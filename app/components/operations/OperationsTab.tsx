@@ -24363,6 +24363,9 @@ Strategies to Improve the CCC
       const payCostByBillRateLevel: any[] = Array.isArray(revenueBillablesData.payCostByBillRateLevel)
         ? revenueBillablesData.payCostByBillRateLevel
         : [];
+      const employeeCompensationRoster: any[] = Array.isArray(revenueBillablesData.employeeCompensationRoster)
+        ? revenueBillablesData.employeeCompensationRoster
+        : [];
       const billRateLevelOrder = ['senior', 'expert', 'experienced', 'skilled', 'lab tech'];
       const marketOrder = ['IN', 'CA', 'CO', 'SD', 'SF', 'NY', 'MA'];
       const displayBillRateLevel = (value: unknown) => {
@@ -24403,9 +24406,29 @@ Strategies to Improve the CCC
         employees.push(employee);
         billRateEconomicsByLevel.set(level, employees);
       });
-      const employeesForBillRateLevel = (level: string) =>
-        [...(billRateEconomicsByLevel.get(String(level || '')) || [])]
+      const employeesForBillRateLevel = (level: string) => {
+        const matchedEmployees = billRateEconomicsByLevel.get(String(level || '')) || [];
+        const employees = matchedEmployees.length > 0
+          ? matchedEmployees
+          : String(level || '').toLowerCase() === 'missing bill rate level'
+            ? employeeCompensationRoster
+                .filter((employee) => String(employee?.billRateLevel || '').toLowerCase() === 'missing bill rate level')
+                .map((employee) => ({
+                  employeeId: employee.employeeId,
+                  employeeName: employee.employeeName,
+                  market: employee.location,
+                  location: employee.location,
+                  payRate: null,
+                  rateCardBillRate: null,
+                  billToPayRatio: null,
+                  estimatedAnnualBillings: null,
+                  estimatedAnnualPay: employee.annualCost == null ? null : Number(employee.annualCost),
+                  estimatedAnnualSpread: null,
+                }))
+            : [];
+        return [...employees]
           .sort((a, b) => String(a.employeeName || '').localeCompare(String(b.employeeName || ''), undefined, { sensitivity: 'base' }));
+      };
       const averageMetric = (employees: any[], key: string) => {
         const values = employees
           .map((employee) => Number(employee[key]))
@@ -24764,9 +24787,9 @@ Strategies to Improve the CCC
                                               <td style={{ ...tdStyle, paddingLeft: '48px', fontWeight: 600 }}>{employee.employeeName || employee.employeeId}</td>
                                               <td style={{ ...tdStyle, textAlign: 'right' }}>—</td>
                                               <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.payRate == null ? '—' : formatUnitCost(employee.payRate)}</td>
-                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{formatUnitCost(Number(employee.rateCardBillRate || 0))}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.rateCardBillRate == null ? '—' : formatUnitCost(Number(employee.rateCardBillRate))}</td>
                                               <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.billToPayRatio == null ? '—' : `${(Number(employee.billToPayRatio) * 100).toFixed(1)}%`}</td>
-                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(Number(employee.estimatedAnnualBillings || 0))}</td>
+                                              <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.estimatedAnnualBillings == null ? '—' : formatCurrency(Number(employee.estimatedAnnualBillings))}</td>
                                               <td style={{ ...tdStyle, textAlign: 'right' }}>{employee.estimatedAnnualPay == null ? '—' : formatCurrency(employee.estimatedAnnualPay)}</td>
                                               <td style={{ ...tdStyle, textAlign: 'right', color: employee.estimatedAnnualSpread == null || Number(employee.estimatedAnnualSpread) >= 0 ? '#166534' : '#991b1b' }}>{employee.estimatedAnnualSpread == null ? '—' : formatCurrency(employee.estimatedAnnualSpread)}</td>
                                             </tr>
