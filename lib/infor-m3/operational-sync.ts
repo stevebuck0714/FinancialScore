@@ -7496,7 +7496,13 @@ async function saveAPTransactionFacts(
     const resolvedDate =
       distDateRaw ||
       (isPaymentLike ? recordDateRaw || invDateRaw : invDateRaw || recordDateRaw);
-    if (!resolvedDate || resolvedDate.getTime() < Date.UTC(2023, 0, 1)) continue;
+    // Vouchers reach us through SLVchHdrs, which runs deeper than the
+    // SLAptrxps payment feed's AP_MIN_BILL_DATE floor. Admitting an invoice
+    // whose payment the source will never send leaves it open forever:
+    // Atlantic carried 436 such vouchers worth $2.7M dated 2022 through May
+    // 2023, while every year with payment coverage reconciled to zero. Hold
+    // the event store to the window where both sides of the ledger exist.
+    if (!resolvedDate || resolvedDate.getTime() < AP_MIN_BILL_DATE.getTime()) continue;
     const eventDate = startOfUtcDay(resolvedDate);
 
     // Payments/credits must reduce AP even when CSI sends a positive InvAmt/AmtPaid.
