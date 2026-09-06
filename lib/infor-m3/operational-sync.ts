@@ -7375,6 +7375,43 @@ async function saveAPOpenBills(
  *   VOUCHER/DEBIT  → +amount (AP increases, you owe more)
  *   CREDIT MEMO    → −amount (AP decreases)
  */
+/**
+ * AP equivalent of getArSourceItemId.
+ *
+ * A voucher is routinely settled by several partial payments that all carry the
+ * same voucher+vouchSeq, so payment lines need their own identity. Without it
+ * both the in-memory dedupe and the (voucher, vouchSeq, transType,
+ * sourceItemId) NULLS NOT DISTINCT index collapse them into a single row:
+ * Atlantic's 1,133 CSI payment rows were persisting as 575 facts, silently
+ * discarding half the payments and leaving settled vouchers open in the aging.
+ */
+function getApSourceItemId(record: Record<string, unknown>): string {
+  const sourceId = pickString(record, [
+    '_ItemId',
+    'ItemId',
+    'itemId',
+    'RowPointer',
+    'rowPointer',
+    '_RowPointer',
+  ]);
+  if (sourceId) return sourceId;
+
+  // Deterministic fallback for extracts that omit a row identity, so a replay
+  // lands on the same key instead of inserting a second copy of the payment.
+  return [
+    pickString(record, ['Voucher', 'voucher']),
+    pickString(record, ['VouchSeq', 'vouchSeq']),
+    pickString(record, ['Type', 'type']),
+    pickString(record, ['CheckNum', 'checkNum']),
+    pickString(record, ['DistDate', 'distDate']),
+    pickString(record, ['RecordDate', 'recordDate']),
+    pickString(record, ['AmtPaid', 'amtPaid']),
+    pickString(record, ['InvAmt', 'invAmt']),
+  ]
+    .map((part) => String(part || '').trim())
+    .join('|');
+}
+
 async function saveAPTransactionFacts(
   companyId: string,
   records: Record<string, unknown>[]
@@ -7401,7 +7438,13 @@ async function saveAPTransactionFacts(
     const transType = rawType || 'v';
     const sign = AP_TYPE_SIGN[transType] ?? 1;
     const vouchSeq = pickString(record, ['VouchSeq', 'vouchSeq']) || '0';
-    const dedupKey = `${voucher}|${vouchSeq}|${transType}`;
+    const isPaymentLike = transType === 'p' || transType === 'a';
+    // Only payment-like rows get a per-line identity. Type=V stays null so the
+    // voucher rows SLVchHdrs and SLAptrxps both report still collapse onto one
+    // another through the NULLS NOT DISTINCT index instead of double-counting
+    // every invoice.
+    const sourceItemId = isPaymentLike ? getApSourceItemId(record) || null : null;
+    const dedupKey = `${voucher}|${vouchSeq}|${transType}|${sourceItemId || ''}`;
     if (seen.has(dedupKey)) continue;
     seen.add(dedupKey);
 
@@ -7418,7 +7461,6 @@ async function saveAPTransactionFacts(
       'ACAM',
       'PYAM',
     ]);
-    const isPaymentLike = transType === 'p' || transType === 'a';
     // A CSI payment row repeats the voucher's face value on InvAmt and carries
     // the amount actually applied on AmtPaid. Preferring InvAmt booked every
     // installment at full invoice value, so a voucher settled in two payments
@@ -7475,6 +7517,7 @@ async function saveAPTransactionFacts(
       exchangeRate: pickNumber(record, ['ExchRate', 'exchRate']) || null,
       termsCode: pickString(record, ['TermsCode', 'termsCode']) || null,
       sourcePlatform: 'INFOR_CSI',
+      sourceItemId,
     });
   }
 
