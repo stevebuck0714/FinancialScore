@@ -2322,21 +2322,27 @@ async function buildDailyApSeriesByAgingRule(
      ),
      -- Pre-aggregate to one row per voucher/day so the date×voucher join stays linear
      -- (no LATERAL, no cartesian product across event/payment streams).
+     -- Qualify vouchers by AP account and window, then count every event those
+     -- vouchers ever had. Restricting the events themselves drops settlements
+     -- that fall outside the window or post to another account -- a prepayment
+     -- booked to a prepaid-inventory account a year before its invoice left
+     -- Atlantic carrying $63,948 of phantom open AP on a voucher that nets to
+     -- zero. A payment settles its voucher wherever and whenever it lands.
      event_daily AS (
-       SELECT voucher, "eventDate"::date AS dt, SUM("normalizedAmount")::float8 AS amt
-       FROM "APTransactionFact"
-       WHERE "companyId" = $1 AND "apAcct" = $2
-         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
-         AND "eventDate" <= $4::date
-       GROUP BY voucher, "eventDate"::date
+       SELECT t.voucher, t."eventDate"::date AS dt, SUM(t."normalizedAmount")::float8 AS amt
+       FROM "APTransactionFact" t
+       JOIN voucher_creates vc ON vc.voucher = t.voucher
+       WHERE t."companyId" = $1
+         AND t."eventDate" <= $4::date
+       GROUP BY t.voucher, t."eventDate"::date
      ),
      type_p_daily AS (
-       SELECT voucher, "eventDate"::date AS dt, SUM(ABS("normalizedAmount"))::float8 AS amt
-       FROM "APTransactionFact"
-       WHERE "companyId" = $1 AND "apAcct" = $2 AND "transType" = 'P'
-         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
-         AND "eventDate" <= $4::date
-       GROUP BY voucher, "eventDate"::date
+       SELECT t.voucher, t."eventDate"::date AS dt, SUM(ABS(t."normalizedAmount"))::float8 AS amt
+       FROM "APTransactionFact" t
+       JOIN voucher_creates vc ON vc.voucher = t.voucher
+       WHERE t."companyId" = $1 AND t."transType" = 'P'
+         AND t."eventDate" <= $4::date
+       GROUP BY t.voucher, t."eventDate"::date
      ),
      payment_facts AS (
        SELECT
@@ -2699,22 +2705,26 @@ async function buildOpenVouchersByAgingRule(
          AND "eventDate" <= $3::date
        GROUP BY voucher
      ),
+     -- Vouchers are qualified by AP account above; their events are not. A
+     -- settlement can post to another account -- Atlantic pays some bills from
+     -- a prepaid-inventory account -- and filtering events by apAcct hides it,
+     -- leaving a voucher that nets to zero reported as fully open.
      events AS (
-       SELECT voucher, SUM("normalizedAmount")::float8 AS event_net
-       FROM "APTransactionFact"
-       WHERE "companyId" = $1
-         AND "apAcct" = $2
-         AND "eventDate" <= $3::date
-       GROUP BY voucher
+       SELECT t.voucher, SUM(t."normalizedAmount")::float8 AS event_net
+       FROM "APTransactionFact" t
+       JOIN voucher_creates vc ON vc.voucher = t.voucher
+       WHERE t."companyId" = $1
+         AND t."eventDate" <= $3::date
+       GROUP BY t.voucher
      ),
      type_p_applied AS (
-       SELECT voucher, SUM(ABS("normalizedAmount"))::float8 AS paid_in_events
-       FROM "APTransactionFact"
-       WHERE "companyId" = $1
-         AND "apAcct" = $2
-         AND "transType" = 'P'
-         AND "eventDate" <= $3::date
-       GROUP BY voucher
+       SELECT t.voucher, SUM(ABS(t."normalizedAmount"))::float8 AS paid_in_events
+       FROM "APTransactionFact" t
+       JOIN voucher_creates vc ON vc.voucher = t.voucher
+       WHERE t."companyId" = $1
+         AND t."transType" = 'P'
+         AND t."eventDate" <= $3::date
+       GROUP BY t.voucher
      ),
      voucher_meta AS (
        SELECT DISTINCT ON (t.voucher)
