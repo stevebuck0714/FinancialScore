@@ -908,12 +908,23 @@ function buildSlCustDrftsAsOfFilter(window?: SyncWindow, site?: string): string 
 function buildSlAptrxAsOfFilter(window?: SyncWindow, site?: string): string | null {
   if (!window) return null;
   const AP_OPEN_COLLECTIBLE_LOOKBACK_DAYS = 150;
-  const collectibleStartDate = new Date(
+  // Vouchers arrive via SLVchHdrs, which carries full history, while payments
+  // arrive only through this filter. A 150-day payment window against an
+  // unbounded voucher feed leaves any voucher whose payment fell outside the
+  // covered slices looking permanently open — Atlantic accumulated ~200 such
+  // vouchers a year, $5.8M in total. Reach back to the AP history floor so the
+  // two feeds have matching depth; there is no point requesting payments older
+  // than the earliest bill we retain. Daily incremental pulls are unaffected:
+  // they use buildCsiRecordDateWindowFilter, not this as-of branch.
+  const lookbackStartDate = new Date(
     Date.UTC(
       window.endDate.getUTCFullYear(),
       window.endDate.getUTCMonth(),
       window.endDate.getUTCDate() - AP_OPEN_COLLECTIBLE_LOOKBACK_DAYS
     )
+  );
+  const collectibleStartDate = new Date(
+    Math.min(lookbackStartDate.getTime(), AP_MIN_BILL_DATE.getTime())
   );
   const collectibleStart = formatCsiCompactDateLiteral(collectibleStartDate);
   const endExclusive = formatCsiCompactDateLiteralExclusiveEnd(window.endDate);
