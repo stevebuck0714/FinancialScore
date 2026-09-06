@@ -8522,6 +8522,90 @@ export async function GET(request: NextRequest) {
                   dpo: latestAllocatedAp ? latestAllocatedAp.dpo : null,
                 } as any)
               : apMetrics;
+            // Bill-level tables have to tie to the same reconstruction the
+            // chart uses. APOpenBillSnapshot stays near-empty for this tenant
+            // because CSI omits DerAmtBal, so leaving them on it renders a few
+            // thousand dollars of bills directly beneath a chart showing the
+            // full balance.
+            const openVouchers = await buildOpenVouchersByAgingRule(
+              prisma,
+              companyId,
+              apAnchorAccountForTrend.accountId,
+              parseIsoDayKey(apLedgerAsOfKey!)
+            );
+            if (openVouchers.length > 0) {
+              const asOfMs = parseIsoDayKey(apLedgerAsOfKey!).getTime();
+              // Matches the daily helper: current is not-yet-due, and the 1-30
+              // bucket includes day 0.
+              const bucketKeyFor = (dueDate: Date): 'current' | 'days1to30' | 'days31to60' | 'days61to90' | 'days90plus' => {
+                const daysPastDue = Math.floor(
+                  (asOfMs - startOfUtcDay(new Date(dueDate)).getTime()) / 86400000
+                );
+                if (daysPastDue < 0) return 'current';
+                if (daysPastDue <= 30) return 'days1to30';
+                if (daysPastDue <= 60) return 'days31to60';
+                if (daysPastDue <= 90) return 'days61to90';
+                return 'days90plus';
+              };
+              const toDayKey = (value: Date | null | undefined): string | null =>
+                value ? dateKeyUtc(startOfUtcDay(new Date(value))) : null;
+
+              const vendorTotals = new Map<
+                string,
+                {
+                  vendorName: string;
+                  current: number;
+                  days1to30: number;
+                  days31to60: number;
+                  days61to90: number;
+                  days90plus: number;
+                  totalDue: number;
+                }
+              >();
+              for (const voucherRow of openVouchers) {
+                const vendorName = voucherRow.vendorName || 'Unknown Vendor';
+                if (!vendorTotals.has(vendorName)) {
+                  vendorTotals.set(vendorName, {
+                    vendorName,
+                    current: 0,
+                    days1to30: 0,
+                    days31to60: 0,
+                    days61to90: 0,
+                    days90plus: 0,
+                    totalDue: 0,
+                  });
+                }
+                const acc = vendorTotals.get(vendorName)!;
+                const amount = Number(voucherRow.openBalance || 0);
+                acc[bucketKeyFor(voucherRow.dueDate)] += amount;
+                acc.totalDue += amount;
+              }
+              unpaidByVendor = Array.from(vendorTotals.values())
+                .sort((a, b) => b.totalDue - a.totalDue)
+                .slice(0, 25) as any;
+
+              const vouchersByAmount = [...openVouchers].sort(
+                (a, b) => Number(b.openBalance || 0) - Number(a.openBalance || 0)
+              );
+              unpaidBills = vouchersByAmount.slice(0, 500).map((voucherRow) => ({
+                vendorName: voucherRow.vendorName || 'Unknown Vendor',
+                billNo: voucherRow.invoiceNum || voucherRow.voucher || '-',
+                date: toDayKey(voucherRow.invoiceDate || voucherRow.voucherCreatedAt),
+                dueDate: toDayKey(voucherRow.dueDate),
+                amountDue: Number(voucherRow.openBalance || 0),
+              })) as any;
+              vendorBills = vouchersByAmount.slice(0, 500).map((voucherRow) => ({
+                vendorName: voucherRow.vendorName || 'Unknown Vendor',
+                billNo: voucherRow.invoiceNum || voucherRow.voucher || '-',
+                date: toDayKey(voucherRow.invoiceDate || voucherRow.voucherCreatedAt),
+                dueDate: toDayKey(voucherRow.dueDate),
+                currency: 'USD',
+                amountCurrency: Number(voucherRow.openBalance || 0),
+                amountHome: Number(voucherRow.openBalance || 0),
+                amountDueHome: Number(voucherRow.openBalance || 0),
+              })) as any;
+              computedApFromOpen = null;
+            }
             apGlAnchorApplied = true;
           } else if (dfsByDay.size > 0) {
             console.warn('[ap-aging] open bills not books-validated; using DFS.ap (skip aging-rule)', {
