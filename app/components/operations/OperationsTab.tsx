@@ -24556,7 +24556,7 @@ Strategies to Improve the CCC
         summary.billToPayRate ??
         (
           Number(summary.avgBillRate || 0) > 0 && Number(summary.avgPayRate || summary.avgHourlyCost || 0) > 0
-            ? Number(summary.avgBillRate || 0) / Number(summary.avgPayRate || summary.avgHourlyCost || 0)
+            ? Number(summary.avgPayRate || summary.avgHourlyCost || 0) / Number(summary.avgBillRate || 0)
             : NaN
         )
       );
@@ -24572,7 +24572,7 @@ Strategies to Improve the CCC
                   { label: 'Billable Employees', value: billableEmployeeCount.toLocaleString('en-US'), color: '#7c3aed' },
                   { label: 'Distinct Levels', value: Number(summary.distinctBillRateLevels || 0).toLocaleString('en-US'), color: '#0f766e' },
                   { label: 'Client Rate Card', value: summary.numericBillRatesAvailable ? 'Available' : 'Needed', color: '#b45309' },
-                  { label: 'Overall Bill to Pay Rate', value: Number.isFinite(overallBillToPayRate) ? `${overallBillToPayRate.toFixed(2)}x` : 'Needed', color: '#0f172a' },
+                  { label: 'Overall Bill to Pay Rate', value: Number.isFinite(overallBillToPayRate) ? `${(overallBillToPayRate * 100).toFixed(1)}%` : 'Needed', color: '#0f172a' },
                 ].map((kpi) => (
                   <div key={kpi.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                     <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>{kpi.label}</div>
