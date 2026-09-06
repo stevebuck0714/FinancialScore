@@ -10827,6 +10827,7 @@ export async function transformInforM3RawRun(options: {
   let recordsCreated = 0;
   const cumulativeApPaymentsByKey = new Map<string, Record<string, unknown>>();
   const cumulativeApOpenByKey = new Map<string, Record<string, unknown>>();
+  const cumulativeApFactsByKey = new Map<string, Record<string, unknown>>();
   for (const businessDateRow of businessDateRows) {
     const snapshotDate = startOfUtcDay(new Date(businessDateRow.businessDate));
     const rawByModuleProgram = new Map<string, {
@@ -10999,6 +11000,15 @@ export async function transformInforM3RawRun(options: {
         return [vendorId, voucher, type, recordDate, rowPointer].join('||');
       };
       for (const record of apOpen) {
+        // The event store must see every record the live sync path would see.
+        // resolveApBillDateFromRecord returns the *invoice* date even on a
+        // payment row, so filtering the event store by AP_MIN_BILL_DATE drops
+        // payments settling invoices older than the floor while the fact
+        // writer's own 2023-01-01 floor still admits those invoices. Atlantic
+        // ended up with 1,249 vouchers and 560 payments in 2023 and $6.2M
+        // permanently open. The bill-date window stays on the open-bill and
+        // aging snapshots below, which are as-of views and genuinely want it.
+        cumulativeApFactsByKey.set(apRecordIdentity(record), record);
         const billDate = resolveApBillDateFromRecord(record);
         if (!isApDateWithinHistoryWindow(billDate)) continue;
         cumulativeApOpenByKey.set(apRecordIdentity(record), record);
@@ -11008,9 +11018,12 @@ export async function transformInforM3RawRun(options: {
         if (!isApDateWithinHistoryWindow(billDate)) continue;
         cumulativeApPaymentsByKey.set(apRecordIdentity(record), record);
       }
+      const cumulativeApFacts = Array.from(cumulativeApFactsByKey.values());
+      if (cumulativeApFacts.length > 0) {
+        recordsCreated += await saveAPTransactionFacts(companyId, cumulativeApFacts);
+      }
       const cumulativeApOpen = Array.from(cumulativeApOpenByKey.values());
       if (cumulativeApOpen.length > 0) {
-        recordsCreated += await saveAPTransactionFacts(companyId, cumulativeApOpen);
         recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, cumulativeApOpen, {
           miProgram: 'AP_OPEN',
           transaction: 'RAW_REPLAY',
