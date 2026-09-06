@@ -88,6 +88,9 @@ type OpTab = 'dashboard' | 'overview' | string;
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+// A nightly feed normally trails the ledger by a day; flagging that as an
+// exception reads like a fault. Disclose only a lag long enough to matter.
+const AP_LEDGER_LAG_DISCLOSURE_DAYS = 2;
 const RETAIL_PRODUCT_AGING_COLORS = ['#4f8f7b', '#d8a24a', '#c56f5d', '#7c6f9f'];
 type RetailForecastPoint = {
   monthKey: string;
@@ -6825,7 +6828,7 @@ export default function OperationsTab({
             </div>
           </div>
         )}
-        {booksAr !== null && arDetailStatus === 'detail_stale' && (
+        {booksAr !== null && arDetailStatus === 'detail_stale' && arLedgerLagDays > AP_LEDGER_LAG_DISCLOSURE_DAYS && (
           <div
             style={{
               marginTop: '-12px',
@@ -6838,20 +6841,9 @@ export default function OperationsTab({
               fontSize: '13px',
             }}
           >
-            The AR ledger feed is {arLedgerLagDays} {arLedgerLagDays === 1 ? 'day' : 'days'} behind the
-            {' '}general ledger. Invoice detail is complete only through {arLedgerAsOfLabel}, so the
-            {' '}{formatCurrency(detailAr)} shown above is that day&apos;s position, while Books AR for
+            The AR ledger feed is {arLedgerLagDays} days behind the general ledger, so the
+            {' '}{formatCurrency(detailAr)} above is the position on {arLedgerAsOfLabel}. Books AR for
             {' '}{arAsOfLabel} is {formatCurrency(booksAr)}.
-            {booksArAtLedgerAsOf !== null && (
-              <>
-                {' '}Measured on the same date, detail ties to Books AR of
-                {' '}{formatCurrency(booksArAtLedgerAsOf)} within
-                {' '}{formatCurrency(Math.abs(booksArAtLedgerAsOf - detailAr))}, so the subledger itself
-                {' '}is intact.
-              </>
-            )}
-            {' '}Aging buckets stay held back until the feed catches up rather than being restated
-            {' '}against a newer books balance.
           </div>
         )}
         {booksAr !== null && arDetailStatus === 'reconciled_with_adjustment' && arGlOnlyAdjustment !== null && arGlOnlyAdjustment !== 0 && (
@@ -7990,7 +7982,10 @@ export default function OperationsTab({
           </div>
         )}
 
-        {apAgingAllocationAvailable && apLedgerLagDays > 0 && (
+        {/* A day or two of lag is ordinary for a nightly feed and the "As of"
+            date below already states which day the aging describes. Only speak
+            up once the position is stale enough to mislead. */}
+        {apAgingAllocationAvailable && apLedgerLagDays > AP_LEDGER_LAG_DISCLOSURE_DAYS && (
           <div
             style={{
               marginTop: '-12px',
@@ -8003,16 +7998,8 @@ export default function OperationsTab({
               fontSize: '13px',
             }}
           >
-            The AP payment feed is {apLedgerLagDays} {apLedgerLagDays === 1 ? 'day' : 'days'} behind the
-            {' '}general ledger. Voucher detail is complete only through {apLedgerAsOfLabel}, so the aging
-            {' '}buckets and DPO above describe that day&apos;s position.
-            {booksApAtLedgerAsOf !== null && (
-              <>
-                {' '}Measured on the same date, the reconstruction ties to Books AP of
-                {' '}{formatCurrency(booksApAtLedgerAsOf)}, so the voucher ledger itself is intact.
-              </>
-            )}
-            {' '}Later dates show the books total without an aging allocation.
+            The AP payment feed is {apLedgerLagDays} days behind the general ledger, so the aging
+            {' '}buckets and DPO describe the position on {apLedgerAsOfLabel}.
           </div>
         )}
 
