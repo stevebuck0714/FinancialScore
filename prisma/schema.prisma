@@ -89,6 +89,11 @@ model Company {
   addressState               String?
   addressZip                 String?
   addressCountry             String?
+  // Primary company contact shown and managed in Site Admin Business Information.
+  // This must not depend on which company user happens to sign in.
+  contactEmail               String?
+  contactName                String?
+  contactPhone               String?
   // ISO 4217 books/home currency for synced financials (default USD)
   baseCurrency               String                 @default("USD")
   // Optional alternate reporting currency for presentation (FX convert on read)

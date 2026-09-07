@@ -162,6 +162,9 @@ export async function GET(request: NextRequest) {
       includeBaseCurrency,
       includeReportingCurrency,
       includeLocale,
+      includeContactEmail,
+      includeContactName,
+      includeContactPhone,
     ] = await Promise.all([
       hasCompanyColumn("industrySectorCategory"),
       hasCompanyColumn("accountingSystem"),
@@ -188,6 +191,9 @@ export async function GET(request: NextRequest) {
       hasCompanyColumn("baseCurrency"),
       hasCompanyColumn("reportingCurrency"),
       hasCompanyColumn("locale"),
+      hasCompanyColumn("contactEmail"),
+      hasCompanyColumn("contactName"),
+      hasCompanyColumn("contactPhone"),
     ]);
     let companies;
     try {
@@ -209,6 +215,9 @@ export async function GET(request: NextRequest) {
           ...(includeBaseCurrency ? { baseCurrency: true } : {}),
           ...(includeReportingCurrency ? { reportingCurrency: true } : {}),
           ...(includeLocale ? { locale: true } : {}),
+          ...(includeContactEmail ? { contactEmail: true } : {}),
+          ...(includeContactName ? { contactName: true } : {}),
+          ...(includeContactPhone ? { contactPhone: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           createdAt: true,
@@ -274,6 +283,9 @@ export async function GET(request: NextRequest) {
           ...(includeBaseCurrency ? { baseCurrency: true } : {}),
           ...(includeReportingCurrency ? { reportingCurrency: true } : {}),
           ...(includeLocale ? { locale: true } : {}),
+          ...(includeContactEmail ? { contactEmail: true } : {}),
+          ...(includeContactName ? { contactName: true } : {}),
+          ...(includeContactPhone ? { contactPhone: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           createdAt: true,
@@ -1060,6 +1072,40 @@ export async function PATCH(request: NextRequest) {
     if (updateFields.addressCountry !== undefined)
       updateData.addressCountry = updateFields.addressCountry;
 
+    // Business Information contact fields are company-owned so they remain
+    // stable regardless of which user account is loaded for the company.
+    const hasCompanyContactUpdate =
+      updateFields.contactEmail !== undefined ||
+      updateFields.contactName !== undefined ||
+      updateFields.contactPhone !== undefined;
+    if (hasCompanyContactUpdate) {
+      const [contactEmailColumnExists, contactNameColumnExists, contactPhoneColumnExists] = await Promise.all([
+        hasCompanyColumn('contactEmail'),
+        hasCompanyColumn('contactName'),
+        hasCompanyColumn('contactPhone'),
+      ]);
+      if (!contactEmailColumnExists || !contactNameColumnExists || !contactPhoneColumnExists) {
+        return NextResponse.json(
+          { error: 'Company contact fields are not available in this environment' },
+          { status: 400 },
+        );
+      }
+      if (updateFields.contactEmail !== undefined) {
+        updateData.contactEmail =
+          typeof updateFields.contactEmail === 'string'
+            ? updateFields.contactEmail.trim().toLowerCase() || null
+            : null;
+      }
+      if (updateFields.contactName !== undefined) {
+        updateData.contactName =
+          typeof updateFields.contactName === 'string' ? updateFields.contactName.trim() || null : null;
+      }
+      if (updateFields.contactPhone !== undefined) {
+        updateData.contactPhone =
+          typeof updateFields.contactPhone === 'string' ? updateFields.contactPhone.trim() || null : null;
+      }
+    }
+
     // Industry sector
     if (updateFields.industrySector !== undefined) {
       if (!updateFields.industrySector) {
@@ -1750,6 +1796,15 @@ export async function PATCH(request: NextRequest) {
     }
     if (await columnExists('locale')) {
       selectFields.locale = true;
+    }
+    if (await columnExists('contactEmail')) {
+      selectFields.contactEmail = true;
+    }
+    if (await columnExists('contactName')) {
+      selectFields.contactName = true;
+    }
+    if (await columnExists('contactPhone')) {
+      selectFields.contactPhone = true;
     }
 
     // Select headcountAllocations if it exists (now that database column is added)

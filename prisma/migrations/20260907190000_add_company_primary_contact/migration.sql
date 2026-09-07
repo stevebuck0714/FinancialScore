@@ -1,0 +1,4 @@
+ALTER TABLE "Company"
+  ADD COLUMN IF NOT EXISTS "contactEmail" TEXT,
+  ADD COLUMN IF NOT EXISTS "contactName" TEXT,
+  ADD COLUMN IF NOT EXISTS "contactPhone" TEXT;

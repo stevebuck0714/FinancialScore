@@ -947,9 +947,12 @@ export default function SiteAdminDashboard(props: any) {
   const getBusinessInfoDraft = (company: any, user: any) => {
     if (editingBusinessInfoByCompany[company?.id]) return editingBusinessInfoByCompany[company.id];
     return {
-      email: user?.email || '',
-      name: user?.name || '',
-      phone: user?.phone || '',
+      // Company contact information must not depend on the first user returned
+      // for this company. Keep the legacy user fallback only until an admin
+      // explicitly saves the company-owned contact record.
+      email: company?.contactEmail ?? user?.email ?? '',
+      name: company?.contactName ?? user?.name ?? '',
+      phone: company?.contactPhone ?? user?.phone ?? '',
       addressStreet: company?.addressStreet || '',
       addressCity: company?.addressCity || '',
       addressState: company?.addressState || '',
@@ -958,7 +961,7 @@ export default function SiteAdminDashboard(props: any) {
     };
   };
 
-  const saveBusinessInfo = async (companyId: string, userId: string, draft: { email: string; name: string; phone: string; addressStreet: string; addressCity: string; addressState: string; addressZip: string; addressCountry: string }) => {
+  const saveBusinessInfo = async (companyId: string, draft: { email: string; name: string; phone: string; addressStreet: string; addressCity: string; addressState: string; addressZip: string; addressCountry: string }) => {
     setSavingBusinessInfoCompanyId(companyId);
     try {
       const companyRes = await fetch('/api/companies', {
@@ -971,6 +974,9 @@ export default function SiteAdminDashboard(props: any) {
           addressState: draft.addressState,
           addressZip: draft.addressZip,
           addressCountry: draft.addressCountry,
+          contactEmail: draft.email,
+          contactName: draft.name,
+          contactPhone: draft.phone,
         }),
       });
       if (!companyRes.ok) {
@@ -978,22 +984,6 @@ export default function SiteAdminDashboard(props: any) {
         throw new Error(err?.error || 'Failed to update company info');
       }
       const companyData = await companyRes.json();
-
-      const userRes = await fetch('/api/users', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: userId,
-          email: draft.email,
-          name: draft.name,
-          phone: draft.phone,
-        }),
-      });
-      if (!userRes.ok) {
-        const err = await userRes.json();
-        throw new Error(err?.error || 'Failed to update user info');
-      }
-      const userData = await userRes.json();
 
       setCompanies((prev: any[]) =>
         Array.isArray(prev)
@@ -1004,11 +994,6 @@ export default function SiteAdminDashboard(props: any) {
             )
           : prev
       );
-
-      const userObj = users.find((u: any) => u.id === userId);
-      if (userObj && userData.user) {
-        Object.assign(userObj, userData.user);
-      }
 
       setEditingBusinessInfoByCompany((prev) => {
         const next = { ...prev };
@@ -10749,7 +10734,7 @@ export default function SiteAdminDashboard(props: any) {
                                         <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Business Information</h4>
                                         <div style={{ display: 'flex', gap: '6px' }}>
                                           <button
-                                            onClick={() => saveBusinessInfo(businessCompany.id, businessUser?.id, biDraft)}
+                                            onClick={() => saveBusinessInfo(businessCompany.id, biDraft)}
                                             disabled={biSaving || !biEditing}
                                             style={{ padding: '6px 12px', background: biEditing ? '#334155' : '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: biEditing && !biSaving ? 'pointer' : 'not-allowed' }}
                                           >
