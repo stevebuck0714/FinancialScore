@@ -78,6 +78,7 @@ function buildValues(row: any) {
   const revenue = toNumber(row.revenue);
   const cogsTotal = toNumber(row.cogsTotal);
   const expense = toNumber(row.expense);
+  const interestExpense = toNumber(row.interestExpense);
   const nonOperatingIncome = toNumber(row.nonOperatingIncome);
   const nonOperatingExpense = toNumber(row.nonOperatingExpense);
   const grossProfit = revenue - cogsTotal;
@@ -92,6 +93,8 @@ function buildValues(row: any) {
     // Simplified report-builder EBITDA proxy until a dedicated saved-report metric layer is added.
     ebitda: revenue - cogsTotal - expense,
     ebitdaMarginPct: revenue ? (revenue - cogsTotal - expense) / revenue : 0,
+    interestExpense,
+    interestExpenseToRevenuePct: revenue ? interestExpense / revenue : 0,
     netIncome,
     cash: toNumber(row.cash),
     ar: toNumber(row.ar),
@@ -1805,6 +1808,7 @@ async function loadMonthlyFinancialContextRows(companyId: string, rawDateRange?:
       revenue: true,
       cogsTotal: true,
       expense: true,
+      interestExpense: true,
       cash: true,
       ar: true,
       ap: true,

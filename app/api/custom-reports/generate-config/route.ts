@@ -408,24 +408,35 @@ function buildFinancialTrendReportConfig(prompt: string, requestedType: ReportCh
     });
   };
 
-  if (/\b(revenue|sales)\b/.test(lowerPrompt)) addSeries('revenue', 'Total Revenue');
-  if (/\b(cogs|cost of goods sold)\b/.test(lowerPrompt)) addSeries('cogsTotal', 'Total COGS');
-  if (/\bgross profit\b/.test(lowerPrompt)) addSeries('grossProfit', 'Gross Profit');
-  if (/\bgross\s+margin\b/.test(lowerPrompt)) addSeries('grossMarginPct', 'Gross Margin %', 'percent');
-  if (/\bebitda\b/.test(lowerPrompt)) addSeries('ebitda', 'EBITDA');
-  if (/\bebitda\s+margin\b|\bmargin\s+ebitda\b/.test(lowerPrompt)) {
-    addSeries('ebitdaMarginPct', 'EBITDA Margin %', 'percent');
+  const interestExpenseToRevenueRatio =
+    /\binterest\s+expense\b[\s\S]{0,80}\b(?:to|over|divided by|as a percentage of)\b[\s\S]{0,80}\b(?:total\s+)?revenue\b/i.test(prompt) ||
+    /\b(?:ratio|percentage)\b[\s\S]{0,80}\b(?:total\s+)?revenue\b[\s\S]{0,80}\binterest\s+expense\b/i.test(prompt);
+  if (interestExpenseToRevenueRatio) {
+    addSeries('interestExpenseToRevenuePct', 'Interest Expense / Revenue', 'percent');
+  } else {
+    const mentionsInterestExpense = /\binterest\s+expense\b/.test(lowerPrompt);
+    if (/\b(revenue|sales)\b/.test(lowerPrompt)) addSeries('revenue', 'Total Revenue');
+    if (/\b(cogs|cost of goods sold)\b/.test(lowerPrompt)) addSeries('cogsTotal', 'Total COGS');
+    if (/\bgross profit\b/.test(lowerPrompt)) addSeries('grossProfit', 'Gross Profit');
+    if (/\bgross\s+margin\b/.test(lowerPrompt)) addSeries('grossMarginPct', 'Gross Margin %', 'percent');
+    if (/\bebitda\b/.test(lowerPrompt)) addSeries('ebitda', 'EBITDA');
+    if (/\bebitda\s+margin\b|\bmargin\s+ebitda\b/.test(lowerPrompt)) {
+      addSeries('ebitdaMarginPct', 'EBITDA Margin %', 'percent');
+    }
+    if (mentionsInterestExpense) addSeries('interestExpense', 'Interest Expense');
+    if (/\b(expense|expenses|opex|operating expense)\b/.test(lowerPrompt) && !mentionsInterestExpense) {
+      addSeries('expense', 'Operating Expense');
+    }
+    if (/\bnet income\b/.test(lowerPrompt)) addSeries('netIncome', 'Net Income');
+    if (/\b(cash|cash balance)\b/.test(lowerPrompt)) addSeries('cash', 'Cash');
+    if (/\b(accounts receivable|receivables|\bar\b)\b/.test(lowerPrompt)) addSeries('ar', 'Accounts Receivable');
+    if (/\b(accounts payable|payables|\bap\b)\b/.test(lowerPrompt)) addSeries('ap', 'Accounts Payable');
+    if (/\binventory\b/.test(lowerPrompt)) addSeries('inventory', 'Inventory');
+    if (/\b(line of credit|\bloc\b)\b/.test(lowerPrompt)) addSeries('loc', 'Line of Credit');
+    if (/\btotal assets?\b/.test(lowerPrompt)) addSeries('totalAssets', 'Total Assets');
+    if (/\btotal liabilit(?:y|ies)\b/.test(lowerPrompt)) addSeries('totalLiab', 'Total Liabilities');
+    if (/\btotal equity\b/.test(lowerPrompt)) addSeries('totalEquity', 'Total Equity');
   }
-  if (/\b(expense|expenses|opex|operating expense)\b/.test(lowerPrompt)) addSeries('expense', 'Operating Expense');
-  if (/\bnet income\b/.test(lowerPrompt)) addSeries('netIncome', 'Net Income');
-  if (/\b(cash|cash balance)\b/.test(lowerPrompt)) addSeries('cash', 'Cash');
-  if (/\b(accounts receivable|receivables|\bar\b)\b/.test(lowerPrompt)) addSeries('ar', 'Accounts Receivable');
-  if (/\b(accounts payable|payables|\bap\b)\b/.test(lowerPrompt)) addSeries('ap', 'Accounts Payable');
-  if (/\binventory\b/.test(lowerPrompt)) addSeries('inventory', 'Inventory');
-  if (/\b(line of credit|\bloc\b)\b/.test(lowerPrompt)) addSeries('loc', 'Line of Credit');
-  if (/\btotal assets?\b/.test(lowerPrompt)) addSeries('totalAssets', 'Total Assets');
-  if (/\btotal liabilit(?:y|ies)\b/.test(lowerPrompt)) addSeries('totalLiab', 'Total Liabilities');
-  if (/\btotal equity\b/.test(lowerPrompt)) addSeries('totalEquity', 'Total Equity');
   if (series.length === 0 || !/\b(month|monthly|year|years|trend|line|graph|chart)\b/.test(lowerPrompt)) return null;
 
   const chartType: ReportChartType = series.length > 1 && (requestedType === 'line' || requestedType === 'multi_line')
@@ -850,6 +861,7 @@ export async function POST(request: NextRequest) {
         revenue: true,
         cogsTotal: true,
         expense: true,
+        interestExpense: true,
         cash: true,
         ar: true,
         ap: true,

@@ -21,6 +21,8 @@ export const financialReportFields: ReportFieldCatalogItem[] = [
   { field: 'expense', label: 'Operating Expense', source: 'MonthlyFinancial', format: 'currency' },
   { field: 'ebitda', label: 'EBITDA', source: 'derived', format: 'currency' },
   { field: 'ebitdaMarginPct', label: 'EBITDA Margin %', source: 'derived', format: 'percent' },
+  { field: 'interestExpense', label: 'Interest Expense', source: 'MonthlyFinancial', format: 'currency' },
+  { field: 'interestExpenseToRevenuePct', label: 'Interest Expense / Revenue', source: 'derived', format: 'percent' },
   { field: 'netIncome', label: 'Net Income', source: 'derived', format: 'currency' },
   { field: 'cash', label: 'Cash', source: 'MonthlyFinancial', format: 'currency' },
   { field: 'ar', label: 'Accounts Receivable', source: 'MonthlyFinancial', format: 'currency' },
