@@ -1775,21 +1775,31 @@ async function buildDatasetDimensionChartPreview(config: any) {
   };
 }
 
-async function loadMonthlyFinancialContextRows(companyId: string) {
-  const endDate = new Date();
-  const startDate = new Date(Date.UTC(endDate.getUTCFullYear() - 3, endDate.getUTCMonth(), 1));
+async function loadMonthlyFinancialContextRows(companyId: string, rawDateRange?: any) {
+  const fallbackEndDate = new Date();
+  const fallbackStartDate = new Date(Date.UTC(fallbackEndDate.getUTCFullYear() - 3, fallbackEndDate.getUTCMonth(), 1));
+  const requestedStart = rawDateRange?.startDate || rawDateRange?.start || rawDateRange?.from;
+  const requestedEnd = rawDateRange?.endDate || rawDateRange?.end || rawDateRange?.to;
+  const parsedStart = requestedStart ? new Date(String(requestedStart)) : null;
+  const parsedEnd = requestedEnd ? new Date(String(requestedEnd)) : null;
+  const startDate = parsedStart && !Number.isNaN(parsedStart.getTime()) ? parsedStart : fallbackStartDate;
+  const endDate = parsedEnd && !Number.isNaN(parsedEnd.getTime()) ? parsedEnd : fallbackEndDate;
+  endDate.setUTCHours(23, 59, 59, 999);
   const dfsMonthly = await loadMonthlyFromDfs(companyId, startDate, endDate);
   if (dfsMonthly?.rows?.length) {
     return dfsMonthly.rows
       .slice()
       .sort((a, b) => b.monthDate.getTime() - a.monthDate.getTime())
-      .slice(0, 36);
+      .slice(0, 120);
   }
 
   return prisma.monthlyFinancial.findMany({
-    where: { companyId },
+    where: {
+      companyId,
+      monthDate: { gte: startDate, lte: endDate },
+    },
     orderBy: { monthDate: 'desc' },
-    take: 36,
+    take: 120,
     select: {
       monthDate: true,
       revenue: true,
@@ -1872,7 +1882,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rows = await loadMonthlyFinancialContextRows(companyId);
+    const rows = await loadMonthlyFinancialContextRows(companyId, previewConfig?.dateRange);
 
     const previewRowsByMonth = new Map<string, { month: string; monthDate: string; values: Record<string, number> }>();
     const financialFields = fields.filter((field) => !field.startsWith('op.'));

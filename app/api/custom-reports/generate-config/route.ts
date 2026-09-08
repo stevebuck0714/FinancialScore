@@ -19,6 +19,7 @@ import {
   normalizeDatasetSort,
   type ReportDataset,
 } from '@/lib/custom-reports/report-datasets';
+import { formatEstDate } from '@/lib/time/eastern';
 
 type ReportChartType = 'line' | 'multi_line' | 'bar' | 'grouped_bar' | 'stacked_bar' | 'combo' | 'table' | 'pie';
 
@@ -160,6 +161,55 @@ function inferExactDateRangeFromPrompt(dataset: ReportDataset, prompt: string): 
     startDate: start.toISOString().slice(0, 10),
     endDate: end.toISOString().slice(0, 10),
   };
+}
+
+function inferFinancialDateRange(prompt: string): { field: 'monthDate'; startDate: string; endDate: string } | null {
+  const normalized = normalizePromptText(prompt).toLowerCase();
+  const monthNames = [
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december',
+  ];
+  const monthMatch = normalized.match(
+    /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\b/
+  );
+  const numberOfMonthsMatch = normalized.match(
+    /\b(?:last|past|previous|trailing|for)\s+(?:the\s+)?(\d{1,2})\s+months?\b|\b(?:the\s+)?(\d{1,2})\s+months?\s+(?:ended|ending)\b/
+  );
+  const numberOfMonths = numberOfMonthsMatch
+    ? Math.min(Math.max(Number(numberOfMonthsMatch[1] || numberOfMonthsMatch[2]), 1), 120)
+    : null;
+  const rangeForEndingMonth = (year: number, monthIndex: number, months: number) => {
+    const start = new Date(Date.UTC(year, monthIndex - (months - 1), 1));
+    const end = new Date(Date.UTC(year, monthIndex + 1, 0));
+    return {
+      field: 'monthDate' as const,
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+    };
+  };
+  if (monthMatch) {
+    const monthIndex = monthNames.indexOf(monthMatch[1]);
+    const year = Number(monthMatch[2]);
+    if (monthIndex >= 0 && Number.isFinite(year)) {
+      if (numberOfMonths) return rangeForEndingMonth(year, monthIndex, numberOfMonths);
+      const endDate = new Date(Date.UTC(year, monthIndex + 1, 0)).toISOString().slice(0, 10);
+      const isYearToDate = /\b(ytd|year to date|through|thru)\b/.test(normalized);
+      return {
+        field: 'monthDate',
+        startDate: isYearToDate ? `${year}-01-01` : `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`,
+        endDate,
+      };
+    }
+  }
+  if (numberOfMonths) {
+    // Financial reporting defaults to completed EST calendar months when the
+    // request has no explicit cutoff month.
+    const [yearRaw, monthRaw] = formatEstDate().split('-');
+    const year = Number(yearRaw);
+    const monthIndex = Number(monthRaw) - 2;
+    return rangeForEndingMonth(year, monthIndex, numberOfMonths);
+  }
+  return null;
 }
 
 function normalizeSeries(config: any, chartType: ReportChartType, fieldCatalog: ReportFieldCatalogItem[]) {
@@ -381,14 +431,18 @@ function buildFinancialTrendReportConfig(prompt: string, requestedType: ReportCh
   const chartType: ReportChartType = series.length > 1 && (requestedType === 'line' || requestedType === 'multi_line')
     ? 'multi_line'
     : requestedType;
+  const explicitDateRange = inferFinancialDateRange(prompt);
   const yearsMatch = lowerPrompt.match(/\b(\d{1,2})\s+years?\b/);
   const years = yearsMatch ? Math.min(Math.max(Number(yearsMatch[1]), 1), 10) : 3;
+  const requestedPeriod = explicitDateRange
+    ? `${explicitDateRange.startDate} through ${explicitDateRange.endDate}`
+    : `the last ${years} years`;
 
   return validateReportConfig({
     title: series.length > 1
-      ? `${series.map((item) => item.label.replace(/^Total /, '')).join(', ')} Over ${years} Years`
-      : `${series[0].label} Over ${years} Years`,
-    description: `Monthly ${series.map((item) => item.label.toLowerCase()).join(', ')} for the last ${years} years.`,
+      ? `${series.map((item) => item.label.replace(/^Total /, '')).join(', ')}: ${requestedPeriod}`
+      : `${series[0].label}: ${requestedPeriod}`,
+    description: `Monthly ${series.map((item) => item.label.toLowerCase()).join(', ')} for ${requestedPeriod}.`,
     chartType,
     dataSource: 'monthlyFinancial',
     timeGrain: 'month',
@@ -402,7 +456,12 @@ function buildFinancialTrendReportConfig(prompt: string, requestedType: ReportCh
         }))
       : series,
     filters: [],
-    notes: [`Generated deterministically from monthly financial data for the last ${years * 12} months.`],
+    dateRange: explicitDateRange,
+    notes: [
+      explicitDateRange
+        ? `Generated deterministically from monthly financial data for ${requestedPeriod}.`
+        : `Generated deterministically from monthly financial data for the last ${years * 12} months.`,
+    ],
   }, chartType, fieldCatalog, prompt);
 }
 
