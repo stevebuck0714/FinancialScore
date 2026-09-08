@@ -352,17 +352,30 @@ function buildFinancialTrendReportConfig(prompt: string, requestedType: ReportCh
       field,
       label,
       chartType: 'line',
-      axis: 'left',
-      aggregation: 'sum',
+      axis: format === 'percent' ? 'right' : 'left',
+      aggregation: format === 'percent' ? 'average' : 'sum',
       format,
     });
   };
 
   if (/\b(revenue|sales)\b/.test(lowerPrompt)) addSeries('revenue', 'Total Revenue');
   if (/\b(cogs|cost of goods sold)\b/.test(lowerPrompt)) addSeries('cogsTotal', 'Total COGS');
-  if (/\bebitda\b/.test(lowerPrompt)) addSeries('ebitda', 'EBITDA');
   if (/\bgross profit\b/.test(lowerPrompt)) addSeries('grossProfit', 'Gross Profit');
+  if (/\bgross\s+margin\b/.test(lowerPrompt)) addSeries('grossMarginPct', 'Gross Margin %', 'percent');
+  if (/\bebitda\b/.test(lowerPrompt)) addSeries('ebitda', 'EBITDA');
+  if (/\bebitda\s+margin\b|\bmargin\s+ebitda\b/.test(lowerPrompt)) {
+    addSeries('ebitdaMarginPct', 'EBITDA Margin %', 'percent');
+  }
   if (/\b(expense|expenses|opex|operating expense)\b/.test(lowerPrompt)) addSeries('expense', 'Operating Expense');
+  if (/\bnet income\b/.test(lowerPrompt)) addSeries('netIncome', 'Net Income');
+  if (/\b(cash|cash balance)\b/.test(lowerPrompt)) addSeries('cash', 'Cash');
+  if (/\b(accounts receivable|receivables|\bar\b)\b/.test(lowerPrompt)) addSeries('ar', 'Accounts Receivable');
+  if (/\b(accounts payable|payables|\bap\b)\b/.test(lowerPrompt)) addSeries('ap', 'Accounts Payable');
+  if (/\binventory\b/.test(lowerPrompt)) addSeries('inventory', 'Inventory');
+  if (/\b(line of credit|\bloc\b)\b/.test(lowerPrompt)) addSeries('loc', 'Line of Credit');
+  if (/\btotal assets?\b/.test(lowerPrompt)) addSeries('totalAssets', 'Total Assets');
+  if (/\btotal liabilit(?:y|ies)\b/.test(lowerPrompt)) addSeries('totalLiab', 'Total Liabilities');
+  if (/\btotal equity\b/.test(lowerPrompt)) addSeries('totalEquity', 'Total Equity');
   if (series.length === 0 || !/\b(month|monthly|year|years|trend|line|graph|chart)\b/.test(lowerPrompt)) return null;
 
   const chartType: ReportChartType = series.length > 1 && (requestedType === 'line' || requestedType === 'multi_line')
@@ -381,7 +394,13 @@ function buildFinancialTrendReportConfig(prompt: string, requestedType: ReportCh
     timeGrain: 'month',
     xAxis: { field: 'monthDate', label: 'Month' },
     yAxes: { left: 'Dollars', right: 'Percent' },
-    series,
+    series: chartType === 'combo'
+      ? series.map((item, index) => ({
+          ...item,
+          chartType: index === 0 ? 'bar' : 'line',
+          axis: item.format === 'percent' ? 'right' : 'left',
+        }))
+      : series,
     filters: [],
     notes: [`Generated deterministically from monthly financial data for the last ${years * 12} months.`],
   }, chartType, fieldCatalog, prompt);

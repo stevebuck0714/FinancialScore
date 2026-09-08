@@ -91,6 +91,7 @@ function buildValues(row: any) {
     expense,
     // Simplified report-builder EBITDA proxy until a dedicated saved-report metric layer is added.
     ebitda: revenue - cogsTotal - expense,
+    ebitdaMarginPct: revenue ? (revenue - cogsTotal - expense) / revenue : 0,
     netIncome,
     cash: toNumber(row.cash),
     ar: toNumber(row.ar),

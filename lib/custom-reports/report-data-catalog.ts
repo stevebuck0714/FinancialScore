@@ -20,6 +20,7 @@ export const financialReportFields: ReportFieldCatalogItem[] = [
   { field: 'grossMarginPct', label: 'Gross Margin %', source: 'derived', format: 'percent' },
   { field: 'expense', label: 'Operating Expense', source: 'MonthlyFinancial', format: 'currency' },
   { field: 'ebitda', label: 'EBITDA', source: 'derived', format: 'currency' },
+  { field: 'ebitdaMarginPct', label: 'EBITDA Margin %', source: 'derived', format: 'percent' },
   { field: 'netIncome', label: 'Net Income', source: 'derived', format: 'currency' },
   { field: 'cash', label: 'Cash', source: 'MonthlyFinancial', format: 'currency' },
   { field: 'ar', label: 'Accounts Receivable', source: 'MonthlyFinancial', format: 'currency' },
