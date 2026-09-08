@@ -7524,8 +7524,23 @@ export async function GET(request: NextRequest) {
           },
           { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
         );
+        // The cards must reflect the same newest valid business-day record
+        // shown in the Aging Trend. Detail reconstruction is retained for
+        // reconciliation diagnostics, but must not replace the chart buckets.
+        const latestTrendRecord = data[0] as any;
         const summaryTotals =
-          latestOpenTotals.totalAR > 0
+          latestTrendRecord && Number(latestTrendRecord.totalAR || 0) > 0
+            ? {
+                totalAR: Number(latestTrendRecord.totalAR || 0),
+                current: Number(latestTrendRecord.current || 0),
+                days1to30: Number(latestTrendRecord.days1to30 || 0),
+                days31to60: Number(latestTrendRecord.days31to60 || 0),
+                days61to90: Number(latestTrendRecord.days61to90 || 0),
+                days90plus: Number(latestTrendRecord.days90plus || 0),
+                dsoWeightedDaysNumerator: 0,
+                dsoWeightedDaysDenominator: 0,
+              }
+            : latestOpenTotals.totalAR > 0
             ? latestOpenTotals
             : {
                 totalAR: Number(derivedTotals.totalAR || 0),
@@ -7555,7 +7570,10 @@ export async function GET(request: NextRequest) {
           select: { snapshotDate: true, ar: true },
           orderBy: { snapshotDate: 'desc' },
         });
-        const detailAr = Number(summaryTotals.totalAR || 0);
+        // Keep the independently reconstructed invoice total for the
+        // reconciliation disclosure. The card buckets come from the aligned
+        // trend record, while the headline remains the Books balance.
+        const detailAr = Number(latestOpenTotals.totalAR || summaryTotals.totalAR || 0);
         const booksAr = booksArSnapshot ? Number(booksArSnapshot.ar || 0) : null;
         // The invoice replay only extends through the newest AR event the
         // ledger carries. When that feed lags the GL, Books AR keeps moving
@@ -7598,7 +7616,10 @@ export async function GET(request: NextRequest) {
               : arGlOnlyAdjustmentIsDisclosable(reconciliationBooksAr, reconciliationDifference)
                 ? reconciliationDifference
                 : null;
-        const totalARForPct = Number(summaryTotals.totalAR || 0);
+        // Percentages describe the invoice-aging allocation, whose denominator
+        // is invoice detail. A separately disclosed GL-only adjustment may
+        // make that amount differ slightly from Books AR.
+        const totalARForPct = detailAr;
         // Standard bucket naming:
         // current<=0, days1to30=1-30, days31to60=31-60, days61to90=61-90, days90plus=>90
         const over30Amount = Number(

@@ -6747,7 +6747,7 @@ export default function OperationsTab({
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total Open AR</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
-                {formatCurrency(summary.detailAr ?? summary.totalOpenAR ?? summary.totalAR ?? 0)}
+                {formatCurrency(summary.totalOpenAR ?? summary.totalAR ?? summary.detailAr ?? 0)}
               </div>
               {booksAr !== null && (
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
