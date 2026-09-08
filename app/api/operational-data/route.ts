@@ -70,6 +70,7 @@ import { hashCacheParts, readDerivedApiCache, readLatestDerivedApiCache, writeDe
 import { privateCacheHeaders } from '@/lib/http-cache';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
+import { isEstBusinessDay } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -551,6 +552,10 @@ async function getFreshBambooHrWorkforceSnapshot(companyId: string) {
 
 function dateKeyUtc(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function isBusinessSnapshotDate(snapshotDate: Date): boolean {
+  return isEstBusinessDay(dateKeyUtc(snapshotDate));
 }
 
 function looksLikeCustomerCode(value: unknown): boolean {
@@ -5960,7 +5965,7 @@ export async function GET(request: NextRequest) {
             orderBy: { snapshotDate: 'desc' },
             take: Math.max(limit, 365),
           });
-          data = snapshots.map((snapshot) => {
+          data = snapshots.filter((snapshot) => isBusinessSnapshotDate(snapshot.snapshotDate)).map((snapshot) => {
             const totalAR = Number(snapshot.totalAR || 0);
             const current = Number(snapshot.current || 0);
             const days1to30 = Number(snapshot.days1to30 || 0);
@@ -6109,7 +6114,7 @@ export async function GET(request: NextRequest) {
           // customer aging buckets. Its companion open-invoice snapshot is the
           // authoritative available source for invoice-level panels. Read it
           // here without using it to rebuild the aging trend.
-          const latestOpenSnapshot = await prisma.aROpenInvoiceSnapshot.findFirst({
+          const latestOpenSnapshots = await prisma.aROpenInvoiceSnapshot.findMany({
             where: {
               companyId,
               frequency: arFrequencyForQuery,
@@ -6117,7 +6122,13 @@ export async function GET(request: NextRequest) {
             },
             select: { snapshotDate: true },
             orderBy: [{ snapshotDate: 'desc' }],
+            // Skip any weekend or federal-holiday rows left behind before the
+            // business-day safeguard was introduced.
+            take: 32,
           });
+          const latestOpenSnapshot = latestOpenSnapshots.find((snapshot) =>
+            isBusinessSnapshotDate(snapshot.snapshotDate)
+          );
           if (latestOpenSnapshot?.snapshotDate) {
             const latestOpenRows = await prisma.aROpenInvoiceSnapshot.findMany({
               where: {
@@ -6527,7 +6538,7 @@ export async function GET(request: NextRequest) {
         }
 
         if (preferOpenInvoiceSnapshotTrend) {
-          const latestOpenSnapshot = await prisma.aROpenInvoiceSnapshot.findFirst({
+          const latestOpenSnapshots = await prisma.aROpenInvoiceSnapshot.findMany({
           where: {
             companyId,
             frequency: arFrequencyForQuery,
@@ -6535,7 +6546,13 @@ export async function GET(request: NextRequest) {
           },
           select: { snapshotDate: true },
           orderBy: [{ snapshotDate: 'desc' }],
+          // A recent calendar window is enough to pass weekends and consecutive
+          // federal holidays while retaining a current daily snapshot.
+          take: 32,
         });
+          const latestOpenSnapshot = latestOpenSnapshots.find((snapshot) =>
+            isBusinessSnapshotDate(snapshot.snapshotDate)
+          );
           let latestOpenSnapshotDate = latestOpenSnapshot?.snapshotDate
           ? startOfUtcDay(new Date(latestOpenSnapshot.snapshotDate))
           : null;
@@ -6761,7 +6778,7 @@ export async function GET(request: NextRequest) {
           ORDER BY b."snapshotDate" DESC
           LIMIT ${Math.max(limit, 365)}
         `;
-          data = arTrendFromOpenRows;
+          data = arTrendFromOpenRows.filter((row) => isBusinessSnapshotDate(row.snapshotDate));
 
           // ARTransactionFact-derived aging-rule override (Infor CSI):
           // The legacy AROpenInvoiceSnapshot trend has gaps and timing issues
@@ -7524,8 +7541,11 @@ export async function GET(request: NextRequest) {
         // Keep the independently reconstructed operational-detail amount in
         // the response so the next reconciliation step can identify, rather
         // than conceal, any difference.
-        const requestedAsOfStart = startOfUtcDay(endDate);
-        const requestedAsOfEnd = endOfUtcDay(endDate);
+        // The bucket summary and the Books balance must refer to the same
+        // valid snapshot date. A holiday request therefore resolves to the
+        // latest prior business-day AR snapshot instead of a zero holiday row.
+        const requestedAsOfStart = startOfUtcDay(arAsOfReferenceDate);
+        const requestedAsOfEnd = endOfUtcDay(arAsOfReferenceDate);
         const booksArSnapshot = await prisma.dailyFinancialSnapshot.findFirst({
           where: {
             companyId,

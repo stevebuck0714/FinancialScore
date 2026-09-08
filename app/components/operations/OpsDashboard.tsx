@@ -20,6 +20,7 @@ import { isCompanySpecificReportForSector } from '@/lib/operations/company-speci
 import { formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
 import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
 import { resolveDisplayCurrency, localeForCurrency } from '@/lib/constants/currencies';
+import { isEstBusinessDay } from '@/lib/time/eastern';
 
 interface OpsDashboardProps {
   selectedCompanyId: string;
@@ -159,8 +160,8 @@ export default function OpsDashboard({
 
   // Trim a daily record stream to the last N weekday observations
   // ending at the most recent snapshot in the dataset (NOT today).
-  // Weekend rows (Sat/Sun) are dropped before slicing so the chart
-  // renders gap-free Mon-Fri only. Non-daily frequencies pass through.
+  // Weekend and federal-holiday rows are dropped before slicing so the chart
+  // renders business-day observations only. Non-daily frequencies pass through.
   const trimDailyToWeekdayWindow = <T extends { snapshotDate: string }>(
     records: T[] | undefined | null,
     frequency: string,
@@ -172,8 +173,8 @@ export default function OpsDashboard({
       .map((rec) => ({ rec, parsed: parseDateSafeUtc(rec.snapshotDate) }))
       .filter((entry): entry is { rec: T; parsed: Date } => entry.parsed !== null)
       .filter(({ parsed }) => {
-        const dow = parsed.getUTCDay();
-        return dow !== 0 && dow !== 6;
+        const dateKey = `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(parsed.getUTCDate()).padStart(2, '0')}`;
+        return isEstBusinessDay(dateKey);
       })
       .sort((a, b) => a.parsed.getTime() - b.parsed.getTime());
     return annotated.slice(-windowDays).map(({ rec }) => rec);
