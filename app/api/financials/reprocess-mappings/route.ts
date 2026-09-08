@@ -19,7 +19,7 @@ import {
 } from '@/lib/financial/qbd-bakers-bs-pins';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
-import { formatEstDate } from '@/lib/time/eastern';
+import { formatEstDate, isEstBusinessDay } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -1822,6 +1822,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
   const directBalanceSheetReports = await loadQbdBalanceSheetReportSnapshots(companyId);
   const latestDirectBalanceSheetByMonth = new Map<string, QbdMappedMonthlyRow>();
   for (const report of directBalanceSheetReports) {
+    if (isBakersCompany(companyId) && !isEstBusinessDay(report.reportDate)) continue;
     const dailyRow = getDailySnapshot(report.reportDate);
     for (const field of QBD_BALANCE_SHEET_TARGET_FIELDS) {
       dailyRow[field] = 0;
@@ -1926,6 +1927,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
       const dateKey = qbdDateKey(rawDate);
       if (!dateKey) return null;
       if (monthKey && dateKey.slice(0, 7) !== monthKey) return null;
+      if (!isEstBusinessDay(dateKey)) return null;
       const snapshotDate = new Date(`${dateKey}T00:00:00.000Z`);
       if (Number.isNaN(snapshotDate.getTime())) return null;
       const numericFields = Object.fromEntries(
@@ -2496,11 +2498,12 @@ async function persistQuickBooksDesktopBalanceSheetAnchor(companyId: string, pay
   const metadata = qbdAsRecord(payload.metadata);
   const build = qbdAsRecord(metadata.qbdMappedMonthlyBuild);
   const dateKey = qbdDateKey(build.balanceSheetReportDate);
+  if (!dateKey || !isEstBusinessDay(dateKey)) return null;
   const rows = Array.isArray(payload.qbdDailyFinancialSnapshots)
     ? (payload.qbdDailyFinancialSnapshots as Array<Record<string, unknown>>)
     : [];
   const row = rows.find((candidate) => qbdDateKey(candidate.snapshotDate) === dateKey);
-  if (!dateKey || !row) {
+  if (!row) {
     return null;
   }
   const anchorDate = new Date(`${dateKey}T00:00:00.000Z`);
@@ -2536,7 +2539,7 @@ async function persistQuickBooksDesktopBalanceSheetAnchor(companyId: string, pay
     .map((accountRow) => {
       const accountDateKey = qbdDateKey(accountRow.anchorDate);
       const accountId = qbdString(accountRow.accountId);
-      if (!accountDateKey || !accountId) return null;
+      if (!accountDateKey || !accountId || !isEstBusinessDay(accountDateKey)) return null;
       return {
         companyId,
         anchorDate: new Date(`${accountDateKey}T00:00:00.000Z`),

@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
+import { isEstBusinessDay } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,9 +99,8 @@ function buildBusinessDayDateRanges(startDate: string, endDate: string) {
   let windowIndex = 0;
 
   while (cursor.getTime() <= end.getTime()) {
-    const day = cursor.getUTCDay();
-    if (day !== 0 && day !== 6) {
-      const key = dateKey(cursor);
+    const key = dateKey(cursor);
+    if (isEstBusinessDay(key)) {
       ranges.push({ startDate: key, endDate: key, windowIndex });
       windowIndex += 1;
     }

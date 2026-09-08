@@ -2,6 +2,7 @@ import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-f
 import { syncMonthlyFinancialBsFromDailySnapshot } from '@/lib/financials/sync-monthly-bs-from-daily';
 import { syncMonthlyFinancialPnlFromDailySnapshot } from '@/lib/financials/sync-monthly-pnl-from-daily';
 import prisma from '@/lib/prisma';
+import { isEstBusinessDay } from '@/lib/time/eastern';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -121,6 +122,16 @@ async function rebuildCashSnapshotsFromGL(params: {
   const end = startOfUtcDay(params.endDate);
 
   for (const cursor = new Date(start); cursor.getTime() <= end.getTime(); cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    if (params.frequency === 'daily' && !isEstBusinessDay(cursor.toISOString().slice(0, 10))) {
+      await prisma.cashSnapshot.deleteMany({
+        where: {
+          companyId: params.companyId,
+          frequency: params.frequency,
+          snapshotDate: new Date(cursor),
+        },
+      });
+      continue;
+    }
     datesProcessed += 1;
     await prisma.cashSnapshot.deleteMany({
       where: {

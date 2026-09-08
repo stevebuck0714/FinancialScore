@@ -39,6 +39,7 @@
 
 import prisma from '@/lib/prisma';
 import { BS_LAST_DAY_FIELDS, PNL_SUM_FIELDS } from '@/lib/financial/month-publish';
+import { isEstBusinessDay } from '@/lib/time/eastern';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -1494,6 +1495,9 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   const accountAnchorDatesApplied = new Set<string>();
   const fieldAnchorDatesApplied = new Set<string>();
   const processDate = async (snapshotDate: Date) => {
+    // Financial snapshots represent business reporting days. Do not create
+    // zero-P&L / carried-balance rows for weekends or federal holidays.
+    if (!isEstBusinessDay(snapshotDate.toISOString().slice(0, 10))) return;
     const fiscalYearStart = computeFiscalYearStart(snapshotDate, fyMonth, fyDay);
     const accountAnchor = accountAnchorForDate(snapshotDate);
     const anchor = accountAnchor ? null : anchorForDate(snapshotDate);

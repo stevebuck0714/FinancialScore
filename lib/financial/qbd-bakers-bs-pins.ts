@@ -1,3 +1,5 @@
+import { isEstBusinessDay } from '@/lib/time/eastern';
+
 export const BAKERS_COMPANY_ID = 'cmq6pjenb0001l5049udok08d';
 export const BAKERS_LOC_RECLASS_DATE = '2026-01-01';
 export const BAKERS_PIN_START = '2024-12-31';
@@ -243,13 +245,13 @@ export function buildBakersAnchoredDailyBalances(
     backBalances = applyMovements(backBalances, glMovementsByDate.get(backCursor), -1);
     backCursor = addDays(backCursor, -1);
     if (!backCursor || backCursor < BAKERS_WALK_START) break;
-    out.set(backCursor, backBalances);
+    if (isEstBusinessDay(backCursor)) out.set(backCursor, backBalances);
   }
 
   cursor = addDays(BAKERS_PIN_START, 1);
   while (cursor && cursor <= end && cursor < '2025-12-31') {
     balances = applyMovements(balances, glMovementsByDate.get(cursor));
-    out.set(cursor, balances);
+    if (isEstBusinessDay(cursor)) out.set(cursor, balances);
     cursor = addDays(cursor, 1);
   }
 
@@ -265,7 +267,7 @@ export function buildBakersAnchoredDailyBalances(
     cursor = addDays(BAKERS_LOC_RECLASS_DATE, 1);
     while (cursor && cursor <= end) {
       balances = applyMovements(balances, glMovementsByDate.get(cursor));
-      out.set(cursor, balances);
+      if (isEstBusinessDay(cursor)) out.set(cursor, balances);
       cursor = addDays(cursor, 1);
     }
   }

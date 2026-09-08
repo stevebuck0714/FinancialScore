@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import prisma from '@/lib/prisma';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
-import { APP_TIME_ZONE } from '@/lib/time/eastern';
+import { APP_TIME_ZONE, isEstBusinessDay } from '@/lib/time/eastern';
 
 const QBD_AUTO_QUEUE_TIME_ZONE = APP_TIME_ZONE;
 const QBD_AUTO_QUEUE_DUE_LOOKBACK_HOURS = 4;
@@ -124,7 +124,7 @@ function localDateToUtc(parts: { year: number; month: number; day: number }): Da
 
 function priorBusinessDateKey(localDate: { year: number; month: number; day: number }): string {
   const cursor = addUtcDays(localDateToUtc(localDate), -1);
-  while (cursor.getUTCDay() === 0 || cursor.getUTCDay() === 6) {
+  while (!isEstBusinessDay(dateKey(cursor))) {
     cursor.setUTCDate(cursor.getUTCDate() - 1);
   }
   return dateKey(cursor);
@@ -240,9 +240,8 @@ function buildBusinessDayDateRanges(startDate: string, endDate: string) {
   let windowIndex = 0;
 
   while (cursor.getTime() <= end.getTime()) {
-    const day = cursor.getUTCDay();
-    if (day !== 0 && day !== 6) {
-      const key = dateKey(cursor);
+    const key = dateKey(cursor);
+    if (isEstBusinessDay(key)) {
       ranges.push({ startDate: key, endDate: key, windowIndex });
       windowIndex += 1;
     }

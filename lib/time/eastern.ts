@@ -63,18 +63,66 @@ export function addEstCalendarMonths(ymd: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function observedFederalHoliday(year: number, month: number, day: number): string {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const dayOfWeek = date.getUTCDay();
+  if (dayOfWeek === 6) date.setUTCDate(date.getUTCDate() - 1);
+  if (dayOfWeek === 0) date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function nthWeekdayOfMonth(year: number, month: number, weekday: number, occurrence: number): string {
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  const offset = (weekday - date.getUTCDay() + 7) % 7;
+  date.setUTCDate(1 + offset + (occurrence - 1) * 7);
+  return date.toISOString().slice(0, 10);
+}
+
+function lastWeekdayOfMonth(year: number, month: number, weekday: number): string {
+  const date = new Date(Date.UTC(year, month, 0));
+  const offset = (date.getUTCDay() - weekday + 7) % 7;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date.toISOString().slice(0, 10);
+}
+
+/** US federal holidays observed by US QuickBooks Desktop business-day processing. */
+export function isUsFederalHoliday(estDate: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(estDate.trim());
+  if (!match) return false;
+  const year = Number(match[1]);
+  const holidays = new Set([
+    observedFederalHoliday(year, 1, 1), // New Year's Day
+    nthWeekdayOfMonth(year, 1, 1, 3), // Martin Luther King Jr. Day
+    nthWeekdayOfMonth(year, 2, 1, 3), // Washington's Birthday
+    lastWeekdayOfMonth(year, 5, 1), // Memorial Day
+    observedFederalHoliday(year, 6, 19), // Juneteenth
+    observedFederalHoliday(year, 7, 4), // Independence Day
+    nthWeekdayOfMonth(year, 9, 1, 1), // Labor Day
+    nthWeekdayOfMonth(year, 10, 1, 2), // Columbus Day
+    observedFederalHoliday(year, 11, 11), // Veterans Day
+    nthWeekdayOfMonth(year, 11, 4, 4), // Thanksgiving Day
+    observedFederalHoliday(year, 12, 25), // Christmas Day
+  ]);
+  return holidays.has(estDate);
+}
+
+/** Whether an EST calendar date is a US QuickBooks Desktop business day. */
+export function isEstBusinessDay(estDate: string): boolean {
+  const date = utcMidnightForEstDate(estDate);
+  const dayOfWeek = date.getUTCDay();
+  return dayOfWeek !== 0 && dayOfWeek !== 6 && !isUsFederalHoliday(estDate);
+}
+
 /** Prior completed EST calendar day relative to `now`. */
 export function previousEstCalendarDate(now: Date = new Date()): string {
   return addEstCalendarDays(formatEstDate(now), -1);
 }
 
-/** Walk back from an EST YMD until weekday (Mon–Fri). Does not know holidays. */
+/** Walk back from an EST YMD until a US federal business day. */
 export function previousEstBusinessDate(estDate: string): string {
   let cursor = estDate;
   for (let i = 0; i < 10; i += 1) {
-    const d = utcMidnightForEstDate(cursor);
-    const dow = d.getUTCDay();
-    if (dow !== 0 && dow !== 6) return cursor;
+    if (isEstBusinessDay(cursor)) return cursor;
     cursor = addEstCalendarDays(cursor, -1);
   }
   return cursor;

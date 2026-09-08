@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { isEstBusinessDay } from '@/lib/time/eastern';
 import { BS_LAST_DAY_FIELDS, PNL_SUM_FIELDS, safeNumber } from '@/lib/financial/month-publish';
 
 const NUMERIC_FIELDS = [...PNL_SUM_FIELDS, ...BS_LAST_DAY_FIELDS];
@@ -157,6 +158,10 @@ export async function ingestDailyFinancialSnapshots(params: DailyFinancialIngest
     }
 
     const recordFrequency = String(rawRecord?.frequency || frequency || 'daily').toLowerCase();
+    if (recordFrequency === 'daily' && !isEstBusinessDay(snapshotDate.toISOString().slice(0, 10))) {
+      skipped += 1;
+      continue;
+    }
     const base: Record<string, unknown> = {
       companyId,
       snapshotDate,
@@ -200,6 +205,7 @@ export async function ingestDailyFinancialSnapshots(params: DailyFinancialIngest
     const targetField = String(line.targetField || '').trim();
     if (!sourceAccountName || !targetField) continue;
     const lineFrequency = String(line.frequency || frequency || 'daily').toLowerCase();
+    if (lineFrequency === 'daily' && !isEstBusinessDay(snapshotDate.toISOString().slice(0, 10))) continue;
 
     await mappedLineDelegate.upsert({
       where: {
