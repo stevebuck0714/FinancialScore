@@ -637,6 +637,9 @@ function validateReportConfig(rawConfig: any, requestedType: ReportChartType, fi
     series,
     filters: datasetConfig?.filters || (Array.isArray(rawConfig?.filters) ? rawConfig.filters.slice(0, 8) : []),
     ...(datasetConfig || {}),
+    // Financial reports do not have a dataset config, so preserve the
+    // explicitly inferred month range for the preview query.
+    dateRange: datasetConfig?.dateRange || rawConfig?.dateRange || undefined,
     notes: Array.isArray(rawConfig?.notes) ? rawConfig.notes.slice(0, 6).map((note: any) => String(note)) : [],
   };
 }
