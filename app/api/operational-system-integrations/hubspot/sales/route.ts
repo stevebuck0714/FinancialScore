@@ -12,7 +12,7 @@ import {
 export const dynamic = 'force-dynamic';
 
 const DEAL_PROPERTIES = 'amount,dealstage,hubspot_owner_id,closedate,createdate,hs_is_closed_won,hs_is_closed_lost';
-const ACTIVITY_TYPES = ['calls', 'emails', 'meetings', 'tasks'] as const;
+const ACTIVITY_TYPES = ['calls', 'meetings', 'tasks'] as const;
 
 const asAmount = (value: unknown) => {
   const amount = Number(value);

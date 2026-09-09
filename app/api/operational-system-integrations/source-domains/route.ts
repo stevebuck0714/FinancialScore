@@ -31,7 +31,7 @@ const SOURCE_PROVIDERS: Record<string, string> = {
 const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
   HUBSPOT_STANDARD: [
     { dataDomain: 'Deals & Pipeline', sourceObject: 'CRM deals, stages, amounts, close dates, and deal owners', enabled: true },
-    { dataDomain: 'Sales Activities', sourceObject: 'Calls, emails, meetings, and tasks', enabled: true },
+    { dataDomain: 'Sales Activities', sourceObject: 'Calls, meetings, and tasks', enabled: true },
     { dataDomain: 'Deal Owners', sourceObject: 'HubSpot owners and sales-rep assignment details', enabled: true },
   ],
   ICE_ENCOMPASS: [
@@ -98,9 +98,14 @@ function sanitizeDataDomains(value: unknown, sourceCode: string): EditableDataDo
   const rows = value
     .map((row) => {
       const candidate = row && typeof row === 'object' && !Array.isArray(row) ? row as Record<string, unknown> : {};
+      const dataDomain = String(candidate.dataDomain || '').trim();
+      const sourceObject = String(candidate.sourceObject || '').trim();
       return {
-        dataDomain: String(candidate.dataDomain || '').trim(),
-        sourceObject: String(candidate.sourceObject || '').trim(),
+        dataDomain,
+        sourceObject:
+          sourceCode === 'HUBSPOT_STANDARD' && dataDomain === 'Sales Activities'
+            ? 'Calls, meetings, and tasks'
+            : sourceObject,
         enabled: candidate.enabled !== false,
       };
     })
