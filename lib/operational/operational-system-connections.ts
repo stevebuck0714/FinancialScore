@@ -52,7 +52,10 @@ function getDelegate():
 
 function isUnknownProviderEnumError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes('not found in enum') && message.includes('OperationalSystemProvider');
+  return (
+    message.includes('OperationalSystemProvider') &&
+    (message.includes('not found in enum') || message.includes('Invalid value for argument'))
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

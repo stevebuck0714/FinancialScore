@@ -1,0 +1,1 @@
+ALTER TYPE "OperationalSystemProvider" ADD VALUE IF NOT EXISTS 'HUBSPOT';

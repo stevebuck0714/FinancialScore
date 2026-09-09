@@ -38,6 +38,7 @@ import {
 } from '@/lib/operations/operational-hub-overlay';
 import { collectSectorHubCatalog } from '@/lib/operations/sector-hub-catalog';
 import OperationalHubCustomizationCard from '@/app/components/siteadmin/OperationalHubCustomizationCard';
+import HubSpotIntegrationCard from '@/app/components/siteadmin/HubSpotIntegrationCard';
 import { DEFAULT_ALLOWED_SECTIONS } from '@/app/components/admin/CompanyDetailsTab';
 import { getSectorMasterTabLabel, getSectorMasterTabKeys } from '@/lib/operations/sector-master-tabs';
 import { GENERIC_OVERVIEW_WIDGET_REPORT_KEYS, sectorHidesGenericOverviewWidgets } from '@/lib/operations/overview-print-options';
@@ -9416,6 +9417,7 @@ export default function SiteAdminDashboard(props: any) {
                                             {renderOperationalSourceSelectorCard(company.id)}
                                             {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(company.id, company.name)}
                                             {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(company.id)}
+                                            {isOperationalSourceSelected(company.id, 'HUBSPOT_STANDARD') && <HubSpotIntegrationCard companyId={company.id} />}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(company.id, company.name)}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(company.id)}
                                             {isOperationalSourceSelected(company.id, 'CREWTRACKS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'CREWTRACKS')}
@@ -13084,6 +13086,7 @@ export default function SiteAdminDashboard(props: any) {
                                   {renderOperationalSourceSelectorCard(businessCompany.id)}
                                   {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
                                   {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(businessCompany.id)}
+                                  {isOperationalSourceSelected(businessCompany.id, 'HUBSPOT_STANDARD') && <HubSpotIntegrationCard companyId={businessCompany.id} />}
                                   {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'CREWTRACKS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'CREWTRACKS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'HILTI')}

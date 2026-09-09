@@ -25,6 +25,34 @@ export const COGENT_SCIENTIFIC_COMPANY_IDS = new Set([
 
 export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   {
+    key: 'salesPipelineSummary',
+    label: 'Pipeline Summary',
+    tabKey: 'hubspot_sales',
+    group: 'Sales',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'salesDealsByStage',
+    label: 'Deals by Stage',
+    tabKey: 'hubspot_sales',
+    group: 'Sales',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'salesRepLeaderboard',
+    label: 'Rep Leaderboard',
+    tabKey: 'hubspot_sales',
+    group: 'Sales',
+    sectorCategories: ['56'],
+  },
+  {
+    key: 'salesActivitySummary',
+    label: 'Sales Activity',
+    tabKey: 'hubspot_sales',
+    group: 'Sales',
+    sectorCategories: ['56'],
+  },
+  {
     key: 'realEstateExecutiveReport',
     label: 'Executive Report',
     tabKey: 'dashboard',
@@ -419,7 +447,15 @@ const COGENT_ONLY_UNIT_ECONOMICS_REPORT_KEYS = new Set([
   'ueMissingBillRateLevel',
 ]);
 
+const COGENT_ONLY_SALES_REPORT_KEYS = new Set([
+  'salesPipelineSummary',
+  'salesDealsByStage',
+  'salesRepLeaderboard',
+  'salesActivitySummary',
+]);
+
 const COGENT_ONLY_REPORT_KEYS = new Set([
+  ...COGENT_ONLY_SALES_REPORT_KEYS,
   ...COGENT_ONLY_HIRING_REPORT_KEYS,
   ...COGENT_ONLY_LABOR_REPORT_KEYS,
   ...COGENT_ONLY_REVENUE_REPORT_KEYS,

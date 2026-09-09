@@ -19,7 +19,7 @@ import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-reso
 export const dynamic = 'force-dynamic';
 
 type SourceDefinition = {
-  provider: 'BAMBOOHR' | 'SPREADSHEET_UPLOAD' | 'ISOLVED';
+  provider: 'BAMBOOHR' | 'HUBSPOT' | 'SPREADSHEET_UPLOAD' | 'ISOLVED';
   sourceCode: string;
   label: string;
   sectorCategories: string[];
@@ -38,6 +38,7 @@ const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'APPLIED_EPIC_INSURANCE_SERVICES', label: 'Applied Epic - Insurance Services', sectorCategories: ['53'] },
   { provider: 'ISOLVED', sourceCode: ISOLVED_PEOPLE_CLOUD_SOURCE_CODE, label: ISOLVED_PEOPLE_CLOUD_LABEL, sectorCategories: ['54'] },
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },
+  { provider: 'HUBSPOT', sourceCode: 'HUBSPOT_STANDARD', label: 'HubSpot', sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL, sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', sectorCategories: ['45'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: 'Monthly Inventory Report', sectorCategories: ['45'] },
@@ -69,7 +70,7 @@ function normalizePullTime(value: unknown): string {
 }
 
 function isApiScheduledSource(source: SourceDefinition | null): boolean {
-  return source?.provider === 'BAMBOOHR' || source?.provider === 'ISOLVED';
+  return source?.provider === 'BAMBOOHR' || source?.provider === 'HUBSPOT' || source?.provider === 'ISOLVED';
 }
 
 async function getValidatedCompany(companyId: string) {

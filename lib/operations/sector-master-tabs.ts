@@ -147,6 +147,7 @@ const SECTOR_BODY_TABS: Record<string, SectorMasterTab[]> = {
     { key: 'work_orders_service_delivery', label: 'Work Orders / Service Delivery' },
     { key: 'labor_scheduling', label: 'Labor & Scheduling' },
     { key: 'hiring', label: 'Hiring' },
+    { key: 'hubspot_sales', label: 'Sales' },
     { key: 'revenue_billables', label: 'Revenue & Billables' },
     { key: 'unit_economics', label: 'Unit Economics' },
     { key: 'assets_routes', label: 'Assets & Routes' },

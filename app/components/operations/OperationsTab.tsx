@@ -39,6 +39,7 @@ import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenu
 import LoansTab from './LoansTab';
 import PayrollBureauOpsViews from './PayrollBureauOpsViews';
 import PayrollBureauExecutiveScorecard from './PayrollBureauExecutiveScorecard';
+import HubSpotSalesTab from './HubSpotSalesTab';
 import CapTableView from '../cap-table/CapTableView';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
@@ -47,6 +48,7 @@ import { getOperationalHubDefaultModuleKeys, getOperationalHubDefaultReportsForM
 import { parseOperationalHubCustomReports, parseOperationalHubCustomTabs } from '@/lib/operations/operational-hub-overlay';
 import {
   isAtlanticPrecisionCompany,
+  isCogentScientificCompany,
   isCompanySpecificReportForSector,
   resolveAssignedCompanyReportKeys,
 } from '@/lib/operations/company-specific-reports';
@@ -1260,6 +1262,7 @@ export default function OperationsTab({
     const raw = String(moduleKey || '').trim();
     const normalized = raw === 'overview' ? 'dashboard' : raw;
     if (!normalized) return true;
+    if (normalized === 'hubspot_sales' && !isCogentScientificCompany(selectedCompanyId, companyName)) return false;
     if (!hasOperationalModuleAccess(normalized)) return false;
     const value = operationalHubSections[`tab:${normalized}`];
     if (normalized === 'loans' && value === undefined) return isLoansDefaultEnabledForCompany(selectedCompanyId);
@@ -28515,6 +28518,9 @@ Strategies to Improve the CCC
   };
 
   const renderModuleTabContent = (moduleKey: string) => {
+    if (moduleKey === 'hubspot_sales') {
+      return <HubSpotSalesTab selectedCompanyId={selectedCompanyId} operationalHubSections={operationalHubSections} />;
+    }
     if (moduleKey === 'forecast') {
       return renderForecast();
     }

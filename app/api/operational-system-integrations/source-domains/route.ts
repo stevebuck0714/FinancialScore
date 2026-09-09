@@ -18,6 +18,7 @@ type EditableDataDomain = {
 };
 
 const SOURCE_PROVIDERS: Record<string, string> = {
+  HUBSPOT_STANDARD: 'HUBSPOT',
   ICE_ENCOMPASS: 'SPREADSHEET_UPLOAD',
   LANTRAX_PROFIT_POWER: 'SPREADSHEET_UPLOAD',
   APPLIED_EPIC_INSURANCE_SERVICES: 'SPREADSHEET_UPLOAD',
@@ -28,6 +29,11 @@ const SOURCE_PROVIDERS: Record<string, string> = {
 };
 
 const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
+  HUBSPOT_STANDARD: [
+    { dataDomain: 'Deals & Pipeline', sourceObject: 'CRM deals, stages, amounts, close dates, and deal owners', enabled: true },
+    { dataDomain: 'Sales Activities', sourceObject: 'Calls, emails, meetings, and tasks', enabled: true },
+    { dataDomain: 'Deal Owners', sourceObject: 'HubSpot owners and sales-rep assignment details', enabled: true },
+  ],
   ICE_ENCOMPASS: [
     { dataDomain: 'Loans', sourceObject: 'Loan details and selected loan fields', enabled: true },
     { dataDomain: 'Loan Pipeline', sourceObject: 'Pipeline views, folders, milestones, dates, loan teams', enabled: true },

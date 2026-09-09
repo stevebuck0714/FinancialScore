@@ -1313,6 +1313,7 @@ enum AccountingPlatform {
 
 enum OperationalSystemProvider {
   BAMBOOHR
+  HUBSPOT
   SPREADSHEET_UPLOAD
   ISOLVED
 }
