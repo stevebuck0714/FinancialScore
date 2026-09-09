@@ -47,7 +47,7 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
 
   const saveConnection = async () => {
     if (!token.trim() && status !== 'ACTIVE') {
-      setError('Enter the HubSpot private-app access token.');
+      setError('Enter the HubSpot service key.');
       return;
     }
     try {
@@ -160,9 +160,9 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
         </div>
         <p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '12px' }}>Configure the HubSpot connection and sync schedule here. Revalidate checks access to configured sales domains; Sales reports read the enabled domains directly from HubSpot.</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))', gap: '12px', maxWidth: '760px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Private-App Access Token *<input type="password" autoComplete="new-password" value={token} onChange={(event) => setToken(event.target.value)} placeholder={status === 'ACTIVE' ? 'Leave blank to keep the current token' : 'pat-na1-…'} style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }} /></label>
+          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Service Key *<input type="password" autoComplete="new-password" value={token} onChange={(event) => setToken(event.target.value)} placeholder={status === 'ACTIVE' ? 'Leave blank to keep the current key' : 'pat-na1-…'} style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }} /></label>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Base URL<input value="https://api.hubapi.com" disabled style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: '#f1f5f9', marginTop: '5px' }} /></label>
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Auth Type *<input value="Private App Token" disabled style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: '#f1f5f9', marginTop: '5px' }} /></label>
+          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Auth Type *<input value="Service Key" disabled style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: '#f1f5f9', marginTop: '5px' }} /></label>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Sync Frequency *<select value={syncFrequency} onChange={(event) => setSyncFrequency(event.target.value)} style={{ display: 'block', width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Sync Time (EST)<input type="time" value={syncTime} onChange={(event) => setSyncTime(event.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }} /></label>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Initial Sync Start Date (YYYY-MM-DD)<input type="date" value={initialSyncStartDate} onChange={(event) => setInitialSyncStartDate(event.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }} /></label>

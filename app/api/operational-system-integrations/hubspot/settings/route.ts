@@ -47,14 +47,14 @@ export async function POST(request: NextRequest) {
     const token = typeof body.privateAppToken === 'string' ? body.privateAppToken.trim() : '';
     const existing = await getOperationalSystemConnection(companyId, 'HUBSPOT', HUBSPOT_SOURCE_CODE);
     if (!token && !existing?.accessToken) {
-      return NextResponse.json({ ok: false, error: 'A HubSpot private-app access token is required.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'A HubSpot service key is required.' }, { status: 400 });
     }
 
     await saveOperationalSystemConnection({
       companyId,
       provider: 'HUBSPOT',
       sourceCode: HUBSPOT_SOURCE_CODE,
-      authType: 'PRIVATE_APP_TOKEN',
+      authType: 'SERVICE_KEY',
       status: 'ACTIVE',
       accessToken: token || existing?.accessToken || null,
       baseUrl: HUBSPOT_API_BASE_URL,
@@ -93,7 +93,7 @@ export async function DELETE(request: NextRequest) {
       companyId,
       provider: 'HUBSPOT',
       sourceCode: HUBSPOT_SOURCE_CODE,
-      authType: existing?.authType || 'PRIVATE_APP_TOKEN',
+      authType: existing?.authType || 'SERVICE_KEY',
       status: 'INACTIVE',
       accessToken: null,
       refreshToken: null,

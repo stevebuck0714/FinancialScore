@@ -22,7 +22,7 @@ export type HubSpotOwner = {
 
 export function assertHubSpotToken(token: string | null | undefined): asserts token is string {
   if (!String(token || '').trim()) {
-    throw new Error('HubSpot is not connected. Add the private-app access token in Site Administration.');
+    throw new Error('HubSpot is not connected. Add the service key in Site Administration.');
   }
 }
 
