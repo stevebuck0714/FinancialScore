@@ -95,7 +95,10 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
       const response = await fetch(`/api/operational-system-integrations/hubspot/sales?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.ok) throw new Error(data?.error || 'HubSpot validation failed.');
-      alert(`HubSpot connection OK.\n\nDeals visible: ${data?.summary?.totalDeals ?? 0}\nActivities visible: ${data?.summary?.activityCount ?? 0}`);
+      const crmCounts = Array.isArray(data?.crmRecordCounts)
+        ? data.crmRecordCounts.map((row: any) => `${row.label}: ${row.count == null ? 'access unavailable' : row.count}`).join('\n')
+        : '';
+      alert(`HubSpot connection OK.\n\nDeals visible: ${data?.summary?.totalDeals ?? 0}\nActivities visible: ${data?.summary?.activityCount ?? 0}${crmCounts ? `\n\nCRM data domains:\n${crmCounts}` : ''}`);
       await load();
     } catch (validationError: any) {
       setError(validationError?.message || 'HubSpot validation failed.');

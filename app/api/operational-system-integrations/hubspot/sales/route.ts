@@ -3,6 +3,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
 import {
   fetchHubSpotPages,
+  fetchHubSpotObjectCount,
   HubSpotDeal,
   hubSpotOwnerName,
   HubSpotOwner,
@@ -13,6 +14,12 @@ export const dynamic = 'force-dynamic';
 
 const DEAL_PROPERTIES = 'amount,dealstage,hubspot_owner_id,closedate,createdate,hs_is_closed_won,hs_is_closed_lost';
 const ACTIVITY_TYPES = ['calls', 'meetings', 'tasks'] as const;
+const CRM_COUNT_DOMAINS = [
+  { domain: 'Companies', objectType: 'companies', label: 'Companies' },
+  { domain: 'Contacts', objectType: 'contacts', label: 'Contacts' },
+  { domain: 'Products', objectType: 'products', label: 'Products' },
+  { domain: 'Line Items', objectType: 'line_items', label: 'Line Items' },
+] as const;
 
 const asAmount = (value: unknown) => {
   const amount = Number(value);
@@ -45,6 +52,28 @@ export async function GET(request: NextRequest) {
     const includeDeals = domainEnabled('Deals & Pipeline');
     const includeOwners = domainEnabled('Deal Owners');
     const includeActivities = domainEnabled('Sales Activities');
+    const crmRecordCounts = await Promise.all(CRM_COUNT_DOMAINS.map(async ({ domain, objectType, label }) => {
+      if (!domainEnabled(domain)) {
+        return { domain, label, count: null, enabled: false, error: null };
+      }
+      try {
+        return {
+          domain,
+          label,
+          count: await fetchHubSpotObjectCount(connection.accessToken, objectType),
+          enabled: true,
+          error: null,
+        };
+      } catch (error) {
+        return {
+          domain,
+          label,
+          count: null,
+          enabled: true,
+          error: error instanceof Error ? error.message : 'HubSpot object query failed.',
+        };
+      }
+    }));
 
     const [deals, owners, activities] = await Promise.all([
       includeDeals ? fetchHubSpotPages<HubSpotDeal>(connection.accessToken, '/crm/v3/objects/deals', { limit: '100', properties: DEAL_PROPERTIES }) : Promise.resolve([] as HubSpotDeal[]),
@@ -121,6 +150,7 @@ export async function GET(request: NextRequest) {
       reps: Array.from(reps.values()).sort((a, b) => b.openPipeline - a.openPipeline),
       winRateTrend: Array.from(monthly.values()).sort((a, b) => a.period.localeCompare(b.period)),
       activities: ACTIVITY_TYPES.map((activityType) => ({ type: activityType, count: activitySummary[activityType] || 0 })),
+      crmRecordCounts,
     });
   } catch (error: any) {
     const message = error?.message || 'Failed to load HubSpot sales data';

@@ -6,6 +6,10 @@ type HubSpotPage<T> = {
   paging?: { next?: { after?: string } };
 };
 
+type HubSpotSearchPage<T> = HubSpotPage<T> & {
+  total?: number;
+};
+
 export type HubSpotDeal = {
   id: string;
   createdAt?: string;
@@ -50,6 +54,40 @@ export async function fetchHubSpotPage<T>(
       throw new Error(`HubSpot API returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
     }
     return text ? JSON.parse(text) as HubSpotPage<T> : {};
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('HubSpot API request timed out.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function fetchHubSpotObjectCount(token: string, objectType: string): Promise<number> {
+  assertHubSpotToken(token);
+  const url = new URL(`/crm/v3/objects/${encodeURIComponent(objectType)}/search`, HUBSPOT_API_BASE_URL);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ limit: 1 }),
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      const detail = text.replace(/\s+/g, ' ').trim().slice(0, 500);
+      throw new Error(`HubSpot API returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+    }
+    const payload = text ? JSON.parse(text) as HubSpotSearchPage<unknown> : {};
+    return Number.isFinite(Number(payload.total)) ? Number(payload.total) : 0;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error('HubSpot API request timed out.');

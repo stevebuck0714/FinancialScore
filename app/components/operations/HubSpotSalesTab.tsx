@@ -80,6 +80,24 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
           </table>
         </div>
       )}
+      {(data?.crmRecordCounts || []).length > 0 && (
+        <div style={reportStyle}>
+          <h3 style={{ margin: '0 0 4px', color: '#0f172a', fontSize: '16px' }}>HubSpot CRM Records</h3>
+          <div style={{ marginBottom: '12px', color: '#64748b', fontSize: '12px' }}>Live counts from enabled HubSpot CRM data domains</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th style={headingStyle}>Data Domain</th><th style={headingStyle}>Records</th><th style={headingStyle}>Status</th></tr></thead>
+            <tbody>{(data?.crmRecordCounts || []).map((row: any) => (
+              <tr key={row.domain}>
+                <td style={cellStyle}>{row.label}</td>
+                <td style={cellStyle}>{row.count == null ? '—' : number.format(row.count)}</td>
+                <td style={{ ...cellStyle, color: row.error ? '#b45309' : '#166534' }}>
+                  {!row.enabled ? 'Disabled' : row.error ? 'Access unavailable' : 'Available'}
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>
         {sectionEnabled('salesRepLeaderboard') && (
           <div style={reportStyle}>

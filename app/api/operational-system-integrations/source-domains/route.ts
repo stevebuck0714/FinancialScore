@@ -31,6 +31,10 @@ const SOURCE_PROVIDERS: Record<string, string> = {
 const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
   HUBSPOT_STANDARD: [
     { dataDomain: 'Deals & Pipeline', sourceObject: 'CRM deals, stages, amounts, close dates, and deal owners', enabled: true },
+    { dataDomain: 'Companies', sourceObject: 'CRM companies and associated account records', enabled: true },
+    { dataDomain: 'Contacts', sourceObject: 'CRM contacts and customer relationships', enabled: true },
+    { dataDomain: 'Products', sourceObject: 'Product library and catalog records', enabled: true },
+    { dataDomain: 'Line Items', sourceObject: 'Deal product line items and quantities', enabled: true },
     { dataDomain: 'Sales Activities', sourceObject: 'Calls, meetings, and tasks', enabled: true },
     { dataDomain: 'Deal Owners', sourceObject: 'HubSpot owners and sales-rep assignment details', enabled: true },
   ],
@@ -110,6 +114,14 @@ function sanitizeDataDomains(value: unknown, sourceCode: string): EditableDataDo
       };
     })
     .filter((row) => row.dataDomain || row.sourceObject);
+
+  if (sourceCode === 'HUBSPOT_STANDARD') {
+    const configuredDomains = new Set(rows.map((row) => row.dataDomain));
+    return [
+      ...rows,
+      ...fallback.filter((row) => !configuredDomains.has(row.dataDomain)),
+    ];
+  }
 
   return rows.length > 0 ? rows : [{ dataDomain: '', sourceObject: '', enabled: true }];
 }
