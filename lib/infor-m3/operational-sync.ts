@@ -10452,29 +10452,63 @@ export async function syncInforM3OperationalData(
                   where: { batchId },
                 });
                 if (Number(existingChildCount || 0) === 0) {
-                  // AR history rebuilds intentionally reuse globally deduplicated
-                  // SLARTRANS raw rows staged by earlier attempts/runs. Use the
-                  // persisted source program, not the request-path resolver:
-                  // CSI preserves mixed casing such as "SLArtrans".
-                  const sourceProgramId = String(row.miProgram || '').trim().toUpperCase();
-                  if (persistedArHistoryRebuildRun === null) {
-                    const rebuildRun = await prisma.inforSyncRun.findFirst({
-                      where: { id: syncRunId, companyId, mode: 'ar_history_rebuild' },
-                      select: { id: true },
-                    });
-                    persistedArHistoryRebuildRun = Boolean(rebuildRun);
-                  }
-                  if (
-                    sourceProgramId === 'SLARTRANS' &&
-                    (options?.fullArFactHistory === true || persistedArHistoryRebuildRun)
-                  ) {
+                  // A CSI pagination retry can return a page whose records were
+                  // already persisted by an earlier batch in this same run/day.
+                  // Treat that as an idempotent replay only when every distinct
+                  // record hash is already present under this exact run scope.
+                  const sourceRecordHashes = Array.from(
+                    new Set(
+                      rawRows
+                        .map((rawRow) => String(rawRow.sourceRecordHash || '').trim())
+                        .filter((hash) => hash.length > 0)
+                    )
+                  );
+                  const existingSameRunRecordCount =
+                    sourceRecordHashes.length > 0
+                      ? await (prisma as any).inforRawRecord.count({
+                          where: {
+                            companyId,
+                            platform: 'INFOR_M3',
+                            syncRunId,
+                            businessDate: snapshotDate,
+                            miProgram: row.miProgram || null,
+                            transaction: req.transaction || null,
+                            sourceRecordHash: { in: sourceRecordHashes },
+                          },
+                        })
+                      : 0;
+                  const reusedSameRunRecords =
+                    existingSameRunRecordCount >= sourceRecordHashes.length && sourceRecordHashes.length > 0;
+                  if (reusedSameRunRecords) {
                     console.log(
-                      `AR history rebuild reusing existing canonical SLARTRANS raw rows for ${syncRunId}.`
+                      `Raw ingest reusing ${sourceRecordHashes.length} already-persisted ${row.miProgram || 'unknown'} rows for ${syncRunId}.`
                     );
-                  } else {
-                    throw new Error(
-                      `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for this request (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
-                    );
+                  }
+                  if (!reusedSameRunRecords) {
+                    // AR history rebuilds intentionally reuse globally deduplicated
+                    // SLARTRANS raw rows staged by earlier attempts/runs. Use the
+                    // persisted source program, not the request-path resolver:
+                    // CSI preserves mixed casing such as "SLArtrans".
+                    const sourceProgramId = String(row.miProgram || '').trim().toUpperCase();
+                    if (persistedArHistoryRebuildRun === null) {
+                      const rebuildRun = await prisma.inforSyncRun.findFirst({
+                        where: { id: syncRunId, companyId, mode: 'ar_history_rebuild' },
+                        select: { id: true },
+                      });
+                      persistedArHistoryRebuildRun = Boolean(rebuildRun);
+                    }
+                    if (
+                      sourceProgramId === 'SLARTRANS' &&
+                      (options?.fullArFactHistory === true || persistedArHistoryRebuildRun)
+                    ) {
+                      console.log(
+                        `AR history rebuild reusing existing canonical SLARTRANS raw rows for ${syncRunId}.`
+                      );
+                    } else {
+                      throw new Error(
+                        `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for this request (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
+                      );
+                    }
                   }
                 }
               }
