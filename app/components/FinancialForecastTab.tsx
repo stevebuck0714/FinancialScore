@@ -228,6 +228,7 @@ export default function FinancialForecastTab({
   const [lastBudgetArchiveAt, setLastBudgetArchiveAt] = useState<string | null>(null);
   const [incomeStatementViewMode, setIncomeStatementViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
   const [customerForecastViewMode, setCustomerForecastViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [customerSort, setCustomerSort] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: '', direction: 'desc' });
   const [graphGranularity, setGraphGranularity] = useState<'monthly' | 'quarterly'>('monthly');
   const [masterMonthlyData, setMasterMonthlyData] = useState<any[]>([]);
   const [customerForecastActuals, setCustomerForecastActuals] = useState<any[]>([]);
@@ -1206,6 +1207,36 @@ export default function FinancialForecastTab({
     });
     return Array.from(buckets.values());
   }, [customerForecastViewMode, monthlyForecastPeriods]);
+  const activeCustomerSortKey = customerForecastColumns.some((column) => column.key === customerSort.key)
+    ? customerSort.key
+    : customerForecastColumns[0]?.key || '';
+  const customerRowsByRevenue = useMemo(() => {
+    const revenueForColumn = (customer: any, columnKey: string) => {
+      const column = customerForecastColumns.find((item) => item.key === columnKey);
+      if (!column) return 0;
+      return customer.months
+        .filter((month: any) => column.monthKeys.includes(month.key))
+        .reduce((sum: number, month: any) => sum + Number(month.revenue || 0), 0);
+    };
+    return [...customerForecastSchedule.allRows].sort((a, b) => {
+      if (activeCustomerSortKey === 'name') {
+        const difference = a.name.localeCompare(b.name);
+        return customerSort.direction === 'asc' ? difference : -difference;
+      }
+      const difference = revenueForColumn(a, activeCustomerSortKey) - revenueForColumn(b, activeCustomerSortKey);
+      if (difference !== 0) return customerSort.direction === 'asc' ? difference : -difference;
+      return a.name.localeCompare(b.name);
+    });
+  }, [customerForecastSchedule.allRows, customerForecastColumns, activeCustomerSortKey, customerSort.direction]);
+  const updateCustomerSort = (key: string) => setCustomerSort((current) => ({
+    key,
+    direction: current.key === key
+      ? current.direction === 'desc' ? 'asc' : 'desc'
+      : key === 'name' ? 'asc' : 'desc',
+  }));
+  const customerSortArrow = (key: string) => activeCustomerSortKey === key
+    ? customerSort.direction === 'asc' ? ' ↑' : ' ↓'
+    : '';
 
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const forecastRows = useMemo(() => {
@@ -3300,8 +3331,14 @@ export default function FinancialForecastTab({
               <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc' }}>
-                    <th style={{ textAlign: 'left', padding: '8px', minWidth: '250px' }}>Line Item</th>
-                    {customerForecastColumns.map((column) => <th key={column.key} style={{ textAlign: 'right', padding: '8px', minWidth: '92px' }}>{column.label}</th>)}
+                    <th aria-sort={activeCustomerSortKey === 'name' ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'left', padding: '8px', minWidth: '250px' }}>
+                      <button onClick={() => updateCustomerSort('name')} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>Line Item{customerSortArrow('name')}</button>
+                    </th>
+                    {customerForecastColumns.map((column) => (
+                      <th key={column.key} aria-sort={activeCustomerSortKey === column.key ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'right', padding: '8px', minWidth: '92px' }}>
+                        <button onClick={() => updateCustomerSort(column.key)} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>{column.label}{customerSortArrow(column.key)}</button>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -3309,7 +3346,7 @@ export default function FinancialForecastTab({
                     <td style={{ padding: '8px', fontWeight: 700, background: '#f8fafc' }}>Revenue by Customer</td>
                     {customerForecastColumns.map((column) => <td key={`customer-revenue-header-${column.key}`} style={{ padding: '8px', background: '#f8fafc' }} />)}
                   </tr>
-                  {customerForecastSchedule.allRows.map((customer) => (
+                  {customerRowsByRevenue.map((customer) => (
                     <tr key={customer.key} style={{ borderTop: '1px solid #e2e8f0' }}>
                       <td style={{ padding: '8px' }}>{customer.name}</td>
                       {customerForecastColumns.map((column) => (
@@ -3436,11 +3473,17 @@ export default function FinancialForecastTab({
             <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', padding: '8px', minWidth: '250px' }}>Line Item</th>
+                  <th aria-sort={activeCustomerSortKey === 'name' ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'left', padding: '8px', minWidth: '250px' }}>
+                    <button onClick={() => updateCustomerSort('name')} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>Line Item{customerSortArrow('name')}</button>
+                  </th>
                   {customerForecastColumns.map((column) => (
                     <React.Fragment key={column.key}>
-                      <th style={{ textAlign: 'right', padding: '8px', minWidth: '105px' }}>{column.label}</th>
-                      <th style={{ textAlign: 'right', padding: '8px', minWidth: '92px' }}>% of Total</th>
+                      <th aria-sort={activeCustomerSortKey === column.key ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'right', padding: '8px', minWidth: '105px' }}>
+                        <button onClick={() => updateCustomerSort(column.key)} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>{column.label}{customerSortArrow(column.key)}</button>
+                      </th>
+                      <th aria-sort={activeCustomerSortKey === column.key ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'right', padding: '8px', minWidth: '92px' }}>
+                        <button onClick={() => updateCustomerSort(column.key)} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>% of Total{customerSortArrow(column.key)}</button>
+                      </th>
                     </React.Fragment>
                   ))}
                 </tr>
@@ -3455,7 +3498,7 @@ export default function FinancialForecastTab({
                     </React.Fragment>
                   ))}
                 </tr>
-                {customerForecastSchedule.allRows.map((customer) => (
+                {customerRowsByRevenue.map((customer) => (
                   <tr key={`growth-${customer.key}`} style={{ borderTop: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '8px' }}>{customer.name}</td>
                     {customerForecastColumns.map((column) => {

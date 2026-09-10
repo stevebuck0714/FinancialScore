@@ -98,10 +98,10 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
             : monthKey.slice(0, 4) === selectedBaselinePeriodKey;
         return matches ? sum + Number(revenue || 0) : sum;
       }, 0);
-      const baseline = baselineActual / (baselineMode === 'yearly' ? 12 : baselineMode === 'quarterly' ? 3 : 1);
+      const baseline = baselineActual / (baselineMode === 'quarterly' ? 3 : 1);
       const annualGrowthPcts = Array.from({ length: 4 }, (_, index) => Number(annualGrowth?.[row.key]?.[index] || 0));
       const projectedAnnual = annualGrowthPcts.reduce((values: number[], growthPct, index) => {
-        const prior = index === 0 ? baseline * 12 : values[index - 1];
+        const prior = index === 0 ? (baselineMode === 'yearly' ? baseline : baseline * 12) : values[index - 1];
         values.push(prior * (1 + growthPct / 100));
         return values;
       }, []);
@@ -213,7 +213,7 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
               <td colSpan={2} style={{ padding: '8px' }}>Total</td>
               <td style={{ padding: '8px', textAlign: 'right' }}>{currency(totalBaseline)}</td>
               {years.map((_, index) => {
-                const prior = index === 0 ? totalBaseline * 12 : totalProjected[index - 1];
+                const prior = index === 0 ? (baselineMode === 'yearly' ? totalBaseline : totalBaseline * 12) : totalProjected[index - 1];
                 const growth = prior > 0 ? ((totalProjected[index] / prior) - 1) * 100 : 0;
                 return <td key={`total-growth-${index}`} style={{ padding: '8px', textAlign: 'right' }}>{growth.toFixed(1)}%</td>;
               })}
