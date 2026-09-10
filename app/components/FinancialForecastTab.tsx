@@ -22,7 +22,7 @@ interface FinancialForecastTabProps {
   basisMode?: 'cash' | 'accrual';
 }
 
-type ForecastTab = 'inputs' | 'income-statement' | 'customer-forecast' | 'graphs';
+type ForecastTab = 'inputs' | 'income-statement' | 'customer-forecast' | 'customer-growth-projections' | 'graphs';
 type OpexPaymentTreatment = 'paid-in-full' | 'ap-schedule';
 
 type QuarterMeta = {
@@ -1120,34 +1120,56 @@ export default function FinancialForecastTab({
   const customerForecastSchedule = useMemo(() => {
     const annualGrowthByCustomer = customerForecastSettings?.annualGrowthByCustomer || {};
     const categoryByCustomer = customerForecastSettings?.categoryByCustomer || {};
-    const customerActuals = new Map<string, { key: string; name: string; baseline: number; latestMonth: string; category: string }>();
+    const baselineMode = customerForecastSettings?.baselineMode === 'quarterly' || customerForecastSettings?.baselineMode === 'yearly'
+      ? customerForecastSettings.baselineMode
+      : 'monthly';
+    const customerActuals = new Map<string, { key: string; name: string; months: Record<string, number>; category: string }>();
+    const [currentYear, currentMonth] = formatEstDate().slice(0, 7).split('-').map(Number);
+    const selectedBaselinePeriodKey = (() => {
+      if (baselineMode === 'yearly') return String(currentYear - 1);
+      if (baselineMode === 'monthly') {
+        const previousMonth = new Date(Date.UTC(currentYear, currentMonth - 2, 1));
+        return `${previousMonth.getUTCFullYear()}-${String(previousMonth.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
+      const currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
+      return currentQuarter === 1 ? `${currentYear - 1}-Q4` : `${currentYear}-Q${currentQuarter - 1}`;
+    })();
     for (const row of customerForecastActuals) {
       const customerId = String(row?.customerId || '').trim();
       const name = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
       const key = customerId ? `id:${customerId}` : `name:${name.toLowerCase().replace(/\s+/g, ' ')}`;
       const monthKey = String(row?.monthKey || '');
+      if (!/^\d{4}-\d{2}$/.test(monthKey)) continue;
       const current = customerActuals.get(key);
-      if (!monthKey || (current && current.latestMonth > monthKey)) continue;
-      customerActuals.set(key, {
+      const customer = current || {
         key,
         name,
-        baseline: Math.max(0, Number(row?.revenue || 0)),
-        latestMonth: monthKey,
+        months: {},
         category: String(categoryByCustomer?.[key] || ''),
-      });
+      };
+      customer.months[monthKey] = Number(customer.months[monthKey] || 0) + Math.max(0, Number(row?.revenue || 0));
+      customerActuals.set(key, customer);
     }
     const firstForecastYear = Number(monthlyForecastPeriods[0]?.year) || new Date().getUTCFullYear();
     const allRows = Array.from(customerActuals.values())
       .map((customer) => {
-        let carry = customer.baseline;
+        const baselineActual = Object.entries(customer.months).reduce((sum, [monthKey, revenue]) => {
+          const periodKey = baselineMode === 'monthly'
+            ? monthKey
+            : baselineMode === 'quarterly'
+              ? `${monthKey.slice(0, 4)}-Q${Math.floor((Number(monthKey.slice(5, 7)) - 1) / 3) + 1}`
+              : monthKey.slice(0, 4);
+          return periodKey === selectedBaselinePeriodKey ? sum + Number(revenue || 0) : sum;
+        }, 0);
+        let carry = baselineActual / (baselineMode === 'yearly' ? 12 : baselineMode === 'quarterly' ? 3 : 1);
         const months = monthlyForecastPeriods.map((period) => {
-          const growthIndex = Math.max(0, Math.min(4, Number(period.year) - firstForecastYear));
+          const growthIndex = Math.max(0, Math.min(3, Number(period.year) - firstForecastYear));
           const annualGrowthPct = Number(annualGrowthByCustomer?.[customer.key]?.[growthIndex] || 0);
           const monthlyGrowth = annualGrowthPct <= -100 ? -1 : Math.pow(1 + annualGrowthPct / 100, 1 / 12) - 1;
           carry = Math.max(0, carry * (1 + monthlyGrowth));
           return { ...period, revenue: carry };
         });
-        return { ...customer, months };
+        return { ...customer, baseline: carry, months };
       });
     const rows = allRows.filter((customer) => customer.category && revenueRowKeys.includes(customer.category));
     const revenueByMonthCategory: Record<string, Record<string, number>> = {};
@@ -2106,12 +2128,14 @@ export default function FinancialForecastTab({
   const showInputsTab = displayMode !== 'graphs-only';
   const showIncomeStatementTab = displayMode !== 'graphs-only';
   const showCustomerForecastTab = displayMode !== 'graphs-only';
+  const showCustomerGrowthProjectionsTab = displayMode !== 'graphs-only';
   const showGraphsTab = displayMode !== 'no-graphs';
   const compactTabStackSpacing = displayMode === 'no-graphs';
   const visibleTabs: ForecastTab[] = [
     ...(showInputsTab ? (['inputs'] as ForecastTab[]) : []),
     ...(showIncomeStatementTab ? (['income-statement'] as ForecastTab[]) : []),
     ...(showCustomerForecastTab ? (['customer-forecast'] as ForecastTab[]) : []),
+    ...(showCustomerGrowthProjectionsTab ? (['customer-growth-projections'] as ForecastTab[]) : []),
     ...(showGraphsTab ? (['graphs'] as ForecastTab[]) : []),
   ];
 
@@ -2237,6 +2261,9 @@ export default function FinancialForecastTab({
           )}
           {showCustomerForecastTab && (
             <button style={tabButtonStyle('customer-forecast')} onClick={() => setActiveTab('customer-forecast')}>Customer Forecast</button>
+          )}
+          {showCustomerGrowthProjectionsTab && (
+            <button style={tabButtonStyle('customer-growth-projections')} onClick={() => setActiveTab('customer-growth-projections')}>Customer Growth Projections</button>
           )}
           {showGraphsTab && (
             <button style={tabButtonStyle('graphs')} onClick={() => setActiveTab('graphs')}>Graphs</button>
@@ -3234,10 +3261,10 @@ export default function FinancialForecastTab({
         <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
           <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
             <div>
-              <h3 style={{ margin: 0, color: '#0f172a' }}>Customer Forecast</h3>
-              <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>
-                Customer projections roll into their mapped income-statement revenue categories.
-              </div>
+              <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement Forecast by Customer</h3>
+              {customerForecastViewMode === 'yearly' && (
+                <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>5 Year Plan</div>
+              )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {(['monthly', 'quarterly', 'yearly'] as const).map((option) => (
@@ -3273,18 +3300,18 @@ export default function FinancialForecastTab({
               <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc' }}>
-                    <th style={{ textAlign: 'left', padding: '8px', minWidth: '190px' }}>Customer</th>
-                    <th style={{ textAlign: 'left', padding: '8px', minWidth: '160px' }}>Income Statement Category</th>
+                    <th style={{ textAlign: 'left', padding: '8px', minWidth: '250px' }}>Line Item</th>
                     {customerForecastColumns.map((column) => <th key={column.key} style={{ textAlign: 'right', padding: '8px', minWidth: '92px' }}>{column.label}</th>)}
                   </tr>
                 </thead>
                 <tbody>
+                  <tr>
+                    <td style={{ padding: '8px', fontWeight: 700, background: '#f8fafc' }}>Revenue by Customer</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-revenue-header-${column.key}`} style={{ padding: '8px', background: '#f8fafc' }} />)}
+                  </tr>
                   {customerForecastSchedule.allRows.map((customer) => (
                     <tr key={customer.key} style={{ borderTop: '1px solid #e2e8f0' }}>
                       <td style={{ padding: '8px' }}>{customer.name}</td>
-                      <td style={{ padding: '8px', color: customer.category ? '#334155' : '#b45309' }}>
-                        {customer.category ? getFieldDisplayName(customer.category) : 'Unmapped'}
-                      </td>
                       {customerForecastColumns.map((column) => (
                         <td key={`${customer.key}-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
                           {formatCurrency(customer.months
@@ -3294,28 +3321,58 @@ export default function FinancialForecastTab({
                       ))}
                     </tr>
                   ))}
-                  <tr style={{ borderTop: '2px solid #bfdbfe', background: '#eff6ff', fontWeight: 700 }}>
-                    <td colSpan={2} style={{ padding: '8px' }}>Mapped Customer Sales → Income Statement</td>
+                  <tr style={{ background: '#eff6ff', fontWeight: 700 }}>
+                    <td style={{ padding: '8px' }}>Total Sales</td>
                     {customerForecastColumns.map((column) => (
-                      <td key={`mapped-total-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
-                        {formatCurrency(customerForecastSchedule.rows.reduce((sum, customer) => sum + customer.months
-                          .filter((month) => column.monthKeys.includes(month.key))
-                          .reduce((monthSum, month) => monthSum + Number(month.revenue || 0), 0), 0))}
+                      <td key={`customer-total-revenue-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
+                        {formatCurrency(forecastRows
+                          .filter((row) => column.monthKeys.includes(String(row.key)))
+                          .reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0))}
                       </td>
                     ))}
                   </tr>
-                  <tr style={{ background: '#f8fafc', fontWeight: 700 }}>
-                    <td colSpan={2} style={{ padding: '8px' }}>Total Customer Sales</td>
-                    {customerForecastColumns.map((column) => (
-                      <td key={`all-total-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
-                        {formatCurrency(customerForecastSchedule.allRows.reduce((sum, customer) => sum + customer.months
-                          .filter((month) => column.monthKeys.includes(month.key))
-                          .reduce((monthSum, month) => monthSum + Number(month.revenue || 0), 0), 0))}
-                      </td>
-                    ))}
+                  <tr>
+                    <td style={{ padding: '8px', fontWeight: 700, background: '#f8fafc' }}>COGS Detail</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-cogs-header-${column.key}`} style={{ padding: '8px', background: '#f8fafc' }} />)}
+                  </tr>
+                  {cogsRowKeys.map((rowKey) => (
+                    <tr key={`customer-cogs-${rowKey}`}>
+                      <td style={{ padding: '8px', color: '#334155' }}>{getFieldDisplayName(rowKey)}</td>
+                      {customerForecastColumns.map((column) => (
+                        <td key={`${rowKey}-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
+                          {formatCurrency(forecastRows.filter((row) => column.monthKeys.includes(String(row.key))).reduce((sum, row) => sum + Number(row.cogsDetails?.[rowKey] || 0), 0))}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  <tr style={{ background: '#fef3c7', fontWeight: 700 }}>
+                    <td style={{ padding: '8px' }}>Total COGS</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-total-cogs-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(forecastRows.filter((row) => column.monthKeys.includes(String(row.key))).reduce((sum, row) => sum + Number(row.totalCogs || 0), 0))}</td>)}
+                  </tr>
+                  <tr style={{ background: '#dbeafe', fontWeight: 700 }}>
+                    <td style={{ padding: '8px' }}>Gross Profit</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-gross-profit-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(forecastRows.filter((row) => column.monthKeys.includes(String(row.key))).reduce((sum, row) => sum + Number(row.grossProfit || 0), 0))}</td>)}
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '8px', fontWeight: 700, background: '#f8fafc' }}>Operating Expense Detail</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-opex-header-${column.key}`} style={{ padding: '8px', background: '#f8fafc' }} />)}
+                  </tr>
+                  {OPEX_FIELDS.map(({ key, label }) => (
+                    <tr key={`customer-opex-${key}`}>
+                      <td style={{ padding: '8px', color: '#334155' }}>{label}</td>
+                      {customerForecastColumns.map((column) => <td key={`${key}-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(forecastRows.filter((row) => column.monthKeys.includes(String(row.key))).reduce((sum, row) => sum + Number(row.opexDetails?.[key] || 0), 0))}</td>)}
+                    </tr>
+                  ))}
+                  <tr style={{ background: '#fde68a', fontWeight: 700 }}>
+                    <td style={{ padding: '8px' }}>Total Operating Expenses</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-total-opex-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(forecastRows.filter((row) => column.monthKeys.includes(String(row.key))).reduce((sum, row) => sum + Number(row.totalOpex || 0), 0))}</td>)}
+                  </tr>
+                  <tr style={{ background: '#dcfce7', fontWeight: 700 }}>
+                    <td style={{ padding: '8px' }}>Operating Income</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-operating-income-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(forecastRows.filter((row) => column.monthKeys.includes(String(row.key))).reduce((sum, row) => sum + Number(row.operatingIncome || 0), 0))}</td>)}
                   </tr>
                   <tr style={{ background: '#e0f2fe', fontWeight: 700 }}>
-                    <td colSpan={2} style={{ padding: '8px' }}>EBITDA</td>
+                    <td style={{ padding: '8px' }}>EBITDA</td>
                     {customerForecastColumns.map((column) => (
                       <td key={`ebitda-customer-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
                         {formatCurrency(forecastRows
@@ -3324,10 +3381,112 @@ export default function FinancialForecastTab({
                       </td>
                     ))}
                   </tr>
+                  <tr>
+                    <td style={{ padding: '8px', fontWeight: 600 }}>Income Taxes</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-taxes-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(forecastRows.filter((row) => column.monthKeys.includes(String(row.key))).reduce((sum, row) => sum + Number(row.totalIncomeTaxes || 0), 0))}</td>)}
+                  </tr>
+                  <tr style={{ background: '#f1f5f9', fontWeight: 700 }}>
+                    <td style={{ padding: '8px' }}>Net Income</td>
+                    {customerForecastColumns.map((column) => <td key={`customer-net-income-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(forecastRows.filter((row) => column.monthKeys.includes(String(row.key))).reduce((sum, row) => sum + Number(row.netIncome || 0), 0))}</td>)}
+                  </tr>
                 </tbody>
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'customer-growth-projections' && (
+        <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement Forecast by Customer</h3>
+              {customerForecastViewMode === 'yearly' && (
+                <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>5 Year Plan</div>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {(['monthly', 'quarterly', 'yearly'] as const).map((option) => (
+                <button
+                  key={option}
+                  onClick={() => setCustomerForecastViewMode(option)}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    background: customerForecastViewMode === option ? '#dbeafe' : '#f8fafc',
+                    color: customerForecastViewMode === option ? '#1d4ed8' : '#334155',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option === 'yearly' ? 'Annual' : option[0].toUpperCase() + option.slice(1)}
+                </button>
+              ))}
+              <button
+                onClick={() => window.print()}
+                style={{ border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Print
+              </button>
+            </div>
+          </div>
+          <div className="ff-print-table-wrap" style={{ overflowX: 'auto' }}>
+            <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc' }}>
+                  <th style={{ textAlign: 'left', padding: '8px', minWidth: '250px' }}>Line Item</th>
+                  {customerForecastColumns.map((column) => (
+                    <React.Fragment key={column.key}>
+                      <th style={{ textAlign: 'right', padding: '8px', minWidth: '105px' }}>{column.label}</th>
+                      <th style={{ textAlign: 'right', padding: '8px', minWidth: '92px' }}>% of Total</th>
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '8px', fontWeight: 700, background: '#f8fafc' }}>Revenue by Customer</td>
+                  {customerForecastColumns.map((column) => (
+                    <React.Fragment key={`growth-header-${column.key}`}>
+                      <td style={{ padding: '8px', background: '#f8fafc' }} />
+                      <td style={{ padding: '8px', background: '#f8fafc' }} />
+                    </React.Fragment>
+                  ))}
+                </tr>
+                {customerForecastSchedule.allRows.map((customer) => (
+                  <tr key={`growth-${customer.key}`} style={{ borderTop: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '8px' }}>{customer.name}</td>
+                    {customerForecastColumns.map((column) => {
+                      const revenue = customer.months
+                        .filter((month) => column.monthKeys.includes(month.key))
+                        .reduce((sum, month) => sum + Number(month.revenue || 0), 0);
+                      const totalCustomerSales = customerForecastSchedule.allRows.reduce((sum, row) => sum + row.months
+                        .filter((month) => column.monthKeys.includes(month.key))
+                        .reduce((monthSum, month) => monthSum + Number(month.revenue || 0), 0), 0);
+                      const share = totalCustomerSales > 0 ? (revenue / totalCustomerSales) * 100 : null;
+                      return (
+                        <React.Fragment key={`${customer.key}-growth-${column.key}`}>
+                          <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(revenue)}</td>
+                          <td style={{ padding: '8px', textAlign: 'right', color: '#64748b' }}>{share == null ? '—' : `${share.toFixed(1)}%`}</td>
+                        </React.Fragment>
+                      );
+                    })}
+                  </tr>
+                ))}
+                <tr style={{ background: '#f8fafc', fontWeight: 700 }}>
+                  <td style={{ padding: '8px' }}>Total Customer Sales</td>
+                  {customerForecastColumns.map((column) => (
+                    <React.Fragment key={`growth-total-${column.key}`}>
+                      <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(customerForecastSchedule.allRows.reduce((sum, customer) => sum + customer.months.filter((month) => column.monthKeys.includes(month.key)).reduce((monthSum, month) => monthSum + Number(month.revenue || 0), 0), 0))}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', color: '#64748b' }}>100.0%</td>
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
