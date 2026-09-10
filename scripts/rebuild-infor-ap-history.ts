@@ -31,21 +31,52 @@ const siteArg = args.find((a) => a.startsWith('--site='))?.split('=')[1]?.trim()
 const lookbackArg = Number(args.find((a) => a.startsWith('--lookback-days='))?.split('=')[1]);
 const lookbackDays =
   Number.isFinite(lookbackArg) && lookbackArg > 0 ? Math.floor(lookbackArg) : DEFAULT_LOOKBACK_DAYS;
+const startDateArg = args.find((a) => a.startsWith('--start-date='))?.split('=')[1]?.trim();
+const endDateArg = args.find((a) => a.startsWith('--end-date='))?.split('=')[1]?.trim();
 
 if (!companyId || !confirmed) {
   throw new Error(
-    'Usage: tsx scripts/rebuild-infor-ap-history.ts <companyId> --confirm [--site=LYN] [--lookback-days=150]'
+    'Usage: tsx scripts/rebuild-infor-ap-history.ts <companyId> --confirm [--site=LYN] [--lookback-days=150] [--start-date=YYYY-MM-DD --end-date=YYYY-MM-DD]'
   );
 }
 
-const endDate = new Date();
-const cutoff = new Date(
-  Date.UTC(
-    endDate.getUTCFullYear(),
-    endDate.getUTCMonth(),
-    endDate.getUTCDate() - lookbackDays
-  )
-);
+function parseUtcCalendarDate(value: string | undefined, label: string, endOfDay = false): Date | null {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`${label} must use YYYY-MM-DD.`);
+  }
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error(`${label} is not a valid calendar date.`);
+  }
+  return parsed;
+}
+
+if (Boolean(startDateArg) !== Boolean(endDateArg)) {
+  throw new Error('Pass --start-date and --end-date together to run an explicit AP recovery window.');
+}
+
+const explicitStartDate = parseUtcCalendarDate(startDateArg, '--start-date');
+const explicitEndDate = parseUtcCalendarDate(endDateArg, '--end-date', true);
+if (explicitStartDate && explicitEndDate && explicitStartDate > explicitEndDate) {
+  throw new Error('--start-date must be on or before --end-date.');
+}
+
+const endDate = explicitEndDate || new Date();
+const cutoff =
+  explicitStartDate ||
+  new Date(
+    Date.UTC(
+      endDate.getUTCFullYear(),
+      endDate.getUTCMonth(),
+      endDate.getUTCDate() - lookbackDays
+    )
+  );
 const syncRunId = `ap-history-rebuild-${randomUUID()}`;
 const window = {
   startDate: cutoff,
@@ -100,10 +131,10 @@ async function main() {
   // will rewrite, so vouchers and pre-window history survive.
   const [deletedPaymentFacts, deletedPaymentEvents] = await prisma.$transaction([
     prisma.aPPaymentFact.deleteMany({
-      where: { companyId, paymentDate: { gte: cutoff } },
+      where: { companyId, paymentDate: { gte: cutoff, lte: endDate } },
     }),
     prisma.aPTransactionFact.deleteMany({
-      where: { companyId, transType: 'P', eventDate: { gte: cutoff } },
+      where: { companyId, transType: 'P', eventDate: { gte: cutoff, lte: endDate } },
     }),
   ]);
 
@@ -152,6 +183,7 @@ async function main() {
         syncRunId,
         lookbackDays,
         windowStart: cutoff.toISOString().slice(0, 10),
+        windowEnd: endDate.toISOString().slice(0, 10),
         sourceRecordCount,
         deletedPaymentFacts: deletedPaymentFacts.count,
         deletedPaymentEvents: deletedPaymentEvents.count,
