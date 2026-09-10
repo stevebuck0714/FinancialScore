@@ -138,6 +138,12 @@ function stableSourceId(raw: RawApRecord, record: Record<string, unknown>, type:
     .digest('hex');
 }
 
+function normalizeApProgram(value: string | null | undefined): string {
+  const source = String(value || '').trim();
+  const match = source.match(/SL(?:VCHHDRS|APPMTS|APTRXPS|APTRXP|APTRXS|APTRX)/i);
+  return match ? match[0].toUpperCase() : source.toUpperCase();
+}
+
 function chunks<T>(rows: T[]): T[][] {
   const out: T[][] = [];
   for (let index = 0; index < rows.length; index += BATCH_SIZE) out.push(rows.slice(index, index + BATCH_SIZE));
@@ -152,16 +158,25 @@ async function loadRawApRecords(companyId: string): Promise<RawApRecord[]> {
       where: {
         companyId,
         platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-        miProgram: {
-          in: [
-            'SLVCHHDRS', 'SLVchHdrs', 'SLVchhdrs',
-            'SLAPPMTS', 'SLAppmts',
-            'SLAPTRXP', 'SLAptrxp',
-            'SLAPTRXPS', 'SLAptrxps',
-            'SLAPTRX', 'SLAptrx',
-            'SLAPTRXS', 'SLAptrxs',
-          ],
-        },
+        // Older CSI raw pages are consistently tagged module=AP but retain
+        // mixed or endpoint-derived program identifiers. Include that
+        // durable module classification, then strictly filter the supported
+        // source programs during row normalization below.
+        OR: [
+          {
+            miProgram: {
+              in: [
+                'SLVCHHDRS', 'SLVchHdrs', 'SLVchhdrs',
+                'SLAPPMTS', 'SLAppmts',
+                'SLAPTRXP', 'SLAptrxp',
+                'SLAPTRXPS', 'SLAptrxps',
+                'SLAPTRX', 'SLAptrx',
+                'SLAPTRXS', 'SLAptrxs',
+              ],
+            },
+          },
+          { module: { equals: 'ap', mode: 'insensitive' } },
+        ],
       },
       select: {
         id: true, platform: true, miProgram: true, sourceRecordId: true, sourceRecordHash: true, payload: true,
@@ -181,7 +196,10 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
   const paymentByKey = new Map<string, ApPaymentRow>();
 
   for (const raw of rawRows) {
-    const program = String(raw.miProgram || '').trim().toUpperCase();
+    // Some historical CSI raw rows retain the endpoint path instead of the
+    // plain IDO name. Normalize the embedded program token before deciding
+    // whether this is a supported AP source.
+    const program = normalizeApProgram(raw.miProgram);
     if (!AP_PROGRAMS.has(program)) continue;
     const record = payloadObject(raw.payload);
     if (!record || text(record, ['InWorkflow']) === '1') continue;
