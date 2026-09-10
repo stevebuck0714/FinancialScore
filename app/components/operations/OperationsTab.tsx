@@ -4176,6 +4176,50 @@ export default function OperationsTab({
           : periodOptions.includes(currentCustomerRevenuePeriodKey(customerRevenuePeriodMode))
             ? currentCustomerRevenuePeriodKey(customerRevenuePeriodMode)
             : 'all';
+    // QBD detail rebuilds provide one canonical customer total per month. The
+    // dashboard's daily customer records can be legacy snapshots rather than
+    // daily deltas, so summing them for a Month/Quarter/Year selection can
+    // overstate revenue. Use the canonical monthly history whenever it is
+    // available for the top-customer reports.
+    const usesCanonicalMonthlyCustomerHistory =
+      summary?.customerHistory?.source === 'customer_sales_snapshot_monthly' &&
+      customerSalesHistoryMonths.length > 0;
+    const customerHistoryIdentity = (row: any) => {
+      const customerId = String(row?.itemName || '').trim();
+      if (customerId) return `id:${customerId}`;
+      return `name:${String(row?.label || 'Unknown Customer').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+    };
+    const invoiceHistoryByCustomer = new Map(
+      (Array.isArray(customerInvoiceVolumeHistory?.rows) ? customerInvoiceVolumeHistory.rows : [])
+        .map((row: any) => [customerHistoryIdentity(row), row] as const)
+    );
+    const customerHistoryMonthMatchesSelectedPeriod = (monthKey: string) => {
+      if (effectivePeriodKey === 'all') return true;
+      if (customerRevenuePeriodMode === 'month') return monthKey === effectivePeriodKey;
+      if (customerRevenuePeriodMode === 'year') return monthKey.startsWith(`${effectivePeriodKey}-`);
+      const [year, quarterRaw] = String(effectivePeriodKey).split('-Q');
+      const month = Number(monthKey.slice(5, 7));
+      return monthKey.startsWith(`${year}-`) && Math.floor((month - 1) / 3) + 1 === Number(quarterRaw || 0);
+    };
+    const canonicalMonthlyTableCustomerTotals = (Array.isArray(customerSalesHistory?.rows) ? customerSalesHistory.rows : [])
+      .map((salesRow: any) => {
+        const invoiceRow = invoiceHistoryByCustomer.get(customerHistoryIdentity(salesRow));
+        const totals = Object.entries(salesRow?.values || {}).reduce(
+          (acc: { revenue: number; invoices: number }, [monthKey, revenue]) => {
+            if (!customerHistoryMonthMatchesSelectedPeriod(monthKey)) return acc;
+            acc.revenue += Number(revenue || 0);
+            acc.invoices += Number(invoiceRow?.values?.[monthKey] || 0);
+            return acc;
+          },
+          { revenue: 0, invoices: 0 }
+        );
+        return {
+          name: String(salesRow?.label || 'Unknown Customer'),
+          totalRevenue: totals.revenue,
+          totalInvoices: totals.invoices,
+        };
+      })
+      .filter((row: any) => row.totalRevenue !== 0 || row.totalInvoices !== 0);
     const filteredRecordsForTopCustomers =
       effectivePeriodKey === 'all'
         ? records
@@ -4191,7 +4235,11 @@ export default function OperationsTab({
       acc[name].totalInvoices += Number(record?.invoiceCount || 0);
       return acc;
     }, {});
-    const rankedCustomersForTable = Object.values(tableCustomerTotals).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
+    const rankedCustomersForTable = (
+      usesCanonicalMonthlyCustomerHistory
+        ? canonicalMonthlyTableCustomerTotals
+        : Object.values(tableCustomerTotals)
+    ).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
     const summaryTopCustomers = Array.isArray(summary?.topCustomers)
       ? (summary.topCustomers as Array<any>).map((row) => ({
           name: String(row?.name || row?.customerName || 'Unknown Customer'),
