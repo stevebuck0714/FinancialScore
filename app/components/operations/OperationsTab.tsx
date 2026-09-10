@@ -25,6 +25,7 @@ import {
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
 import FinancialForecastTab from '../FinancialForecastTab';
+import CustomerSalesForecast from './CustomerSalesForecast';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
 import ProductRevenueForecastReport from './ProductRevenueForecastReport';
 import ProductForecastRollupReport from './ProductForecastRollupReport';
@@ -5449,6 +5450,13 @@ export default function OperationsTab({
                   </div>
                 )}
                 {renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers' }) || null}
+                {!isRetailSalesLanguage && (
+                  <CustomerSalesForecast
+                    companyId={selectedCompanyId}
+                    industrySectorCategory={industrySectorCategory}
+                    basisMode="accrual"
+                  />
+                )}
                 {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
                   <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                     <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>

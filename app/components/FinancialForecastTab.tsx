@@ -22,7 +22,7 @@ interface FinancialForecastTabProps {
   basisMode?: 'cash' | 'accrual';
 }
 
-type ForecastTab = 'inputs' | 'income-statement' | 'graphs';
+type ForecastTab = 'inputs' | 'income-statement' | 'customer-forecast' | 'graphs';
 type OpexPaymentTreatment = 'paid-in-full' | 'ap-schedule';
 
 type QuarterMeta = {
@@ -51,6 +51,7 @@ type ForecastPeriodMeta = {
 const OPEX_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'autoTravel', label: 'Auto Travel' },
   { key: 'benefits', label: 'Benefits' },
+  { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
   { key: 'infrastructure', label: 'Infrastructure' },
   { key: 'insurance', label: 'Insurance' },
   { key: 'interestExpense', label: 'Interest Expense' },
@@ -226,8 +227,11 @@ export default function FinancialForecastTab({
   const [isArchivingBudget, setIsArchivingBudget] = useState(false);
   const [lastBudgetArchiveAt, setLastBudgetArchiveAt] = useState<string | null>(null);
   const [incomeStatementViewMode, setIncomeStatementViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [customerForecastViewMode, setCustomerForecastViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
   const [graphGranularity, setGraphGranularity] = useState<'monthly' | 'quarterly'>('monthly');
   const [masterMonthlyData, setMasterMonthlyData] = useState<any[]>([]);
+  const [customerForecastActuals, setCustomerForecastActuals] = useState<any[]>([]);
+  const [customerForecastSettings, setCustomerForecastSettings] = useState<any>({});
   const [productAdjSalesByMonth, setProductAdjSalesByMonth] = useState<Record<string, number>>({});
   const [hasProductSalesFeed, setHasProductSalesFeed] = useState(false);
   const isAtlanticCompany = isAtlanticPrecisionCompany(selectedCompanyId, companyName);
@@ -264,6 +268,30 @@ export default function FinancialForecastTab({
       isCancelled = true;
     };
   }, [selectedCompanyId]);
+
+  React.useEffect(() => {
+    let isCancelled = false;
+    const loadCustomerForecast = async () => {
+      if (!selectedCompanyId) return;
+      try {
+        const response = await fetch(
+          `/api/customer-revenue-forecast?companyId=${encodeURIComponent(selectedCompanyId)}&basisMode=${basisMode}`,
+          { cache: 'no-store' },
+        );
+        const data = await response.json();
+        if (!response.ok || isCancelled) return;
+        setCustomerForecastActuals(Array.isArray(data?.actuals) ? data.actuals : []);
+        setCustomerForecastSettings(data?.forecast && typeof data.forecast === 'object' ? data.forecast : {});
+      } catch {
+        if (!isCancelled) {
+          setCustomerForecastActuals([]);
+          setCustomerForecastSettings({});
+        }
+      }
+    };
+    void loadCustomerForecast();
+    return () => { isCancelled = true; };
+  }, [selectedCompanyId, basisMode]);
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -1089,17 +1117,100 @@ export default function FinancialForecastTab({
   const quarterlyFutureCount = quarterlyForecastPeriods.length;
   const futureSectionCount = 0;
   const totalInputPeriodCols = actualMonthColumnCount + monthlyForecastCount + futureSectionCount;
+  const customerForecastSchedule = useMemo(() => {
+    const annualGrowthByCustomer = customerForecastSettings?.annualGrowthByCustomer || {};
+    const categoryByCustomer = customerForecastSettings?.categoryByCustomer || {};
+    const customerActuals = new Map<string, { key: string; name: string; baseline: number; latestMonth: string; category: string }>();
+    for (const row of customerForecastActuals) {
+      const customerId = String(row?.customerId || '').trim();
+      const name = String(row?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+      const key = customerId ? `id:${customerId}` : `name:${name.toLowerCase().replace(/\s+/g, ' ')}`;
+      const monthKey = String(row?.monthKey || '');
+      const current = customerActuals.get(key);
+      if (!monthKey || (current && current.latestMonth > monthKey)) continue;
+      customerActuals.set(key, {
+        key,
+        name,
+        baseline: Math.max(0, Number(row?.revenue || 0)),
+        latestMonth: monthKey,
+        category: String(categoryByCustomer?.[key] || ''),
+      });
+    }
+    const firstForecastYear = Number(monthlyForecastPeriods[0]?.year) || new Date().getUTCFullYear();
+    const allRows = Array.from(customerActuals.values())
+      .map((customer) => {
+        let carry = customer.baseline;
+        const months = monthlyForecastPeriods.map((period) => {
+          const growthIndex = Math.max(0, Math.min(4, Number(period.year) - firstForecastYear));
+          const annualGrowthPct = Number(annualGrowthByCustomer?.[customer.key]?.[growthIndex] || 0);
+          const monthlyGrowth = annualGrowthPct <= -100 ? -1 : Math.pow(1 + annualGrowthPct / 100, 1 / 12) - 1;
+          carry = Math.max(0, carry * (1 + monthlyGrowth));
+          return { ...period, revenue: carry };
+        });
+        return { ...customer, months };
+      });
+    const rows = allRows.filter((customer) => customer.category && revenueRowKeys.includes(customer.category));
+    const revenueByMonthCategory: Record<string, Record<string, number>> = {};
+    const baselineByCategory: Record<string, number> = {};
+    rows.forEach((customer) => customer.months.forEach((month) => {
+      if (!revenueByMonthCategory[month.key]) revenueByMonthCategory[month.key] = {};
+      revenueByMonthCategory[month.key][customer.category] =
+        Number(revenueByMonthCategory[month.key][customer.category] || 0) + Number(month.revenue || 0);
+    }));
+    rows.forEach((customer) => {
+      baselineByCategory[customer.category] = Number(baselineByCategory[customer.category] || 0) + customer.baseline;
+    });
+    return {
+      rows,
+      allRows,
+      revenueByMonthCategory,
+      baselineByCategory,
+      mappedCategories: new Set(rows.map((customer) => customer.category)),
+    };
+  }, [customerForecastActuals, customerForecastSettings, monthlyForecastPeriods, revenueRowKeys]);
+  const customerForecastColumns = useMemo(() => {
+    if (customerForecastViewMode === 'monthly') {
+      return monthlyForecastPeriods.map((period) => ({ key: period.key, label: period.label, monthKeys: [period.key] }));
+    }
+    const buckets = new Map<string, { key: string; label: string; monthKeys: string[] }>();
+    monthlyForecastPeriods.forEach((period) => {
+      const key = customerForecastViewMode === 'quarterly'
+        ? `${period.year}-Q${Math.floor(Number(period.month || 0) / 3) + 1}`
+        : String(period.year);
+      const label = customerForecastViewMode === 'quarterly' ? key : String(period.year);
+      const bucket = buckets.get(key) || { key, label, monthKeys: [] };
+      bucket.monthKeys.push(period.key);
+      buckets.set(key, bucket);
+    });
+    return Array.from(buckets.values());
+  }, [customerForecastViewMode, monthlyForecastPeriods]);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const forecastRows = useMemo(() => {
     if (!latestActualMonth) return [];
     const revenueCarry: Record<string, number> = {};
+    const residualRevenueCarry: Record<string, number> = {};
     revenueRowKeys.forEach((k) => {
       revenueCarry[k] = Number(latestActualMonth?.revenueDetails?.[k]) || 0;
+      residualRevenueCarry[k] = Math.max(0, revenueCarry[k] - Number(customerForecastSchedule.baselineByCategory[k] || 0));
     });
 
     return forecastPeriods.map((q, idx) => {
       const revenueDetails: Record<string, number> = {};
       revenueRowKeys.forEach((k) => {
+        const customerForecastRevenue = customerForecastSchedule.revenueByMonthCategory[String(q.key)]?.[k];
+        if (customerForecastSchedule.mappedCategories.has(k) && Number.isFinite(customerForecastRevenue)) {
+          const monthlyBasePct = Number(revenueGrowthByRow[k]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
+          const derivedQuarterlyPct = useQuarterlyActualColumns
+            ? Number(monthlyBasePct.toFixed(2))
+            : Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(2));
+          const configuredGrowthPct = Number(revenueGrowthByRow[k]?.[idx]);
+          const residualGrowthPct = Number.isFinite(configuredGrowthPct) ? configuredGrowthPct : derivedQuarterlyPct;
+          residualRevenueCarry[k] = Math.max(0, residualRevenueCarry[k] * (1 + residualGrowthPct / 100));
+          revenueCarry[k] = Math.max(0, Number(customerForecastRevenue || 0)) + residualRevenueCarry[k];
+          revenueDetails[k] = revenueCarry[k];
+          return;
+        }
         const productLockedAmount = lockedProductAdjSalesAmount({
           fieldKey: k,
           year: Number(q.year),
@@ -1157,6 +1268,7 @@ export default function FinancialForecastTab({
       const totalOpex = Object.values(opexDetails).reduce((sum, v) => sum + v, 0);
       const grossProfit = totalRevenue - totalCogs;
       const operatingIncome = grossProfit - totalOpex;
+      const ebitda = operatingIncome + (Number(opexDetails.depreciationAmortization) || 0);
       const taxableIncome = Math.max(operatingIncome, 0);
       const incomeTaxPct = Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx]) || 0;
       const enteredTaxAmount = Number(opexAmountByRow[INCOME_TAX_PCT_KEY]?.[idx]);
@@ -1178,10 +1290,11 @@ export default function FinancialForecastTab({
         grossProfit,
         totalOpex,
         operatingIncome,
+        ebitda,
         netIncome,
       };
     });
-  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow, basisMode, accrualRevenueAmountByRow, opexAmountByRow, useQuarterlyActualColumns, canUseAccrualOpexAmountInput, hasProductSalesFeed, productAdjSalesByMonth, lastProductAdjMonth]);
+  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow, basisMode, accrualRevenueAmountByRow, opexAmountByRow, useQuarterlyActualColumns, canUseAccrualOpexAmountInput, hasProductSalesFeed, productAdjSalesByMonth, lastProductAdjMonth, customerForecastSchedule]);
 
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -1228,6 +1341,7 @@ export default function FinancialForecastTab({
           totalOpex: 0,
           totalIncomeTaxes: 0,
           operatingIncome: 0,
+          ebitda: 0,
           netIncome: 0,
           isActual: false,
         });
@@ -1248,6 +1362,7 @@ export default function FinancialForecastTab({
       bucket.totalOpex += Number(row.totalOpex) || 0;
       bucket.totalIncomeTaxes += Number(row.totalIncomeTaxes) || 0;
       bucket.operatingIncome += Number(row.operatingIncome) || 0;
+      bucket.ebitda += Number(row.ebitda) || 0;
       bucket.netIncome += Number(row.netIncome) || 0;
     });
     return Array.from(grouped.values()).sort((a, b) => {
@@ -1283,6 +1398,7 @@ export default function FinancialForecastTab({
         const totalOpex = Object.values(actual.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
         const grossProfit = totalRevenue - totalCogs;
         const operatingIncome = grossProfit - totalOpex;
+        const ebitda = operatingIncome + (Number(actual.opexDetails?.depreciationAmortization) || 0);
         const totalIncomeTaxes = Number(actual.incomeTaxes) || 0;
         const netIncome = operatingIncome - totalIncomeTaxes;
         return {
@@ -1299,6 +1415,7 @@ export default function FinancialForecastTab({
           totalOpex,
           totalIncomeTaxes,
           operatingIncome,
+          ebitda,
           netIncome,
           isActual: true,
         };
@@ -1330,6 +1447,7 @@ export default function FinancialForecastTab({
         totalOpex: 0,
         totalIncomeTaxes: 0,
         operatingIncome: 0,
+        ebitda: 0,
         netIncome: 0,
         isActual: false,
       };
@@ -1358,6 +1476,7 @@ export default function FinancialForecastTab({
             totalOpex: 0,
             totalIncomeTaxes: 0,
             operatingIncome: 0,
+            ebitda: 0,
             netIncome: 0,
             isActual: false,
           });
@@ -1378,6 +1497,7 @@ export default function FinancialForecastTab({
         bucket.totalOpex += Number(row.totalOpex) || 0;
         bucket.totalIncomeTaxes += Number(row.totalIncomeTaxes) || 0;
         bucket.operatingIncome += Number(row.operatingIncome) || 0;
+        bucket.ebitda += Number(row.ebitda) || 0;
         bucket.netIncome += Number(row.netIncome) || 0;
         bucket.isActual = bucket.isActual || Boolean(row.isActual);
       });
@@ -1985,11 +2105,13 @@ export default function FinancialForecastTab({
 
   const showInputsTab = displayMode !== 'graphs-only';
   const showIncomeStatementTab = displayMode !== 'graphs-only';
+  const showCustomerForecastTab = displayMode !== 'graphs-only';
   const showGraphsTab = displayMode !== 'no-graphs';
   const compactTabStackSpacing = displayMode === 'no-graphs';
   const visibleTabs: ForecastTab[] = [
     ...(showInputsTab ? (['inputs'] as ForecastTab[]) : []),
     ...(showIncomeStatementTab ? (['income-statement'] as ForecastTab[]) : []),
+    ...(showCustomerForecastTab ? (['customer-forecast'] as ForecastTab[]) : []),
     ...(showGraphsTab ? (['graphs'] as ForecastTab[]) : []),
   ];
 
@@ -2112,6 +2234,9 @@ export default function FinancialForecastTab({
           )}
           {showIncomeStatementTab && (
             <button style={tabButtonStyle('income-statement')} onClick={() => setActiveTab('income-statement')}>Income Statement Forecast</button>
+          )}
+          {showCustomerForecastTab && (
+            <button style={tabButtonStyle('customer-forecast')} onClick={() => setActiveTab('customer-forecast')}>Customer Forecast</button>
           )}
           {showGraphsTab && (
             <button style={tabButtonStyle('graphs')} onClick={() => setActiveTab('graphs')}>Graphs</button>
@@ -3076,6 +3201,14 @@ export default function FinancialForecastTab({
                   ))}
                 </tr>
                 <tr>
+                  <td style={{ padding: '8px', fontWeight: 700, background: '#e0f2fe' }}>EBITDA</td>
+                  {incomeStatementColumns.map((col) => (
+                    <td key={`ebitda-${col.key}`} style={{ textAlign: 'right', padding: '8px', background: '#e0f2fe', fontWeight: 700 }}>
+                      {formatCurrency(Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.ebitda) || 0), 0)))}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
                   <td style={{ padding: '8px', fontWeight: 600 }}>Income Taxes</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`tax-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
@@ -3094,6 +3227,107 @@ export default function FinancialForecastTab({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'customer-forecast' && (
+        <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, color: '#0f172a' }}>Customer Forecast</h3>
+              <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>
+                Customer projections roll into their mapped income-statement revenue categories.
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {(['monthly', 'quarterly', 'yearly'] as const).map((option) => (
+                <button
+                  key={option}
+                  onClick={() => setCustomerForecastViewMode(option)}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    background: customerForecastViewMode === option ? '#dbeafe' : '#f8fafc',
+                    color: customerForecastViewMode === option ? '#1d4ed8' : '#334155',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option === 'yearly' ? 'Annual' : option[0].toUpperCase() + option.slice(1)}
+                </button>
+              ))}
+              <button
+                onClick={() => window.print()}
+                style={{ border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', borderRadius: '8px', padding: '8px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Print
+              </button>
+            </div>
+          </div>
+          {customerForecastSchedule.allRows.length === 0 ? (
+            <div style={{ padding: '24px', color: '#64748b', textAlign: 'center' }}>No monthly customer sales history is available yet.</div>
+          ) : (
+            <div className="ff-print-table-wrap" style={{ overflowX: 'auto' }}>
+              <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th style={{ textAlign: 'left', padding: '8px', minWidth: '190px' }}>Customer</th>
+                    <th style={{ textAlign: 'left', padding: '8px', minWidth: '160px' }}>Income Statement Category</th>
+                    {customerForecastColumns.map((column) => <th key={column.key} style={{ textAlign: 'right', padding: '8px', minWidth: '92px' }}>{column.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {customerForecastSchedule.allRows.map((customer) => (
+                    <tr key={customer.key} style={{ borderTop: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '8px' }}>{customer.name}</td>
+                      <td style={{ padding: '8px', color: customer.category ? '#334155' : '#b45309' }}>
+                        {customer.category ? getFieldDisplayName(customer.category) : 'Unmapped'}
+                      </td>
+                      {customerForecastColumns.map((column) => (
+                        <td key={`${customer.key}-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
+                          {formatCurrency(customer.months
+                            .filter((month) => column.monthKeys.includes(month.key))
+                            .reduce((sum, month) => sum + Number(month.revenue || 0), 0))}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: '2px solid #bfdbfe', background: '#eff6ff', fontWeight: 700 }}>
+                    <td colSpan={2} style={{ padding: '8px' }}>Mapped Customer Sales → Income Statement</td>
+                    {customerForecastColumns.map((column) => (
+                      <td key={`mapped-total-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
+                        {formatCurrency(customerForecastSchedule.rows.reduce((sum, customer) => sum + customer.months
+                          .filter((month) => column.monthKeys.includes(month.key))
+                          .reduce((monthSum, month) => monthSum + Number(month.revenue || 0), 0), 0))}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr style={{ background: '#f8fafc', fontWeight: 700 }}>
+                    <td colSpan={2} style={{ padding: '8px' }}>Total Customer Sales</td>
+                    {customerForecastColumns.map((column) => (
+                      <td key={`all-total-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
+                        {formatCurrency(customerForecastSchedule.allRows.reduce((sum, customer) => sum + customer.months
+                          .filter((month) => column.monthKeys.includes(month.key))
+                          .reduce((monthSum, month) => monthSum + Number(month.revenue || 0), 0), 0))}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr style={{ background: '#e0f2fe', fontWeight: 700 }}>
+                    <td colSpan={2} style={{ padding: '8px' }}>EBITDA</td>
+                    {customerForecastColumns.map((column) => (
+                      <td key={`ebitda-customer-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
+                        {formatCurrency(forecastRows
+                          .filter((row) => column.monthKeys.includes(String(row.key)))
+                          .reduce((sum, row) => sum + Number(row.ebitda || 0), 0))}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
