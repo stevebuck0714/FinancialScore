@@ -3589,9 +3589,10 @@ export async function GET(request: NextRequest) {
               cacheType === 'ar-aging' || cacheType === 'ar'
                 ? 'qbd-authoritative-aging-snapshots-v4'
                 : null,
-              // Bust stale ap-aging payloads that were cached while the
-              // payment-gap guard / DerAmtBal preference was missing.
-              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-true-open-balance-v1' : null,
+              // Bust stale AP payloads. Companies explicitly configured with
+              // a balance-sheet anchor must always use books totals, even if
+              // their accounting-system label is not normalized as INFOR_CSI.
+              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-books-anchor-v2' : null,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
@@ -8309,7 +8310,11 @@ export async function GET(request: NextRequest) {
         let apLedgerLagDays: number | null = null;
         let booksApAtLedgerAsOf: number | null = null;
         const apAnchorCfgForTrend = getApBalanceSheetAnchorConfig(companyId);
-        if (isInforGlCompany && apAnchorCfgForTrend) {
+        // An explicit AP anchor is the source-of-truth configuration for the
+        // company. Do not also depend on an accounting-system display label:
+        // a legacy or non-normalized label must not expose stale or incomplete
+        // voucher-aging snapshots as the AP total.
+        if (apAnchorCfgForTrend) {
           // Prefer books-validated open bills. If CSI remaining balances are
           // missing/sparse, use DFS.ap (GL books) for Total AP / trend — never
           // the incomplete Type=V/P aging-rule reconstruction (~2x books).
