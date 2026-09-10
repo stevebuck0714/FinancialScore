@@ -151,44 +151,29 @@ function chunks<T>(rows: T[]): T[][] {
 }
 
 async function loadRawApRecords(companyId: string): Promise<RawApRecord[]> {
-  const rows: RawApRecord[] = [];
-  let cursor: string | undefined;
-  while (true) {
-    const page = await prisma.inforRawRecord.findMany({
-      where: {
-        companyId,
-        platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-        // Older CSI raw pages are consistently tagged module=AP but retain
-        // mixed or endpoint-derived program identifiers. Include that
-        // durable module classification, then strictly filter the supported
-        // source programs during row normalization below.
-        OR: [
-          {
-            miProgram: {
-              in: [
-                'SLVCHHDRS', 'SLVchHdrs', 'SLVchhdrs',
-                'SLAPPMTS', 'SLAppmts',
-                'SLAPTRXP', 'SLAptrxp',
-                'SLAPTRXPS', 'SLAptrxps',
-                'SLAPTRX', 'SLAptrx',
-                'SLAPTRXS', 'SLAptrxs',
-              ],
-            },
-          },
-          { module: { equals: 'ap', mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        id: true, platform: true, miProgram: true, sourceRecordId: true, sourceRecordHash: true, payload: true,
-      },
-      orderBy: { id: 'asc' },
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      take: 5_000,
-    });
-    rows.push(...page);
-    if (page.length < 5_000) return rows;
-    cursor = page[page.length - 1].id;
-  }
+  // Historical syncs persist the same CSI page on many business dates. Pick
+  // one current copy per source program + source identity inside Postgres,
+  // rather than loading every replay copy into Node before deduplicating.
+  return prisma.$queryRawUnsafe<RawApRecord[]>(
+    `SELECT DISTINCT ON (
+       UPPER(COALESCE("miProgram", '')),
+       COALESCE(NULLIF("sourceRecordId", ''), NULLIF("sourceRecordHash", ''), id)
+     )
+       id, platform, "miProgram", "sourceRecordId", "sourceRecordHash", payload
+     FROM "InforRawRecord"
+     WHERE "companyId" = $1
+       AND platform IN ('INFOR_M3', 'INFOR_CSI')
+       AND (
+         UPPER(COALESCE(module, '')) = 'AP'
+         OR UPPER(COALESCE("miProgram", '')) ~ 'SL(VCHHDRS|APPMTS|APTRXP|APTRXPS|APTRX|APTRXS)'
+       )
+     ORDER BY
+       UPPER(COALESCE("miProgram", '')),
+       COALESCE(NULLIF("sourceRecordId", ''), NULLIF("sourceRecordHash", ''), id),
+       "fetchedAt" DESC,
+       id DESC`,
+    companyId
+  );
 }
 
 function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
