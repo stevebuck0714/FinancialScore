@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { parseHistoricalRebuildRange } from '@/lib/infor-m3/historical-rebuild';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
-import { enqueueArHistoryRebuildRun, isInforSyncQueueEnabled } from '@/lib/infor-m3/sync-queue';
+import { enqueueApHistoryRebuildRun, isInforSyncQueueEnabled } from '@/lib/infor-m3/sync-queue';
 import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -17,14 +17,12 @@ export async function POST(request: NextRequest) {
     }
     if (body.confirm !== true) {
       return NextResponse.json(
-        { ok: false, error: 'Explicit confirmation is required to queue an AR history rebuild.' },
+        { ok: false, error: 'Explicit confirmation is required to queue an AP history rebuild.' },
         { status: 400 },
       );
     }
     const site = String(body.site || '').trim();
-    if (!site) {
-      return NextResponse.json({ ok: false, error: 'CSI site is required.' }, { status: 400 });
-    }
+    if (!site) return NextResponse.json({ ok: false, error: 'CSI site is required.' }, { status: 400 });
     const range = parseHistoricalRebuildRange(body);
     if (!isInforSyncQueueEnabled()) {
       return NextResponse.json(
@@ -32,28 +30,20 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
-
-    const run = await enqueueArHistoryRebuildRun({
-      companyId,
-      site,
-      startDate: range.startDate,
-      endDate: range.endDate,
-      workerBaseUrl: request.nextUrl.origin,
+    const run = await enqueueApHistoryRebuildRun({
+      companyId, site, startDate: range.startDate, endDate: range.endDate, workerBaseUrl: request.nextUrl.origin,
     });
     return NextResponse.json({
-      ok: true,
-      companyId,
-      run,
-      message:
-        run.status === 'queued'
-          ? 'AR rebuild queued behind an active Infor run.'
-          : `AR rebuild queued for ${range.startDateIso} through ${range.endDateIso}.`,
+      ok: true, companyId, run,
+      message: run.status === 'queued'
+        ? 'AP rebuild queued behind an active Infor run.'
+        : `AP rebuild queued for ${range.startDateIso} through ${range.endDateIso}.`,
     });
   } catch (error) {
     const details = error instanceof Error ? error.message : 'Unknown error';
     const status = details.includes('Unauthorized') ? 401 : details.includes('Forbidden') ? 403 : 500;
     return NextResponse.json(
-      { ok: false, error: 'Failed to queue AR history rebuild.', details },
+      { ok: false, error: 'Failed to queue AP history rebuild.', details },
       { status: /startDate|endDate|calendar date|Date range/.test(details) ? 400 : status },
     );
   }

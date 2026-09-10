@@ -36,7 +36,24 @@ const DEFAULT_TASK_EXECUTION_TIMEOUT_MS = 270_000;
 const PENDING_TRANSFORM_REPLAY_MODE = 'pending_transform_replay';
 const FINANCIAL_MAPPING_REBUILD_MODE = 'financial_mapping_rebuild';
 const AR_HISTORY_REBUILD_MODE = 'ar_history_rebuild';
+const AP_HISTORY_REBUILD_MODE = 'ap_history_rebuild';
 const FINANCIAL_MAPPING_REBUILD_CHUNK_SIZE = 30;
+/** Maximum selectable calendar window for a targeted ledger rebuild. */
+export const MAX_TARGETED_LEDGER_REBUILD_DAYS = 366;
+
+function assertTargetedLedgerRebuildRange(startDate: Date, endDate: Date, ledger: string): void {
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
+    throw new Error(`${ledger} rebuild requires a valid start date.`);
+  }
+  if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) {
+    throw new Error(`${ledger} rebuild requires a valid end date.`);
+  }
+  if (startDate > endDate) throw new Error(`${ledger} rebuild start date must be on or before end date.`);
+  const calendarDays = Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1;
+  if (calendarDays > MAX_TARGETED_LEDGER_REBUILD_DAYS) {
+    throw new Error(`${ledger} rebuild date range cannot exceed ${MAX_TARGETED_LEDGER_REBUILD_DAYS} calendar days.`);
+  }
+}
 
 type QueueRunRecord = {
   id: string;
@@ -476,11 +493,14 @@ export async function enqueueFinancialMappingRebuildRun(input: {
 export async function enqueueArHistoryRebuildRun(input: {
   companyId: string;
   site: string;
+  startDate: Date;
+  endDate: Date;
   workerBaseUrl?: string;
 }): Promise<{ runId: string; status: string }> {
   const companyId = String(input.companyId || '').trim();
   const site = String(input.site || '').trim();
-  if (!companyId || !site) throw new Error('Atlantic AR rebuild requires companyId and CSI site.');
+  if (!companyId || !site) throw new Error('AR rebuild requires companyId and CSI site.');
+  assertTargetedLedgerRebuildRange(input.startDate, input.endDate, 'AR');
 
   const activeRun = await db().inforSyncRun.findFirst({
     where: {
@@ -490,7 +510,6 @@ export async function enqueueArHistoryRebuildRun(input: {
     },
     select: { id: true },
   });
-  const now = new Date();
   const runId = randomUUID();
   const status = activeRun ? 'queued' : 'running';
   await db().$transaction(async (tx) => {
@@ -503,12 +522,12 @@ export async function enqueueArHistoryRebuildRun(input: {
         frequency: 'daily',
         site,
         mode: AR_HISTORY_REBUILD_MODE,
-        startDate: new Date('2023-01-01T00:00:00.000Z'),
-        endDate: now,
+        startDate: input.startDate,
+        endDate: input.endDate,
         message:
           status === 'queued'
-            ? 'Atlantic AR history rebuild queued behind active Infor sync.'
-            : 'Atlantic AR history rebuild staging SLARTRANS data.',
+            ? 'AR history rebuild queued behind active Infor sync.'
+            : 'AR history rebuild staging SLARTRANS data.',
       },
     });
     await tx.inforSyncTask.create({
@@ -520,8 +539,8 @@ export async function enqueueArHistoryRebuildRun(input: {
         payload: {
           mode: AR_HISTORY_REBUILD_MODE,
           site,
-          startDate: '2023-01-01T00:00:00.000Z',
-          endDate: now.toISOString(),
+          startDate: input.startDate.toISOString(),
+          endDate: input.endDate.toISOString(),
           arOnlyBackfill: true,
           fullArFactHistory: true,
           forceIngestOnly: true,
@@ -535,20 +554,69 @@ export async function enqueueArHistoryRebuildRun(input: {
   return { runId, status };
 }
 
-async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
+export async function enqueueApHistoryRebuildRun(input: {
+  companyId: string;
+  site: string;
+  startDate: Date;
+  endDate: Date;
+  workerBaseUrl?: string;
+}): Promise<{ runId: string; status: string }> {
+  const companyId = String(input.companyId || '').trim();
+  const site = String(input.site || '').trim();
+  if (!companyId || !site) throw new Error('AP rebuild requires companyId and CSI site.');
+  assertTargetedLedgerRebuildRange(input.startDate, input.endDate, 'AP');
+  const activeRun = await db().inforSyncRun.findFirst({
+    where: { companyId, platform: 'INFOR_M3', status: { in: ['queued', 'running'] } },
+    select: { id: true },
+  });
+  const runId = randomUUID();
+  const status = activeRun ? 'queued' : 'running';
+  await db().$transaction(async (tx) => {
+    await tx.inforSyncRun.create({
+      data: {
+        id: runId, companyId, platform: 'INFOR_M3', status, frequency: 'daily', site,
+        mode: AP_HISTORY_REBUILD_MODE, startDate: input.startDate, endDate: input.endDate,
+        message: status === 'queued' ? 'AP history rebuild queued behind active Infor sync.' : 'AP history rebuild staging payment data.',
+      },
+    });
+    await tx.inforSyncTask.create({
+      data: {
+        runId, companyId, status: 'pending', maxAttempts: DEFAULT_MAX_ATTEMPTS,
+        payload: {
+          mode: AP_HISTORY_REBUILD_MODE, site,
+          startDate: input.startDate.toISOString(), endDate: input.endDate.toISOString(),
+          apOnlyBackfill: true, forceIngestOnly: true, allowRawIngestOnly: true,
+          deferDailySnapshotHydration: true, workerBaseUrl: normalizeWorkerBaseUrl(input.workerBaseUrl),
+        },
+      },
+    });
+  });
+  return { runId, status };
+}
+
+async function finalizeArHistoryRebuild(companyId: string, syncRunId: string, startDate: Date, endDate: Date) {
   const stagedRawRecordCount = await db().inforRawRecord.count({
     where: {
       companyId,
       platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+      syncRunId,
       miProgram: { equals: 'SLARTRANS', mode: 'insensitive' },
     },
   });
-  const directFactCount = await db().aRTransactionFact.count({
-    where: { companyId },
-  });
-  if (directFactCount === 0) {
-    throw new Error('No AR transaction facts were written; existing facts were not replaced.');
+  if (stagedRawRecordCount === 0) {
+    throw new Error('AR ingest completed without SLARTRANS source records; existing facts were not replaced.');
   }
+  const [deletedTransactions, deletedPayments] = await db().$transaction([
+    db().aRTransactionFact.deleteMany({ where: { companyId, eventDate: { gte: startDate, lte: endDate } } }),
+    db().aRPaymentFact.deleteMany({ where: { companyId, paymentDate: { gte: startDate, lte: endDate } } }),
+  ]);
+  const transformed = await transformInforM3RawRun({
+    companyId, syncRunId, frequency: 'daily', batchSize: 5000, arFactsOnly: true,
+  });
+  if (!transformed.success) throw new Error(`AR fact transform failed: ${transformed.errors.join('; ')}`);
+  const directFactCount = await db().aRTransactionFact.count({
+    where: { companyId, eventDate: { gte: startDate, lte: endDate } },
+  });
 
   const books = await db().dailyFinancialSnapshot.findFirst({
     where: { companyId, frequency: 'daily' },
@@ -578,11 +646,41 @@ async function finalizeArHistoryRebuild(companyId: string, syncRunId: string) {
   return {
     stagedRawRecordCount,
     directFactCount,
+    deletedTransactions: deletedTransactions.count,
+    deletedPayments: deletedPayments.count,
+    transformed,
     booksArAsOf: books?.snapshotDate.toISOString().slice(0, 10) ?? null,
     booksAr,
     reconstructedOpenAr,
     difference: booksAr - reconstructedOpenAr,
   };
+}
+
+async function finalizeApHistoryRebuild(companyId: string, syncRunId: string, startDate: Date, endDate: Date) {
+  const stagedRawRecordCount = await db().inforRawRecord.count({
+    where: {
+      companyId, platform: { in: ['INFOR_M3', 'INFOR_CSI'] }, syncRunId,
+      miProgram: { in: ['SLAPTRXPS', 'SLAptrxps'] },
+    },
+  });
+  if (stagedRawRecordCount === 0) {
+    throw new Error('AP ingest completed without SLAPTRXPS source records; existing payment facts were not replaced.');
+  }
+  const [deletedPaymentFacts, deletedPaymentEvents] = await db().$transaction([
+    db().aPPaymentFact.deleteMany({ where: { companyId, paymentDate: { gte: startDate, lte: endDate } } }),
+    db().aPTransactionFact.deleteMany({ where: { companyId, transType: 'P', eventDate: { gte: startDate, lte: endDate } } }),
+  ]);
+  const transformed = await transformInforM3RawRun({
+    companyId,
+    syncRunId,
+    frequency: 'daily',
+    batchSize: 5000,
+    // Preserve voucher headers: this range recovery replaces only payment
+    // facts and P events, matching the safe AP rebuild script behavior.
+    apPaymentsOnly: true,
+  });
+  if (!transformed.success) throw new Error(`AP fact transform failed: ${transformed.errors.join('; ')}`);
+  return { stagedRawRecordCount, deletedPaymentFacts: deletedPaymentFacts.count, deletedPaymentEvents: deletedPaymentEvents.count, transformed };
 }
 
 export async function hasPendingFinancialMappingRebuildRuns(): Promise<boolean> {
@@ -1783,10 +1881,11 @@ async function processTask(
 
     if (Number(runUpdated?.count || 0) === 1 && hasMore && cursor) {
       const nextPayload = buildTaskPayload(task.run, {
-        ...(String(task.run.mode || '') === AR_HISTORY_REBUILD_MODE
+        ...([AR_HISTORY_REBUILD_MODE, AP_HISTORY_REBUILD_MODE].includes(String(task.run.mode || ''))
           ? {
-              arOnlyBackfill: true,
-              fullArFactHistory: true,
+              ...(String(task.run.mode || '') === AR_HISTORY_REBUILD_MODE
+                ? { arOnlyBackfill: true, fullArFactHistory: true }
+                : { apOnlyBackfill: true }),
               forceIngestOnly: true,
               allowRawIngestOnly: true,
               deferDailySnapshotHydration: true,
@@ -1838,12 +1937,20 @@ async function processTask(
   // terminal signal. `hasMore` is an upstream-response hint and can disagree
   // with the queue when its final task drains, which would skip the one-shot
   // AR fact rebuild while reporting generic completion.
-  const terminalArHistoryRebuild =
+  const terminalLedgerHistoryRebuild =
     runCompletedInThisTask &&
-    String(task.run.mode || '').trim().toLowerCase() === AR_HISTORY_REBUILD_MODE;
-  if (terminalArHistoryRebuild) {
+    [AR_HISTORY_REBUILD_MODE, AP_HISTORY_REBUILD_MODE].includes(String(task.run.mode || '').trim().toLowerCase());
+  if (terminalLedgerHistoryRebuild) {
     try {
-      const reconciliation = await finalizeArHistoryRebuild(task.companyId, task.runId);
+      const startDate = new Date(task.run.startDate || taskPayload.startDate || '');
+      const endDate = new Date(task.run.endDate || taskPayload.endDate || '');
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        throw new Error('Historical ledger rebuild finalizer is missing its validated date range.');
+      }
+      const isAr = String(task.run.mode || '').trim().toLowerCase() === AR_HISTORY_REBUILD_MODE;
+      const reconciliation = isAr
+        ? await finalizeArHistoryRebuild(task.companyId, task.runId, startDate, endDate)
+        : await finalizeApHistoryRebuild(task.companyId, task.runId, startDate, endDate);
       const now = new Date();
       await db().$transaction([
         db().inforSyncTask.update({
@@ -1853,18 +1960,20 @@ async function processTask(
         db().inforSyncRun.update({
           where: { id: task.runId },
           data: {
-            message:
-              `Atlantic AR rebuild complete. Books AR ${reconciliation.booksAr.toFixed(2)}; ` +
-              `reconstructed AR ${reconciliation.reconstructedOpenAr.toFixed(2)}; ` +
-              `difference ${reconciliation.difference.toFixed(2)}.`,
+            message: isAr
+              ? `AR rebuild complete for ${startDate.toISOString().slice(0, 10)}–${endDate.toISOString().slice(0, 10)}. ` +
+                `Books AR ${reconciliation.booksAr.toFixed(2)}; reconstructed AR ${reconciliation.reconstructedOpenAr.toFixed(2)}; ` +
+                `difference ${reconciliation.difference.toFixed(2)}.`
+              : `AP payment rebuild complete for ${startDate.toISOString().slice(0, 10)}–${endDate.toISOString().slice(0, 10)}. ` +
+                `${reconciliation.deletedPaymentFacts} payment facts and ${reconciliation.deletedPaymentEvents} payment events replaced.`,
             updatedAt: now,
           },
         }),
       ]);
       return { runId: task.runId, taskId: task.id, status: 'success' };
     } catch (error) {
-      const details = errorToMessage(error, 'Atlantic AR history rebuild failed');
-      await markRunPostProcessingFailure(task, 'Atlantic AR history rebuild', details);
+      const details = errorToMessage(error, 'Historical ledger rebuild failed');
+      await markRunPostProcessingFailure(task, 'historical ledger rebuild', details);
       return { runId: task.runId, taskId: task.id, status: 'failed', details };
     }
   }

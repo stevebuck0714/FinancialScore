@@ -461,7 +461,7 @@ export default function SiteAdminDashboard(props: any) {
     inforCredentials, setInforCredentials, inforProbePath, setInforProbePath, inforProbeSummary,
     inforOperationalSyncStatus,
     checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3, runInforM3OperationalSync, resetInforM3OperationalSyncState,
-    queueAtlanticArHistoryRebuild,
+    queueInforLedgerHistoryRebuild,
     runPlatformOperationalSync,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
@@ -475,6 +475,29 @@ export default function SiteAdminDashboard(props: any) {
   const [standaloneBusinessesLoading, setStandaloneBusinessesLoading] = React.useState(false);
   const [siteAdminCreateBusy, setSiteAdminCreateBusy] = React.useState(false);
   const [siteAdminCreateError, setSiteAdminCreateError] = React.useState<string | null>(null);
+  const [historicalRebuildRanges, setHistoricalRebuildRanges] = React.useState<Record<string, { startDate: string; endDate: string }>>({});
+  const getHistoricalRebuildRange = (companyId: string) =>
+    historicalRebuildRanges[companyId] || { startDate: '', endDate: '' };
+  const setHistoricalRebuildRange = (companyId: string, patch: Partial<{ startDate: string; endDate: string }>) =>
+    setHistoricalRebuildRanges((current) => ({
+      ...current,
+      [companyId]: { ...getHistoricalRebuildRange(companyId), ...patch },
+    }));
+  const queueHistoricalLedgerRebuild = (company: any, ledger: 'ar' | 'ap') => {
+    const site = requireCompanyCsiSite(company.id);
+    if (!site) return;
+    const range = getHistoricalRebuildRange(company.id);
+    if (!range.startDate || !range.endDate) {
+      alert('Enter both start and end dates (YYYY-MM-DD) for the targeted rebuild.');
+      return;
+    }
+    const label = ledger.toUpperCase();
+    const arNote = 'Only AR facts in this date range are replaced; facts outside the range are preserved.';
+    if (!confirm(`Queue ${label} history rebuild for ${range.startDate} through ${range.endDate}? ${ledger === 'ar' ? arNote : 'Only AP payment facts and payment events in this date range are replaced.'}`)) {
+      return;
+    }
+    queueInforLedgerHistoryRebuild?.(company.id, site, ledger, range.startDate, range.endDate);
+  };
   React.useEffect(() => {
     let isMounted = true;
     fetch('/api/referral-partners')
@@ -7695,26 +7718,13 @@ export default function SiteAdminDashboard(props: any) {
                                                       >
                                                         {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
                                                       </button>
-                                                      {isAtlanticPrecisionCompany(company.id) && (
-                                                        <button
-                                                          onClick={() => {
-                                                            const site = requireCompanyCsiSite(company.id);
-                                                            if (!site) return;
-                                                            if (!confirm(
-                                                              'Queue the Atlantic AR history rebuild? It will stage SLARTRANS history first, then replace only Atlantic AR transaction and payment facts.'
-                                                            )) {
-                                                              return;
-                                                            }
-                                                            queueAtlanticArHistoryRebuild?.(company.id, site);
-                                                          }}
-                                                          disabled={inforBusy}
-                                                          style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '8px 12px', background: '#b45309', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                        >
-                                                          {inforBusy && inforBusyAction === 'ar_history_rebuild'
-                                                            ? 'Queueing AR Rebuild...'
-                                                            : 'Rebuild Atlantic AR History'}
-                                                        </button>
-                                                      )}
+                                                      <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', paddingTop: '4px', borderTop: '1px solid #e2e8f0' }}>
+                                                        <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#64748b' }}>Targeted AR/AP rebuild (maximum 366 calendar days). AR replaces facts only inside this range.</div>
+                                                        <input type="date" aria-label="Historical rebuild start date" value={getHistoricalRebuildRange(company.id).startDate} onChange={(event) => setHistoricalRebuildRange(company.id, { startDate: event.target.value })} disabled={inforBusy} style={{ minWidth: 0, border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px' }} />
+                                                        <input type="date" aria-label="Historical rebuild end date" value={getHistoricalRebuildRange(company.id).endDate} onChange={(event) => setHistoricalRebuildRange(company.id, { endDate: event.target.value })} disabled={inforBusy} style={{ minWidth: 0, border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px' }} />
+                                                        <button onClick={() => queueHistoricalLedgerRebuild(company, 'ar')} disabled={inforBusy} style={{ padding: '8px 10px', background: '#b45309', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}>{inforBusy && inforBusyAction === 'ar_history_rebuild' ? 'Queueing AR...' : 'Rebuild AR Range'}</button>
+                                                        <button onClick={() => queueHistoricalLedgerRebuild(company, 'ap')} disabled={inforBusy} style={{ padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}>{inforBusy && inforBusyAction === 'ap_history_rebuild' ? 'Queueing AP...' : 'Rebuild AP Range'}</button>
+                                                      </div>
                                                     </div>
                                                   </div>
                                                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: '#f8fafc', gridColumn: '4', gridRow: '1' }}>
@@ -11085,26 +11095,13 @@ export default function SiteAdminDashboard(props: any) {
                                               >
                                                 {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
                                               </button>
-                                              {isAtlanticPrecisionCompany(businessCompany.id, businessCompany.name) && (
-                                                <button
-                                                  onClick={() => {
-                                                    const site = requireCompanyCsiSite(businessCompany.id);
-                                                    if (!site) return;
-                                                    if (!confirm(
-                                                      'Queue the Atlantic AR history rebuild? It will stage SLARTRANS history first, then replace only Atlantic AR transaction and payment facts.'
-                                                    )) {
-                                                      return;
-                                                    }
-                                                    queueAtlanticArHistoryRebuild?.(businessCompany.id, site);
-                                                  }}
-                                                  disabled={inforBusy}
-                                                  style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '8px 12px', background: '#b45309', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                >
-                                                  {inforBusy && inforBusyAction === 'ar_history_rebuild'
-                                                    ? 'Queueing AR Rebuild...'
-                                                    : 'Rebuild Atlantic AR History'}
-                                                </button>
-                                              )}
+                                              <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', paddingTop: '4px', borderTop: '1px solid #e2e8f0' }}>
+                                                <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#64748b' }}>Targeted AR/AP rebuild (maximum 366 calendar days). AR replaces facts only inside this range.</div>
+                                                <input type="date" aria-label="Historical rebuild start date" value={getHistoricalRebuildRange(businessCompany.id).startDate} onChange={(event) => setHistoricalRebuildRange(businessCompany.id, { startDate: event.target.value })} disabled={inforBusy} style={{ minWidth: 0, border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px' }} />
+                                                <input type="date" aria-label="Historical rebuild end date" value={getHistoricalRebuildRange(businessCompany.id).endDate} onChange={(event) => setHistoricalRebuildRange(businessCompany.id, { endDate: event.target.value })} disabled={inforBusy} style={{ minWidth: 0, border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px' }} />
+                                                <button onClick={() => queueHistoricalLedgerRebuild(businessCompany, 'ar')} disabled={inforBusy} style={{ padding: '8px 10px', background: '#b45309', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}>{inforBusy && inforBusyAction === 'ar_history_rebuild' ? 'Queueing AR...' : 'Rebuild AR Range'}</button>
+                                                <button onClick={() => queueHistoricalLedgerRebuild(businessCompany, 'ap')} disabled={inforBusy} style={{ padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}>{inforBusy && inforBusyAction === 'ap_history_rebuild' ? 'Queueing AP...' : 'Rebuild AP Range'}</button>
+                                              </div>
                                             </div>
                                           </div>
                                           <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white', gridColumn: '4', gridRow: '1' }}>

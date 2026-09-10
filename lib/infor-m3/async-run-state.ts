@@ -8,7 +8,7 @@ export type InforOperationalAsyncRun = {
   companyId: string;
   frequency: 'daily' | 'weekly' | 'monthly';
   site?: string;
-  mode?: 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill';
+  mode?: 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill' | 'ar_history_rebuild' | 'ap_history_rebuild';
   backfillMonths?: number;
   lookbackDays?: number;
   startDate?: string;

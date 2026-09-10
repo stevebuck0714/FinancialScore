@@ -297,7 +297,7 @@ type InforOperationalSyncStatus = {
   companyId: string;
   syncRunId: string;
   state: 'running' | 'done' | 'failed';
-  runMode: 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill' | 'ar_history_rebuild' | null;
+  runMode: 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill' | 'ar_history_rebuild' | 'ap_history_rebuild' | null;
   chunkCount: number;
   recordsCreated: number;
   warningCount: number;
@@ -3765,7 +3765,7 @@ function FinancialScorePage() {
   const [inforError, setInforError] = useState<string | null>(null);
   const [inforBusy, setInforBusy] = useState(false);
   const [inforBusyAction, setInforBusyAction] = useState<
-    'connect' | 'save_credentials' | 'test_token' | 'probe' | 'disconnect' | 'operational_sync' | 'operational_sync_reset' | 'ar_history_rebuild' | null
+    'connect' | 'save_credentials' | 'test_token' | 'probe' | 'disconnect' | 'operational_sync' | 'operational_sync_reset' | 'ar_history_rebuild' | 'ap_history_rebuild' | null
   >(null);
   const [inforBusyStartedAt, setInforBusyStartedAt] = useState<number | null>(null);
   const [inforCredentials, setInforCredentials] = useState({
@@ -9192,40 +9192,48 @@ function FinancialScorePage() {
     }
   };
 
-  const queueAtlanticArHistoryRebuild = async (companyId: string, site: string) => {
-    setInforBusyAction('ar_history_rebuild');
+  const queueInforLedgerHistoryRebuild = async (
+    companyId: string,
+    site: string,
+    ledger: 'ar' | 'ap',
+    startDate: string,
+    endDate: string,
+  ) => {
+    const mode = ledger === 'ar' ? 'ar_history_rebuild' : 'ap_history_rebuild';
+    const label = ledger.toUpperCase();
+    setInforBusyAction(mode);
     setInforBusy(true);
     setInforBusyStartedAt(Date.now());
     setInforError(null);
     try {
-      const response = await fetch('/api/infor-m3/rebuild-ar-history', {
+      const response = await fetch(`/api/infor-m3/rebuild-${ledger}-history`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, site, confirm: true }),
+        body: JSON.stringify({ companyId, site, startDate, endDate, confirm: true }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.ok) {
-        throw new Error(data?.details || data?.error || 'Failed to queue Atlantic AR history rebuild.');
+        throw new Error(data?.details || data?.error || `Failed to queue ${label} history rebuild.`);
       }
       const syncRunId = String(data?.run?.runId || '').trim();
-      if (!syncRunId) throw new Error('AR rebuild queue did not return a run ID.');
+      if (!syncRunId) throw new Error(`${label} rebuild queue did not return a run ID.`);
       setInforOperationalSyncStatus({
         companyId,
         syncRunId,
         state: 'running',
-        runMode: 'ar_history_rebuild',
+        runMode: mode,
         chunkCount: 0,
         recordsCreated: 0,
         warningCount: 0,
         lastChunkAt: new Date().toISOString(),
         lastStatusText: 'queued',
-        message: String(data?.message || 'Atlantic AR rebuild queued.'),
+        message: String(data?.message || `${label} rebuild queued.`),
         lastError: null,
         recentlyActive: true,
       });
-      alert('Atlantic AR rebuild queued. It will stage history before replacing Atlantic AR facts.');
+      alert(`${label} rebuild queued. It will stage history before replacing facts in the selected date range.`);
     } catch (error: any) {
-      const message = error?.message || 'Failed to queue Atlantic AR history rebuild.';
+      const message = error?.message || `Failed to queue ${label} history rebuild.`;
       setInforError(message);
       alert(message);
     } finally {
@@ -15020,7 +15028,7 @@ function FinancialScorePage() {
               probeInforM3={probeInforM3}
               disconnectInforM3={disconnectInforM3}
               runInforM3OperationalSync={runInforM3OperationalSync}
-              queueAtlanticArHistoryRebuild={queueAtlanticArHistoryRebuild}
+              queueInforLedgerHistoryRebuild={queueInforLedgerHistoryRebuild}
               resetInforM3OperationalSyncState={resetInforM3OperationalSyncState}
               runPlatformOperationalSync={runPlatformOperationalSync}
               newSiteAdminFirstName={newSiteAdminFirstName}

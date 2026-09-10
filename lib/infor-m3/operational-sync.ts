@@ -10819,12 +10819,15 @@ export async function transformInforM3RawRun(options: {
   reuseCanonicalSlArtrans?: boolean;
   /** Rebuild AR facts without rewriting point-in-time invoice snapshots. */
   arFactsOnly?: boolean;
+  /** Rebuild AP payment events without replaying voucher headers. */
+  apPaymentsOnly?: boolean;
 }): Promise<InforRawTransformResult> {
   const companyId = String(options.companyId || '').trim();
   const syncRunId = String(options.syncRunId || '').trim();
   const frequency = options.frequency || 'daily';
   const reuseCanonicalSlArtrans = options.reuseCanonicalSlArtrans === true;
   const arFactsOnly = options.arFactsOnly === true || reuseCanonicalSlArtrans;
+  const apPaymentsOnly = options.apPaymentsOnly === true;
   const errors: string[] = [];
   if (!companyId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing companyId'] };
   if (!syncRunId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing syncRunId'] };
@@ -10926,6 +10929,15 @@ export async function transformInforM3RawRun(options: {
         const moduleName = String(row.module || '').trim();
         const miProgram = String(row.miProgram || '').trim().toUpperCase();
         if (reuseCanonicalSlArtrans && miProgram !== 'SLARTRANS') continue;
+        // A targeted AP recovery replaces payment events only. Replaying
+        // SLVCHHDRS here can create duplicate voucher-header adjustment rows;
+        // those headers are deliberately preserved outside this recovery path.
+        if (
+          apPaymentsOnly &&
+          !['SLAPPMTS', 'SLAPTRXP', 'SLAPTRXPS', 'SLAPTRX', 'SLAPTRXS'].includes(miProgram)
+        ) {
+          continue;
+        }
         const transaction = String(row.transaction || 'CSI_LOAD').trim() || 'CSI_LOAD';
         const moduleType = classifyModuleFromProgramId(miProgram) ?? classifyModule(moduleName);
         const key = `${moduleType}||${miProgram}||${transaction}`;
