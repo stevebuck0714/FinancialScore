@@ -140,7 +140,7 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
       <div style={{ marginBottom: '18px' }}>
         <h2 style={{ margin: '0 0 6px', color: '#0f172a', fontSize: '22px' }}>Talent & Employer Intelligence</h2>
         <div style={{ color: '#64748b', fontSize: '13px' }}>
-          HubSpot recruiting CRM activity · As of {summary.asOf ? formatEstDateTime(summary.asOf) : '—'}
+          HubSpot sales CRM activity · As of {summary.asOf ? formatEstDateTime(summary.asOf) : '—'}
         </div>
       </div>
       {sectionEnabled('salesPipelineSummary') && (
@@ -150,7 +150,7 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
             ['Employer Companies', number.format(Number(data?.companies?.records?.length || 0))],
             ['Candidate–Employer Links', number.format(Number(crmReports.candidateEmployerLinks?.employerLinks || 0))],
             ['Candidates Recently Touched', number.format(Number(crmReports.engagementCoverage?.contactsWithSalesActivity || 0))],
-            ['Recruiting Activities', number.format(Number(summary.activityCount || 0))],
+            ['Sales Activities', number.format(Number(summary.activityCount || 0))],
           ].map(([label, value]) => (
             <div key={label} style={{ ...reportStyle, marginBottom: 0 }}>
               <div style={{ color: '#64748b', fontSize: '12px', fontWeight: 700 }}>{label}</div>
@@ -189,14 +189,14 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '16px' }}>
         <div style={reportStyle}>
-          <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: '16px' }}>Recruiting Activity by Owner</h3>
+          <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: '16px' }}>Sales Activity by Owner</h3>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{sortableHeader('activityOwner', 'owner', 'Owner')}{sortableHeader('activityOwner', 'count', 'Activities')}</tr></thead>
             <tbody>{sortRows(crmReports.activityByOwner || [], 'activityOwner').map((row: any) => <tr key={row.owner}><td style={cellStyle}>{row.owner}</td><td style={cellStyle}>{number.format(row.count)}</td></tr>)}</tbody>
           </table>
         </div>
         <div style={reportStyle}>
-          <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: '16px' }}>Recruiting Activity Status</h3>
+          <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: '16px' }}>Sales Activity Status</h3>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{sortableHeader('activityStatus', 'status', 'Status / Outcome')}{sortableHeader('activityStatus', 'count', 'Activities')}</tr></thead>
             <tbody>{sortRows(crmReports.activityByStatus || [], 'activityStatus').flatMap((row: any) => {
@@ -222,12 +222,12 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center', marginBottom: '12px' }}>
           <div>
             <h3 style={{ margin: '0 0 4px', color: '#0f172a', fontSize: '16px' }}>Employer Directory</h3>
-            <div style={{ color: '#64748b', fontSize: '12px' }}>Current employers, industry classification, lifecycle, and recruiting activity</div>
+            <div style={{ color: '#64748b', fontSize: '12px' }}>Current employers, industry classification, lifecycle, and sales activity</div>
           </div>
           <input value={companySearch} onChange={(event) => { setCompanySearch(event.target.value); setCompanyPage(0); }} placeholder="Search employers" style={{ width: '220px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px 9px', fontSize: '12px' }} />
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{sortableHeader('companies', 'name', 'Employer')}{sortableHeader('companies', 'industry', 'Industry')}{sortableHeader('companies', 'lifecyclestage', 'Lifecycle')}{sortableHeader('companies', 'type', 'Type')}{sortableHeader('companies', 'hs_last_sales_activity_timestamp', 'Last Recruiting Activity')}</tr></thead>
+          <thead><tr>{sortableHeader('companies', 'name', 'Employer')}{sortableHeader('companies', 'industry', 'Industry')}{sortableHeader('companies', 'lifecyclestage', 'Lifecycle')}{sortableHeader('companies', 'type', 'Type')}{sortableHeader('companies', 'hs_last_sales_activity_timestamp', 'Last Sales Activity')}</tr></thead>
           <tbody>{visibleCompanies.map((row: any) => <tr key={row.id}><td style={cellStyle}>{row.properties?.name || '—'}</td><td style={cellStyle}>{row.properties?.industry || '—'}</td><td style={cellStyle}>{row.properties?.lifecyclestage || '—'}</td><td style={cellStyle}>{row.properties?.type || '—'}</td><td style={cellStyle}>{formatHubSpotTimestamp(row.properties?.hs_last_sales_activity_timestamp)}</td></tr>)}</tbody>
         </table>
         {pagination(companyPage, companyRows.length, setCompanyPage)}
@@ -236,7 +236,7 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center', marginBottom: '12px' }}>
           <div>
             <h3 style={{ margin: '0 0 4px', color: '#0f172a', fontSize: '16px' }}>Candidate Directory</h3>
-            <div style={{ color: '#64748b', fontSize: '12px' }}>Prospective hires, current role, lifecycle, source, and recruiting activity</div>
+            <div style={{ color: '#64748b', fontSize: '12px' }}>Prospective hires, current role, lifecycle, source, and sales activity</div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <select value={selectedEmployer} onChange={(event) => { setSelectedEmployer(event.target.value); setContactPage(0); }} style={{ width: '220px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px 9px', fontSize: '12px', background: 'white' }}>
@@ -248,7 +248,7 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{sortableHeader('contacts', 'contact', 'Candidate')}{sortableHeader('contacts', 'email', 'Email')}{sortableHeader('contacts', 'phone', 'Phone')}{sortableHeader('contacts', 'mobilephone', 'Mobile')}{sortableHeader('contacts', 'employer', 'Current Employer')}{sortableHeader('contacts', 'jobtitle', 'Current Role')}{sortableHeader('contacts', 'city', 'City')}{sortableHeader('contacts', 'state', 'State')}{sortableHeader('contacts', 'country', 'Country')}{sortableHeader('contacts', 'lifecyclestage', 'Lifecycle')}{sortableHeader('contacts', 'hs_analytics_source', 'Source')}{sortableHeader('contacts', 'createdate', 'Created')}{sortableHeader('contacts', 'hs_last_sales_activity_timestamp', 'Last Recruiting Activity')}</tr></thead>
+            <thead><tr>{sortableHeader('contacts', 'contact', 'Candidate')}{sortableHeader('contacts', 'email', 'Email')}{sortableHeader('contacts', 'phone', 'Phone')}{sortableHeader('contacts', 'mobilephone', 'Mobile')}{sortableHeader('contacts', 'employer', 'Current Employer')}{sortableHeader('contacts', 'jobtitle', 'Current Role')}{sortableHeader('contacts', 'city', 'City')}{sortableHeader('contacts', 'state', 'State')}{sortableHeader('contacts', 'country', 'Country')}{sortableHeader('contacts', 'lifecyclestage', 'Lifecycle')}{sortableHeader('contacts', 'hs_analytics_source', 'Source')}{sortableHeader('contacts', 'createdate', 'Created')}{sortableHeader('contacts', 'hs_last_sales_activity_timestamp', 'Last Sales Activity')}</tr></thead>
             <tbody>{visibleContacts.map((row: any) => <tr key={row.id}><td style={cellStyle}>{[row.properties?.firstname, row.properties?.lastname].filter(Boolean).join(' ') || '—'}</td><td style={cellStyle}>{row.properties?.email || '—'}</td><td style={cellStyle}>{row.properties?.phone || '—'}</td><td style={cellStyle}>{row.properties?.mobilephone || '—'}</td><td style={cellStyle}>{contactEmployer(row)}</td><td style={cellStyle}>{row.properties?.jobtitle || '—'}</td><td style={cellStyle}>{row.properties?.city || '—'}</td><td style={cellStyle}>{row.properties?.state || '—'}</td><td style={cellStyle}>{row.properties?.country || '—'}</td><td style={cellStyle}>{row.properties?.lifecyclestage || '—'}</td><td style={cellStyle}>{row.properties?.hs_analytics_source || '—'}</td><td style={cellStyle}>{formatHubSpotTimestamp(row.properties?.createdate)}</td><td style={cellStyle}>{formatHubSpotTimestamp(row.properties?.hs_last_sales_activity_timestamp)}</td></tr>)}</tbody>
           </table>
         </div>
@@ -258,7 +258,7 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
       <div style={reportStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center', marginBottom: '12px' }}>
           <div>
-            <h3 style={{ margin: '0 0 4px', color: '#0f172a', fontSize: '16px' }}>Recruiting Activity Detail</h3>
+            <h3 style={{ margin: '0 0 4px', color: '#0f172a', fontSize: '16px' }}>Sales Activity Detail</h3>
             <div style={{ color: '#64748b', fontSize: '12px' }}>Individual HubSpot calls, meetings, and candidate tasks</div>
           </div>
           <input value={activitySearch} onChange={(event) => { setActivitySearch(event.target.value); setActivityPage(0); }} placeholder="Search activities" style={{ width: '220px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px 9px', fontSize: '12px' }} />
@@ -281,7 +281,7 @@ export default function HubSpotSalesTab({ selectedCompanyId, operationalHubSecti
         )}
         {sectionEnabled('salesActivitySummary') && (
           <div style={reportStyle}>
-            <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: '16px' }}>Recruiting Activity</h3>
+            <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: '16px' }}>Sales Activity</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>{sortableHeader('activities', 'type', 'Activity')}{sortableHeader('activities', 'count', 'Count')}</tr></thead>
               <tbody>{sortRows(data?.activities || [], 'activities').map((row: any) => <tr key={row.type}><td style={cellStyle}>{String(row.type).replace(/^./, (value: string) => value.toUpperCase())}</td><td style={cellStyle}>{number.format(row.count)}</td></tr>)}</tbody>
