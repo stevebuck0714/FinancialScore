@@ -2106,6 +2106,10 @@ function shouldPersistGlobalRawSourceRecordId(miProgram: string | null | undefin
     'SLAPTRXPS',
     'SLAPTRXS',
     'SLAPPMTS',
+    // Voucher headers are also re-read during targeted AP recoveries. Their
+    // stable CSI _ItemId must not trip the global raw-record unique index,
+    // because the AP transform reads records scoped to the current recovery run.
+    'SLVCHHDRS',
   ].includes(programId);
 }
 
