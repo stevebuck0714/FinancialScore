@@ -90,7 +90,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'time_utilization', label: 'Workforce / Time', dataType: 'labor-scheduling' },
   { key: 'labor_scheduling', label: 'Labor & Scheduling', dataType: 'labor-scheduling' },
   { key: 'hiring', label: 'Hiring', dataType: 'hiring' },
-  { key: 'hubspot_sales', label: 'Sales' },
+  { key: 'hubspot_sales', label: 'Recruiting' },
   { key: 'payroll', label: 'Payroll', dataType: 'payroll' },
   { key: 'todays_operations', label: "Today's Operations", dataType: 'payroll-bureau-ops' },
   { key: 'payroll_performance', label: 'Payroll Performance', dataType: 'payroll-bureau-ops' },

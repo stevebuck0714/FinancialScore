@@ -26,30 +26,30 @@ export const COGENT_SCIENTIFIC_COMPANY_IDS = new Set([
 export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   {
     key: 'salesPipelineSummary',
-    label: 'Pipeline Summary',
+    label: 'Talent Overview',
     tabKey: 'hubspot_sales',
-    group: 'Sales',
+    group: 'Recruiting',
     sectorCategories: ['56'],
   },
   {
     key: 'salesDealsByStage',
     label: 'Deals by Stage',
     tabKey: 'hubspot_sales',
-    group: 'Sales',
+    group: 'Recruiting',
     sectorCategories: ['56'],
   },
   {
     key: 'salesRepLeaderboard',
-    label: 'Rep Leaderboard',
+    label: 'Recruiter Activity',
     tabKey: 'hubspot_sales',
-    group: 'Sales',
+    group: 'Recruiting',
     sectorCategories: ['56'],
   },
   {
     key: 'salesActivitySummary',
-    label: 'Sales Activity',
+    label: 'Recruiting Activity',
     tabKey: 'hubspot_sales',
-    group: 'Sales',
+    group: 'Recruiting',
     sectorCategories: ['56'],
   },
   {

@@ -2167,7 +2167,7 @@ export default function OperationsTab({
     (activeTab === 'forecast' && activeAccrualBasisForecastTab === 'cash-forecast') ||
     activeTab === 'working_capital_forecast' ||
     activeTab === 'working-capital-forecast';
-  const isFullWidthOpsViewActive = isWholesaleRevenueForecastViewActive || isThirteenWeekCashForecastViewActive;
+  const isFullWidthOpsViewActive = isWholesaleRevenueForecastViewActive || isThirteenWeekCashForecastViewActive || activeTab === 'hubspot_sales';
 
   const selectedWholesaleRawCustomer =
     wholesaleRawCustomers.find((customer) => customer.key === wholesaleRawCustomerFilter) || null;

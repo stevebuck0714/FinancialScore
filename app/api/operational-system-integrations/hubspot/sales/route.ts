@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
+import { formatEstDate } from '@/lib/time/eastern';
 import {
   fetchHubSpotPages,
-  fetchHubSpotObjectCount,
   HubSpotDeal,
   hubSpotOwnerName,
   HubSpotOwner,
@@ -14,17 +14,40 @@ export const dynamic = 'force-dynamic';
 
 const DEAL_PROPERTIES = 'amount,dealstage,hubspot_owner_id,closedate,createdate,hs_is_closed_won,hs_is_closed_lost';
 const ACTIVITY_TYPES = ['calls', 'meetings', 'tasks'] as const;
-const CRM_COUNT_DOMAINS = [
-  { domain: 'Companies', objectType: 'companies', label: 'Companies' },
-  { domain: 'Contacts', objectType: 'contacts', label: 'Contacts' },
-  { domain: 'Products', objectType: 'products', label: 'Products' },
-  { domain: 'Line Items', objectType: 'line_items', label: 'Line Items' },
-] as const;
+const ACTIVITY_PROPERTIES: Record<(typeof ACTIVITY_TYPES)[number], string> = {
+  calls: 'hs_call_title,hs_call_disposition,hs_call_status,hs_call_duration,hs_timestamp,hubspot_owner_id',
+  meetings: 'hs_meeting_title,hs_meeting_outcome,hs_meeting_start_time,hs_meeting_end_time,hs_timestamp,hubspot_owner_id',
+  tasks: 'hs_task_subject,hs_task_status,hs_task_priority,hs_timestamp,hubspot_owner_id',
+};
+const CONTACT_PROPERTIES = 'firstname,lastname,email,phone,mobilephone,jobtitle,city,state,country,lifecyclestage,hs_analytics_source,createdate,hs_last_sales_activity_timestamp';
+const COMPANY_PROPERTIES = 'name,domain,industry,type,lifecyclestage,createdate,hs_last_sales_activity_timestamp';
 
 const asAmount = (value: unknown) => {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
 };
+
+function countRowsBy(
+  rows: Array<{ properties?: Record<string, string | null | undefined> }>,
+  field: string,
+  label: string
+) {
+  const counts = new Map<string, number>();
+  rows.forEach((row) => {
+    const value = String(row.properties?.[field] || '').trim() || 'Unspecified';
+    counts.set(value, (counts.get(value) || 0) + 1);
+  });
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ [label]: value, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function activityMonth(timestamp: string | null | undefined): string {
+  const raw = String(timestamp || '').trim();
+  if (!raw) return 'Unscheduled';
+  const date = /^\d+$/.test(raw) ? new Date(Number(raw)) : new Date(raw);
+  return Number.isNaN(date.getTime()) ? 'Unscheduled' : formatEstDate(date).slice(0, 7);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -52,38 +75,45 @@ export async function GET(request: NextRequest) {
     const includeDeals = domainEnabled('Deals & Pipeline');
     const includeOwners = domainEnabled('Deal Owners');
     const includeActivities = domainEnabled('Sales Activities');
-    const crmRecordCounts = await Promise.all(CRM_COUNT_DOMAINS.map(async ({ domain, objectType, label }) => {
-      if (!domainEnabled(domain)) {
-        return { domain, label, count: null, enabled: false, error: null };
-      }
+    const fetchCrmRecords = async (domain: string, objectType: string, properties: string, associations?: string) => {
+      if (!domainEnabled(domain)) return { records: [], enabled: false, error: null };
       try {
         return {
-          domain,
-          label,
-          count: await fetchHubSpotObjectCount(connection.accessToken, objectType),
+          records: await fetchHubSpotPages<HubSpotDeal>(
+            connection.accessToken,
+            `/crm/v3/objects/${objectType}`,
+            { limit: '100', properties, ...(associations ? { associations } : {}) },
+            10
+          ),
           enabled: true,
           error: null,
         };
       } catch (error) {
         return {
-          domain,
-          label,
-          count: null,
+          records: [],
           enabled: true,
           error: error instanceof Error ? error.message : 'HubSpot object query failed.',
         };
       }
-    }));
+    };
+    const [companies, contacts] = await Promise.all([
+      fetchCrmRecords('Companies', 'companies', COMPANY_PROPERTIES),
+      fetchCrmRecords('Contacts', 'contacts', CONTACT_PROPERTIES, 'companies'),
+    ]);
 
     const [deals, owners, activities] = await Promise.all([
       includeDeals ? fetchHubSpotPages<HubSpotDeal>(connection.accessToken, '/crm/v3/objects/deals', { limit: '100', properties: DEAL_PROPERTIES }) : Promise.resolve([] as HubSpotDeal[]),
       includeOwners ? fetchHubSpotPages<HubSpotOwner>(connection.accessToken, '/crm/v3/owners', { limit: '100' }) : Promise.resolve([] as HubSpotOwner[]),
       includeActivities
         ? Promise.all(ACTIVITY_TYPES.map((activityType) =>
-            fetchHubSpotPages<unknown>(connection.accessToken, `/crm/v3/objects/${activityType}`, { limit: '100' }, 1)
-              .then((rows) => ({ activityType, count: rows.length }))
+            fetchHubSpotPages<HubSpotDeal>(
+              connection.accessToken,
+              `/crm/v3/objects/${activityType}`,
+              { limit: '100', properties: ACTIVITY_PROPERTIES[activityType] },
+              10
+            ).then((records) => ({ activityType, count: records.length, records }))
           ))
-        : Promise.resolve([] as Array<{ activityType: string; count: number }>),
+        : Promise.resolve([] as Array<{ activityType: string; count: number; records: HubSpotDeal[] }>),
     ]);
     const ownersById = new Map(owners.map((owner) => [String(owner.id), hubSpotOwnerName(owner)]));
     const stages = new Map<string, { stage: string; dealCount: number; pipelineValue: number }>();
@@ -135,6 +165,59 @@ export async function GET(request: NextRequest) {
       acc[activity.activityType] = activity.count;
       return acc;
     }, {});
+    const activityDetails = activities.flatMap(({ activityType, records }) => records.map((record) => {
+      const properties = record.properties || {};
+      const owner = ownersById.get(String(properties.hubspot_owner_id || '')) || 'Unassigned';
+      if (activityType === 'calls') {
+        return {
+          id: record.id,
+          type: 'Call',
+          subject: String(properties.hs_call_title || '—'),
+          status: String(properties.hs_call_disposition || properties.hs_call_status || '—'),
+          owner,
+          timestamp: properties.hs_timestamp || null,
+          durationSeconds: asAmount(properties.hs_call_duration) || null,
+        };
+      }
+      if (activityType === 'meetings') {
+        return {
+          id: record.id,
+          type: 'Meeting',
+          subject: String(properties.hs_meeting_title || '—'),
+          status: String(properties.hs_meeting_outcome || '—'),
+          owner,
+          timestamp: properties.hs_meeting_start_time || properties.hs_timestamp || null,
+          durationSeconds: null,
+        };
+      }
+      return {
+        id: record.id,
+        type: 'Task',
+        subject: String(properties.hs_task_subject || '—'),
+        status: String(properties.hs_task_status || '—'),
+        owner,
+        timestamp: properties.hs_timestamp || null,
+        durationSeconds: null,
+      };
+    }));
+    const activityRows = activityDetails.map((activity) => ({
+      properties: {
+        owner: activity.owner,
+        status: activity.status,
+        month: activityMonth(activity.timestamp),
+      },
+    }));
+    const contactActivityCount = contacts.records.filter((row) =>
+      Boolean(String(row.properties?.hs_last_sales_activity_timestamp || '').trim())
+    ).length;
+    const companyActivityCount = companies.records.filter((row) =>
+      Boolean(String(row.properties?.hs_last_sales_activity_timestamp || '').trim())
+    ).length;
+    const candidatesWithEmployer = contacts.records.filter((row: any) =>
+      Array.isArray(row.associations?.companies?.results) && row.associations.companies.results.length > 0
+    ).length;
+    const candidateEmployerLinks = contacts.records.reduce((total, row: any) =>
+      total + (Array.isArray(row.associations?.companies?.results) ? row.associations.companies.results.length : 0), 0);
 
     return NextResponse.json({
       ok: true,
@@ -150,7 +233,30 @@ export async function GET(request: NextRequest) {
       reps: Array.from(reps.values()).sort((a, b) => b.openPipeline - a.openPipeline),
       winRateTrend: Array.from(monthly.values()).sort((a, b) => a.period.localeCompare(b.period)),
       activities: ACTIVITY_TYPES.map((activityType) => ({ type: activityType, count: activitySummary[activityType] || 0 })),
-      crmRecordCounts,
+      activityDetails,
+      companies,
+      contacts,
+      crmReports: {
+        contactLifecycle: countRowsBy(contacts.records, 'lifecyclestage', 'lifecycle'),
+        contactSource: countRowsBy(contacts.records, 'hs_analytics_source', 'source'),
+        candidateRoles: countRowsBy(contacts.records, 'jobtitle', 'title'),
+        companyIndustry: countRowsBy(companies.records, 'industry', 'industry'),
+        companyLifecycle: countRowsBy(companies.records, 'lifecyclestage', 'lifecycle'),
+        activityByOwner: countRowsBy(activityRows, 'owner', 'owner'),
+        activityByStatus: countRowsBy(activityRows, 'status', 'status'),
+        activityByMonth: countRowsBy(activityRows, 'month', 'period'),
+        engagementCoverage: {
+          contactsWithSalesActivity: contactActivityCount,
+          contactsWithoutSalesActivity: contacts.records.length - contactActivityCount,
+          companiesWithSalesActivity: companyActivityCount,
+          companiesWithoutSalesActivity: companies.records.length - companyActivityCount,
+        },
+        candidateEmployerLinks: {
+          candidatesWithEmployer,
+          candidatesWithoutEmployer: contacts.records.length - candidatesWithEmployer,
+          employerLinks: candidateEmployerLinks,
+        },
+      },
     });
   } catch (error: any) {
     const message = error?.message || 'Failed to load HubSpot sales data';
