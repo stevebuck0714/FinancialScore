@@ -116,7 +116,9 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
     setForecast((current: any) => {
       const annualGrowthByCustomer = { ...(current?.annualGrowthByCustomer || {}) };
       const growths = [...(annualGrowthByCustomer[key] || Array(4).fill(0))];
-      growths[yearIndex] = value;
+      for (let index = yearIndex; index < growths.length; index += 1) {
+        growths[index] = value;
+      }
       annualGrowthByCustomer[key] = growths;
       return { ...(current || {}), annualGrowthByCustomer };
     });
@@ -174,11 +176,16 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
       {savedAt && <div style={{ marginBottom: '10px', color: '#64748b', fontSize: '11px' }}>Last saved {formatEstDateTime(savedAt)}</div>}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <colgroup>
+            <col style={{ width: '130px' }} />
+            <col style={{ width: '130px' }} />
+            <col style={{ width: '90px' }} />
+          </colgroup>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              <th rowSpan={2} style={{ textAlign: 'left', padding: '8px' }}>Customer</th>
-              <th rowSpan={2} style={{ textAlign: 'left', padding: '8px' }}>Revenue Category</th>
-              <th rowSpan={2} style={{ textAlign: 'right', padding: '8px' }}>Baseline</th>
+              <th rowSpan={2} style={{ width: '130px', textAlign: 'left', padding: '8px' }}>Customer</th>
+              <th rowSpan={2} style={{ width: '130px', textAlign: 'left', padding: '8px' }}>Revenue Category</th>
+              <th rowSpan={2} style={{ width: '90px', textAlign: 'right', padding: '8px' }}>Baseline</th>
               <th colSpan={4} style={{ textAlign: 'center', padding: '8px' }}>Annual Growth Rate</th>
               <th colSpan={4} style={{ textAlign: 'center', padding: '8px' }}>Forecast Sales</th>
             </tr>
@@ -190,14 +197,14 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
           <tbody>
             {customers.map((row) => (
               <tr key={row.key} style={{ borderTop: '1px solid #e2e8f0' }}>
-                <td style={{ padding: '8px', fontWeight: 600 }}>{row.name}</td>
-                <td style={{ padding: '8px' }}>
-                  <select value={row.category} onChange={(event) => updateCategory(row.key, event.target.value)} style={{ width: '180px', padding: '5px', border: '1px solid #cbd5e1', borderRadius: '5px' }}>
+                <td style={{ width: '130px', padding: '8px', fontWeight: 600, overflowWrap: 'anywhere' }}>{row.name}</td>
+                <td style={{ width: '130px', padding: '8px' }}>
+                  <select value={row.category} onChange={(event) => updateCategory(row.key, event.target.value)} style={{ width: '100%', padding: '5px', border: '1px solid #cbd5e1', borderRadius: '5px' }}>
                     <option value="">Unmapped</option>
                     {revenueCategories.map((key) => <option key={key} value={key}>{getFieldDisplayName(key)}</option>)}
                   </select>
                 </td>
-                <td style={{ padding: '8px', textAlign: 'right' }}>{currency(row.baseline)}</td>
+                <td style={{ width: '90px', padding: '8px', textAlign: 'right', whiteSpace: 'nowrap' }}>{currency(row.baseline)}</td>
                 {row.annualGrowthPcts.map((value: number, index: number) => <td key={`${row.key}-growth-${index}`} style={{ padding: '8px', textAlign: 'right' }}><input value={value} onChange={(event) => updateGrowth(row.key, index, event.target.value)} inputMode="decimal" style={{ width: '56px', textAlign: 'right', padding: '4px' }} />%</td>)}
                 {row.projectedAnnual.map((value: number, index: number) => <td key={`${row.key}-projected-${index}`} style={{ padding: '8px', textAlign: 'right' }}>{currency(value)}</td>)}
               </tr>
