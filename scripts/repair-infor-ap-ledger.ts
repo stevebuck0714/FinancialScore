@@ -87,6 +87,19 @@ function parseSourceDate(value: unknown): Date | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return utcDay(value);
   const token = String(value ?? '').trim();
   if (!token) return null;
+  // CSI commonly serializes date fields as `YYYYMMDD HH:mm:ss.sss`, which
+  // Date.parse does not reliably recognize. These are accounting calendar
+  // dates, so preserve the stated day at UTC midnight.
+  const csiCompact = token.match(/^(\d{4})(\d{2})(\d{2})(?:\s+\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?$/);
+  if (csiCompact) {
+    const year = Number(csiCompact[1]);
+    const month = Number(csiCompact[2]);
+    const day = Number(csiCompact[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+      ? date
+      : null;
+  }
   const date = /^\d{4}-\d{2}-\d{2}$/.test(token)
     ? new Date(`${token}T00:00:00.000Z`)
     : new Date(token);
