@@ -2188,11 +2188,8 @@ async function loadDailyOpenBillApTotalsByDate(
 
 /**
  * Compute a daily AP balance series using the customer's stated business rule:
- * "AP rarely if ever goes over N days; assume any voucher older than N days is paid
- *  or written off."
- *
  * For each day D in [rangeStart, rangeEnd]:
- *   AP(D) = Σ over each voucher V whose creation date is in (D - agingDays, D]
+ *   AP(D) = Σ over each voucher V created on or before D
  *           of max(0, Σ events(V) with eventDate ≤ D
  *                    - supplemental unmatched APPaymentFact applied to V)
  *
@@ -2207,10 +2204,6 @@ async function loadDailyOpenBillApTotalsByDate(
  *      of dollars below zero.
  *   2. Reliance on a hard-coded TB anchor that goes stale over time.
  *
- * Validated against the customer's 12/31/2023 TB anchor: returns $723K vs TB
- * $698K (drift +3.6%, well within accounting tolerance). The same window across
- * 9 historical quarter-ends shows a stable, plausible $616K-$999K range.
- *
  * Do not call this when isApPaymentEventLedgerStale() is true — missing Type=P
  * rows make open AP climb without bound.
  */
@@ -2222,7 +2215,6 @@ async function buildDailyApSeriesByAgingRule(
   accountNumber: string | null,
   rangeStart: Date,
   rangeEnd: Date,
-  agingDays: number = 150
 ): Promise<
   Array<{
     snapshotDate: Date;
@@ -2250,8 +2242,6 @@ async function buildDailyApSeriesByAgingRule(
 > {
   const startKey = dateKeyUtc(startOfUtcDay(rangeStart));
   const endKey = dateKeyUtc(startOfUtcDay(rangeEnd));
-  const aging = Number.isFinite(agingDays) && agingDays > 0 ? Math.floor(agingDays) : 150;
-
   // Inlined termsCode-to-days cascade (voucher → vendor → N30 default).
   // Mirrors TERMS_CODE_DAYS / DEFAULT_TERMS_DAYS so the SQL stays in
   // sync with the JS helpers used by buildOpenVouchersByAgingRule.
@@ -2290,7 +2280,6 @@ async function buildDailyApSeriesByAgingRule(
        SELECT voucher, MIN("eventDate")::date AS created_at
        FROM "APTransactionFact"
        WHERE "companyId" = $1 AND "apAcct" = $2 AND "transType" = 'V'
-         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
          AND "eventDate" <= $4::date
        GROUP BY voucher
      ),
@@ -2361,7 +2350,6 @@ async function buildDailyApSeriesByAgingRule(
            AND "paidAmountHome" <> 0
            AND "billNo" IS NOT NULL
            AND TRIM("billNo") <> ''
-           AND "paymentDate" >= ($3::date - INTERVAL '${aging} days')
            AND "paymentDate" <= $4::date
          GROUP BY "billNo", "paymentDate", "vendorName", "paidAmountHome"
        ) d
@@ -2390,8 +2378,7 @@ async function buildDailyApSeriesByAgingRule(
          COALESCE(SUM(CASE WHEN e.dt <= ds.d THEN e.amt ELSE 0 END), 0)::float8 AS event_net
        FROM date_series ds
        JOIN voucher_creates vc
-         ON vc.created_at > (ds.d - INTERVAL '${aging} days')
-        AND vc.created_at <= ds.d
+        ON vc.created_at <= ds.d
        LEFT JOIN event_daily e ON e.voucher = vc.voucher
        GROUP BY ds.d, vc.voucher
      ),
@@ -2402,8 +2389,7 @@ async function buildDailyApSeriesByAgingRule(
          COALESCE(SUM(CASE WHEN p.dt <= ds.d THEN p.amt ELSE 0 END), 0)::float8 AS paid_amt
        FROM date_series ds
        JOIN voucher_creates vc
-         ON vc.created_at > (ds.d - INTERVAL '${aging} days')
-        AND vc.created_at <= ds.d
+        ON vc.created_at <= ds.d
        LEFT JOIN payment_by_voucher_day p ON p.voucher = vc.voucher
        GROUP BY ds.d, vc.voucher
      ),
@@ -2414,8 +2400,7 @@ async function buildDailyApSeriesByAgingRule(
          COALESCE(SUM(CASE WHEN t.dt <= ds.d THEN t.amt ELSE 0 END), 0)::float8 AS paid_in_events
        FROM date_series ds
        JOIN voucher_creates vc
-         ON vc.created_at > (ds.d - INTERVAL '${aging} days')
-        AND vc.created_at <= ds.d
+        ON vc.created_at <= ds.d
        LEFT JOIN type_p_daily t ON t.voucher = vc.voucher
        GROUP BY ds.d, vc.voucher
      ),
@@ -2667,8 +2652,7 @@ async function buildOpenVouchersByAgingRule(
   prismaClient: any,
   companyId: string,
   apAcct: string,
-  asOfDate: Date,
-  agingDays: number = 150
+  asOfDate: Date
 ): Promise<
   Array<{
     voucher: string;
@@ -2685,7 +2669,6 @@ async function buildOpenVouchersByAgingRule(
   }>
 > {
   const asOfKey = dateKeyUtc(startOfUtcDay(asOfDate));
-  const aging = Number.isFinite(agingDays) && agingDays > 0 ? Math.floor(agingDays) : 150;
 
   const rows: Array<{
     voucher: string;
@@ -2706,7 +2689,6 @@ async function buildOpenVouchersByAgingRule(
        WHERE "companyId" = $1
          AND "apAcct" = $2
          AND "transType" = 'V'
-         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
          AND "eventDate" <= $3::date
        GROUP BY voucher
      ),

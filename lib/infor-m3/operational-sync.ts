@@ -7729,16 +7729,17 @@ async function saveAPPayments(
   const stagedRows = records
     .map((record, idx) => {
       const typeToken = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
-      // Typed AP feeds (SLAptrx* / SLVchHdrs) carry payments on Type=P (and sometimes A).
-      // Do not treat voucher/debit/credit headers as payment facts even when AmtPaid is
-      // stamped on them — that double-counts against Type=P and overstates paid AP.
-      if (typeToken && ['V', 'D', 'C'].includes(typeToken)) return null;
-      const billDate = resolveApBillDateFromRecord(record);
-      if (!isApDateWithinHistoryWindow(billDate)) return null;
-      const paymentDate = parseMaybeDate(
-        pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT', 'DistDate', 'CheckDate', 'CreateDate', 'RecordDate'])
-      );
+      // APTransactionFact is the sole ledger for Type=A adjustments. Writing
+      // an adjustment into APPaymentFact as well makes the aging reconstruction
+      // subtract it twice. Only Type=P represents a supplemental payment fact.
+      if (typeToken !== 'P') return null;
+      // Use the same accounting-date precedence as APTransactionFact. Never
+      // derive the payment date from the invoice date or ingestion timestamp.
+      const paymentDate =
+        parseMaybeDate(pickString(record, ['DistDate', 'distDate'])) ||
+        parseMaybeDate(pickString(record, ['RecordDate', 'recordDate']));
       if (!paymentDate) return null;
+      if (!isApDateWithinHistoryWindow(paymentDate)) return null;
       const vendorName =
         pickString(record, ['UbVendName', 'VendaddrName', 'VendorName', ...VENDOR_NAME_KEYS]) || `Unknown Vendor ${idx + 1}`;
       const paidAmountHome = pickNumber(
@@ -10046,7 +10047,20 @@ export async function syncInforM3OperationalData(
                   arApFlow === 'open' || isSlAptrxFamily || isSlVchHdrsProgram;
 
                 if (shouldWriteApTransactionFacts) {
-                  const apFactRows = await saveAPTransactionFacts(companyId, records);
+                  // SLVchHdrs is the canonical voucher-header source. The
+                  // SLAptrx* stream repeats Type=V voucher rows alongside
+                  // payment activity; do not turn those repeats into second
+                  // invoice events. Preserve non-V events (P/A/C/D) from that
+                  // stream so the ledger has actual settlements and credits.
+                  const apFactRecords = isSlAptrxFamily
+                    ? records.filter(
+                        (record) =>
+                          String(pickString(record, ['Type', 'type']) || '')
+                            .trim()
+                            .toUpperCase() !== 'V'
+                      )
+                    : records;
+                  const apFactRows = await saveAPTransactionFacts(companyId, apFactRecords);
                   moduleRecordsCreated += apFactRows;
                 }
                 if (shouldWriteApPayments) {
