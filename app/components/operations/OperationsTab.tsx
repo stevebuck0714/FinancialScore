@@ -939,6 +939,8 @@ export default function OperationsTab({
   const [customerDateRangeSaveStatus, setCustomerDateRangeSaveStatus] = useState<string | null>(null);
   const [customerRevenuePeriodMode, setCustomerRevenuePeriodMode] = useState<'year' | 'quarter' | 'month'>('month');
   const [customerRevenuePeriodKey, setCustomerRevenuePeriodKey] = useState<string>(() => monthKeyFromDateValue(new Date()));
+  const [customerHistoricalGrowthView, setCustomerHistoricalGrowthView] = useState<'monthly' | 'annual'>('monthly');
+  const [selectedCustomerHistoricalGrowthKey, setSelectedCustomerHistoricalGrowthKey] = useState('');
   const [hiddenCustomerTrendSeries, setHiddenCustomerTrendSeries] = useState<Record<string, boolean>>({});
   const [expandedWipCustomers, setExpandedWipCustomers] = useState<Record<string, boolean>>({});
   const [wipLineItemSortKey, setWipLineItemSortKey] = useState<WipLineItemSortKey>('orderId');
@@ -996,7 +998,6 @@ export default function OperationsTab({
   const operationalDataInflightRef = useRef(operationalDataInflightStore);
   const wholesaleProductsReportCacheRef = useRef(wholesaleProductsReportCacheStore);
   const wholesaleProductsReportInflightRef = useRef(wholesaleProductsReportInflightStore);
-  const productTransformCacheRef = useRef(productTransformCacheStore);
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -1672,12 +1673,6 @@ export default function OperationsTab({
   }, [dailyFinancialData, dailyFinancialWindowStart]);
 
   useEffect(() => {
-    if (customerRevenuePeriodMode === 'month') {
-      setCustomerRevenuePeriodKey(monthKeyFromDateValue(endDate || new Date()));
-    }
-  }, [startDate, endDate, frequency, customerData, customerRevenuePeriodMode]);
-
-  useEffect(() => {
     if (!selectedCompanyId) return;
     hasHydratedDateRangeRef.current = false;
     setDateRangeReady(false);
@@ -1996,7 +1991,7 @@ export default function OperationsTab({
     };
   }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
 
-  const loadSummary = async () => {
+  async function loadSummary() {
     try {
       const params = new URLSearchParams({
         companyId: selectedCompanyId,
@@ -2009,7 +2004,7 @@ export default function OperationsTab({
     } catch (err: any) {
       console.warn('Failed to load operational summary:', err?.message || err);
     }
-  };
+  }
 
   const getSalesHistoryStartDate = () => {
     const parsedEnd = parseDateValue(endDate) || new Date();
@@ -2017,7 +2012,7 @@ export default function OperationsTab({
     return start.toISOString().slice(0, 10);
   };
 
-  const fetchOperationalType = async (type: OpsDataType, options?: { refreshConcentration?: boolean }) => {
+  async function fetchOperationalType(type: OpsDataType, options?: { refreshConcentration?: boolean }) {
     const apiType = type === 'sales' ? 'customers' : type;
     const typeLimit = type === 'sales' ? '5000' : apiType === 'products' ? 'all' : apiType === 'customers' ? '500' : '1000';
     const timeoutMs = apiType === 'customers' && options?.refreshConcentration
@@ -2066,7 +2061,7 @@ export default function OperationsTab({
     } finally {
       window.clearTimeout(timeoutId);
     }
-  };
+  }
 
   const resolveWholesaleProductsReportMode = (): WholesaleProductsReportMode => {
     if (resolveModuleKey(activeTab) === 'vendors') return 'vendor';
@@ -2498,10 +2493,10 @@ export default function OperationsTab({
     }
   };
 
-  const fetchOperationalTypeWithCache = async (
+  async function fetchOperationalTypeWithCache(
     type: OpsDataType,
     options?: { preferCache?: boolean; forceRefresh?: boolean; refreshConcentration?: boolean }
-  ) => {
+  ) {
     const preferCache = options?.preferCache === true;
     const forceRefresh = options?.forceRefresh === true;
     const key = buildOperationalDataCacheKey(type);
@@ -2527,7 +2522,7 @@ export default function OperationsTab({
       });
     operationalDataInflightRef.current.set(key, request);
     return request;
-  };
+  }
 
   const activeWholesaleModuleDataType = mapModuleToDataType(activeTab);
   const shouldLoadWholesaleProductsReport =
@@ -2726,7 +2721,7 @@ export default function OperationsTab({
   };
 
   const getCachedProductTransform = (key: string, deps: any[], build: () => any) => {
-    const cached = productTransformCacheRef.current.get(key);
+    const cached = productTransformCacheStore.get(key);
     if (
       cached &&
       cached.deps.length === deps.length &&
@@ -2735,7 +2730,7 @@ export default function OperationsTab({
       return cached.value;
     }
     const value = build();
-    productTransformCacheRef.current.set(key, { deps, value });
+    productTransformCacheStore.set(key, { deps, value });
     return value;
   };
 
@@ -2766,7 +2761,7 @@ export default function OperationsTab({
     return Array.isArray(payload?.unitCostHistory) ? payload.unitCostHistory : [];
   };
 
-  const fetchCashConversionFinancialData = async () => {
+  async function fetchCashConversionFinancialData() {
     const response = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
     if (!response.ok) throw new Error('Failed to load cash conversion financial data');
     const payload = await response.json();
@@ -2790,9 +2785,9 @@ export default function OperationsTab({
         months: normalizedRecords.length,
       },
     };
-  };
+  }
 
-  const loadTabData = async (tab: string) => {
+  async function loadTabData(tab: string) {
     try {
       const type = mapModuleToDataType(tab) || null;
       if (!type) {
@@ -2831,7 +2826,7 @@ export default function OperationsTab({
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
     if (!isBureauExecutiveScorecardEnabled) return;
@@ -4000,6 +3995,79 @@ export default function OperationsTab({
     const customerInvoiceVolumeHistory = summary?.customerHistory?.invoiceVolume || { ...emptyCustomerHistory, valueFormat: 'number' };
     const customerSalesHistoryMonths = Array.isArray(customerSalesHistory?.months) ? customerSalesHistory.months : [];
     const customerSalesHistoryValues = customerSalesHistory?.totalRow?.values || {};
+    const customerHistoricalSalesHistory = summary?.customerHistoricalSales?.sales || emptyCustomerHistory;
+    const customerHistoricalSalesMonths = Array.isArray(customerHistoricalSalesHistory?.months)
+      ? customerHistoricalSalesHistory.months
+      : [];
+    const customerHistoricalSalesRows = Array.isArray(customerHistoricalSalesHistory?.rows)
+      ? customerHistoricalSalesHistory.rows
+      : [];
+    const customerHistoricalGrowthIdentity = (row: any) => {
+      const customerId = String(row?.itemName || '').trim();
+      return customerId
+        ? `id:${customerId}`
+        : `name:${String(row?.label || 'Unknown Customer').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+    };
+    const selectedCustomerHistoricalGrowthRow =
+      customerHistoricalSalesRows.find((row: any) => customerHistoricalGrowthIdentity(row) === selectedCustomerHistoricalGrowthKey)
+      || customerHistoricalSalesRows[0]
+      || null;
+    const selectedCustomerHistoricalGrowthKeyEffective = selectedCustomerHistoricalGrowthRow
+      ? customerHistoricalGrowthIdentity(selectedCustomerHistoricalGrowthRow)
+      : '';
+    const customerHistoricalStartMonthKey = monthKeyFromDateValue(startDate || '');
+    const customerHistoricalEndMonthKey = monthKeyFromDateValue(endDate || '');
+    const customerHistoricalMonthlyPeriods = customerHistoricalSalesMonths
+      .filter((month: any) => {
+        const monthKey = String(month?.monthKey || '');
+        return monthKey >= customerHistoricalStartMonthKey && monthKey <= customerHistoricalEndMonthKey;
+      })
+      .map((month: any) => {
+        const monthKey = String(month.monthKey);
+        const priorYearMonthKey = `${Number(monthKey.slice(0, 4)) - 1}-${monthKey.slice(5, 7)}`;
+        const sales = Number(selectedCustomerHistoricalGrowthRow?.values?.[monthKey] || 0);
+        const priorSales = selectedCustomerHistoricalGrowthRow?.values?.[priorYearMonthKey];
+        const growthRate = Number(priorSales) > 0
+          ? ((sales / Number(priorSales)) - 1) * 100
+          : null;
+        return { period: String(month?.monthLabel || monthKey), periodKey: monthKey, sales, growthRate };
+      });
+    const latestHistoricalSalesMonthKey = customerHistoricalSalesMonths
+      .map((month: any) => String(month?.monthKey || ''))
+      .filter((monthKey: string) => monthKey && monthKey <= customerHistoricalEndMonthKey)
+      .sort()
+      .at(-1) || '';
+    const latestHistoricalSalesYear = Number(latestHistoricalSalesMonthKey.slice(0, 4));
+    const latestHistoricalSalesMonth = Number(latestHistoricalSalesMonthKey.slice(5, 7));
+    const lastCompleteHistoricalSalesYear = Number.isFinite(latestHistoricalSalesYear)
+      ? latestHistoricalSalesMonth === 12 ? latestHistoricalSalesYear : latestHistoricalSalesYear - 1
+      : new Date().getUTCFullYear() - 1;
+    const customerHistoricalAnnualPeriods = Array.from({ length: 3 }, (_, index) => {
+      const year = lastCompleteHistoricalSalesYear - 2 + index;
+      const sales = Array.from({ length: 12 }, (_, monthIndex) => {
+        const monthKey = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+        return Number(selectedCustomerHistoricalGrowthRow?.values?.[monthKey] || 0);
+      }).reduce((sum, value) => sum + value, 0);
+      const priorSales = Array.from({ length: 12 }, (_, monthIndex) => {
+        const monthKey = `${year - 1}-${String(monthIndex + 1).padStart(2, '0')}`;
+        return Number(selectedCustomerHistoricalGrowthRow?.values?.[monthKey] || 0);
+      }).reduce((sum, value) => sum + value, 0);
+      return {
+        period: String(year),
+        periodKey: String(year),
+        sales,
+        growthRate: priorSales > 0 ? ((sales / priorSales) - 1) * 100 : null,
+      };
+    });
+    const customerHistoricalGrowthPeriods =
+      customerHistoricalGrowthView === 'annual'
+        ? customerHistoricalAnnualPeriods
+        : customerHistoricalMonthlyPeriods;
+    const customerHistoricalSourceLabel = summary?.customerHistoricalSales?.source === 'raw_slartrans_invoice'
+      ? 'Invoice history'
+      : summary?.customerHistoricalSales?.source === 'customer_sales_snapshot_monthly'
+        ? 'Monthly customer history'
+        : 'No canonical customer history';
     const customerSalesCurrentMonthKey =
       selectedEndForCustomer
         ? `${selectedEndForCustomer.getUTCFullYear()}-${String(selectedEndForCustomer.getUTCMonth() + 1).padStart(2, '0')}`
@@ -4185,13 +4253,17 @@ export default function OperationsTab({
           : periodOptions.includes(currentCustomerRevenuePeriodKey(customerRevenuePeriodMode))
             ? currentCustomerRevenuePeriodKey(customerRevenuePeriodMode)
             : 'all';
-    // QBD detail rebuilds provide one canonical customer total per month. The
-    // dashboard's daily customer records can be legacy snapshots rather than
-    // daily deltas, so summing them for a Month/Quarter/Year selection can
-    // overstate revenue. Use the canonical monthly history whenever it is
-    // available for the top-customer reports.
+    // Invoice detail and QBD detail rebuilds provide one canonical customer
+    // total per month. The dashboard's daily customer records can be legacy
+    // snapshots rather than daily deltas, so summing them for a
+    // Month/Quarter/Year selection can overstate or understate revenue. Use
+    // the canonical monthly history whenever it is available for the
+    // top-customer reports.
     const usesCanonicalMonthlyCustomerHistory =
-      summary?.customerHistory?.source === 'customer_sales_snapshot_monthly' &&
+      (
+        summary?.customerHistory?.source === 'raw_slartrans_invoice' ||
+        summary?.customerHistory?.source === 'customer_sales_snapshot_monthly'
+      ) &&
       customerSalesHistoryMonths.length > 0;
     const customerHistoryIdentity = (row: any) => {
       const customerId = String(row?.itemName || '').trim();
@@ -5036,6 +5108,25 @@ export default function OperationsTab({
           },
         ],
       },
+      customersHistoricalSalesGrowth: {
+        title: 'Customer Sales History & Growth',
+        sections: [
+          {
+            body:
+              'Shows the selected customer’s recognized monthly sales and same-month-prior-year growth. Annual view summarizes the last three complete calendar years.',
+          },
+          {
+            heading: 'Growth calculation',
+            body:
+              'Monthly growth compares each month with the same month one year earlier. Annual growth compares each completed calendar year with its prior calendar year. A missing prior period is shown as unavailable, not zero growth.',
+          },
+          {
+            heading: 'Data source',
+            body:
+              'Uses canonical monthly invoice history when available, with monthly customer snapshots as the fallback.',
+          },
+        ],
+      },
       customersTopByRevenue: {
         title: 'Top Customers by Revenue',
         sections: [
@@ -5477,6 +5568,100 @@ export default function OperationsTab({
                     {renderSalesReportEmptyState()}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {isSectionEnabled('customersHistoricalSalesGrowth') && (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
+                      {retailizeCustomerText('Customer Sales History & Growth')}
+                    </h3>
+                    {renderCustomerChartInfoLink('customersHistoricalSalesGrowth')}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <select
+                      value={selectedCustomerHistoricalGrowthKeyEffective}
+                      onChange={(event) => setSelectedCustomerHistoricalGrowthKey(event.target.value)}
+                      disabled={customerHistoricalSalesRows.length === 0}
+                      aria-label="Select customer sales history"
+                      style={{ maxWidth: '260px', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', color: '#334155', background: 'white' }}
+                    >
+                      {customerHistoricalSalesRows.map((row: any) => {
+                        const key = customerHistoricalGrowthIdentity(row);
+                        return <option key={key} value={key}>{String(row?.label || 'Unknown Customer')}</option>;
+                      })}
+                    </select>
+                    <select
+                      value={customerHistoricalGrowthView}
+                      onChange={(event) => setCustomerHistoricalGrowthView(event.target.value as 'monthly' | 'annual')}
+                      aria-label="Select sales history view"
+                      style={{ padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', color: '#334155', background: 'white' }}
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="annual">Annual (Last 3 Years)</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginBottom: '12px', color: '#64748b', fontSize: '11px' }}>
+                  {customerHistoricalGrowthView === 'monthly'
+                    ? `Date range: ${selectedDateRangeLabel} | Sales and same-month-prior-year growth.`
+                    : 'Last three complete calendar years | Sales and year-over-year growth.'}
+                  {' '}Source: {customerHistoricalSourceLabel}.
+                </div>
+                {!selectedCustomerHistoricalGrowthRow ? (
+                  <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '13px' }}>
+                    No canonical customer sales history is available for this company.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 0.8fr) minmax(420px, 1.2fr)', gap: '20px', alignItems: 'stretch' }}>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                            <th style={{ textAlign: 'left', padding: '7px 8px', color: '#475569' }}>Period</th>
+                            <th style={{ textAlign: 'right', padding: '7px 8px', color: '#475569' }}>Sales</th>
+                            <th style={{ textAlign: 'right', padding: '7px 8px', color: '#475569' }}>Growth Rate</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {customerHistoricalGrowthPeriods.length === 0 ? (
+                            <tr>
+                              <td colSpan={3} style={{ padding: '18px 8px', color: '#64748b', textAlign: 'center' }}>
+                                No sales data is available for the selected range.
+                              </td>
+                            </tr>
+                          ) : customerHistoricalGrowthPeriods.map((row: any) => (
+                            <tr key={row.periodKey} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '7px 8px', color: '#1e293b' }}>{row.period}</td>
+                              <td style={{ padding: '7px 8px', color: '#16a34a', fontWeight: 600, textAlign: 'right' }}>{formatCurrency(row.sales)}</td>
+                              <td style={{ padding: '7px 8px', color: row.growthRate == null ? '#64748b' : row.growthRate >= 0 ? '#16a34a' : '#dc2626', textAlign: 'right' }}>
+                                {row.growthRate == null ? '—' : formatPct(row.growthRate)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <ResponsiveContainer width="100%" height={Math.max(260, customerHistoricalGrowthPeriods.length * 26)}>
+                      <ComposedChart data={customerHistoricalGrowthPeriods}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '11px' }} />
+                        <YAxis yAxisId="sales" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
+                        <YAxis yAxisId="growth" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+                        <Tooltip
+                          formatter={(value: any, name: any) => String(name) === 'Annualized Growth'
+                            ? [value == null ? '—' : formatPct(Number(value)), String(name)]
+                            : [formatCurrency(Number(value || 0)), String(name)]}
+                        />
+                        <Legend />
+                        <Bar yAxisId="sales" dataKey="sales" name="Sales" fill="#2563eb" radius={[3, 3, 0, 0]} />
+                        <Line yAxisId="growth" type="monotone" dataKey="growthRate" name="Annualized Growth" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} connectNulls={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
             )}
 

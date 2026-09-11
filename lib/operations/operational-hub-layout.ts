@@ -36,6 +36,7 @@ export function withoutIsolvedHubReportName(label: string): string {
 const REPORTS_BY_DATA_GROUP: Record<string, OperationalHubReportDefinition[]> = {
   Customers: [
     { key: 'customersTop10MonthlyTrend', label: 'Top 10 Customers Monthly Trend', group: 'Customers' },
+    { key: 'customersHistoricalSalesGrowth', label: 'Customer Sales History & Growth', group: 'Customers' },
     { key: 'customersTopByRevenue', label: 'Top Customers by Revenue', group: 'Customers' },
     { key: 'customersRevenueDistribution', label: 'Revenue Distribution by Customer', group: 'Customers' },
     { key: 'customersPlatoSalesMetricCards', label: 'Sales Metric Cards', group: 'Customers' },
@@ -128,6 +129,7 @@ const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
   ],
   customers: [
     { key: 'customersTop10MonthlyTrend', label: 'Top 10 Customers Monthly Trend', group: 'Customers' },
+    { key: 'customersHistoricalSalesGrowth', label: 'Customer Sales History & Growth', group: 'Customers' },
     { key: 'customersTopByRevenue', label: 'Top Customers by Revenue', group: 'Customers' },
     { key: 'customersRevenueDistribution', label: 'Revenue Distribution by Customer', group: 'Customers' },
     { key: 'customersConcentrationRisk', label: 'Concentration Risk', group: 'Customers' },

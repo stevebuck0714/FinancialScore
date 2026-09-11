@@ -194,6 +194,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'cash13WeekTrend', label: '13-Week Trend', group: 'Cash' },
   { key: 'cashBridge', label: 'Bridge (Receipts vs Disbursements)', group: 'Cash' },
   { key: 'customersTop10MonthlyTrend', label: 'Top 10 Customers Monthly Trend', group: 'Customers' },
+  { key: 'customersHistoricalSalesGrowth', label: 'Customer Sales History & Growth', group: 'Customers' },
   { key: 'customersTopByRevenue', label: 'Top Customers by Revenue', group: 'Customers' },
   { key: 'customersRevenueDistribution', label: 'Revenue Distribution by Customer', group: 'Customers' },
   { key: 'customersPlatoSalesMetricCards', label: 'Sales Metric Cards', group: 'Customers' },

@@ -81,7 +81,7 @@ const PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v11-monthly-customer-history';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v12-historical-customer-growth';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
@@ -4049,6 +4049,45 @@ export async function GET(request: NextRequest) {
             sales: buildCustomerHistory(customerHistorySourceRows, 'revenue'),
             invoiceVolume: buildCustomerHistory(customerHistorySourceRows, 'invoiceCount'),
           };
+          const customerHistoryStart = new Date(Date.UTC(endDate.getUTCFullYear() - 3, 0, 1));
+          const customerHistoricalStart = new Date(Math.min(startDate.getTime(), customerHistoryStart.getTime()));
+          const historicalCustomerSnapshotRows = await prisma.customerSalesSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: 'monthly',
+              snapshotDate: { gte: customerHistoricalStart, lte: endDate },
+            },
+            orderBy: { snapshotDate: 'asc' },
+            take: 100000,
+          });
+          const historicalRawInvoiceRows = isInforCompany
+            ? await deriveCustomerSalesFromRawInvoices(companyId, customerHistoricalStart, endDate)
+            : [];
+          const historicalRawInvoiceMonths = new Set(
+            historicalRawInvoiceRows
+              .map((row) => {
+                const snapshot = new Date(row.snapshotDate);
+                return Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              })
+              .filter(Boolean),
+          );
+          const customerHistoricalSourceRows = normalizeCustomerHistoryRows([
+            ...historicalRawInvoiceRows,
+            ...historicalCustomerSnapshotRows.filter((row) => {
+              const snapshot = new Date(row.snapshotDate);
+              const monthKey = Number.isNaN(snapshot.getTime()) ? '' : businessMonthKey(snapshot);
+              return monthKey && !historicalRawInvoiceMonths.has(monthKey);
+            }),
+          ]);
+          const customerHistoricalSales = {
+            source: historicalRawInvoiceRows.length > 0
+              ? 'raw_slartrans_invoice'
+              : historicalCustomerSnapshotRows.length > 0
+                ? 'customer_sales_snapshot_monthly'
+                : 'unavailable',
+            sales: buildCustomerHistory(customerHistoricalSourceRows, 'revenue'),
+            invoiceVolume: buildCustomerHistory(customerHistoricalSourceRows, 'invoiceCount'),
+          };
           const concentrationCache = {
             namespace: 'customer-concentration-exposure',
             cacheKey: hashCacheParts([
@@ -4506,6 +4545,7 @@ export async function GET(request: NextRequest) {
             backlogSeries,
             topCustomersSummary,
             customerHistory,
+            customerHistoricalSales,
             customerConcentration: {
               executiveMonthly: customerConcentrationExecutiveMonthly,
               customerMonthly: customerConcentrationMonthlyCustomers,
@@ -5821,6 +5861,7 @@ export async function GET(request: NextRequest) {
             customerDataBasis: salesResult.basis,
             customerRevenueSourceVersion: CUSTOMER_REVENUE_SOURCE_VERSION,
             customerHistory: salesResult.customerHistory,
+            customerHistoricalSales: salesResult.customerHistoricalSales,
             customerConcentration: salesResult.customerConcentration,
             revenueLabel: 'Revenue',
             customerOverview: arResult.customerOverview,
