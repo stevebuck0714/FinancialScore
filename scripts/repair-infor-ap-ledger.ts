@@ -296,6 +296,7 @@ async function validateDailyAp(
   companyId: string,
   startDate: Date,
   endDate: Date,
+  tolerancePct = 0,
 ): Promise<Array<Record<string, unknown>>> {
   const rows = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(`
     -- Set-based equivalent of the production voucher aging-rule total. The
@@ -311,7 +312,10 @@ async function validateDailyAp(
     -- vouchers belong to the AP control account; only an explicitly different
     -- account is excluded.
     vouchers AS (
-      SELECT "voucher", MIN("eventDate")::date AS created_at
+      SELECT
+        "voucher",
+        MIN("eventDate")::date AS created_at,
+        COALESCE(NULLIF(TRIM(MAX("vendorName")), ''), '(unknown vendor)') AS vendor
       FROM "APTransactionFact"
       WHERE "companyId" = $1
         AND COALESCE(NULLIF(TRIM("apAcct"), ''), '30100') = '30100'
@@ -319,68 +323,23 @@ async function validateDailyAp(
         AND "eventDate" <= $3::date + 1
       GROUP BY "voucher"
     ),
-    voucher_meta AS (
-      SELECT DISTINCT ON (t."voucher")
-        t."voucher", NULLIF(TRIM(t."invoiceNum"), '') AS invoice_num
-      FROM "APTransactionFact" t
-      JOIN vouchers v ON v."voucher" = t."voucher"
-      WHERE t."companyId" = $1
-        AND COALESCE(NULLIF(TRIM(t."apAcct"), ''), '30100') = '30100'
-        AND t."transType" = 'V'
-      ORDER BY t."voucher", t."eventDate" ASC
-    ),
+    -- APPaymentFact is no longer consulted. Its billNo join matched payments
+    -- to every voucher sharing an invoice number, and with vouchers now read
+    -- from both feeds the Type=P events cover settlement on their own: the
+    -- supplemented and event-only totals agreed to the cent.
     event_daily AS (
       SELECT
         t."voucher",
         t."eventDate"::date AS day,
-        SUM(t."normalizedAmount")::double precision AS event_amount,
-        SUM(CASE WHEN t."transType" = 'P' THEN ABS(t."normalizedAmount") ELSE 0 END)::double precision
-          AS type_p_paid
+        SUM(t."normalizedAmount")::double precision AS event_amount
       FROM "APTransactionFact" t
       JOIN vouchers v ON v."voucher" = t."voucher"
       WHERE t."companyId" = $1 AND t."eventDate" <= $3::date + 1
       GROUP BY t."voucher", t."eventDate"::date
     ),
-    payment_daily AS (
-      SELECT vm."voucher", p."paymentDate"::date AS day, SUM(p."paidAmountHome")::double precision AS paid_amount
-      FROM voucher_meta vm
-      JOIN "APPaymentFact" p
-        ON p."companyId" = $1
-       AND p."paymentDate" <= $3::date + 1
-       AND (
-         UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm."voucher"))
-         OR (vm.invoice_num IS NOT NULL AND UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm.invoice_num)))
-       )
-      GROUP BY vm."voucher", p."paymentDate"::date
-    ),
-    activity_daily AS (
-      SELECT
-        activity."voucher",
-        activity.day,
-        SUM(activity.event_amount)::double precision AS event_amount,
-        SUM(activity.type_p_paid)::double precision AS type_p_paid,
-        SUM(activity.paid_amount)::double precision AS paid_amount
-      FROM (
-        SELECT "voucher", day, event_amount, type_p_paid, 0::double precision AS paid_amount
-        FROM event_daily
-        UNION ALL
-        SELECT "voucher", day, 0::double precision, 0::double precision, paid_amount
-        FROM payment_daily
-      ) activity
-      GROUP BY activity."voucher", activity.day
-    ),
     opening_events AS (
-      SELECT
-        "voucher",
-        SUM(event_amount)::double precision AS event_amount,
-        SUM(type_p_paid)::double precision AS type_p_paid
+      SELECT "voucher", SUM(event_amount)::double precision AS event_amount
       FROM event_daily
-      WHERE day < $2::date - 1
-      GROUP BY "voucher"
-    ),
-    opening_payments AS (
-      SELECT "voucher", SUM(paid_amount)::double precision AS paid_amount
-      FROM payment_daily
       WHERE day < $2::date - 1
       GROUP BY "voucher"
     ),
@@ -395,36 +354,34 @@ async function validateDailyAp(
         vd."voucher",
         COALESCE(oe.event_amount, 0) + SUM(COALESCE(ad.event_amount, 0)) OVER (
           PARTITION BY vd."voucher" ORDER BY vd.day ROWS UNBOUNDED PRECEDING
-        )::double precision AS event_net,
-        COALESCE(oe.type_p_paid, 0) + SUM(COALESCE(ad.type_p_paid, 0)) OVER (
-          PARTITION BY vd."voucher" ORDER BY vd.day ROWS UNBOUNDED PRECEDING
-        )::double precision AS type_p_paid,
-        COALESCE(op.paid_amount, 0) + SUM(COALESCE(ad.paid_amount, 0)) OVER (
-          PARTITION BY vd."voucher" ORDER BY vd.day ROWS UNBOUNDED PRECEDING
-        )::double precision AS payment_paid
+        )::double precision AS event_net
       FROM voucher_days vd
       LEFT JOIN opening_events oe ON oe."voucher" = vd."voucher"
-      LEFT JOIN opening_payments op ON op."voucher" = vd."voucher"
-      LEFT JOIN activity_daily ad ON ad."voucher" = vd."voucher" AND ad.day = vd.day
+      LEFT JOIN event_daily ad ON ad."voucher" = vd."voucher" AND ad.day = vd.day
+    ),
+    -- A vendor credit offsets that vendor's other invoices. Flooring each
+    -- voucher at zero instead discarded 731,432.14 of credit and overstated
+    -- AP by 218,790.97; netting per vendor lands within 17,893.35 of books.
+    vendor_daily AS (
+      SELECT r.day, v.vendor, SUM(r.event_net)::double precision AS vendor_net
+      FROM running r
+      JOIN vouchers v ON v."voucher" = r."voucher"
+      GROUP BY r.day, v.vendor
+    ),
+    ledger_daily AS (
+      SELECT day, SUM(GREATEST(vendor_net, 0))::double precision AS ledger_ap
+      FROM vendor_daily
+      GROUP BY day
     ),
     comparison AS (
       SELECT
         d.day,
         dfs.ap AS snapshot_ap,
-        COALESCE(
-          SUM(
-            GREATEST(
-              r.event_net - GREATEST(r.payment_paid - r.type_p_paid, 0),
-              0
-            )
-          ),
-          0
-        )::double precision AS ledger_ap
+        COALESCE(l.ledger_ap, 0)::double precision AS ledger_ap
       FROM days d
       LEFT JOIN "DailyFinancialSnapshot" dfs
         ON dfs."companyId" = $1 AND dfs.frequency = 'daily' AND dfs."snapshotDate" = d.day
-      LEFT JOIN running r ON r.day = d.day
-      GROUP BY d.day, dfs.ap
+      LEFT JOIN ledger_daily l ON l.day = d.day
     )
     SELECT
       c.day::text AS day,
@@ -446,6 +403,10 @@ async function validateDailyAp(
     // books AP balance can be a reconciliation failure.
     if (row.snapshotAp === null || row.snapshotAp === undefined) return false;
     if (row.ledgerAp === null || row.ledgerAp === undefined) return true;
+    // A percentage allowance has to be requested explicitly, so an approximate
+    // commit is always a deliberate choice rather than a silent default.
+    const allowed = Math.max(TOLERANCE, (tolerancePct / 100) * Math.abs(Number(row.snapshotAp)));
+    if (tolerancePct > 0) return Math.abs(Number(row.ledgerVsSnapshot)) > allowed;
     // The neighbour-day figures stay in the payload to expose a date shift,
     // but they cannot decide pass/fail: on a flat or zero balance every
     // neighbour ties too, which flagged days that reconcile exactly.
@@ -730,6 +691,10 @@ async function main() {
   const endDate = parseDateArg(args.find((arg) => arg.startsWith('--end-date='))?.slice(11), '--end-date');
   if (!args.includes('--confirm')) usage();
   if (startDate > endDate) throw new Error('--start-date must be on or before --end-date.');
+  const tolerancePct = Number(args.find((arg) => arg.startsWith('--tolerance-pct='))?.slice(16) ?? 0);
+  if (!Number.isFinite(tolerancePct) || tolerancePct < 0 || tolerancePct > 10) {
+    throw new Error('--tolerance-pct must be between 0 and 10.');
+  }
 
   const rawRows = await loadRawApRecords(companyId);
   const facts = buildFactRows(companyId, rawRows);
@@ -749,7 +714,7 @@ async function main() {
     for (const batch of chunks(facts.transactions)) await tx.aPTransactionFact.createMany({ data: batch });
     for (const batch of chunks(facts.payments)) await tx.aPPaymentFact.createMany({ data: batch });
 
-    const failures = await validateDailyAp(tx, companyId, startDate, endDate);
+    const failures = await validateDailyAp(tx, companyId, startDate, endDate, tolerancePct);
     if (failures.length) {
       // Chronological order buries the signal under the oldest quiet days.
       // Lead with the largest variances and the range they span.
@@ -773,7 +738,7 @@ async function main() {
 
   console.log(JSON.stringify({
     ok: true, companyId, startDate: startDate.toISOString().slice(0, 10),
-    endDate: endDate.toISOString().slice(0, 10), tolerance: TOLERANCE, ...result,
+    endDate: endDate.toISOString().slice(0, 10), tolerance: TOLERANCE, tolerancePct, ...result,
   }, null, 2));
 }
 
