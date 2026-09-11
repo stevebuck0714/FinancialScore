@@ -2276,10 +2276,18 @@ async function buildDailyApSeriesByAgingRule(
     `WITH date_series AS (
        SELECT generate_series($3::date, $4::date, '1 day'::interval)::date AS d
      ),
+     -- CSI only stamps ApAcct on voucher headers synced from 2026-01-30 on:
+     -- 4,473 of Atlantic's 5,050 headers carry no account at all. Requiring an
+     -- exact match discarded almost every historical voucher, so this read
+     -- zero before 2026 and could never pass the books check that gates the
+     -- aging buckets. An untagged voucher belongs to the AP control account;
+     -- only an explicitly different account is excluded.
      voucher_creates AS (
        SELECT voucher, MIN("eventDate")::date AS created_at
        FROM "APTransactionFact"
-       WHERE "companyId" = $1 AND "apAcct" = $2 AND "transType" = 'V'
+       WHERE "companyId" = $1
+         AND COALESCE(NULLIF(TRIM("apAcct"), ''), $2) = $2
+         AND "transType" = 'V'
          AND "eventDate" <= $4::date
        GROUP BY voucher
      ),
@@ -2292,7 +2300,9 @@ async function buildDailyApSeriesByAgingRule(
          NULLIF(TRIM(t."termsCode"), '') AS voucher_terms_code
        FROM "APTransactionFact" t
        JOIN voucher_creates vc ON vc.voucher = t.voucher
-       WHERE t."companyId" = $1 AND t."apAcct" = $2 AND t."transType" = 'V'
+       WHERE t."companyId" = $1
+         AND COALESCE(NULLIF(TRIM(t."apAcct"), ''), $2) = $2
+         AND t."transType" = 'V'
        ORDER BY t.voucher, t."eventDate" ASC
      ),
      vendor_terms AS (
@@ -2438,7 +2448,7 @@ async function buildDailyApSeriesByAgingRule(
        SELECT "eventDate"::date AS dt, SUM("normalizedAmount")::float8 AS amt
        FROM "APTransactionFact"
        WHERE "companyId" = $1
-         AND "apAcct" = $2
+         AND COALESCE(NULLIF(TRIM("apAcct"), ''), $2) = $2
          AND "transType" = 'V'
          AND "eventDate" >= ($3::date - INTERVAL '90 days')
          AND "eventDate" <= $4::date
@@ -2682,12 +2692,15 @@ async function buildOpenVouchersByAgingRule(
     vendor_terms_code: string | null;
   }> = await prismaClient.$queryRawUnsafe(
     `WITH voucher_creates AS (
+       -- Untagged vouchers belong to the AP control account; see the matching
+       -- note in buildDailyApSeriesByAgingRule. Requiring an exact ApAcct match
+       -- hid almost all of Atlantic's history from the bill-level tables.
        SELECT
          voucher,
          MIN("eventDate")::date AS created_at
        FROM "APTransactionFact"
        WHERE "companyId" = $1
-         AND "apAcct" = $2
+         AND COALESCE(NULLIF(TRIM("apAcct"), ''), $2) = $2
          AND "transType" = 'V'
          AND "eventDate" <= $3::date
        GROUP BY voucher
@@ -2724,7 +2737,7 @@ async function buildOpenVouchersByAgingRule(
        FROM "APTransactionFact" t
        JOIN voucher_creates vc ON vc.voucher = t.voucher
        WHERE t."companyId" = $1
-         AND t."apAcct" = $2
+         AND COALESCE(NULLIF(TRIM(t."apAcct"), ''), $2) = $2
          AND t."transType" = 'V'
        ORDER BY t.voucher, t."eventDate" ASC
      ),
@@ -8396,9 +8409,14 @@ export async function GET(request: NextRequest) {
                 agingRuleByDay.set(dateKeyUtc(startOfUtcDay(new Date(row.snapshotDate))), row);
               }
               const atLedger = agingRuleByDay.get(apLedgerAsOfKey);
-              agingRuleValidated =
-                atLedger != null &&
-                apOpenBillsMatchBooksTotal(Number(atLedger.apBalance || 0), booksApAtLedgerAsOf);
+              // The reconstruction is used for the age *distribution* only --
+              // Total AP always comes from the books below -- so it no longer
+              // has to tie to the books total to be usable. It never could:
+              // CSI omits duty and tariff settlements from the voucher feeds,
+              // which leaves the ledger a variable amount below books and used
+              // to force every bucket to zero. A distribution just needs some
+              // open vouchers behind it.
+              agingRuleValidated = atLedger != null && Number(atLedger.apBalance || 0) > 0;
               if (latestDfsKey) {
                 apLedgerLagDays = Math.floor(
                   (parseIsoDayKey(latestDfsKey).getTime() - parseIsoDayKey(apLedgerAsOfKey).getTime()) /
@@ -8493,15 +8511,23 @@ export async function GET(request: NextRequest) {
             const byDay = new Map<string, ApDayRec>();
             for (const [dayKey, booksAp] of dfsByDay.entries()) {
               const reconstructed = dayKey <= apLedgerAsOfKey! ? agingRuleByDay.get(dayKey) : undefined;
-              if (reconstructed) {
+              const ledgerTotal = Number(reconstructed?.apBalance || 0);
+              if (reconstructed && ledgerTotal > 0 && booksAp > 0) {
+                // Total AP is the books balance, so it ties to the balance
+                // sheet exactly. The buckets carry the books total in the
+                // proportions the open vouchers show, because the voucher set
+                // recovers a variable share of the balance and raw amounts
+                // would leave the buckets short of the line on the chart. The
+                // shape is measured; only the scale comes from books.
+                const scale = booksAp / ledgerTotal;
                 byDay.set(dayKey, {
                   snapshotDate: parseIsoDayKey(dayKey),
-                  totalAP: Number(reconstructed.apBalance || 0),
-                  current: Number(reconstructed.current || 0),
-                  days1to30: Number(reconstructed.days1to30 || 0),
-                  days31to60: Number(reconstructed.days31to60 || 0),
-                  days61to90: Number(reconstructed.days61to90 || 0),
-                  days90plus: Number(reconstructed.days90plus || 0),
+                  totalAP: booksAp,
+                  current: Number(reconstructed.current || 0) * scale,
+                  days1to30: Number(reconstructed.days1to30 || 0) * scale,
+                  days31to60: Number(reconstructed.days31to60 || 0) * scale,
+                  days61to90: Number(reconstructed.days61to90 || 0) * scale,
+                  days90plus: Number(reconstructed.days90plus || 0) * scale,
                   agingAllocationAvailable: true,
                 });
               } else {

@@ -312,10 +312,7 @@ async function validateDailyAp(
     -- vouchers belong to the AP control account; only an explicitly different
     -- account is excluded.
     vouchers AS (
-      SELECT
-        "voucher",
-        MIN("eventDate")::date AS created_at,
-        COALESCE(NULLIF(TRIM(MAX("vendorName")), ''), '(unknown vendor)') AS vendor
+      SELECT "voucher", MIN("eventDate")::date AS created_at
       FROM "APTransactionFact"
       WHERE "companyId" = $1
         AND COALESCE(NULLIF(TRIM("apAcct"), ''), '30100') = '30100'
@@ -359,18 +356,13 @@ async function validateDailyAp(
       LEFT JOIN opening_events oe ON oe."voucher" = vd."voucher"
       LEFT JOIN event_daily ad ON ad."voucher" = vd."voucher" AND ad.day = vd.day
     ),
-    -- A vendor credit offsets that vendor's other invoices. Flooring each
-    -- voucher at zero instead discarded 731,432.14 of credit and overstated
-    -- AP by 218,790.97; netting per vendor lands within 17,893.35 of books.
-    vendor_daily AS (
-      SELECT r.day, v.vendor, SUM(r.event_net)::double precision AS vendor_net
-      FROM running r
-      JOIN vouchers v ON v."voucher" = r."voucher"
-      GROUP BY r.day, v.vendor
-    ),
+    -- Vendor-level credit netting was measured against books on 2026-09-09 and
+    -- looked 17,893.35 short, but across the rest of 2026 it runs ~204,000 low
+    -- while the per-voucher floor tracks books closely on the same days. One
+    -- date was not enough to choose a rule, so this stays on the floor.
     ledger_daily AS (
-      SELECT day, SUM(GREATEST(vendor_net, 0))::double precision AS ledger_ap
-      FROM vendor_daily
+      SELECT day, SUM(GREATEST(event_net, 0))::double precision AS ledger_ap
+      FROM running
       GROUP BY day
     ),
     comparison AS (
