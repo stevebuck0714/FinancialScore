@@ -13,10 +13,11 @@ const AP_PROGRAMS = new Set([
 const PAYMENT_PROGRAMS = new Set(['SLAPPMTS', 'SLAPTRXP', 'SLAPTRXPS', 'SLAPTRX', 'SLAPTRXS']);
 const TOLERANCE = 0.005;
 const BATCH_SIZE = 1_000;
-// CSI's detailed payment feed begins here. Keeping voucher events in the
-// same coverage window avoids resurrecting invoices whose settlement events
-// are unavailable in the staged raw data.
-const AP_MIN_BILL_DATE = new Date('2023-06-01T00:00:00.000Z');
+// Voucher coverage begins 2023-01-01 in both SLVchHdrs and SLAptrxps Type=V;
+// the Type=P payment feed reaches back to 2017. The floor tracks the voucher
+// side because a voucher with no header cannot be aged, while payments
+// arriving before it are dropped by the orphan guard below.
+const AP_MIN_BILL_DATE = new Date('2023-01-01T00:00:00.000Z');
 
 type RawApRecord = {
   id: string;
@@ -168,27 +169,19 @@ function chunks<T>(rows: T[]): T[][] {
 }
 
 async function loadRawApRecords(companyId: string): Promise<RawApRecord[]> {
-  // Historical syncs persist the same CSI page on many business dates. Pick
-  // one current copy per source program + source identity inside Postgres,
-  // rather than loading every replay copy into Node before deduplicating.
+  // Historical syncs persist the same CSI page on many business dates, so this
+  // table runs to tens of millions of rows. InforRawRecord_dedup_by_itemid_uniq
+  // already guarantees one row per (companyId, platform, miProgram,
+  // sourceRecordId), so restricting to identified rows both deduplicates and
+  // keeps this on an index scan. Sorting replay copies instead read the whole
+  // table and blew the interactive transaction limit.
   return prisma.$queryRawUnsafe<RawApRecord[]>(
-    `SELECT DISTINCT ON (
-       UPPER(COALESCE("miProgram", '')),
-       COALESCE(NULLIF("sourceRecordId", ''), NULLIF("sourceRecordHash", ''), id)
-     )
-       id, platform, "miProgram", "sourceRecordId", "sourceRecordHash", payload
+    `SELECT id, platform, "miProgram", "sourceRecordId", "sourceRecordHash", payload
      FROM "InforRawRecord"
      WHERE "companyId" = $1
        AND platform IN ('INFOR_M3', 'INFOR_CSI')
-       AND (
-         UPPER(COALESCE(module, '')) = 'AP'
-         OR UPPER(COALESCE("miProgram", '')) ~ 'SL(VCHHDRS|APPMTS|APTRXP|APTRXPS|APTRX|APTRXS)'
-       )
-     ORDER BY
-       UPPER(COALESCE("miProgram", '')),
-       COALESCE(NULLIF("sourceRecordId", ''), NULLIF("sourceRecordHash", ''), id),
-       "fetchedAt" DESC,
-       id DESC`,
+       AND "sourceRecordId" IS NOT NULL
+       AND UPPER(COALESCE("miProgram", '')) ~ 'SL(VCHHDRS|APPMTS|APTRXPS|APTRXP|APTRXS|APTRX)'`,
     companyId
   );
 }
@@ -196,6 +189,11 @@ async function loadRawApRecords(companyId: string): Promise<RawApRecord[]> {
 function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
   const transactionByKey = new Map<string, ApTransactionRow>();
   const paymentByKey = new Map<string, ApPaymentRow>();
+  const paymentVoucherByKey = new Map<string, string>();
+  const voucherHeaders = new Set<string>();
+  // SLAptrx carries rows dated as far out as 2417. Nothing downstream bounds
+  // an event date, so a single corrupt row would sit in the ledger forever.
+  const maxEventDate = new Date(Date.now() + 366 * 86_400_000);
 
   for (const raw of rawRows) {
     // Some historical CSI raw rows retain the endpoint path instead of the
@@ -224,6 +222,7 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
       ? distDate || recordDate
       : distDate || invoiceDate || recordDate;
     if (!eventDate || eventDate.getTime() < AP_MIN_BILL_DATE.getTime()) continue;
+    if (eventDate.getTime() > maxEventDate.getTime()) continue;
 
     const paidAmount = number(record, ['AmtPaid']);
     const invoiceAmount = number(record, ['InvAmt', 'InvoiceAmount']);
@@ -250,11 +249,13 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
     if (!existing || (existing.sourceProgram !== 'SLVCHHDRS' && program === 'SLVCHHDRS')) {
       transactionByKey.set(transactionKey, transaction);
     }
+    if (type === 'V') voucherHeaders.add(voucher);
 
     // Payment facts are supplemental reporting facts only; Type=A belongs only
     // in APTransactionFact and must never be double-booked here.
     if (type !== 'P' || paidAmount === null || paidAmount === 0) continue;
     const paymentSourceId = stableSourceId(raw, record, type);
+    paymentVoucherByKey.set(paymentSourceId, voucher);
     paymentByKey.set(paymentSourceId, {
       companyId, paymentDate: eventDate,
       vendorId: text(record, ['VendNum', 'vendorId']),
@@ -265,7 +266,21 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
       sourceItemId: paymentSourceId, sourceProgram: program, sourceTransaction: 'DB_AP_LEDGER_REPAIR',
     });
   }
-  return { transactions: [...transactionByKey.values()], payments: [...paymentByKey.values()] };
+  // Payments settling a voucher whose header predates the coverage floor have
+  // nothing to reduce. Booking them anyway drives the ledger below books --
+  // the orphan-payment leakage that made the anchor roll-forward go negative.
+  const transactions = [...transactionByKey.values()].filter(
+    (row) => row.transType === 'V' || voucherHeaders.has(row.voucher)
+  );
+  const payments = [...paymentByKey.entries()]
+    .filter(([key]) => voucherHeaders.has(paymentVoucherByKey.get(key) || ''))
+    .map(([, row]) => row);
+  const orphanTransactions = transactionByKey.size - transactions.length;
+  const orphanPayments = paymentByKey.size - payments.length;
+  if (orphanTransactions || orphanPayments) {
+    console.warn('[ap-repair] dropped orphan AP activity', { orphanTransactions, orphanPayments });
+  }
+  return { transactions, payments };
 }
 
 async function validateDailyAp(
@@ -412,8 +427,11 @@ async function validateDailyAp(
   `, companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10));
 
   return rows.filter((row) => {
-    const required = [row.snapshotAp, row.ledgerAp];
-    if (required.some((value) => value === null || value === undefined)) return true;
+    // Weekends, holidays and pre-coverage days have no books balance, so there
+    // is nothing for the ledger to disagree with. Only a day that carries a
+    // books AP balance can be a reconciliation failure.
+    if (row.snapshotAp === null || row.snapshotAp === undefined) return false;
+    if (row.ledgerAp === null || row.ledgerAp === undefined) return true;
     return Math.abs(Number(row.ledgerVsSnapshot)) > TOLERANCE ||
       Math.abs(Number(row.ledgerMinusOneVsSnapshot)) <= TOLERANCE ||
       Math.abs(Number(row.ledgerPlusOneVsSnapshot)) <= TOLERANCE;
