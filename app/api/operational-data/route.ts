@@ -10941,21 +10941,9 @@ export async function GET(request: NextRequest) {
       }
 
       case 'ap': {
-        // AP balance derivation uses the customer's "150-day aging rule":
-        // any voucher older than 150 days without a recorded payment is
-        // assumed paid or written off. This was validated against the
-        // 12/31/2023 TB anchor ($698K) — the rule produces $723K (drift
-        // +3.6%, well within accounting tolerance) and yields a stable
-        // historical series ($616K-$999K across 9 quarter-ends).
-        //
-        // The previous anchor-roll-forward approach drifted to a NEGATIVE
-        // ~$360K today because post-anchor payments included settlements
-        // for pre-anchor vouchers whose V events never made it into
-        // APTransactionFact (orphan-payment leakage). The aging-rule
-        // method is anchor-free and immune to that class of bug.
-        //
-        // See tmp/reconcile-aging-sweep.ts and tmp/compare-current-ap.ts
-        // for the validation evidence.
+        // AP balances come from the books (DailyFinancialSnapshot.ap), which
+        // is derived from GL. Voucher/payment reconstruction is not accurate
+        // enough to stand in for a balance and is no longer used here.
         let apData: Array<{
           snapshotDate: Date;
           accountName: string;
@@ -10981,47 +10969,23 @@ export async function GET(request: NextRequest) {
               }));
           } else {
             const anchorAccount = apSheetAnchorCfg.accounts[0];
-            const paymentLedger = await isApPaymentEventLedgerStale(
-              prisma,
-              companyId,
-              anchorAccount.accountId
-            );
-            if (paymentLedger.stale) {
-              console.warn(
-                `[ap] skipping aging-rule for ${companyId}: payment ledger stale`,
-                paymentLedger
-              );
-              const agingRows = await prisma.aPAgingSnapshot.findMany({
-                where: {
-                  companyId,
-                  frequency: frequency === 'monthly' ? 'monthly' : 'daily',
-                  snapshotDate: { gte: startDate, lte: endDate },
-                },
-                orderBy: { snapshotDate: 'asc' },
-                take: Math.max(limit * 10, 1500),
-              });
-              apData = agingRows.map((row) => ({
-                snapshotDate: new Date(row.snapshotDate),
-                accountName: anchorAccount.accountName || 'Accounts Payable',
-                apBalance: Number(row.totalAP || 0),
-                accountId: anchorAccount.accountId,
-                accountNumber: anchorAccount.accountNumber || anchorAccount.accountId,
-              }));
-            } else {
-              console.warn(
-                `[ap] no DFS.ap rows for ${companyId}; aging-rule is last resort only`
-              );
-              apData = await buildDailyApSeriesByAgingRule(
-                prisma,
+            console.warn(`[ap] no DFS.ap rows for ${companyId}; using stored aging snapshots`);
+            const agingRows = await prisma.aPAgingSnapshot.findMany({
+              where: {
                 companyId,
-                anchorAccount.accountId,
-                anchorAccount.accountName || 'Accounts Payable',
-                anchorAccount.accountNumber || anchorAccount.accountId,
-                startDate,
-                endDate,
-                150
-              );
-            }
+                frequency: frequency === 'monthly' ? 'monthly' : 'daily',
+                snapshotDate: { gte: startDate, lte: endDate },
+              },
+              orderBy: { snapshotDate: 'asc' },
+              take: Math.max(limit * 10, 1500),
+            });
+            apData = agingRows.map((row) => ({
+              snapshotDate: new Date(row.snapshotDate),
+              accountName: anchorAccount.accountName || 'Accounts Payable',
+              apBalance: Number(row.totalAP || 0),
+              accountId: anchorAccount.accountId,
+              accountNumber: anchorAccount.accountNumber || anchorAccount.accountId,
+            }));
           }
         }
         if (apData.length > 0) {

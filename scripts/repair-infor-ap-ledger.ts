@@ -67,7 +67,8 @@ type ApPaymentRow = {
 
 function usage(): never {
   throw new Error(
-    'Usage: tsx scripts/repair-infor-ap-ledger.ts <companyId> --start-date=YYYY-MM-DD --end-date=YYYY-MM-DD --confirm'
+    'Usage: tsx scripts/repair-infor-ap-ledger.ts <companyId> --start-date=YYYY-MM-DD --end-date=YYYY-MM-DD --confirm\n' +
+    '       tsx scripts/repair-infor-ap-ledger.ts <companyId> --explain=YYYY-MM-DD   (read-only diagnosis)'
   );
 }
 
@@ -445,12 +446,152 @@ async function validateDailyAp(
   });
 }
 
+const AP_ACCT_MATCH = `COALESCE(NULLIF(TRIM(t."apAcct"), ''), '30100') = '30100'`;
+
+/**
+ * Read-only view of the ledger the repair would produce, as of one date.
+ * Reports open AP by age and the vouchers carrying it, so a variance can be
+ * attributed to specific invoices instead of inferred from a daily total.
+ */
+async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
+  const shared = `
+    WITH vouchers AS (
+      SELECT t."voucher", MIN(t."eventDate")::date AS created_at
+      FROM "APTransactionFact" t
+      WHERE t."companyId" = $1 AND ${AP_ACCT_MATCH}
+        AND t."transType" = 'V' AND t."eventDate" <= $2::date
+      GROUP BY t."voucher"
+    ),
+    voucher_meta AS (
+      SELECT DISTINCT ON (t."voucher")
+        t."voucher",
+        NULLIF(TRIM(t."invoiceNum"), '') AS invoice_num,
+        t."vendorName"
+      FROM "APTransactionFact" t
+      JOIN vouchers v ON v."voucher" = t."voucher"
+      WHERE t."companyId" = $1 AND ${AP_ACCT_MATCH} AND t."transType" = 'V'
+      ORDER BY t."voucher", t."eventDate" ASC
+    ),
+    events AS (
+      SELECT
+        t."voucher",
+        SUM(t."normalizedAmount")::double precision AS event_net,
+        SUM(CASE WHEN t."transType" = 'P' THEN ABS(t."normalizedAmount") ELSE 0 END)::double precision
+          AS type_p_paid
+      FROM "APTransactionFact" t
+      JOIN vouchers v ON v."voucher" = t."voucher"
+      WHERE t."companyId" = $1 AND t."eventDate" <= $2::date
+      GROUP BY t."voucher"
+    ),
+    pays AS (
+      SELECT vm."voucher", SUM(p."paidAmountHome")::double precision AS paid
+      FROM voucher_meta vm
+      JOIN "APPaymentFact" p
+        ON p."companyId" = $1 AND p."paymentDate" <= $2::date
+       AND (
+         UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm."voucher"))
+         OR (vm.invoice_num IS NOT NULL AND UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm.invoice_num)))
+       )
+      GROUP BY vm."voucher"
+    ),
+    open_items AS (
+      SELECT
+        v."voucher", v.created_at, vm."vendorName",
+        COALESCE(e.event_net, 0) AS event_net,
+        COALESCE(e.type_p_paid, 0) AS type_p_paid,
+        COALESCE(pp.paid, 0) AS payment_paid,
+        GREATEST(
+          COALESCE(e.event_net, 0)
+            - GREATEST(COALESCE(pp.paid, 0) - COALESCE(e.type_p_paid, 0), 0),
+          0
+        )::double precision AS open_amt,
+        ($2::date - v.created_at) AS days_open
+      FROM vouchers v
+      LEFT JOIN voucher_meta vm ON vm."voucher" = v."voucher"
+      LEFT JOIN events e ON e."voucher" = v."voucher"
+      LEFT JOIN pays pp ON pp."voucher" = v."voucher"
+    )`;
+
+  const [buckets, top, books] = await Promise.all([
+    tx.$queryRawUnsafe(
+      `${shared}
+       SELECT
+         CASE
+           WHEN days_open <= 30 THEN '1: 0-30'
+           WHEN days_open <= 60 THEN '2: 31-60'
+           WHEN days_open <= 90 THEN '3: 61-90'
+           WHEN days_open <= 150 THEN '4: 91-150'
+           ELSE '5: 151+'
+         END AS age_bucket,
+         COUNT(*) AS open_vouchers,
+         ROUND(SUM(open_amt)::numeric, 2) AS open_ap
+       FROM open_items WHERE open_amt > 0.005
+       GROUP BY 1 ORDER BY 1`,
+      companyId, asOf
+    ),
+    tx.$queryRawUnsafe(
+      `${shared}
+       SELECT
+         "voucher", created_at::text AS created_at, "vendorName", days_open,
+         ROUND(event_net::numeric, 2) AS event_net,
+         ROUND(type_p_paid::numeric, 2) AS type_p_paid,
+         ROUND(payment_paid::numeric, 2) AS payment_paid,
+         ROUND(open_amt::numeric, 2) AS open_amt
+       FROM open_items WHERE open_amt > 0.005
+       ORDER BY open_amt DESC LIMIT 25`,
+      companyId, asOf
+    ),
+    tx.$queryRawUnsafe(
+      `SELECT ap FROM "DailyFinancialSnapshot"
+       WHERE "companyId" = $1 AND frequency = 'daily' AND "snapshotDate" = $2::date`,
+      companyId, asOf
+    ),
+  ]);
+
+  return { asOf, booksAp: books?.[0]?.ap ?? null, buckets, topOpenVouchers: top };
+}
+
+const EXPLAIN_ROLLBACK = 'AP_EXPLAIN_ROLLBACK';
+
 async function main() {
   const args = process.argv.slice(2);
   const companyId = args.find((arg) => !arg.startsWith('--'))?.trim();
+  if (!companyId) usage();
+
+  // Diagnosis has to see the rebuilt ledger, not the stale one, so it runs the
+  // same rebuild and then forces a rollback. Nothing is ever committed here.
+  const explainArg = args.find((arg) => arg.startsWith('--explain='))?.slice(10);
+  if (explainArg) {
+    const asOf = parseDateArg(explainArg, '--explain').toISOString().slice(0, 10);
+    const explainRaw = await loadRawApRecords(companyId);
+    const explainFacts = buildFactRows(companyId, explainRaw);
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.aPTransactionFact.deleteMany({
+          where: { companyId, sourcePlatform: { in: ['INFOR_M3', 'INFOR_CSI'] } },
+        });
+        await tx.aPPaymentFact.deleteMany({
+          where: { companyId, sourcePlatform: { in: ['INFOR_M3', 'INFOR_CSI'] } },
+        });
+        for (const batch of chunks(explainFacts.transactions)) {
+          await tx.aPTransactionFact.createMany({ data: batch });
+        }
+        for (const batch of chunks(explainFacts.payments)) {
+          await tx.aPPaymentFact.createMany({ data: batch });
+        }
+        const report = await explainOpenVouchers(tx, companyId, asOf);
+        console.log(JSON.stringify(report, (_k, v) => (typeof v === 'bigint' ? Number(v) : v), 2));
+        throw new Error(EXPLAIN_ROLLBACK);
+      }, { timeout: 300_000 });
+    } catch (error) {
+      if ((error as Error)?.message !== EXPLAIN_ROLLBACK) throw error;
+    }
+    return;
+  }
+
   const startDate = parseDateArg(args.find((arg) => arg.startsWith('--start-date='))?.slice(13), '--start-date');
   const endDate = parseDateArg(args.find((arg) => arg.startsWith('--end-date='))?.slice(11), '--end-date');
-  if (!companyId || !args.includes('--confirm')) usage();
+  if (!args.includes('--confirm')) usage();
   if (startDate > endDate) throw new Error('--start-date must be on or before --end-date.');
 
   const rawRows = await loadRawApRecords(companyId);
