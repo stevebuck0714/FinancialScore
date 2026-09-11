@@ -3508,6 +3508,12 @@ export default function FinancialForecastTab({
 
       {activeTab === 'customer-growth-projections' && (
         <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          <div className="ff-yearly-income-print-title" style={{ display: 'none' }}>
+            <div className="ff-yearly-income-print-title__company">{companyName}</div>
+            <div className="ff-yearly-income-print-title__detail">Income Statement Forecast by Customer</div>
+            <div className="ff-yearly-income-print-title__detail">5 Year Plan</div>
+            <div className="ff-yearly-income-print-title__detail">Date Created: {formatEstDate(new Date())}</div>
+          </div>
           <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
             <div>
               <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement Forecast by Customer</h3>
