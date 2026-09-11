@@ -432,9 +432,10 @@ async function validateDailyAp(
     // books AP balance can be a reconciliation failure.
     if (row.snapshotAp === null || row.snapshotAp === undefined) return false;
     if (row.ledgerAp === null || row.ledgerAp === undefined) return true;
-    return Math.abs(Number(row.ledgerVsSnapshot)) > TOLERANCE ||
-      Math.abs(Number(row.ledgerMinusOneVsSnapshot)) <= TOLERANCE ||
-      Math.abs(Number(row.ledgerPlusOneVsSnapshot)) <= TOLERANCE;
+    // The neighbour-day figures stay in the payload to expose a date shift,
+    // but they cannot decide pass/fail: on a flat or zero balance every
+    // neighbour ties too, which flagged days that reconcile exactly.
+    return Math.abs(Number(row.ledgerVsSnapshot)) > TOLERANCE;
   });
 }
 
@@ -466,9 +467,15 @@ async function main() {
 
     const failures = await validateDailyAp(tx, companyId, startDate, endDate);
     if (failures.length) {
+      // Chronological order buries the signal under the oldest quiet days.
+      // Lead with the largest variances and the range they span.
+      const worst = [...failures].sort(
+        (a, b) => Math.abs(Number(b.ledgerVsSnapshot)) - Math.abs(Number(a.ledgerVsSnapshot))
+      );
       throw new Error(
-        `AP repair rolled back: ${failures.length} daily reconciliation failure(s). ` +
-        JSON.stringify(failures.slice(0, 10))
+        `AP repair rolled back: ${failures.length} daily reconciliation failure(s) ` +
+        `between ${failures[0].day} and ${failures[failures.length - 1].day}. ` +
+        `Worst variances: ${JSON.stringify(worst.slice(0, 10))}`
       );
     }
     return {
