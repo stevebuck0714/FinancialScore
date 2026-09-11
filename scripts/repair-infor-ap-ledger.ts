@@ -275,115 +275,140 @@ async function validateDailyAp(
   endDate: Date,
 ): Promise<Array<Record<string, unknown>>> {
   const rows = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(`
+    -- Set-based equivalent of the production voucher aging-rule total. The
+    -- former per-day LATERAL query rescanned the complete ledger and exceeded
+    -- Prisma's interactive transaction limit before it could validate/commit.
     WITH days AS (
-      -- Include the bounding days so every target date gets a real -1/+1
-      -- offset test, including the first and last requested date.
       SELECT generate_series($2::date - 1, $3::date + 1, interval '1 day')::date AS day
+    ),
+    vouchers AS (
+      SELECT "voucher", MIN("eventDate")::date AS created_at
+      FROM "APTransactionFact"
+      WHERE "companyId" = $1
+        AND "apAcct" = '30100'
+        AND "transType" = 'V'
+        AND "eventDate" <= $3::date + 1
+      GROUP BY "voucher"
+    ),
+    voucher_meta AS (
+      SELECT DISTINCT ON (t."voucher")
+        t."voucher", NULLIF(TRIM(t."invoiceNum"), '') AS invoice_num
+      FROM "APTransactionFact" t
+      JOIN vouchers v ON v."voucher" = t."voucher"
+      WHERE t."companyId" = $1
+        AND t."apAcct" = '30100'
+        AND t."transType" = 'V'
+      ORDER BY t."voucher", t."eventDate" ASC
+    ),
+    event_daily AS (
+      SELECT
+        t."voucher",
+        t."eventDate"::date AS day,
+        SUM(t."normalizedAmount")::double precision AS event_amount,
+        SUM(CASE WHEN t."transType" = 'P' THEN ABS(t."normalizedAmount") ELSE 0 END)::double precision
+          AS type_p_paid
+      FROM "APTransactionFact" t
+      JOIN vouchers v ON v."voucher" = t."voucher"
+      WHERE t."companyId" = $1 AND t."eventDate" <= $3::date + 1
+      GROUP BY t."voucher", t."eventDate"::date
+    ),
+    payment_daily AS (
+      SELECT vm."voucher", p."paymentDate"::date AS day, SUM(p."paidAmountHome")::double precision AS paid_amount
+      FROM voucher_meta vm
+      JOIN "APPaymentFact" p
+        ON p."companyId" = $1
+       AND p."paymentDate" <= $3::date + 1
+       AND (
+         UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm."voucher"))
+         OR (vm.invoice_num IS NOT NULL AND UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm.invoice_num)))
+       )
+      GROUP BY vm."voucher", p."paymentDate"::date
+    ),
+    activity_daily AS (
+      SELECT
+        activity."voucher",
+        activity.day,
+        SUM(activity.event_amount)::double precision AS event_amount,
+        SUM(activity.type_p_paid)::double precision AS type_p_paid,
+        SUM(activity.paid_amount)::double precision AS paid_amount
+      FROM (
+        SELECT "voucher", day, event_amount, type_p_paid, 0::double precision AS paid_amount
+        FROM event_daily
+        UNION ALL
+        SELECT "voucher", day, 0::double precision, 0::double precision, paid_amount
+        FROM payment_daily
+      ) activity
+      GROUP BY activity."voucher", activity.day
+    ),
+    opening_events AS (
+      SELECT
+        "voucher",
+        SUM(event_amount)::double precision AS event_amount,
+        SUM(type_p_paid)::double precision AS type_p_paid
+      FROM event_daily
+      WHERE day < $2::date - 1
+      GROUP BY "voucher"
+    ),
+    opening_payments AS (
+      SELECT "voucher", SUM(paid_amount)::double precision AS paid_amount
+      FROM payment_daily
+      WHERE day < $2::date - 1
+      GROUP BY "voucher"
+    ),
+    voucher_days AS (
+      SELECT d.day, v."voucher"
+      FROM days d
+      JOIN vouchers v ON v.created_at <= d.day
+    ),
+    running AS (
+      SELECT
+        vd.day,
+        vd."voucher",
+        COALESCE(oe.event_amount, 0) + SUM(COALESCE(ad.event_amount, 0)) OVER (
+          PARTITION BY vd."voucher" ORDER BY vd.day ROWS UNBOUNDED PRECEDING
+        )::double precision AS event_net,
+        COALESCE(oe.type_p_paid, 0) + SUM(COALESCE(ad.type_p_paid, 0)) OVER (
+          PARTITION BY vd."voucher" ORDER BY vd.day ROWS UNBOUNDED PRECEDING
+        )::double precision AS type_p_paid,
+        COALESCE(op.paid_amount, 0) + SUM(COALESCE(ad.paid_amount, 0)) OVER (
+          PARTITION BY vd."voucher" ORDER BY vd.day ROWS UNBOUNDED PRECEDING
+        )::double precision AS payment_paid
+      FROM voucher_days vd
+      LEFT JOIN opening_events oe ON oe."voucher" = vd."voucher"
+      LEFT JOIN opening_payments op ON op."voucher" = vd."voucher"
+      LEFT JOIN activity_daily ad ON ad."voucher" = vd."voucher" AND ad.day = vd.day
     ),
     comparison AS (
       SELECT
         d.day,
         dfs.ap AS snapshot_ap,
-        COALESCE(ledger.open_ap, 0)::double precision AS ledger_ap,
-        CASE WHEN anchor."openingBalance" IS NULL THEN NULL
-          ELSE -(anchor."openingBalance" + COALESCE(gl.gl_delta, 0)) END::double precision AS account_30100_ap
-      FROM days d
-      LEFT JOIN "DailyFinancialSnapshot" dfs
-        ON dfs."companyId" = $1 AND dfs.frequency = 'daily' AND dfs."snapshotDate" = d.day
-      LEFT JOIN LATERAL (
-        -- This intentionally mirrors the production aging-rule total:
-        -- canonical 30100 voucher headers, all related event activity, then
-        -- only payment-fact amounts absent from Type=P transaction events.
-        WITH voucher_creates AS (
-          SELECT "voucher", MIN("eventDate")::date AS created_at
-          FROM "APTransactionFact"
-          WHERE "companyId" = $1
-            AND "apAcct" = '30100'
-            AND "transType" = 'V'
-            AND "eventDate" <= d.day
-          GROUP BY "voucher"
-        ),
-        voucher_meta AS (
-          SELECT DISTINCT ON (t."voucher")
-            t."voucher", NULLIF(TRIM(t."invoiceNum"), '') AS invoice_num
-          FROM "APTransactionFact" t
-          JOIN voucher_creates vc ON vc."voucher" = t."voucher"
-          WHERE t."companyId" = $1
-            AND t."apAcct" = '30100'
-            AND t."transType" = 'V'
-          ORDER BY t."voucher", t."eventDate" ASC
-        ),
-        event_nets AS (
-          SELECT
-            vc."voucher",
-            SUM(t."normalizedAmount")::double precision AS event_net,
-            SUM(CASE WHEN t."transType" = 'P' THEN ABS(t."normalizedAmount") ELSE 0 END)::double precision
-              AS type_p_paid
-          FROM voucher_creates vc
-          JOIN "APTransactionFact" t
-            ON t."companyId" = $1
-           AND t."voucher" = vc."voucher"
-           AND t."eventDate" <= d.day
-          GROUP BY vc."voucher"
-        ),
-        payment_nets AS (
-          SELECT
-            vm."voucher",
-            COALESCE(SUM(p."paidAmountHome"), 0)::double precision AS payment_paid
-          FROM voucher_meta vm
-          LEFT JOIN "APPaymentFact" p
-            ON p."companyId" = $1
-           AND p."paymentDate" <= d.day
-           AND (
-             UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm."voucher"))
-             OR (
-               vm.invoice_num IS NOT NULL
-               AND UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm.invoice_num))
-             )
-           )
-          GROUP BY vm."voucher"
-        )
-        SELECT COALESCE(
+        COALESCE(
           SUM(
             GREATEST(
-              en.event_net - GREATEST(COALESCE(pn.payment_paid, 0) - en.type_p_paid, 0),
+              r.event_net - GREATEST(r.payment_paid - r.type_p_paid, 0),
               0
             )
           ),
           0
-        )::double precision AS open_ap
-        FROM event_nets en
-        LEFT JOIN payment_nets pn ON pn."voucher" = en."voucher"
-      ) ledger ON true
-      LEFT JOIN LATERAL (
-        SELECT "anchorDate", "openingBalance"
-        FROM "BalanceSheetAccountAnchor"
-        WHERE "companyId" = $1 AND "accountId" = '30100' AND "anchorDate" <= d.day
-        ORDER BY "anchorDate" DESC
-        LIMIT 1
-      ) anchor ON true
-      LEFT JOIN LATERAL (
-        SELECT SUM("signedAmount")::double precision AS gl_delta
-        FROM "GLTransactionFact"
-        WHERE "companyId" = $1 AND "accountId" = '30100'
-          AND "transDate" > anchor."anchorDate" AND "transDate" <= d.day
-      ) gl ON true
+        )::double precision AS ledger_ap
+      FROM days d
+      LEFT JOIN "DailyFinancialSnapshot" dfs
+        ON dfs."companyId" = $1 AND dfs.frequency = 'daily' AND dfs."snapshotDate" = d.day
+      LEFT JOIN running r ON r.day = d.day
+      GROUP BY d.day, dfs.ap
     )
     SELECT
-      comparison.day::text AS day,
-      comparison.snapshot_ap AS "snapshotAp",
-      comparison.ledger_ap AS "ledgerAp",
-      comparison.account_30100_ap AS "account30100Ap",
-      (comparison.ledger_ap - comparison.account_30100_ap)::double precision AS "ledgerVsAccount",
-      (comparison.snapshot_ap - comparison.account_30100_ap)::double precision AS "snapshotVsAccount",
-      (comparison.ledger_ap - comparison.snapshot_ap)::double precision AS "ledgerVsSnapshot",
-      (COALESCE(prev.ledger_ap, 0) - comparison.snapshot_ap)::double precision AS "ledgerMinusOneVsSnapshot",
-      (COALESCE(next.ledger_ap, 0) - comparison.snapshot_ap)::double precision AS "ledgerPlusOneVsSnapshot"
-    FROM comparison
-    LEFT JOIN comparison prev ON prev.day = comparison.day - 1
-    LEFT JOIN comparison next ON next.day = comparison.day + 1
-    WHERE comparison.day BETWEEN $2::date AND $3::date
-    ORDER BY comparison.day
+      c.day::text AS day,
+      c.snapshot_ap AS "snapshotAp",
+      c.ledger_ap AS "ledgerAp",
+      (c.ledger_ap - c.snapshot_ap)::double precision AS "ledgerVsSnapshot",
+      (COALESCE(prev.ledger_ap, 0) - c.snapshot_ap)::double precision AS "ledgerMinusOneVsSnapshot",
+      (COALESCE(next.ledger_ap, 0) - c.snapshot_ap)::double precision AS "ledgerPlusOneVsSnapshot"
+    FROM comparison c
+    LEFT JOIN comparison prev ON prev.day = c.day - 1
+    LEFT JOIN comparison next ON next.day = c.day + 1
+    WHERE c.day BETWEEN $2::date AND $3::date
+    ORDER BY c.day
   `, companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10));
 
   return rows.filter((row) => {
