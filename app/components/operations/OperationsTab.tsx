@@ -4289,11 +4289,15 @@ export default function OperationsTab({
     );
     const customerHistoryMonthMatchesSelectedPeriod = (monthKey: string) => {
       if (effectivePeriodKey === 'all') return true;
-      if (customerRevenuePeriodMode === 'month') return monthKey === effectivePeriodKey;
-      if (customerRevenuePeriodMode === 'year') return monthKey.startsWith(`${effectivePeriodKey}-`);
+      // History values can be keyed as either YYYY-MM or YYYY-MM-DD. Compare
+      // their calendar month so a date-keyed August record cannot fall
+      // through to the current (September MTD) customer record.
+      const normalizedMonthKey = String(monthKey || '').slice(0, 7);
+      if (customerRevenuePeriodMode === 'month') return normalizedMonthKey === effectivePeriodKey;
+      if (customerRevenuePeriodMode === 'year') return normalizedMonthKey.startsWith(`${effectivePeriodKey}-`);
       const [year, quarterRaw] = String(effectivePeriodKey).split('-Q');
-      const month = Number(monthKey.slice(5, 7));
-      return monthKey.startsWith(`${year}-`) && Math.floor((month - 1) / 3) + 1 === Number(quarterRaw || 0);
+      const month = Number(normalizedMonthKey.slice(5, 7));
+      return normalizedMonthKey.startsWith(`${year}-`) && Math.floor((month - 1) / 3) + 1 === Number(quarterRaw || 0);
     };
     const canonicalMonthlyTableCustomerTotals = (Array.isArray(customerSalesHistory?.rows) ? customerSalesHistory.rows : [])
       .map((salesRow: any) => {
@@ -4707,8 +4711,8 @@ export default function OperationsTab({
         </button>
       );
       return (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxSizing: 'border-box', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', maxWidth: '100%', minWidth: 0 }}>
             <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>{title}</h3>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
               <button
@@ -4773,7 +4777,7 @@ export default function OperationsTab({
               </label>
             </div>
           </div>
-          <div hidden={isTableCollapsed} style={{ maxWidth: '100%', overflowX: 'auto', paddingBottom: '8px' }}>
+          <div hidden={isTableCollapsed} style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', paddingBottom: '8px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + months.length * 112)}px` }}>
               <thead>
                 <tr>

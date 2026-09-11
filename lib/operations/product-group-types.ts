@@ -71,4 +71,8 @@ export type ProductGroupDataset = {
   priceCount: number;
   groups: ProductGroupOption[];
   rows: ProductGroupRow[];
+  salesHistory?: {
+    months: Array<{ monthKey: string; monthLabel: string }>;
+    rows: Array<{ key: string; label: string; values: Record<string, number>; total: number }>;
+  };
 };

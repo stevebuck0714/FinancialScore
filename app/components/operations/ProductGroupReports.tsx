@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   FORECAST_MONTH_FULL_LABELS,
   FORECAST_MONTHS,
@@ -119,6 +120,8 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
   const [dataset, setDataset] = useState<ProductGroupDataset | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [salesHistoryStartDate, setSalesHistoryStartDate] = useState('');
+  const [salesHistoryEndDate, setSalesHistoryEndDate] = useState('');
 
   useEffect(() => {
     if (!availableViews.some((item) => item.key === view) && availableViews[0]) {
@@ -161,6 +164,27 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
   const dataThru = dataset?.dataThru || '';
   const closed = closedMonths(dataThru || null);
   const shippingDays = dataset?.shippingDays || [];
+  const selectedGroupSalesHistory = useMemo(() => {
+    const historyRows = dataset?.salesHistory?.rows || [];
+    return historyRows.find((row) => row.key === groupKey) || historyRows[0] || null;
+  }, [dataset?.salesHistory?.rows, groupKey]);
+  const groupSalesHistoryPeriods = useMemo(() => {
+    const months = dataset?.salesHistory?.months || [];
+    return months
+      .filter((month) => (!salesHistoryStartDate || month.monthKey >= salesHistoryStartDate.slice(0, 7)) &&
+        (!salesHistoryEndDate || month.monthKey <= salesHistoryEndDate.slice(0, 7)))
+      .map((month) => {
+        const priorMonthKey = `${Number(month.monthKey.slice(0, 4)) - 1}-${month.monthKey.slice(5, 7)}`;
+        const sales = Number(selectedGroupSalesHistory?.values?.[month.monthKey] || 0);
+        const priorSales = Number(selectedGroupSalesHistory?.values?.[priorMonthKey] || 0);
+        return {
+          period: month.monthLabel,
+          periodKey: month.monthKey,
+          sales,
+          growthRate: priorSales > 0 ? ((sales / priorSales) - 1) * 100 : null,
+        };
+      });
+  }, [dataset?.salesHistory?.months, salesHistoryStartDate, salesHistoryEndDate, selectedGroupSalesHistory]);
 
   const th: React.CSSProperties = {
     textAlign: 'right',
@@ -324,6 +348,45 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
         <Chip label="Data thru" value={dataThru || '—'} />
         {closed.length ? <Chip label="Closed through" value={FORECAST_MONTH_FULL_LABELS[closed[closed.length - 1]]} /> : null}
         <Chip label="% Days Shipped" value={fmtPct(pctDaysShippedYear(shippingDays, year, dataThru || null))} />
+      </div>
+
+      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 10 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16, color: '#1e293b' }}>Group Sales History & Growth</h3>
+            <div style={{ marginTop: 4, color: '#64748b', fontSize: 11 }}>
+              {selectedGroupSalesHistory?.label || 'Select a group'} | Sales and same-month-prior-year growth.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label style={{ display: 'grid', gap: 4, fontSize: 11, color: '#64748b', fontWeight: 700 }}>
+              From
+              <input type="date" value={salesHistoryStartDate} onChange={(event) => setSalesHistoryStartDate(event.target.value)} style={{ ...inputStyle, width: 138 }} />
+            </label>
+            <label style={{ display: 'grid', gap: 4, fontSize: 11, color: '#64748b', fontWeight: 700 }}>
+              To
+              <input type="date" value={salesHistoryEndDate} onChange={(event) => setSalesHistoryEndDate(event.target.value)} style={{ ...inputStyle, width: 138 }} />
+            </label>
+          </div>
+        </div>
+        {groupSalesHistoryPeriods.length === 0 ? (
+          <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 13 }}>
+            No group sales history is available for the selected range.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={340}>
+            <ComposedChart data={groupSalesHistoryPeriods}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '11px' }} interval="preserveStartEnd" />
+              <YAxis yAxisId="sales" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${Math.round(Number(value || 0) / 1000)}k`} />
+              <YAxis yAxisId="growth" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
+              <Tooltip formatter={(value: any, name: any) => String(name) === 'Growth Rate' ? [value == null ? '—' : `${Number(value).toFixed(1)}%`, String(name)] : [fmtMoney(Number(value || 0)), String(name)]} />
+              <Legend />
+              <Bar yAxisId="sales" dataKey="sales" name="Sales" fill="#2563eb" radius={[3, 3, 0, 0]} />
+              <Line yAxisId="growth" type="monotone" dataKey="growthRate" name="Growth Rate" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} connectNulls={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {error ? <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div> : null}
