@@ -296,11 +296,17 @@ async function validateDailyAp(
     WITH days AS (
       SELECT generate_series($2::date - 1, $3::date + 1, interval '1 day')::date AS day
     ),
+    -- CSI only stamps ApAcct on voucher headers synced from 2026-01-30 on:
+    -- 4,473 of 5,050 headers carry no account at all. Requiring '30100' here
+    -- discarded every older voucher, which is why the reconstruction read
+    -- zero before 2026 and sat a constant $41,157.55 short after it. Untagged
+    -- vouchers belong to the AP control account; only an explicitly different
+    -- account is excluded.
     vouchers AS (
       SELECT "voucher", MIN("eventDate")::date AS created_at
       FROM "APTransactionFact"
       WHERE "companyId" = $1
-        AND "apAcct" = '30100'
+        AND COALESCE(NULLIF(TRIM("apAcct"), ''), '30100') = '30100'
         AND "transType" = 'V'
         AND "eventDate" <= $3::date + 1
       GROUP BY "voucher"
@@ -311,7 +317,7 @@ async function validateDailyAp(
       FROM "APTransactionFact" t
       JOIN vouchers v ON v."voucher" = t."voucher"
       WHERE t."companyId" = $1
-        AND t."apAcct" = '30100'
+        AND COALESCE(NULLIF(TRIM(t."apAcct"), ''), '30100') = '30100'
         AND t."transType" = 'V'
       ORDER BY t."voucher", t."eventDate" ASC
     ),
