@@ -522,7 +522,7 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
       LEFT JOIN pays pp ON pp."voucher" = v."voucher"
     )`;
 
-  const [buckets, top, books, eventMix, degenerateKeys, overApplied] = await Promise.all([
+  const [buckets, top, books, eventMix, degenerateKeys, ruleTotals, overApplied] = await Promise.all([
     tx.$queryRawUnsafe(
       `${shared}
        SELECT
@@ -595,6 +595,21 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
        ORDER BY shared.vouchers DESC LIMIT 10`,
       companyId, asOf
     ),
+    // Price every candidate open-AP rule in one pass so the right one can be
+    // chosen against books rather than discovered a deploy at a time.
+    tx.$queryRawUnsafe(
+      `${shared}
+       SELECT
+         ROUND(SUM(GREATEST(net_amt, 0))::numeric, 2) AS with_payment_facts,
+         ROUND(SUM(GREATEST(event_net, 0))::numeric, 2) AS events_only,
+         ROUND(SUM(event_net)::numeric, 2) AS events_unfloored,
+         ROUND(SUM(net_amt)::numeric, 2) AS with_payment_facts_unfloored,
+         (SELECT ROUND(SUM(GREATEST(vendor_net, 0))::numeric, 2)
+          FROM (SELECT "vendorName", SUM(event_net) AS vendor_net
+                FROM open_items GROUP BY "vendorName") v) AS events_netted_by_vendor
+       FROM open_items`,
+      companyId, asOf
+    ),
     // Vouchers paid beyond their own invoice. Flooring each at zero hides the
     // excess, so it never offsets the genuinely open items and inflates AP.
     tx.$queryRawUnsafe(
@@ -621,6 +636,7 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
     asOf,
     booksAp: books?.[0]?.ap ?? null,
     buckets,
+    ruleTotals: ruleTotals?.[0] ?? null,
     eventMix,
     overAppliedVouchers: overApplied?.[0] ?? null,
     sharedInvoiceNumbers: degenerateKeys,
