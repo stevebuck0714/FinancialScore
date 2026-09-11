@@ -1276,6 +1276,10 @@ export default function FinancialForecastTab({
     });
     return Array.from(buckets.values());
   }, [customerForecastViewMode, customerForecastSchedule.actualMonthKeys, monthlyForecastPeriods]);
+  const customerConcentrationColumns = useMemo(
+    () => customerForecastColumns.filter((column) => column.label !== '2031'),
+    [customerForecastColumns],
+  );
   const activeCustomerSortKey = customerForecastColumns.some((column) => column.key === customerSort.key)
     ? customerSort.key
     : customerForecastColumns[0]?.key || '';
@@ -3541,8 +3545,8 @@ export default function FinancialForecastTab({
           <div className="ff-print-table-wrap" style={{ overflowX: 'auto' }}>
             <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <colgroup>
-                <col style={{ width: '94px' }} />
-                {customerForecastColumns.map((column) => (
+                <col style={{ width: '80px' }} />
+                {customerConcentrationColumns.map((column) => (
                   <React.Fragment key={`growth-columns-${column.key}`}>
                     <col style={{ width: '100px' }} />
                     <col style={{ width: '60px' }} />
@@ -3551,10 +3555,10 @@ export default function FinancialForecastTab({
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th aria-sort={activeCustomerSortKey === 'name' ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'left', padding: '8px', minWidth: '94px' }}>
+                  <th aria-sort={activeCustomerSortKey === 'name' ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'left', padding: '8px', minWidth: '80px' }}>
                     <button onClick={() => updateCustomerSort('name')} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>Line Item{customerSortArrow('name')}</button>
                   </th>
-                  {customerForecastColumns.map((column) => (
+                  {customerConcentrationColumns.map((column) => (
                     <React.Fragment key={column.key}>
                       <th aria-sort={activeCustomerSortKey === column.key ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'right', padding: '8px 3px 8px 10px', minWidth: '100px' }}>
                         <button onClick={() => updateCustomerSort(column.key)} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>{column.label}{customerSortArrow(column.key)}</button>
@@ -3569,7 +3573,7 @@ export default function FinancialForecastTab({
               <tbody>
                 <tr>
                   <td style={{ padding: '8px', fontWeight: 700, background: '#f8fafc' }}>Revenue by Customer</td>
-                  {customerForecastColumns.map((column) => (
+                  {customerConcentrationColumns.map((column) => (
                     <React.Fragment key={`growth-header-${column.key}`}>
                       <td style={{ padding: '8px', background: '#f8fafc' }} />
                       <td style={{ padding: '8px', background: '#f8fafc' }} />
@@ -3579,7 +3583,7 @@ export default function FinancialForecastTab({
                 {customerRowsByRevenue.map((customer) => (
                   <tr key={`growth-${customer.key}`} style={{ borderTop: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '8px' }}>{customer.name}</td>
-                    {customerForecastColumns.map((column) => {
+                    {customerConcentrationColumns.map((column) => {
                       const revenue = customer.months
                         .filter((month) => column.monthKeys.includes(month.key))
                         .reduce((sum, month) => sum + Number(month.revenue || 0), 0);
@@ -3598,7 +3602,7 @@ export default function FinancialForecastTab({
                 ))}
                 <tr style={{ background: '#f8fafc', fontWeight: 700 }}>
                   <td style={{ padding: '8px' }}>Total Customer Sales</td>
-                  {customerForecastColumns.map((column) => (
+                  {customerConcentrationColumns.map((column) => (
                     <React.Fragment key={`growth-total-${column.key}`}>
                       <td style={{ padding: '8px 3px 8px 10px', textAlign: 'right' }}>{formatCurrency(customerForecastSchedule.allRows.reduce((sum, customer) => sum + customer.months.filter((month) => column.monthKeys.includes(month.key)).reduce((monthSum, month) => monthSum + Number(month.revenue || 0), 0), 0))}</td>
                       <td style={{ padding: '8px 14px 8px 3px', textAlign: 'right', color: '#64748b' }}>100.0%</td>
