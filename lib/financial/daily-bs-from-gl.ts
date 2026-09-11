@@ -1497,7 +1497,17 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   const processDate = async (snapshotDate: Date) => {
     // Financial snapshots represent business reporting days. Do not create
     // zero-P&L / carried-balance rows for weekends or federal holidays.
-    if (!isEstBusinessDay(snapshotDate.toISOString().slice(0, 10))) return;
+    if (!isEstBusinessDay(snapshotDate.toISOString().slice(0, 10))) {
+      // Skipping alone left rows written before this guard existed in place
+      // forever, holding a stale carried-forward balance. Atlantic's Saturday
+      // 2026-09-05 and Sunday 2026-09-06 both reported AP of 508,219.04 while
+      // the surrounding business days were 636,016.91 and 643,023.69, which
+      // read as a reconciliation break on a day that should not exist.
+      await prisma.dailyFinancialSnapshot.deleteMany({
+        where: { companyId, frequency: 'daily', snapshotDate },
+      });
+      return;
+    }
     const fiscalYearStart = computeFiscalYearStart(snapshotDate, fyMonth, fyDay);
     const accountAnchor = accountAnchorForDate(snapshotDate);
     const anchor = accountAnchor ? null : anchorForDate(snapshotDate);
