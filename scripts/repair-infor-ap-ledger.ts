@@ -206,10 +206,17 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
     if (!record || text(record, ['InWorkflow']) === '1') continue;
     const type = String(text(record, ['Type']) || 'V').toUpperCase();
     if (!['V', 'D', 'C', 'P', 'A'].includes(type)) continue;
-    // SLVchHdrs is the canonical voucher-header source. SLAptrx* repeats
-    // Type=V rows beside its payment activity; replaying those as invoices
-    // creates phantom open AP.
-    if (program !== 'SLVCHHDRS' && type === 'V') continue;
+    // Neither voucher feed is a superset: SLVchHdrs holds 5,050 Type=V rows
+    // and SLAptrxps 5,461, and vouchers such as 403169 exist only in the
+    // latter. Take Type=V from both and let the voucher+sequence key below
+    // collapse the overlap, preferring the header source.
+    //
+    // Type=A on a vch_hdr row mirrors a settlement rather than adding a
+    // payable: on 403169 it repeats the 51,301.62 payment, and on 402900 the
+    // 23,551.56 already paid. Booking it re-opens every settled invoice.
+    // The aptrxp Type=A rows are genuine adjustments -- that is where duty
+    // and tariff relief arrives -- so only the header-sourced ones drop.
+    if (program === 'SLVCHHDRS' && type === 'A') continue;
 
     const voucher = text(record, ['Voucher', 'billNo', 'InvNum']);
     if (!voucher) continue;
