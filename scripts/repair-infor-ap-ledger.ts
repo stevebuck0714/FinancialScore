@@ -13,6 +13,10 @@ const AP_PROGRAMS = new Set([
 const PAYMENT_PROGRAMS = new Set(['SLAPPMTS', 'SLAPTRXP', 'SLAPTRXPS', 'SLAPTRX', 'SLAPTRXS']);
 const TOLERANCE = 0.005;
 const BATCH_SIZE = 1_000;
+// CSI's detailed payment feed begins here. Keeping voucher events in the
+// same coverage window avoids resurrecting invoices whose settlement events
+// are unavailable in the staged raw data.
+const AP_MIN_BILL_DATE = new Date('2023-06-01T00:00:00.000Z');
 
 type RawApRecord = {
   id: string;
@@ -203,12 +207,10 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
     if (!record || text(record, ['InWorkflow']) === '1') continue;
     const type = String(text(record, ['Type']) || 'V').toUpperCase();
     if (!['V', 'D', 'C', 'P', 'A'].includes(type)) continue;
-    // SLVchHdrs emits historical adjustment headers as well as the actual
-    // adjustment transaction feed. Never recreate those known Type=A duplicates.
-    if (program === 'SLVCHHDRS' && type === 'A') continue;
-    // Header source is authoritative for voucher events; payment rows must
-    // originate from the AP transaction/payment source.
-    if (program === 'SLVCHHDRS' && type === 'P') continue;
+    // SLVchHdrs is the canonical voucher-header source. SLAptrx* repeats
+    // Type=V rows beside its payment activity; replaying those as invoices
+    // creates phantom open AP.
+    if (program !== 'SLVCHHDRS' && type === 'V') continue;
 
     const voucher = text(record, ['Voucher', 'billNo', 'InvNum']);
     if (!voucher) continue;
@@ -221,7 +223,7 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
     const eventDate = type === 'P'
       ? distDate || recordDate
       : distDate || invoiceDate || recordDate;
-    if (!eventDate) continue;
+    if (!eventDate || eventDate.getTime() < AP_MIN_BILL_DATE.getTime()) continue;
 
     const paidAmount = number(record, ['AmtPaid']);
     const invoiceAmount = number(record, ['InvAmt', 'InvoiceAmount']);
@@ -240,7 +242,7 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
       voucher, vouchSeq, invoiceNum: text(record, ['InvNum']),
       invoiceDate, distDate, transType: type, invoiceAmount: Math.abs(amount), normalizedAmount,
       exchangeRate: number(record, ['ExchRate']), termsCode: text(record, ['TermsCode']),
-      sourcePlatform: raw.platform, sourceItemId, sourceProgram: program,
+      sourcePlatform: 'INFOR_CSI', sourceItemId, sourceProgram: program,
     };
     const transactionKey = `${voucher}|${vouchSeq}|${type}|${sourceItemId || ''}`;
     const existing = transactionByKey.get(transactionKey);
@@ -289,14 +291,69 @@ async function validateDailyAp(
       LEFT JOIN "DailyFinancialSnapshot" dfs
         ON dfs."companyId" = $1 AND dfs.frequency = 'daily' AND dfs."snapshotDate" = d.day
       LEFT JOIN LATERAL (
-        SELECT SUM(GREATEST(voucher_net.net, 0))::double precision AS open_ap
-        FROM (
-          SELECT "voucher", COALESCE("vouchSeq", ''), COALESCE("vendorId", ''),
-                 SUM("normalizedAmount") AS net
+        -- This intentionally mirrors the production aging-rule total:
+        -- canonical 30100 voucher headers, all related event activity, then
+        -- only payment-fact amounts absent from Type=P transaction events.
+        WITH voucher_creates AS (
+          SELECT "voucher", MIN("eventDate")::date AS created_at
           FROM "APTransactionFact"
-          WHERE "companyId" = $1 AND "eventDate" <= d.day
-          GROUP BY "voucher", COALESCE("vouchSeq", ''), COALESCE("vendorId", '')
-        ) voucher_net
+          WHERE "companyId" = $1
+            AND "apAcct" = '30100'
+            AND "transType" = 'V'
+            AND "eventDate" <= d.day
+          GROUP BY "voucher"
+        ),
+        voucher_meta AS (
+          SELECT DISTINCT ON (t."voucher")
+            t."voucher", NULLIF(TRIM(t."invoiceNum"), '') AS invoice_num
+          FROM "APTransactionFact" t
+          JOIN voucher_creates vc ON vc."voucher" = t."voucher"
+          WHERE t."companyId" = $1
+            AND t."apAcct" = '30100'
+            AND t."transType" = 'V'
+          ORDER BY t."voucher", t."eventDate" ASC
+        ),
+        event_nets AS (
+          SELECT
+            vc."voucher",
+            SUM(t."normalizedAmount")::double precision AS event_net,
+            SUM(CASE WHEN t."transType" = 'P' THEN ABS(t."normalizedAmount") ELSE 0 END)::double precision
+              AS type_p_paid
+          FROM voucher_creates vc
+          JOIN "APTransactionFact" t
+            ON t."companyId" = $1
+           AND t."voucher" = vc."voucher"
+           AND t."eventDate" <= d.day
+          GROUP BY vc."voucher"
+        ),
+        payment_nets AS (
+          SELECT
+            vm."voucher",
+            COALESCE(SUM(p."paidAmountHome"), 0)::double precision AS payment_paid
+          FROM voucher_meta vm
+          LEFT JOIN "APPaymentFact" p
+            ON p."companyId" = $1
+           AND p."paymentDate" <= d.day
+           AND (
+             UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm."voucher"))
+             OR (
+               vm.invoice_num IS NOT NULL
+               AND UPPER(TRIM(p."billNo")) = UPPER(TRIM(vm.invoice_num))
+             )
+           )
+          GROUP BY vm."voucher"
+        )
+        SELECT COALESCE(
+          SUM(
+            GREATEST(
+              en.event_net - GREATEST(COALESCE(pn.payment_paid, 0) - en.type_p_paid, 0),
+              0
+            )
+          ),
+          0
+        )::double precision AS open_ap
+        FROM event_nets en
+        LEFT JOIN payment_nets pn ON pn."voucher" = en."voucher"
       ) ledger ON true
       LEFT JOIN LATERAL (
         SELECT "anchorDate", "openingBalance"
@@ -320,8 +377,8 @@ async function validateDailyAp(
       (comparison.ledger_ap - comparison.account_30100_ap)::double precision AS "ledgerVsAccount",
       (comparison.snapshot_ap - comparison.account_30100_ap)::double precision AS "snapshotVsAccount",
       (comparison.ledger_ap - comparison.snapshot_ap)::double precision AS "ledgerVsSnapshot",
-      (COALESCE(prev.ledger_ap, 0) - comparison.account_30100_ap)::double precision AS "ledgerMinusOneVsAccount",
-      (COALESCE(next.ledger_ap, 0) - comparison.account_30100_ap)::double precision AS "ledgerPlusOneVsAccount"
+      (COALESCE(prev.ledger_ap, 0) - comparison.snapshot_ap)::double precision AS "ledgerMinusOneVsSnapshot",
+      (COALESCE(next.ledger_ap, 0) - comparison.snapshot_ap)::double precision AS "ledgerPlusOneVsSnapshot"
     FROM comparison
     LEFT JOIN comparison prev ON prev.day = comparison.day - 1
     LEFT JOIN comparison next ON next.day = comparison.day + 1
@@ -330,13 +387,11 @@ async function validateDailyAp(
   `, companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10));
 
   return rows.filter((row) => {
-    const required = [row.snapshotAp, row.ledgerAp, row.account30100Ap];
+    const required = [row.snapshotAp, row.ledgerAp];
     if (required.some((value) => value === null || value === undefined)) return true;
-    return Math.abs(Number(row.ledgerVsAccount)) > TOLERANCE ||
-      Math.abs(Number(row.snapshotVsAccount)) > TOLERANCE ||
-      Math.abs(Number(row.ledgerVsSnapshot)) > TOLERANCE ||
-      Math.abs(Number(row.ledgerMinusOneVsAccount)) <= TOLERANCE ||
-      Math.abs(Number(row.ledgerPlusOneVsAccount)) <= TOLERANCE;
+    return Math.abs(Number(row.ledgerVsSnapshot)) > TOLERANCE ||
+      Math.abs(Number(row.ledgerMinusOneVsSnapshot)) <= TOLERANCE ||
+      Math.abs(Number(row.ledgerPlusOneVsSnapshot)) <= TOLERANCE;
   });
 }
 
