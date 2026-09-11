@@ -2607,6 +2607,13 @@ const TERMS_CODE_DAYS: Record<string, number> = {
 const DEFAULT_TERMS_DAYS = 30;
 const DEFAULT_TERMS_LABEL = 'default:N30';
 
+// How far the voucher aging may run past the newest known payment before the
+// buckets are reported unavailable. Atlantic's payment feed sits about a week
+// behind the books, which is well inside this window; a feed that stalls for
+// longer would age paid vouchers into past-due buckets and is better shown as
+// a total with no distribution.
+const AP_AGING_MAX_DAYS_PAST_LEDGER = 14;
+
 function termsCodeToDays(code: string | null | undefined): number | null {
   if (!code) return null;
   const trimmed = String(code).trim().toUpperCase();
@@ -8510,7 +8517,19 @@ export async function GET(request: NextRequest) {
             });
             const byDay = new Map<string, ApDayRec>();
             for (const [dayKey, booksAp] of dfsByDay.entries()) {
-              const reconstructed = dayKey <= apLedgerAsOfKey! ? agingRuleByDay.get(dayKey) : undefined;
+              // Payments arrive a few days behind the books, so refusing to age
+              // anything past the newest payment left the most recent days
+              // showing a total with no buckets. Vouchers paid in that window
+              // still look open, but the buckets are scaled to the books total
+              // below, so the overstatement divides out and only the age mix
+              // drifts. The window is capped because that drift compounds: a
+              // tenant whose payment feed stalls for months would otherwise
+              // show every voucher marching into 90+.
+              const daysPastLedger = Math.floor(
+                (parseIsoDayKey(dayKey).getTime() - parseIsoDayKey(apLedgerAsOfKey!).getTime()) / 86400000
+              );
+              const reconstructed =
+                daysPastLedger <= AP_AGING_MAX_DAYS_PAST_LEDGER ? agingRuleByDay.get(dayKey) : undefined;
               const ledgerTotal = Number(reconstructed?.apBalance || 0);
               if (reconstructed && ledgerTotal > 0 && booksAp > 0) {
                 // Total AP is the books balance, so it ties to the balance
