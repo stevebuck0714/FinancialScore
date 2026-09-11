@@ -512,7 +512,7 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
       LEFT JOIN pays pp ON pp."voucher" = v."voucher"
     )`;
 
-  const [buckets, top, books] = await Promise.all([
+  const [buckets, top, books, eventMix, degenerateKeys] = await Promise.all([
     tx.$queryRawUnsafe(
       `${shared}
        SELECT
@@ -546,9 +546,43 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
        WHERE "companyId" = $1 AND frequency = 'daily' AND "snapshotDate" = $2::date`,
       companyId, asOf
     ),
+    // Which feed and event type each dollar of the ledger comes from.
+    tx.$queryRawUnsafe(
+      `SELECT
+         t."sourceProgram", t."transType",
+         COUNT(*) AS rows,
+         ROUND(SUM(t."normalizedAmount")::numeric, 2) AS net_amount
+       FROM "APTransactionFact" t
+       WHERE t."companyId" = $1 AND t."eventDate" <= $2::date
+       GROUP BY 1, 2 ORDER BY 1, 2`,
+      companyId, asOf
+    ),
+    // A voucher whose invoice number is a placeholder matches every payment
+    // sharing that billNo, crediting it with unrelated settlements.
+    tx.$queryRawUnsafe(
+      `SELECT
+         COALESCE(NULLIF(TRIM(t."invoiceNum"), ''), '(blank)') AS invoice_num,
+         COUNT(DISTINCT t."voucher") AS vouchers,
+         (SELECT COUNT(*) FROM "APPaymentFact" p
+          WHERE p."companyId" = $1
+            AND UPPER(TRIM(p."billNo")) = UPPER(TRIM(COALESCE(t."invoiceNum", '')))) AS matching_payments
+       FROM "APTransactionFact" t
+       WHERE t."companyId" = $1 AND t."transType" = 'V' AND t."eventDate" <= $2::date
+       GROUP BY 1
+       HAVING COUNT(DISTINCT t."voucher") > 1
+       ORDER BY vouchers DESC LIMIT 10`,
+      companyId, asOf
+    ),
   ]);
 
-  return { asOf, booksAp: books?.[0]?.ap ?? null, buckets, topOpenVouchers: top };
+  return {
+    asOf,
+    booksAp: books?.[0]?.ap ?? null,
+    buckets,
+    eventMix,
+    sharedInvoiceNumbers: degenerateKeys,
+    topOpenVouchers: top,
+  };
 }
 
 /** Every rebuilt event on one voucher, to attribute a variance to its source rows. */
