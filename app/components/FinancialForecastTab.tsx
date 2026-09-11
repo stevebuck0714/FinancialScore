@@ -1179,9 +1179,21 @@ export default function FinancialForecastTab({
           priorAnnualProjection = Math.max(0, priorAnnualProjection * (1 + annualGrowthPct / 100));
           annualProjectionByYear.set(year, priorAnnualProjection);
         }
+        const actualRevenueByYear = actualMonthKeys.reduce<Record<number, number>>((totals, monthKey) => {
+          const year = Number(monthKey.slice(0, 4));
+          totals[year] = Number(totals[year] || 0) + Number(customer.months[monthKey] || 0);
+          return totals;
+        }, {});
+        const projectedMonthsByYear = monthlyForecastPeriods.reduce<Record<number, number>>((counts, period) => {
+          const year = Number(period.year);
+          counts[year] = Number(counts[year] || 0) + 1;
+          return counts;
+        }, {});
         const projectedMonths = monthlyForecastPeriods.map((period) => {
-          const annualProjection = annualProjectionByYear.get(Number(period.year)) || 0;
-          return { ...period, revenue: annualProjection / 12 };
+          const year = Number(period.year);
+          const annualProjection = annualProjectionByYear.get(year) || 0;
+          const remainingAnnualRevenue = Math.max(0, annualProjection - Number(actualRevenueByYear[year] || 0));
+          return { ...period, revenue: remainingAnnualRevenue / Number(projectedMonthsByYear[year] || 1) };
         });
         const actualMonths = Object.entries(customer.months)
           .filter(([monthKey]) => !firstForecastMonthKey || monthKey < firstForecastMonthKey)
