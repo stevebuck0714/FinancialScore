@@ -712,7 +712,7 @@ export default function OpsDashboard({
   const showCustomerWidget = customerLabels.length > 0 && isOverviewReportEnabled('overviewStdRevenue');
   const showArWidget = arLabels.length > 0 && isOverviewReportEnabled('overviewStdArAging');
   const showApWidget = apLabels.length > 0 && isOverviewReportEnabled('overviewStdApAging');
-  const showProductWidget = productLabels.length > 0 && !printSectionKey;
+  const showProductWidget = productLabels.length > 0 && !printSectionKey && !sectorHidesGenericOverviewWidgets(industrySectorCategory);
   const showInventoryWidget = inventoryLabels.length > 0 && isOverviewReportEnabled('overviewStdInventory');
   const showCashWidget = cashLabels.length > 0 && isOverviewReportEnabled('overviewStdCashTrend');
   const showEbitdaWidget = isOverviewReportEnabled('overviewStdEbitda');

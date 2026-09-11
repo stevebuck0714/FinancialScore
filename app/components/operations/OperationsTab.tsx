@@ -1392,10 +1392,18 @@ export default function OperationsTab({
   const isWholesaleTradeSector = String(industrySectorCategory || '').trim() === '42';
   const isManufacturingSector = String(industrySectorCategory || '').trim() === '32';
   const isPayrollBureauSector = String(industrySectorCategory || '').trim() === '54';
-  const isOverviewCashConversionEnabled = isSectionEnabled('overviewStdCashConversionAnalysis');
-  const isOverviewEbitdaPerformanceEnabled = isSectionEnabled('overviewStdEbitdaPerformance');
-  const isOverviewCustomerConcentrationEnabled = isSectionEnabled('overviewStdCustomerConcentrationExposure');
-  const isOverviewExecutionVelocityEnabled = isSectionEnabled('overviewStdExecutionVelocity');
+  const isOverviewCashConversionEnabled = isWholesaleTradeSector
+    ? isSectionEnabled('overviewStdCashConversionAnalysis')
+    : operationalHubSections.overviewStdCashConversionAnalysis === true;
+  const isOverviewEbitdaPerformanceEnabled = isWholesaleTradeSector
+    ? isSectionEnabled('overviewStdEbitdaPerformance')
+    : operationalHubSections.overviewStdEbitdaPerformance === true;
+  const isOverviewCustomerConcentrationEnabled = isWholesaleTradeSector
+    ? isSectionEnabled('overviewStdCustomerConcentrationExposure')
+    : operationalHubSections.overviewStdCustomerConcentrationExposure === true;
+  const isOverviewExecutionVelocityEnabled = isWholesaleTradeSector
+    ? isSectionEnabled('overviewStdExecutionVelocity')
+    : operationalHubSections.overviewStdExecutionVelocity === true;
   const isHealthcareEnterpriseReportsEnabled = isSectionEnabled('overviewHealthcareEnterpriseReports');
   const isHealthcareRegionReportsEnabled = isSectionEnabled('overviewHealthcareRegionReports');
   const isHealthcareServiceReportsEnabled = isSectionEnabled('overviewHealthcareServiceReports');
@@ -1509,7 +1517,7 @@ export default function OperationsTab({
   useEffect(() => {
     const needsCashConversionData =
       (activeTab === 'forecast' && activeForecastBasisTab === 'cash-basis') ||
-      (isWholesaleTradeSector && activeTab === 'dashboard' && (isOverviewCashConversionEnabled || isOverviewEbitdaPerformanceEnabled)) ||
+      (activeTab === 'dashboard' && (isOverviewCashConversionEnabled || isOverviewEbitdaPerformanceEnabled)) ||
       (!isWholesaleTradeSector && activeTab === 'cash' && activeCashSubTab === 'cash-conversion-analysis' && isCashConversionAnalysisEnabled);
     if (!needsCashConversionData) return;
 
@@ -4237,7 +4245,7 @@ export default function OperationsTab({
       return acc;
     }, {});
     const rankedCustomersForTable = (
-      usesCanonicalMonthlyCustomerHistory
+      usesCanonicalMonthlyCustomerHistory && canonicalMonthlyTableCustomerTotals.length > 0
         ? canonicalMonthlyTableCustomerTotals
         : Object.values(tableCustomerTotals)
     ).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
@@ -4273,11 +4281,13 @@ export default function OperationsTab({
       }, new Map<string, { name: string; totalRevenue: number; totalInvoices: null }>()).values()
     ).sort((a, b) => Number(b.totalRevenue || 0) - Number(a.totalRevenue || 0));
     const rankedCustomersForTableEffective =
-      concentrationTopCustomersForTable.length >= 10
-        ? concentrationTopCustomersForTable
-        : rankedCustomersForTable.length > 0
-          ? rankedCustomersForTable
-          : summaryTopCustomers;
+      rankedCustomersForTable.length > 0
+        ? rankedCustomersForTable
+        : concentrationTopCustomersForTable.length > 0
+          ? concentrationTopCustomersForTable
+          : effectivePeriodKey === 'all'
+            ? summaryTopCustomers
+            : [];
     const selectedPeriodLabel =
       customerRevenuePeriodMode === 'year'
         ? (effectivePeriodKey === 'all' ? 'All Years' : effectivePeriodKey)
@@ -4292,7 +4302,18 @@ export default function OperationsTab({
                   ? String(effectivePeriodKey)
                   : monthDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
               })();
-    const halfWindowRows = recordsInSelectedDateRange.reduce(
+    const retentionSourceRecords = usesCanonicalMonthlyCustomerHistory
+      ? customerSalesHistoryMonths.flatMap((month: any) =>
+          (Array.isArray(customerSalesHistory?.rows) ? customerSalesHistory.rows : [])
+            .map((row: any) => ({
+              snapshotDate: `${month.monthKey}-01`,
+              customerName: String(row?.label || 'Unknown Customer'),
+              revenue: Number(row?.values?.[month.monthKey] || 0),
+            }))
+            .filter((row: any) => row.revenue !== 0)
+        )
+      : recordsInSelectedDateRange;
+    const halfWindowRows = retentionSourceRecords.reduce(
       (
         acc: Record<
           string,
@@ -5629,8 +5650,24 @@ export default function OperationsTab({
           const wipAsOfLabel = wipAsOfDate
             ? formatDateSafeUtc(wipAsOfDate, { year: 'numeric', month: 'short', day: 'numeric' })
             : formatDateSafeUtc(new Date(), { year: 'numeric', month: 'short', day: 'numeric' });
+          const ytdEndMonthKey = selectedEndForCustomer
+            ? `${selectedEndForCustomer.getUTCFullYear()}-${String(selectedEndForCustomer.getUTCMonth() + 1).padStart(2, '0')}`
+            : '';
+          const canonicalBookingsTopRows = usesCanonicalMonthlyCustomerHistory
+            ? (Array.isArray(customerSalesHistory?.rows) ? customerSalesHistory.rows : [])
+                .map((row: any) => ({
+                  customerName: String(row?.label || 'Unknown Customer'),
+                  ytd: Object.entries(row?.values || {}).reduce((sum, [monthKey, revenue]) => (
+                    monthKey.slice(0, 4) === ytdEndMonthKey.slice(0, 4) && monthKey <= ytdEndMonthKey
+                      ? sum + Number(revenue || 0)
+                      : sum
+                  ), 0),
+                }))
+                .filter((row: any) => row.ytd > 0)
+            : [];
           const bookingsByCustomerName = new Map<string, { ytd: number }>(
-            bookingsTopRows.map((row: any) => [String(row.customerName), { ytd: Number(row.ytd || 0) }])
+            (canonicalBookingsTopRows.length > 0 ? canonicalBookingsTopRows : bookingsTopRows)
+              .map((row: any) => [String(row.customerName), { ytd: Number(row.ytd || 0) }])
           );
           const wipByCustomerName = new Map<string, { wip: number }>(
             wipRows.map((row: any) => [String(row.customerName), { wip: Number(row.wipValue || 0) }])
@@ -29329,7 +29366,7 @@ Strategies to Improve the CCC
       ...(isOverviewCustomerConcentrationEnabled ? [{ key: 'customer-concentration-exposure' as const, label: 'Customer Concentration Exposure' }] : []),
       ...(isOverviewExecutionVelocityEnabled ? [{ key: 'execution-velocity' as const, label: 'Execution Velocity' }] : []),
     ];
-    if (!isWholesaleTradeSector || !overviewReports.length) return dashboard;
+    if (!overviewReports.length) return dashboard;
     const effectiveOverviewSubTab = overviewReports.some((tab) => tab.key === activeOverviewSubTab)
       ? activeOverviewSubTab
       : overviewReports[0].key;

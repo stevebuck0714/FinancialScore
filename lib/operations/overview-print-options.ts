@@ -80,9 +80,11 @@ export function getOverviewPrintOptions(
     ];
   }
 
-  if (sector === '42') {
+  if (['32', '42'].includes(sector)) {
+    const isOverviewSubtabEnabled = (sectionKey: string) =>
+      sector === '42' ? isSectionEnabled(sections, sectionKey) : sections[sectionKey] === true;
     const wholesalePages: OverviewPrintOption[] = [
-      ...(isSectionEnabled(sections, 'overviewStdCashConversionAnalysis')
+      ...(isOverviewSubtabEnabled('overviewStdCashConversionAnalysis')
         ? [{
             key: 'overviewStdCashConversionAnalysis',
             label: 'Cash Conversion Analysis',
@@ -90,7 +92,7 @@ export function getOverviewPrintOptions(
             overviewSubTab: 'cash-conversion-analysis',
           }]
         : []),
-      ...(isSectionEnabled(sections, 'overviewStdEbitdaPerformance')
+      ...(isOverviewSubtabEnabled('overviewStdEbitdaPerformance')
         ? [{
             key: 'overviewStdEbitdaPerformance',
             label: 'EBITDA Performance',
@@ -98,7 +100,7 @@ export function getOverviewPrintOptions(
             overviewSubTab: 'ebitda-performance',
           }]
         : []),
-      ...(isSectionEnabled(sections, 'overviewStdCustomerConcentrationExposure')
+      ...(isOverviewSubtabEnabled('overviewStdCustomerConcentrationExposure')
         ? [{
             key: 'overviewStdCustomerConcentrationExposure',
             label: 'Customer Concentration Exposure',
@@ -106,7 +108,7 @@ export function getOverviewPrintOptions(
             overviewSubTab: 'customer-concentration-exposure',
           }]
         : []),
-      ...(isSectionEnabled(sections, 'overviewStdExecutionVelocity')
+      ...(isOverviewSubtabEnabled('overviewStdExecutionVelocity')
         ? [{
             key: 'overviewStdExecutionVelocity',
             label: 'Execution Velocity',
