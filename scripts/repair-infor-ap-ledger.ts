@@ -314,14 +314,14 @@ async function validateDailyAp(
     )
     SELECT
       comparison.day::text AS day,
-      snapshot_ap AS "snapshotAp",
-      ledger_ap AS "ledgerAp",
-      account_30100_ap AS "account30100Ap",
-      (ledger_ap - account_30100_ap)::double precision AS "ledgerVsAccount",
-      (snapshot_ap - account_30100_ap)::double precision AS "snapshotVsAccount",
-      (ledger_ap - snapshot_ap)::double precision AS "ledgerVsSnapshot",
-      (COALESCE(prev.ledger_ap, 0) - account_30100_ap)::double precision AS "ledgerMinusOneVsAccount",
-      (COALESCE(next.ledger_ap, 0) - account_30100_ap)::double precision AS "ledgerPlusOneVsAccount"
+      comparison.snapshot_ap AS "snapshotAp",
+      comparison.ledger_ap AS "ledgerAp",
+      comparison.account_30100_ap AS "account30100Ap",
+      (comparison.ledger_ap - comparison.account_30100_ap)::double precision AS "ledgerVsAccount",
+      (comparison.snapshot_ap - comparison.account_30100_ap)::double precision AS "snapshotVsAccount",
+      (comparison.ledger_ap - comparison.snapshot_ap)::double precision AS "ledgerVsSnapshot",
+      (COALESCE(prev.ledger_ap, 0) - comparison.account_30100_ap)::double precision AS "ledgerMinusOneVsAccount",
+      (COALESCE(next.ledger_ap, 0) - comparison.account_30100_ap)::double precision AS "ledgerPlusOneVsAccount"
     FROM comparison
     LEFT JOIN comparison prev ON prev.day = comparison.day - 1
     LEFT JOIN comparison next ON next.day = comparison.day + 1
