@@ -39,7 +39,7 @@
 
 import prisma from '@/lib/prisma';
 import { BS_LAST_DAY_FIELDS, PNL_SUM_FIELDS } from '@/lib/financial/month-publish';
-import { isEstBusinessDay } from '@/lib/time/eastern';
+import { formatEstDate, isEstBusinessDay } from '@/lib/time/eastern';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -1495,9 +1495,20 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   const accountAnchorDatesApplied = new Set<string>();
   const fieldAnchorDatesApplied = new Set<string>();
   const processDate = async (snapshotDate: Date) => {
+    const snapshotDayKey = snapshotDate.toISOString().slice(0, 10);
+    // A caller passing an end date past today produced snapshots with no GL
+    // activity behind them, carrying the last real balance forward into dates
+    // that have not happened -- Bakers held rows dated as far out as
+    // 2026-09-30. Compared as calendar dates, since snapshotDate is date-only.
+    if (snapshotDayKey > formatEstDate()) {
+      await prisma.dailyFinancialSnapshot.deleteMany({
+        where: { companyId, frequency: 'daily', snapshotDate },
+      });
+      return;
+    }
     // Financial snapshots represent business reporting days. Do not create
     // zero-P&L / carried-balance rows for weekends or federal holidays.
-    if (!isEstBusinessDay(snapshotDate.toISOString().slice(0, 10))) {
+    if (!isEstBusinessDay(snapshotDayKey)) {
       // Skipping alone left rows written before this guard existed in place
       // forever, holding a stale carried-forward balance. Atlantic's Saturday
       // 2026-09-05 and Sunday 2026-09-06 both reported AP of 508,219.04 while
