@@ -6,6 +6,7 @@ import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { formatEstDate, formatEstDateTime } from '@/lib/time/eastern';
 
 type BaselineMode = 'monthly' | 'quarterly' | 'yearly';
+const FORECAST_YEAR_COUNT = 5;
 
 type Props = {
   companyId: string;
@@ -99,7 +100,12 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
         return matches ? sum + Number(revenue || 0) : sum;
       }, 0);
       const baseline = baselineActual / (baselineMode === 'quarterly' ? 3 : 1);
-      const annualGrowthPcts = Array.from({ length: 4 }, (_, index) => Number(annualGrowth?.[row.key]?.[index] || 0));
+      const configuredGrowthPcts = Array.isArray(annualGrowth?.[row.key]) ? annualGrowth[row.key] : [];
+      const finalConfiguredGrowthPct = Number(configuredGrowthPcts[configuredGrowthPcts.length - 1] || 0);
+      const annualGrowthPcts = Array.from(
+        { length: FORECAST_YEAR_COUNT },
+        (_, index) => Number(configuredGrowthPcts[index] ?? finalConfiguredGrowthPct),
+      );
       const projectedAnnual = annualGrowthPcts.reduce((values: number[], growthPct, index) => {
         const prior = index === 0 ? (baselineMode === 'yearly' ? baseline : baseline * 12) : values[index - 1];
         values.push(prior * (1 + growthPct / 100));
@@ -107,7 +113,7 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
       }, []);
       return { ...row, baseline, annualGrowthPcts, projectedAnnual, category: String(categoryByCustomer?.[row.key] || '') };
     }).sort((a, b) => b.baseline - a.baseline);
-    return { customers: output, years: Array.from({ length: 4 }, (_, index) => firstYear + index) };
+    return { customers: output, years: Array.from({ length: FORECAST_YEAR_COUNT }, (_, index) => firstYear + index) };
   }, [actuals, forecast, baselineMode, selectedBaselinePeriodKey]);
 
   const updateGrowth = (key: string, yearIndex: number, raw: string) => {
@@ -115,7 +121,12 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
     if (!Number.isFinite(value)) return;
     setForecast((current: any) => {
       const annualGrowthByCustomer = { ...(current?.annualGrowthByCustomer || {}) };
-      const growths = [...(annualGrowthByCustomer[key] || Array(4).fill(0))];
+      const configuredGrowths = Array.isArray(annualGrowthByCustomer[key]) ? annualGrowthByCustomer[key] : [];
+      const finalConfiguredGrowth = Number(configuredGrowths[configuredGrowths.length - 1] || 0);
+      const growths = Array.from(
+        { length: FORECAST_YEAR_COUNT },
+        (_, index) => Number(configuredGrowths[index] ?? finalConfiguredGrowth),
+      );
       for (let index = yearIndex; index < growths.length; index += 1) {
         growths[index] = value;
       }
@@ -186,8 +197,8 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
               <th rowSpan={2} style={{ width: '130px', textAlign: 'left', padding: '8px' }}>Customer</th>
               <th rowSpan={2} style={{ width: '130px', textAlign: 'left', padding: '8px' }}>Revenue Category</th>
               <th rowSpan={2} style={{ width: '90px', textAlign: 'right', padding: '8px' }}>Baseline</th>
-              <th colSpan={4} style={{ textAlign: 'center', padding: '8px' }}>Annual Growth Rate</th>
-              <th colSpan={4} style={{ textAlign: 'center', padding: '8px' }}>Forecast Sales</th>
+              <th colSpan={FORECAST_YEAR_COUNT} style={{ textAlign: 'center', padding: '8px' }}>Annual Growth Rate</th>
+              <th colSpan={FORECAST_YEAR_COUNT} style={{ textAlign: 'center', padding: '8px' }}>Forecast Sales</th>
             </tr>
             <tr style={{ background: '#f8fafc' }}>
               {years.map((year) => <th key={`growth-${year}`} style={{ textAlign: 'center', padding: '8px' }}>{year}</th>)}

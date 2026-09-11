@@ -1174,8 +1174,13 @@ export default function FinancialForecastTab({
         let priorAnnualProjection = baselineMode === 'yearly' ? baselineActual : monthlyBaseline * 12;
         const lastForecastYear = Number(monthlyForecastPeriods[monthlyForecastPeriods.length - 1]?.year) || firstForecastYear;
         for (let year = firstGrowthYear; year <= lastForecastYear; year += 1) {
-          const growthIndex = Math.max(0, Math.min(3, year - firstGrowthYear));
-          const annualGrowthPct = Number(annualGrowthByCustomer?.[customer.key]?.[growthIndex] || 0);
+          const configuredGrowthPcts = Array.isArray(annualGrowthByCustomer?.[customer.key])
+            ? annualGrowthByCustomer[customer.key]
+            : [];
+          const growthIndex = Math.max(0, year - firstGrowthYear);
+          const annualGrowthPct = Number(
+            configuredGrowthPcts[growthIndex] ?? configuredGrowthPcts[configuredGrowthPcts.length - 1] ?? 0,
+          );
           priorAnnualProjection = Math.max(0, priorAnnualProjection * (1 + annualGrowthPct / 100));
           annualProjectionByYear.set(year, priorAnnualProjection);
         }
