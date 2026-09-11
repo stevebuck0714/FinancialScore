@@ -63,7 +63,7 @@ async function warmupOperationalRequest(params: {
   origin: string;
   cronSecret: string;
   companyId: string;
-  type: 'products' | 'customers';
+  type: 'products' | 'customers' | 'inventory';
   startDate: string;
   endDate: string;
   limit: string;
@@ -153,6 +153,16 @@ export async function GET(request: NextRequest) {
     limit: 'all',
     sectorCategory,
   });
+  const inventory = await warmupOperationalRequest({
+    origin: request.nextUrl.origin,
+    cronSecret,
+    companyId,
+    type: 'inventory',
+    startDate,
+    endDate,
+    limit: '1000',
+    sectorCategory,
+  });
   const wholesaleReport = sectorCategory === '42'
     ? Object.fromEntries(await Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
         reportMode,
@@ -176,12 +186,13 @@ export async function GET(request: NextRequest) {
     : true;
 
   return NextResponse.json({
-    ok: Boolean(customers?.ok && performanceProducts?.ok && wholesaleOk),
+    ok: Boolean(customers?.ok && performanceProducts?.ok && inventory?.ok && wholesaleOk),
     companyId,
     startDate,
     endDate,
     customers,
     performanceProducts,
+    inventory,
     wholesaleReport,
   });
 }

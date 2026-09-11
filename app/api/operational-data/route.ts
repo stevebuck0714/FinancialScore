@@ -79,6 +79,7 @@ const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;
 const PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const INVENTORY_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v12-historical-customer-growth';
@@ -3342,8 +3343,13 @@ export async function GET(request: NextRequest) {
       type === 'customers' &&
       frequency === 'daily' &&
       boundedLimit === 500;
+    const isCronInventoryWarmup =
+      hasCronCacheWarmupAuth &&
+      type === 'inventory' &&
+      frequency === 'daily' &&
+      boundedLimit === 1000;
     const isCronProductsCacheWarmup = isCronWholesaleProductsWarmup || isCronProductsPerformanceWarmup;
-    const isCronOperationalCacheWarmup = isCronProductsCacheWarmup || isCronCustomersWarmup;
+    const isCronOperationalCacheWarmup = isCronProductsCacheWarmup || isCronCustomersWarmup || isCronInventoryWarmup;
 
     // SECURITY: Require normal user auth unless this is the tightly scoped cron
     // warmup that rebuilds wholesale product caches after snapshot hydration.
@@ -3566,6 +3572,8 @@ export async function GET(request: NextRequest) {
       ? PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS
       : cacheType === 'customers'
       ? CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS
+      : cacheType === 'inventory'
+      ? INVENTORY_OPERATIONAL_CACHE_TTL_SECONDS
       : OPERATIONAL_DATA_CACHE_TTL_SECONDS;
     const cacheableRequest =
       OPERATIONAL_CACHEABLE_TYPES.has(cacheType) &&
@@ -4725,8 +4733,12 @@ export async function GET(request: NextRequest) {
                   orderBy: { snapshotDate: 'asc' },
                   take: 100000,
                 });
-          const rawRowsForPayload = monthlyRowsForPayload.length > 0 ? monthlyRowsForPayload : productRows;
-          const rowsForPayloadFrequency = monthlyRowsForPayload.length > 0 ? 'monthly' : frequency;
+          // Daily product snapshots record invoice deltas. Prefer them when
+          // present and let the reporting layer aggregate them into months;
+          // the older monthly snapshots can contain cumulative values and
+          // materially overstate item-level monthly sales.
+          const rawRowsForPayload = productRows.length > 0 ? productRows : monthlyRowsForPayload;
+          const rowsForPayloadFrequency = productRows.length > 0 ? frequency : 'monthly';
           const monthRevenueReference = new Map<string, number>();
           for (const row of monthlyProductRows as any[]) {
             const snapshot = new Date(row.snapshotDate);

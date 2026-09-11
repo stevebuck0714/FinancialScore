@@ -71,6 +71,7 @@ async function fetchProductsCacheWarmup(params: {
   origin: string;
   cronSecret: string;
   companyId: string;
+  type?: 'products' | 'inventory';
   startDate: string;
   endDate: string;
   limit: string;
@@ -80,7 +81,7 @@ async function fetchProductsCacheWarmup(params: {
 }): Promise<Record<string, unknown>> {
   const url = new URL('/api/operational-data', params.origin);
   url.searchParams.set('companyId', params.companyId);
-  url.searchParams.set('type', 'products');
+  url.searchParams.set('type', params.type || 'products');
   url.searchParams.set('frequency', 'daily');
   url.searchParams.set('startDate', params.startDate);
   url.searchParams.set('endDate', params.endDate);
@@ -147,6 +148,16 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
     limit: 'all',
     sectorCategory,
   });
+  const inventory = await fetchProductsCacheWarmup({
+    origin: params.origin,
+    cronSecret: params.cronSecret,
+    companyId: params.companyId,
+    type: 'inventory',
+    startDate: productsStartIsoFromEndDate(endDate),
+    endDate,
+    limit: '1000',
+    sectorCategory,
+  });
   const wholesaleReport = sectorCategory === '42'
     ? Object.fromEntries(await Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
         reportMode,
@@ -177,6 +188,7 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
     companyId: params.companyId,
     ok: Boolean(
       performanceProducts?.ok &&
+      inventory?.ok &&
       executiveBriefing?.ok &&
       (
         sectorCategory === '42'
@@ -185,6 +197,7 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
       )
     ),
     performanceProducts,
+    inventory,
     wholesaleReport,
     executiveBriefing,
   };

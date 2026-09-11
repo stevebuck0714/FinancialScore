@@ -952,6 +952,8 @@ export default function OperationsTab({
   const [residentialHomesSoldForecastLoading, setResidentialHomesSoldForecastLoading] = useState(false);
   const [salesHistoryCategoriesExpanded, setSalesHistoryCategoriesExpanded] = useState(true);
   const [expandedSalesHistoryCategories, setExpandedSalesHistoryCategories] = useState<Record<string, boolean>>({});
+  const [salesHistorySort, setSalesHistorySort] = useState<Record<string, { key: string; dir: 'asc' | 'desc' }>>({});
+  const [collapsedSalesHistoryTables, setCollapsedSalesHistoryTables] = useState<Record<string, boolean>>({});
   const [salesHistoryRangeMode, setSalesHistoryRangeMode] = useState<'all' | 'last30' | 'last90' | 'ytd' | 'last12' | 'custom'>('all');
   const [salesHistoryRollup, setSalesHistoryRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('monthly');
   const [salesHistoryStartDate, setSalesHistoryStartDate] = useState('');
@@ -2025,7 +2027,14 @@ export default function OperationsTab({
       ? 60000
       : 25000;
     const requestFrequency = frequency;
-    const requestStartDate = startDate;
+    // Inventory is a point-in-time report with a short operational trend.
+    // Restrict its request to the warmed 90-day window so a saved, broad
+    // dashboard range cannot force a multi-year inventory snapshot scan.
+    const inventoryWarmStartDate = addEstCalendarDays(endDate, -90);
+    const requestStartDate =
+      apiType === 'inventory' && startDate < inventoryWarmStartDate
+        ? inventoryWarmStartDate
+        : startDate;
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       type: apiType,
@@ -4645,11 +4654,66 @@ export default function OperationsTab({
         displayedHistory.valueFormat === 'number'
           ? Math.round(Number(value || 0)).toLocaleString('en-US')
           : formatCurrency(Number(value || 0));
+      const isTableCollapsed = Boolean(collapsedSalesHistoryTables[title]);
+      const currentSort = salesHistorySort[title];
+      const historySortValue = (row: any, key: string) =>
+        key.startsWith('month:')
+          ? Number(row?.values?.[key.slice('month:'.length)] || 0)
+          : getSortableValue(row, key);
+      const sortedRows = !currentSort
+        ? displayedHistory.rows
+        : [...displayedHistory.rows].sort((left: any, right: any) => {
+            const direction = currentSort.dir === 'asc' ? 1 : -1;
+            const leftValue = historySortValue(left, currentSort.key);
+            const rightValue = historySortValue(right, currentSort.key);
+            if (leftValue == null && rightValue == null) return 0;
+            if (leftValue == null) return 1;
+            if (rightValue == null) return -1;
+            if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+              return (leftValue - rightValue) * direction;
+            }
+            return String(leftValue).localeCompare(String(rightValue), undefined, { sensitivity: 'base', numeric: true }) * direction;
+          });
+      const sortHistoryBy = (key: string, defaultDir: 'asc' | 'desc' = 'asc') => {
+        setSalesHistorySort((previous) => ({
+          ...previous,
+          [title]: nextSortForKey(previous[title], key, defaultDir),
+        }));
+      };
+      const sortableHeader = (label: string, key: string, alignment: 'left' | 'right', defaultDir: 'asc' | 'desc' = 'asc') => (
+        <button
+          type="button"
+          onClick={() => sortHistoryBy(key, defaultDir)}
+          aria-label={`Sort by ${label}`}
+          style={{
+            border: 0,
+            background: 'transparent',
+            color: '#475569',
+            cursor: 'pointer',
+            font: 'inherit',
+            fontWeight: 700,
+            padding: 0,
+            textAlign: alignment,
+            whiteSpace: 'nowrap',
+            width: '100%',
+          }}
+        >
+          {label}{sortArrow(currentSort, key)}
+        </button>
+      );
       return (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>{title}</h3>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setCollapsedSalesHistoryTables((previous) => ({ ...previous, [title]: !previous[title] }))}
+                aria-expanded={!isTableCollapsed}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', fontWeight: 700, background: 'white', color: '#334155', cursor: 'pointer' }}
+              >
+                {isTableCollapsed ? 'Expand Table' : 'Collapse Table'}
+              </button>
               <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
                 Range
                 <select
@@ -4704,20 +4768,26 @@ export default function OperationsTab({
               </label>
             </div>
           </div>
-          <div style={{ maxWidth: '100%', overflowX: 'auto', paddingBottom: '8px' }}>
+          <div hidden={isTableCollapsed} style={{ maxWidth: '100%', overflowX: 'auto', paddingBottom: '8px' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + months.length * 112)}px` }}>
               <thead>
                 <tr>
-                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>{rowHeaderLabel}</th>
+                  <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>
+                    {sortableHeader(rowHeaderLabel, 'label', 'left')}
+                  </th>
                   {showItemNameColumn && (
-                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '220px' }}>{itemHeaderLabel}</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '220px' }}>
+                      {sortableHeader(itemHeaderLabel, 'itemName', 'left')}
+                    </th>
                   )}
                   {months.map((month: any) => (
                     <th key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '104px' }}>
-                      {month.monthLabel || month.monthKey}
+                      {sortableHeader(month.monthLabel || month.monthKey, `month:${month.monthKey}`, 'right', 'desc')}
                     </th>
                   ))}
-                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '112px' }}>Total</th>
+                  <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '112px' }}>
+                    {sortableHeader('Total', 'total', 'right', 'desc')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -4757,7 +4827,7 @@ export default function OperationsTab({
                   </td>
                 </tr>
                 {salesHistoryCategoriesExpanded &&
-                  displayedHistory.rows.map((row: any) => {
+                  sortedRows.map((row: any) => {
                     const categoryLabel = String(row?.label || 'Unknown');
                     const items = Array.isArray(row?.items) ? row.items : [];
                     const isCategoryExpanded = expandedSalesHistoryCategories[categoryLabel] ?? false;
@@ -4887,7 +4957,6 @@ export default function OperationsTab({
       const chartRows = categoryHistory.months.map((month: any) => {
         const row: Record<string, any> = {
           month: month.monthLabel || month.monthKey,
-          Total: Number(categoryHistory.totalRow?.values?.[month.monthKey] || 0),
         };
         categoryHistory.rows.forEach((category: any) => {
           const label = String(category?.label || 'Unknown');
@@ -4915,7 +4984,6 @@ export default function OperationsTab({
           <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
           <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
           <Legend onClick={toggleCategorySalesSeries} wrapperStyle={{ cursor: 'pointer' }} />
-          <Line type="monotone" dataKey="Total" name="Total Sales" stroke="#0f172a" strokeWidth={3} dot={{ r: 3 }} connectNulls hide={Boolean(hiddenCategorySalesSeries.Total)} />
           {visibleCategoryRows.map((category: any, index: number) => {
             const label = String(category?.label || 'Unknown');
             return (
@@ -5358,7 +5426,7 @@ export default function OperationsTab({
     const renderCategorySalesHistoryPanel = () =>
       isSectionEnabled('customersPlatoSalesHistoryChart') ? (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Category Sales by Month</h3>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Top 15 Items by Month</h3>
           <ResponsiveContainer width="100%" height={300}>
             {renderCategorySalesHistoryChart(salesReportPayload.sales)}
           </ResponsiveContainer>

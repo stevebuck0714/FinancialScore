@@ -52,7 +52,7 @@ async function fetchOperationalCacheWarmup(params: {
   origin: string;
   cronSecret: string;
   companyId: string;
-  type: 'customers' | 'products';
+  type: 'customers' | 'products' | 'inventory';
   startDate: string;
   endDate: string;
   limit: string;
@@ -180,6 +180,16 @@ async function warmReportCachesForCompany(params: {
     limit: 'all',
     sectorCategory,
   });
+  const inventory = await fetchOperationalCacheWarmup({
+    origin: params.origin,
+    cronSecret: params.cronSecret,
+    companyId: params.companyId,
+    type: 'inventory',
+    startDate: productsStartIsoFromEndDate(endDate),
+    endDate,
+    limit: '1000',
+    sectorCategory,
+  });
   const wholesaleReport = sectorCategory === '42'
     ? Object.fromEntries(await Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
         reportMode,
@@ -216,6 +226,7 @@ async function warmReportCachesForCompany(params: {
     ok: Boolean(
       customers?.ok &&
       performanceProducts?.ok &&
+      inventory?.ok &&
       masterData?.ok &&
       executiveBriefing?.ok &&
       (
@@ -226,6 +237,7 @@ async function warmReportCachesForCompany(params: {
     ),
     customers,
     performanceProducts,
+    inventory,
     wholesaleReport,
     masterData,
     executiveBriefing,
