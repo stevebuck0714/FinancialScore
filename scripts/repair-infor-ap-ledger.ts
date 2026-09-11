@@ -560,17 +560,29 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
     // A voucher whose invoice number is a placeholder matches every payment
     // sharing that billNo, crediting it with unrelated settlements.
     tx.$queryRawUnsafe(
-      `SELECT
-         COALESCE(NULLIF(TRIM(t."invoiceNum"), ''), '(blank)') AS invoice_num,
-         COUNT(DISTINCT t."voucher") AS vouchers,
-         (SELECT COUNT(*) FROM "APPaymentFact" p
-          WHERE p."companyId" = $1
-            AND UPPER(TRIM(p."billNo")) = UPPER(TRIM(COALESCE(t."invoiceNum", '')))) AS matching_payments
-       FROM "APTransactionFact" t
-       WHERE t."companyId" = $1 AND t."transType" = 'V' AND t."eventDate" <= $2::date
-       GROUP BY 1
-       HAVING COUNT(DISTINCT t."voucher") > 1
-       ORDER BY vouchers DESC LIMIT 10`,
+      `WITH shared AS (
+         SELECT
+           COALESCE(NULLIF(TRIM(t."invoiceNum"), ''), '(blank)') AS invoice_num,
+           COUNT(DISTINCT t."voucher") AS vouchers
+         FROM "APTransactionFact" t
+         WHERE t."companyId" = $1 AND t."transType" = 'V' AND t."eventDate" <= $2::date
+         GROUP BY 1
+         HAVING COUNT(DISTINCT t."voucher") > 1
+       ),
+       paid AS (
+         SELECT UPPER(TRIM("billNo")) AS bill_no, COUNT(*) AS matching_payments,
+                ROUND(SUM("paidAmountHome")::numeric, 2) AS matching_amount
+         FROM "APPaymentFact"
+         WHERE "companyId" = $1 AND "paymentDate" <= $2::date
+         GROUP BY 1
+       )
+       SELECT
+         shared.invoice_num, shared.vouchers,
+         COALESCE(paid.matching_payments, 0) AS matching_payments,
+         COALESCE(paid.matching_amount, 0) AS matching_amount
+       FROM shared
+       LEFT JOIN paid ON paid.bill_no = UPPER(TRIM(shared.invoice_num))
+       ORDER BY shared.vouchers DESC LIMIT 10`,
       companyId, asOf
     ),
   ]);
