@@ -500,6 +500,9 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
         COALESCE(e.event_net, 0) AS event_net,
         COALESCE(e.type_p_paid, 0) AS type_p_paid,
         COALESCE(pp.paid, 0) AS payment_paid,
+        (COALESCE(e.event_net, 0)
+          - GREATEST(COALESCE(pp.paid, 0) - COALESCE(e.type_p_paid, 0), 0)
+        )::double precision AS net_amt,
         GREATEST(
           COALESCE(e.event_net, 0)
             - GREATEST(COALESCE(pp.paid, 0) - COALESCE(e.type_p_paid, 0), 0),
@@ -512,7 +515,7 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
       LEFT JOIN pays pp ON pp."voucher" = v."voucher"
     )`;
 
-  const [buckets, top, books, eventMix, degenerateKeys] = await Promise.all([
+  const [buckets, top, books, eventMix, degenerateKeys, overApplied] = await Promise.all([
     tx.$queryRawUnsafe(
       `${shared}
        SELECT
@@ -585,6 +588,26 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
        ORDER BY shared.vouchers DESC LIMIT 10`,
       companyId, asOf
     ),
+    // Vouchers paid beyond their own invoice. Flooring each at zero hides the
+    // excess, so it never offsets the genuinely open items and inflates AP.
+    tx.$queryRawUnsafe(
+      `${shared}
+       SELECT
+         COUNT(*) AS voucher_count,
+         ROUND(SUM(net_amt)::numeric, 2) AS discarded_credit,
+         JSON_AGG(x ORDER BY x.net_amt) FILTER (WHERE x.rn <= 10) AS worst
+       FROM (
+         SELECT
+           "voucher", created_at::text AS created_at, "vendorName",
+           ROUND(event_net::numeric, 2) AS event_net,
+           ROUND(type_p_paid::numeric, 2) AS type_p_paid,
+           ROUND(payment_paid::numeric, 2) AS payment_paid,
+           ROUND(net_amt::numeric, 2) AS net_amt,
+           ROW_NUMBER() OVER (ORDER BY net_amt) AS rn
+         FROM open_items WHERE net_amt < -0.005
+       ) x`,
+      companyId, asOf
+    ),
   ]);
 
   return {
@@ -592,6 +615,7 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
     booksAp: books?.[0]?.ap ?? null,
     buckets,
     eventMix,
+    overAppliedVouchers: overApplied?.[0] ?? null,
     sharedInvoiceNumbers: degenerateKeys,
     topOpenVouchers: top,
   };
