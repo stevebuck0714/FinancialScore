@@ -1169,18 +1169,28 @@ export default function FinancialForecastTab({
               : monthKey.slice(0, 4);
           return periodKey === selectedBaselinePeriodKey ? sum + Number(revenue || 0) : sum;
         }, 0);
-        let carry = baselineActual / (baselineMode === 'yearly' ? 12 : baselineMode === 'quarterly' ? 3 : 1);
-        const projectedMonths = monthlyForecastPeriods.map((period) => {
-          const growthIndex = Math.max(0, Math.min(3, Number(period.year) - firstGrowthYear));
+        const monthlyBaseline = baselineActual / (baselineMode === 'yearly' ? 12 : baselineMode === 'quarterly' ? 3 : 1);
+        const annualProjectionByYear = new Map<number, number>();
+        let priorAnnualProjection = baselineMode === 'yearly' ? baselineActual : monthlyBaseline * 12;
+        const lastForecastYear = Number(monthlyForecastPeriods[monthlyForecastPeriods.length - 1]?.year) || firstForecastYear;
+        for (let year = firstGrowthYear; year <= lastForecastYear; year += 1) {
+          const growthIndex = Math.max(0, Math.min(3, year - firstGrowthYear));
           const annualGrowthPct = Number(annualGrowthByCustomer?.[customer.key]?.[growthIndex] || 0);
-          const monthlyGrowth = annualGrowthPct <= -100 ? -1 : Math.pow(1 + annualGrowthPct / 100, 1 / 12) - 1;
-          carry = Math.max(0, carry * (1 + monthlyGrowth));
-          return { ...period, revenue: carry };
+          priorAnnualProjection = Math.max(0, priorAnnualProjection * (1 + annualGrowthPct / 100));
+          annualProjectionByYear.set(year, priorAnnualProjection);
+        }
+        const projectedMonths = monthlyForecastPeriods.map((period) => {
+          const annualProjection = annualProjectionByYear.get(Number(period.year)) || 0;
+          return { ...period, revenue: annualProjection / 12 };
         });
         const actualMonths = Object.entries(customer.months)
           .filter(([monthKey]) => !firstForecastMonthKey || monthKey < firstForecastMonthKey)
           .map(([key, revenue]) => ({ key, revenue: Number(revenue || 0) }));
-        return { ...customer, baseline: carry, months: [...actualMonths, ...projectedMonths] };
+        return {
+          ...customer,
+          baseline: Number(projectedMonths[projectedMonths.length - 1]?.revenue || monthlyBaseline),
+          months: [...actualMonths, ...projectedMonths],
+        };
       });
     const rows = allRows.filter((customer) => customer.category && revenueRowKeys.includes(customer.category));
     const revenueByMonthCategory: Record<string, Record<string, number>> = {};
@@ -3409,9 +3419,9 @@ export default function FinancialForecastTab({
                     <td style={{ padding: '8px' }}>Total Sales</td>
                     {customerForecastColumns.map((column) => (
                       <td key={`customer-total-revenue-${column.key}`} style={{ padding: '8px', textAlign: 'right' }}>
-                        {formatCurrency(forecastRows
-                          .filter((row) => column.monthKeys.includes(String(row.key)))
-                          .reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0))}
+                        {formatCurrency(customerForecastSchedule.allRows.reduce((sum, customer) => sum + customer.months
+                          .filter((month) => column.monthKeys.includes(month.key))
+                          .reduce((monthSum, month) => monthSum + Number(month.revenue || 0), 0), 0))}
                       </td>
                     ))}
                   </tr>
