@@ -5740,7 +5740,7 @@ export default function OperationsTab({
               </div>
             )}
 
-            {!isRetailSalesLanguage && (
+            {!isRetailSalesLanguage && !isAtlanticCompany && (
               <CustomerSalesForecast
                 companyId={selectedCompanyId}
                 industrySectorCategory={industrySectorCategory}
