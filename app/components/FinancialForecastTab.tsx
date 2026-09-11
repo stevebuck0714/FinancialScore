@@ -227,7 +227,7 @@ export default function FinancialForecastTab({
   const [isArchivingBudget, setIsArchivingBudget] = useState(false);
   const [lastBudgetArchiveAt, setLastBudgetArchiveAt] = useState<string | null>(null);
   const [incomeStatementViewMode, setIncomeStatementViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
-  const [customerForecastViewMode, setCustomerForecastViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [customerForecastViewMode, setCustomerForecastViewMode] = useState<'monthly' | 'quarterly' | 'yearly'>('yearly');
   const [customerSort, setCustomerSort] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: '', direction: 'desc' });
   const [graphGranularity, setGraphGranularity] = useState<'monthly' | 'quarterly'>('monthly');
   const [masterMonthlyData, setMasterMonthlyData] = useState<any[]>([]);
@@ -1152,6 +1152,13 @@ export default function FinancialForecastTab({
       customerActuals.set(key, customer);
     }
     const firstForecastYear = Number(monthlyForecastPeriods[0]?.year) || new Date().getUTCFullYear();
+    const firstForecastMonthKey = String(monthlyForecastPeriods[0]?.key || '');
+    const actualMonthKeys = Array.from(new Set(
+      Array.from(customerActuals.values())
+        .flatMap((customer) => Object.keys(customer.months))
+        .filter((monthKey) => !firstForecastMonthKey || monthKey < firstForecastMonthKey),
+    )).sort();
+    const firstGrowthYear = Number(actualMonthKeys[actualMonthKeys.length - 1]?.slice(0, 4)) || firstForecastYear;
     const allRows = Array.from(customerActuals.values())
       .map((customer) => {
         const baselineActual = Object.entries(customer.months).reduce((sum, [monthKey, revenue]) => {
@@ -1163,14 +1170,17 @@ export default function FinancialForecastTab({
           return periodKey === selectedBaselinePeriodKey ? sum + Number(revenue || 0) : sum;
         }, 0);
         let carry = baselineActual / (baselineMode === 'yearly' ? 12 : baselineMode === 'quarterly' ? 3 : 1);
-        const months = monthlyForecastPeriods.map((period) => {
-          const growthIndex = Math.max(0, Math.min(3, Number(period.year) - firstForecastYear));
+        const projectedMonths = monthlyForecastPeriods.map((period) => {
+          const growthIndex = Math.max(0, Math.min(3, Number(period.year) - firstGrowthYear));
           const annualGrowthPct = Number(annualGrowthByCustomer?.[customer.key]?.[growthIndex] || 0);
           const monthlyGrowth = annualGrowthPct <= -100 ? -1 : Math.pow(1 + annualGrowthPct / 100, 1 / 12) - 1;
           carry = Math.max(0, carry * (1 + monthlyGrowth));
           return { ...period, revenue: carry };
         });
-        return { ...customer, baseline: carry, months };
+        const actualMonths = Object.entries(customer.months)
+          .filter(([monthKey]) => !firstForecastMonthKey || monthKey < firstForecastMonthKey)
+          .map(([key, revenue]) => ({ key, revenue: Number(revenue || 0) }));
+        return { ...customer, baseline: carry, months: [...actualMonths, ...projectedMonths] };
       });
     const rows = allRows.filter((customer) => customer.category && revenueRowKeys.includes(customer.category));
     const revenueByMonthCategory: Record<string, Record<string, number>> = {};
@@ -1186,16 +1196,51 @@ export default function FinancialForecastTab({
     return {
       rows,
       allRows,
+      actualMonthKeys,
       revenueByMonthCategory,
       baselineByCategory,
       mappedCategories: new Set(rows.map((customer) => customer.category)),
     };
   }, [customerForecastActuals, customerForecastSettings, monthlyForecastPeriods, revenueRowKeys]);
   const customerForecastColumns = useMemo(() => {
+    const firstForecastPeriod = monthlyForecastPeriods[0];
+    if (!firstForecastPeriod) return [];
+    const lastActualPeriod = shiftMonth(firstForecastPeriod.year, firstForecastPeriod.month, -1);
     if (customerForecastViewMode === 'monthly') {
-      return monthlyForecastPeriods.map((period) => ({ key: period.key, label: period.label, monthKeys: [period.key] }));
+      return [
+        {
+          key: `actual-${lastActualPeriod.year}-${String(lastActualPeriod.month + 1).padStart(2, '0')}`,
+          label: getMonthLabel(lastActualPeriod.year, lastActualPeriod.month),
+          monthKeys: [`${lastActualPeriod.year}-${String(lastActualPeriod.month + 1).padStart(2, '0')}`],
+        },
+        ...monthlyForecastPeriods.map((period) => ({ key: period.key, label: period.label, monthKeys: [period.key] })),
+      ];
     }
     const buckets = new Map<string, { key: string; label: string; monthKeys: string[] }>();
+    if (customerForecastViewMode === 'quarterly') {
+      const completedQuarterEnd = shiftMonth(
+        lastActualPeriod.year,
+        lastActualPeriod.month,
+        -((lastActualPeriod.month + 1) % 3),
+      );
+      const completedQuarterStart = shiftMonth(completedQuarterEnd.year, completedQuarterEnd.month, -2);
+      const quarter = Math.floor(completedQuarterEnd.month / 3) + 1;
+      const quarterMonthKeys = Array.from({ length: 3 }, (_, index) => {
+        const period = shiftMonth(completedQuarterStart.year, completedQuarterStart.month, index);
+        return `${period.year}-${String(period.month + 1).padStart(2, '0')}`;
+      });
+      buckets.set(
+        `actual-${completedQuarterEnd.year}-Q${quarter}`,
+        { key: `actual-${completedQuarterEnd.year}-Q${quarter}`, label: `${completedQuarterEnd.year}-Q${quarter}`, monthKeys: quarterMonthKeys },
+      );
+    }
+    if (customerForecastViewMode === 'yearly') {
+      customerForecastSchedule.actualMonthKeys.forEach((monthKey) => {
+        const year = monthKey.slice(0, 4);
+        if (year !== String(monthlyForecastPeriods[0]?.year || '')) return;
+        buckets.set(year, { key: year, label: year, monthKeys: [monthKey] });
+      });
+    }
     monthlyForecastPeriods.forEach((period) => {
       const key = customerForecastViewMode === 'quarterly'
         ? `${period.year}-Q${Math.floor(Number(period.month || 0) / 3) + 1}`
@@ -1206,7 +1251,7 @@ export default function FinancialForecastTab({
       buckets.set(key, bucket);
     });
     return Array.from(buckets.values());
-  }, [customerForecastViewMode, monthlyForecastPeriods]);
+  }, [customerForecastViewMode, customerForecastSchedule.actualMonthKeys, monthlyForecastPeriods]);
   const activeCustomerSortKey = customerForecastColumns.some((column) => column.key === customerSort.key)
     ? customerSort.key
     : customerForecastColumns[0]?.key || '';
@@ -2294,7 +2339,7 @@ export default function FinancialForecastTab({
             <button style={tabButtonStyle('customer-forecast')} onClick={() => setActiveTab('customer-forecast')}>Customer Forecast</button>
           )}
           {showCustomerGrowthProjectionsTab && (
-            <button style={tabButtonStyle('customer-growth-projections')} onClick={() => setActiveTab('customer-growth-projections')}>Customer Growth Projections</button>
+            <button style={tabButtonStyle('customer-growth-projections')} onClick={() => setActiveTab('customer-growth-projections')}>Customer Concentration Projections</button>
           )}
           {showGraphsTab && (
             <button style={tabButtonStyle('graphs')} onClick={() => setActiveTab('graphs')}>Graphs</button>
@@ -3331,7 +3376,7 @@ export default function FinancialForecastTab({
               <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc' }}>
-                    <th aria-sort={activeCustomerSortKey === 'name' ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'left', padding: '8px', minWidth: '250px' }}>
+                    <th aria-sort={activeCustomerSortKey === 'name' ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'left', padding: '8px', minWidth: '125px' }}>
                       <button onClick={() => updateCustomerSort('name')} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>Line Item{customerSortArrow('name')}</button>
                     </th>
                     {customerForecastColumns.map((column) => (
@@ -3473,7 +3518,7 @@ export default function FinancialForecastTab({
             <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th aria-sort={activeCustomerSortKey === 'name' ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'left', padding: '8px', minWidth: '250px' }}>
+                  <th aria-sort={activeCustomerSortKey === 'name' ? customerSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} style={{ textAlign: 'left', padding: '8px', minWidth: '94px' }}>
                     <button onClick={() => updateCustomerSort('name')} style={{ border: 0, background: 'transparent', padding: 0, color: 'inherit', cursor: 'pointer', fontWeight: 'inherit' }}>Line Item{customerSortArrow('name')}</button>
                   </th>
                   {customerForecastColumns.map((column) => (
