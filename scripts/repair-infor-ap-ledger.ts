@@ -551,6 +551,40 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
   return { asOf, booksAp: books?.[0]?.ap ?? null, buckets, topOpenVouchers: top };
 }
 
+/** Every rebuilt event on one voucher, to attribute a variance to its source rows. */
+async function explainVoucher(tx: any, companyId: string, voucher: string) {
+  const [events, payments] = await Promise.all([
+    tx.$queryRawUnsafe(
+      `SELECT
+         "eventDate"::text AS event_date, "transType", "vouchSeq", "invoiceNum",
+         ROUND("invoiceAmount"::numeric, 2) AS invoice_amount,
+         ROUND("normalizedAmount"::numeric, 2) AS normalized_amount,
+         "apAcct", "sourceProgram", "sourceItemId"
+       FROM "APTransactionFact"
+       WHERE "companyId" = $1 AND "voucher" = $2
+       ORDER BY "eventDate", "transType", "vouchSeq"`,
+      companyId, voucher
+    ),
+    tx.$queryRawUnsafe(
+      `SELECT
+         p."paymentDate"::text AS payment_date, p."billNo",
+         ROUND(p."paidAmountHome"::numeric, 2) AS paid_amount,
+         p."sourceProgram", p."sourceItemId"
+       FROM "APPaymentFact" p
+       WHERE p."companyId" = $1
+         AND UPPER(TRIM(p."billNo")) IN (
+           SELECT UPPER(TRIM($2))
+           UNION
+           SELECT UPPER(TRIM(t."invoiceNum")) FROM "APTransactionFact" t
+           WHERE t."companyId" = $1 AND t."voucher" = $2 AND NULLIF(TRIM(t."invoiceNum"), '') IS NOT NULL
+         )
+       ORDER BY p."paymentDate"`,
+      companyId, voucher
+    ),
+  ]);
+  return { voucher, events, payments };
+}
+
 const EXPLAIN_ROLLBACK = 'AP_EXPLAIN_ROLLBACK';
 
 async function main() {
@@ -579,7 +613,10 @@ async function main() {
         for (const batch of chunks(explainFacts.payments)) {
           await tx.aPPaymentFact.createMany({ data: batch });
         }
-        const report = await explainOpenVouchers(tx, companyId, asOf);
+        const voucherArg = args.find((arg) => arg.startsWith('--voucher='))?.slice(10);
+        const report = voucherArg
+          ? await explainVoucher(tx, companyId, voucherArg)
+          : await explainOpenVouchers(tx, companyId, asOf);
         console.log(JSON.stringify(report, (_k, v) => (typeof v === 'bigint' ? Number(v) : v), 2));
         throw new Error(EXPLAIN_ROLLBACK);
       }, { timeout: 300_000 });
