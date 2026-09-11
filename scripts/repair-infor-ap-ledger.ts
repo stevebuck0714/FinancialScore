@@ -606,7 +606,14 @@ async function explainOpenVouchers(tx: any, companyId: string, asOf: string) {
          ROUND(SUM(net_amt)::numeric, 2) AS with_payment_facts_unfloored,
          (SELECT ROUND(SUM(GREATEST(vendor_net, 0))::numeric, 2)
           FROM (SELECT "vendorName", SUM(event_net) AS vendor_net
-                FROM open_items GROUP BY "vendorName") v) AS events_netted_by_vendor
+                FROM open_items GROUP BY "vendorName") v) AS events_netted_by_vendor,
+         -- Heuristic: any payment closes the voucher, treating the remainder
+         -- as duty already settled. Cannot tell a duty remainder from a
+         -- genuine partial payment, so it is priced, not recommended.
+         ROUND(SUM(CASE
+           WHEN type_p_paid > 0.005 OR payment_paid > 0.005 THEN 0
+           ELSE GREATEST(event_net, 0)
+         END)::numeric, 2) AS closed_if_any_payment
        FROM open_items`,
       companyId, asOf
     ),
