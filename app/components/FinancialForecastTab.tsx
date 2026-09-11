@@ -1238,7 +1238,9 @@ export default function FinancialForecastTab({
       customerForecastSchedule.actualMonthKeys.forEach((monthKey) => {
         const year = monthKey.slice(0, 4);
         if (year !== String(monthlyForecastPeriods[0]?.year || '')) return;
-        buckets.set(year, { key: year, label: year, monthKeys: [monthKey] });
+        const bucket = buckets.get(year) || { key: year, label: year, monthKeys: [] };
+        bucket.monthKeys.push(monthKey);
+        buckets.set(year, bucket);
       });
     }
     monthlyForecastPeriods.forEach((period) => {
