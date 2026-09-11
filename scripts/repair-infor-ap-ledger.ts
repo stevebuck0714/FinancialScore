@@ -313,7 +313,7 @@ async function validateDailyAp(
       ) gl ON true
     )
     SELECT
-      day::text AS day,
+      comparison.day::text AS day,
       snapshot_ap AS "snapshotAp",
       ledger_ap AS "ledgerAp",
       account_30100_ap AS "account30100Ap",
@@ -326,7 +326,7 @@ async function validateDailyAp(
     LEFT JOIN comparison prev ON prev.day = comparison.day - 1
     LEFT JOIN comparison next ON next.day = comparison.day + 1
     WHERE comparison.day BETWEEN $2::date AND $3::date
-    ORDER BY day
+    ORDER BY comparison.day
   `, companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10));
 
   return rows.filter((row) => {
