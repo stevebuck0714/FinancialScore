@@ -941,6 +941,8 @@ export default function OperationsTab({
   const [customerRevenuePeriodKey, setCustomerRevenuePeriodKey] = useState<string>(() => monthKeyFromDateValue(new Date()));
   const [customerHistoricalGrowthView, setCustomerHistoricalGrowthView] = useState<'monthly' | 'annual'>('monthly');
   const [selectedCustomerHistoricalGrowthKey, setSelectedCustomerHistoricalGrowthKey] = useState('');
+  const [customerHistoricalGrowthStartDate, setCustomerHistoricalGrowthStartDate] = useState('');
+  const [customerHistoricalGrowthEndDate, setCustomerHistoricalGrowthEndDate] = useState('');
   const [hiddenCustomerTrendSeries, setHiddenCustomerTrendSeries] = useState<Record<string, boolean>>({});
   const [expandedWipCustomers, setExpandedWipCustomers] = useState<Record<string, boolean>>({});
   const [wipLineItemSortKey, setWipLineItemSortKey] = useState<WipLineItemSortKey>('orderId');
@@ -2021,7 +2023,7 @@ export default function OperationsTab({
       ? 120000
       : apiType === 'hiring'
       ? 90000
-      : apiType === 'customers' || apiType === 'products'
+      : apiType === 'customers' || apiType === 'products' || apiType === 'inventory'
       ? 45000
       : apiType === 'revenue-billables' || apiType === 'unit-economics'
       ? 60000
@@ -4024,8 +4026,10 @@ export default function OperationsTab({
     const selectedCustomerHistoricalGrowthKeyEffective = selectedCustomerHistoricalGrowthRow
       ? customerHistoricalGrowthIdentity(selectedCustomerHistoricalGrowthRow)
       : '';
-    const customerHistoricalStartMonthKey = monthKeyFromDateValue(startDate || '');
-    const customerHistoricalEndMonthKey = monthKeyFromDateValue(endDate || '');
+    const customerHistoricalGrowthStartDateEffective = customerHistoricalGrowthStartDate || startDate;
+    const customerHistoricalGrowthEndDateEffective = customerHistoricalGrowthEndDate || endDate;
+    const customerHistoricalStartMonthKey = monthKeyFromDateValue(customerHistoricalGrowthStartDateEffective || '');
+    const customerHistoricalEndMonthKey = monthKeyFromDateValue(customerHistoricalGrowthEndDateEffective || '');
     const customerHistoricalMonthlyPeriods = customerHistoricalSalesMonths
       .filter((month: any) => {
         const monthKey = String(month?.monthKey || '');
@@ -4531,13 +4535,14 @@ export default function OperationsTab({
     const renderCategorySalesHistoryTable = (
       title: string,
       section: any,
-      options: { rowHeaderLabel?: string; itemHeaderLabel?: string; countLabel?: string; showItemNameColumn?: boolean } = {}
+      options: { rowHeaderLabel?: string; itemHeaderLabel?: string; countLabel?: string; showItemNameColumn?: boolean; itemColumnMinWidth?: string } = {}
     ) => {
       const categoryHistory = section?.categoryHistory;
       const rowHeaderLabel = options.rowHeaderLabel || 'Category';
       const itemHeaderLabel = options.itemHeaderLabel || 'Item Name';
       const countLabel = options.countLabel || 'categories';
       const showItemNameColumn = options.showItemNameColumn !== false;
+      const itemColumnMinWidth = options.itemColumnMinWidth || '220px';
       const parseSalesHistoryPeriodDate = (period: any): Date | null => {
         const raw = String(period?.monthKey || period?.dateKey || period?.periodKey || '').trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return parseDateValue(raw);
@@ -4776,7 +4781,7 @@ export default function OperationsTab({
                     {sortableHeader(rowHeaderLabel, 'label', 'left')}
                   </th>
                   {showItemNameColumn && (
-                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '220px' }}>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: itemColumnMinWidth }}>
                       {sortableHeader(itemHeaderLabel, 'itemName', 'left')}
                     </th>
                   )}
@@ -5623,13 +5628,13 @@ export default function OperationsTab({
 
             {isSectionEnabled('customersPlatoSalesHistoryTables') && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
-                {renderCategorySalesHistoryTable('Customer Sales History', { categoryHistory: customerSalesHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers' }) || (
+                {renderCategorySalesHistoryTable('Customer Sales History', { categoryHistory: customerSalesHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || (
                   <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                     <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Customer Sales History</h3>
                     {renderSalesReportEmptyState()}
                   </div>
                 )}
-                {renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers' }) || null}
+                {renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || null}
                 {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
                   <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                     <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>
@@ -5670,11 +5675,33 @@ export default function OperationsTab({
                       <option value="monthly">Monthly</option>
                       <option value="annual">Annual (Last 3 Years)</option>
                     </select>
+                    {customerHistoricalGrowthView === 'monthly' && (
+                      <>
+                        <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                          From
+                          <input
+                            type="date"
+                            value={customerHistoricalGrowthStartDate}
+                            onChange={(event) => setCustomerHistoricalGrowthStartDate(event.target.value)}
+                            style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', fontSize: '12px' }}
+                          />
+                        </label>
+                        <label style={{ display: 'grid', gap: '4px', fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                          To
+                          <input
+                            type="date"
+                            value={customerHistoricalGrowthEndDate}
+                            onChange={(event) => setCustomerHistoricalGrowthEndDate(event.target.value)}
+                            style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', fontSize: '12px' }}
+                          />
+                        </label>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div style={{ marginBottom: '12px', color: '#64748b', fontSize: '11px' }}>
                   {customerHistoricalGrowthView === 'monthly'
-                    ? `Date range: ${selectedDateRangeLabel} | Sales and same-month-prior-year growth.`
+                    ? `Date range: ${formatSelectedFilterDate(customerHistoricalGrowthStartDateEffective)} - ${formatSelectedFilterDate(customerHistoricalGrowthEndDateEffective)} | Sales and same-month-prior-year growth.`
                     : 'Last three complete calendar years | Sales and year-over-year growth.'}
                   {' '}Source: {customerHistoricalSourceLabel}.
                 </div>
@@ -5683,52 +5710,28 @@ export default function OperationsTab({
                     No canonical customer sales history is available for this company.
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 0.8fr) minmax(420px, 1.2fr)', gap: '20px', alignItems: 'stretch' }}>
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                        <thead>
-                          <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                            <th style={{ textAlign: 'left', padding: '7px 8px', color: '#475569' }}>Period</th>
-                            <th style={{ textAlign: 'right', padding: '7px 8px', color: '#475569' }}>Sales</th>
-                            <th style={{ textAlign: 'right', padding: '7px 8px', color: '#475569' }}>Growth Rate</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {customerHistoricalGrowthPeriods.length === 0 ? (
-                            <tr>
-                              <td colSpan={3} style={{ padding: '18px 8px', color: '#64748b', textAlign: 'center' }}>
-                                No sales data is available for the selected range.
-                              </td>
-                            </tr>
-                          ) : customerHistoricalGrowthPeriods.map((row: any) => (
-                            <tr key={row.periodKey} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                              <td style={{ padding: '7px 8px', color: '#1e293b' }}>{row.period}</td>
-                              <td style={{ padding: '7px 8px', color: '#16a34a', fontWeight: 600, textAlign: 'right' }}>{formatCurrency(row.sales)}</td>
-                              <td style={{ padding: '7px 8px', color: row.growthRate == null ? '#64748b' : row.growthRate >= 0 ? '#16a34a' : '#dc2626', textAlign: 'right' }}>
-                                {row.growthRate == null ? '—' : formatPct(row.growthRate)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  customerHistoricalGrowthPeriods.length === 0 ? (
+                    <div style={{ height: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '13px' }}>
+                      No sales data is available for the selected range.
                     </div>
-                    <ResponsiveContainer width="100%" height={Math.max(260, customerHistoricalGrowthPeriods.length * 26)}>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={360}>
                       <ComposedChart data={customerHistoricalGrowthPeriods}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '11px' }} />
                         <YAxis yAxisId="sales" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                         <YAxis yAxisId="growth" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
                         <Tooltip
-                          formatter={(value: any, name: any) => String(name) === 'Annualized Growth'
+                          formatter={(value: any, name: any) => String(name) === 'Growth Rate'
                             ? [value == null ? '—' : formatPct(Number(value)), String(name)]
                             : [formatCurrency(Number(value || 0)), String(name)]}
                         />
                         <Legend />
                         <Bar yAxisId="sales" dataKey="sales" name="Sales" fill="#2563eb" radius={[3, 3, 0, 0]} />
-                        <Line yAxisId="growth" type="monotone" dataKey="growthRate" name="Annualized Growth" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} connectNulls={false} />
+                        <Line yAxisId="growth" type="monotone" dataKey="growthRate" name="Growth Rate" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} connectNulls={false} />
                       </ComposedChart>
                     </ResponsiveContainer>
-                  </div>
+                  )
                 )}
               </div>
             )}
@@ -13512,7 +13515,11 @@ export default function OperationsTab({
   // Inventory Tab
   const renderInventory = () => {
     if (loading || !inventoryData) {
-      return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading inventory data...</div>;
+      return (
+        <div data-print-ready={loading ? 'loading' : 'error'} style={{ padding: '40px', textAlign: 'center', color: error ? '#b91c1c' : '#64748b' }}>
+          {loading ? 'Loading inventory data...' : error || 'No inventory data is available for the selected period.'}
+        </div>
+      );
     }
 
     const { records, summary, trend, departmentTrend, agingReport } = inventoryData;
