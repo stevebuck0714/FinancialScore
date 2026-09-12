@@ -11651,7 +11651,7 @@ export default function SiteAdminDashboard(props: any) {
                                       </label>
                                     </div>
 
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'end' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '6px', alignItems: 'end' }}>
                                       <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                         <span style={{ fontWeight: 600 }}>Read-Only Probe Path</span>
                                         <input
@@ -11662,6 +11662,22 @@ export default function SiteAdminDashboard(props: any) {
                                           style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                         />
                                       </label>
+                                      <button
+                                        onClick={() => {
+                                          const site = requireCompanyCsiSite(businessCompany.id);
+                                          if (!site) return;
+                                          probeInforM3?.(
+                                            businessCompany.id,
+                                            site,
+                                            '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?properties=*&recordCap=1'
+                                          );
+                                        }}
+                                        disabled={inforBusy || !inforConnected}
+                                        title="Reads one SLItems record and displays its field names only."
+                                        style={{ padding: '8px 12px', background: '#475569', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                      >
+                                        Discover SLItems Fields
+                                      </button>
                                       <button
                                         onClick={() => {
                                           const site = requireCompanyCsiSite(businessCompany.id);
