@@ -8997,7 +8997,29 @@ function FinancialScorePage() {
         throw new Error(data.details || data.error || 'Probe failed');
       }
 
-      const firstItem = Array.isArray(data?.data?.Items) ? data.data.Items[0] : null;
+      const probeBody =
+        typeof data?.data === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(data.data);
+              } catch {
+                return null;
+              }
+            })()
+          : data?.data;
+      const probeRecords =
+        probeBody && typeof probeBody === 'object'
+          ? [
+              ...(Array.isArray(probeBody.Items) ? probeBody.Items : []),
+              ...(Array.isArray(probeBody.items) ? probeBody.items : []),
+              ...(Array.isArray(probeBody.results) ? probeBody.results : []),
+              ...(Array.isArray(probeBody.records) ? probeBody.records : []),
+              ...(Array.isArray(probeBody.MIRecord) ? probeBody.MIRecord : []),
+            ]
+          : [];
+      const firstItem = probeRecords.find(
+        (record) => record && typeof record === 'object' && !Array.isArray(record)
+      );
       const fieldNames =
         firstItem && typeof firstItem === 'object' && !Array.isArray(firstItem)
           ? Object.keys(firstItem).sort()
