@@ -34,6 +34,36 @@ function firstInforRecord(body: unknown): Record<string, unknown> | null {
   return null;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function configuredSlItemsMongooseConfig(metadata: unknown): string {
+  const source = asRecord(metadata);
+  const programSets: unknown[] = [
+    source.accountingPrograms,
+    ...Object.values(asRecord(source.accountingProgramsBySystem)),
+  ];
+  for (const programSet of programSets) {
+    if (!Array.isArray(programSet)) continue;
+    const slItems = programSet
+      .map(asRecord)
+      .find((program) => String(program.miProgram || '').trim().toUpperCase() === 'SLITEMS');
+    if (!slItems) continue;
+    const config = String(
+      slItems.mongooseConfig ??
+      slItems.mongoose_configuration ??
+      slItems.mongooseConfiguration ??
+      slItems.configName ??
+      ''
+    ).trim();
+    if (config) return config;
+  }
+  return '';
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
@@ -91,9 +121,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const connection = discoverSlItemsFields
+      ? await prisma.accountingConnection.findUnique({
+          where: { companyId_platform: { companyId, platform: 'INFOR_M3' } },
+          select: { connectionMetadata: true },
+        })
+      : null;
+    const mongooseConfig = discoverSlItemsFields
+      ? configuredSlItemsMongooseConfig(connection?.connectionMetadata)
+      : '';
+    if (discoverSlItemsFields && !mongooseConfig) {
+      return NextResponse.json(
+        { error: 'SLItems Mongoose configuration is not configured for this company.' },
+        { status: 400 }
+      );
+    }
+
     const result = await callInforIonApi(credentials, endpointPath, {
       timeoutMs: 15000,
-      headers: requestedSite ? { 'X-Infor-Site': requestedSite } : undefined,
+      headers: {
+        ...(requestedSite ? { 'X-Infor-Site': requestedSite } : {}),
+        ...(mongooseConfig ? { 'X-Infor-MongooseConfig': mongooseConfig } : {}),
+      },
     });
     const record = discoverSlItemsFields ? firstInforRecord(result.body) : null;
     return NextResponse.json(
