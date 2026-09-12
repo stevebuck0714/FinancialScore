@@ -22,16 +22,13 @@ function isAllowedReadPath(path: string): boolean {
   return isReadScope && !isBlocked;
 }
 
-function firstInforRecord(body: unknown): Record<string, unknown> | null {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
-  const payload = body as Record<string, unknown>;
-  const candidates = [payload.Items, payload.items, payload.results, payload.records, payload.MIRecord];
-  for (const candidate of candidates) {
-    if (!Array.isArray(candidate)) continue;
-    const first = candidate.find((row) => row && typeof row === 'object' && !Array.isArray(row));
-    if (first) return first as Record<string, unknown>;
-  }
-  return null;
+function inforPropertyNames(body: unknown): string[] {
+  const payload = asRecord(body);
+  const properties = Array.isArray(payload.Properties) ? payload.Properties : [];
+  return properties
+    .map((property) => String(asRecord(property).Name || '').trim())
+    .filter(Boolean)
+    .sort();
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -82,7 +79,7 @@ export async function GET(request: NextRequest) {
 
     const discoverSlItemsFields = request.nextUrl.searchParams.get('mode') === 'slitems-fields';
     const endpointPath = discoverSlItemsFields
-      ? '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?properties=*&recordCap=1'
+      ? '/APR_PRD/CSI/IDORequestService/ido/info/SLItems'
       : request.nextUrl.searchParams.get('path');
     const requestedSite = String(request.nextUrl.searchParams.get('site') || '').trim();
     if (!endpointPath) {
@@ -147,7 +144,7 @@ export async function GET(request: NextRequest) {
     const inforPayload = asRecord(result.body);
     const inforSuccess = inforPayload.Success !== false;
     const inforMessage = String(inforPayload.Message || '').trim() || null;
-    const record = discoverSlItemsFields ? firstInforRecord(result.body) : null;
+    const fields = discoverSlItemsFields ? inforPropertyNames(result.body) : [];
     return NextResponse.json(
       {
         ok: result.ok && inforSuccess,
@@ -164,8 +161,8 @@ export async function GET(request: NextRequest) {
         },
         ...(discoverSlItemsFields
           ? {
-              fields: record ? Object.keys(record).sort() : [],
-              recordFound: Boolean(record),
+              fields,
+              recordFound: fields.length > 0,
               mongooseConfigApplied: Boolean(mongooseConfig),
               inforSuccess,
               inforMessage,
