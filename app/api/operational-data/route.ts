@@ -3563,9 +3563,6 @@ export async function GET(request: NextRequest) {
     const shouldBuildWholesaleOrderLines =
       isWholesaleProductsReportRequest &&
       (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'raw');
-    const shouldBuildWholesaleVendorPricingRows =
-      isWholesaleProductsReportRequest &&
-      (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'vendor');
     const operationalCacheTtlSeconds = isWholesaleProductsReportRequest
       ? WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS
       : cacheType === 'products'
@@ -9978,160 +9975,6 @@ export async function GET(request: NextRequest) {
               })()
             : [];
 
-        const wholesaleVendorPricingRows: any[] = shouldBuildWholesaleVendorPricingRows && (prisma as any).inforRawRecord?.findMany
-          ? await (async () => {
-              const rawDelegate = (prisma as any).inforRawRecord;
-              const [latestVendorMasterDate, latestVendorPriceDate] = await Promise.all([
-                rawDelegate.findFirst({
-                  where: {
-                    companyId,
-                    platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-                    miProgram: 'SLItemVends',
-                  },
-                  select: { businessDate: true },
-                  orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
-                }),
-                rawDelegate.findFirst({
-                  where: {
-                    companyId,
-                    platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-                    miProgram: 'SLItemVendPrices',
-                  },
-                  select: { businessDate: true },
-                  orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
-                }),
-              ]);
-              const rawFilters = [
-                latestVendorMasterDate?.businessDate
-                  ? { miProgram: 'SLItemVends', businessDate: latestVendorMasterDate.businessDate }
-                  : null,
-                latestVendorPriceDate?.businessDate
-                  ? { miProgram: 'SLItemVendPrices', businessDate: latestVendorPriceDate.businessDate }
-                  : null,
-              ].filter(Boolean);
-              if (rawFilters.length === 0) return [];
-
-              const rawRows = await rawDelegate.findMany({
-                where: {
-                  companyId,
-                  platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-                  OR: rawFilters,
-                },
-                select: {
-                  miProgram: true,
-                  businessDate: true,
-                  payload: true,
-                  fetchedAt: true,
-                  createdAt: true,
-                },
-                orderBy: [{ miProgram: 'asc' }, { businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
-                take: Math.min(rawPayloadRowCap, 50000),
-              });
-              const readText = (...values: unknown[]) => {
-                for (const value of values) {
-                  const text = String(value ?? '').trim();
-                  if (text) return text;
-                }
-                return '';
-              };
-              const readNumber = (...values: unknown[]) => {
-                for (const value of values) {
-                  const text = String(value ?? '').replace(/[$,]/g, '').trim();
-                  if (!text) continue;
-                  const parsed = Number(text);
-                  if (Number.isFinite(parsed)) return parsed;
-                }
-                return null;
-              };
-              const masterRowsByItemVendor = new Map<string, any>();
-              const buildItemVendorKey = (item: unknown, vendorId: unknown) =>
-                `${readText(item).toUpperCase()}||${readText(vendorId).toUpperCase()}`;
-
-              for (const rawRow of rawRows as any[]) {
-                if (rawRow?.miProgram !== 'SLItemVends') continue;
-                const payload = rawRow?.payload && typeof rawRow.payload === 'object' && !Array.isArray(rawRow.payload)
-                  ? rawRow.payload
-                  : null;
-                if (!payload) continue;
-                const item = readText(payload['Item'], payload['_ItemId']);
-                const vendorId = readText(payload['VendNum']);
-                const key = buildItemVendorKey(item, vendorId);
-                if (!key.replace(/\|/g, '')) continue;
-                if (!masterRowsByItemVendor.has(key)) {
-                  masterRowsByItemVendor.set(key, {
-                    item,
-                    vendorId,
-                    vendorName: readText(payload['VendaddrName'], payload['VendAddrName']),
-                    vendorItem: readText(payload['VendItem']),
-                    rank: readNumber(payload['Rank']),
-                    masterBuyAgreement: readText(payload['MasterBuyAgreement']),
-                    sourceBusinessDate: rawRow.businessDate,
-                  });
-                }
-              }
-
-              return (rawRows as any[])
-                .filter((rawRow) => rawRow?.miProgram === 'SLItemVendPrices')
-                .map((rawRow) => {
-                  const payload = rawRow?.payload && typeof rawRow.payload === 'object' && !Array.isArray(rawRow.payload)
-                    ? rawRow.payload
-                    : null;
-                  if (!payload) return null;
-                  const item = readText(payload['Item'], payload['_ItemId']);
-                  const vendorId = readText(payload['VendNum']);
-                  if (!item || !vendorId) return null;
-                  const master = masterRowsByItemVendor.get(buildItemVendorKey(item, vendorId)) || {};
-                  const actualNoAdj = readNumber(payload['BrkCostConv_1'], payload['BrkCost_1']);
-                  const formalContracts = readNumber(payload['BrkCost_1']);
-                  const vendorPricingSheet = actualNoAdj ?? formalContracts;
-                  const difference =
-                    actualNoAdj != null && vendorPricingSheet != null
-                      ? Number((actualNoAdj - vendorPricingSheet).toFixed(4))
-                      : null;
-                  const effectiveDate =
-                    parseDateTokenToIso(payload['EffectDate']) ||
-                    parseDateTokenToIso(payload['RecordDate']) ||
-                    parseDateTokenToIso(rawRow.businessDate);
-
-                  return {
-                    source: 'SLItemVendPrices',
-                    item,
-                    vendorId,
-                    vendorName: readText(payload['VendAddrName'], payload['VendaddrName'], master.vendorName),
-                    vendorItem: readText(payload['ItemVendVendItem'], master.vendorItem),
-                    rank: readNumber(payload['ItemvendRank'], master.rank),
-                    effectiveDate,
-                    effectiveDateRaw: readText(payload['EffectDate'], payload['RecordDate']),
-                    breakQty1: readNumber(payload['BrkQty_1']),
-                    actualNoAdj,
-                    formalContracts,
-                    vendorPricingSheet,
-                    difference,
-                    updatedDiff: difference,
-                    unitBrokerageCost: readNumber(payload['UnitBrokerageCost']),
-                    unitDutyCost: readNumber(payload['UnitDutyCost']),
-                    unitFreightCost: readNumber(payload['UnitFreightCost']),
-                    unitInsuranceCost: readNumber(payload['UnitInsuranceCost']),
-                    unitLocalFreightCost: readNumber(payload['UnitLocFrtCost']),
-                    currencyCode: readText(payload['VendorCurrCode']),
-                    refType: readText(payload['RefType']),
-                    status: readText(payload['Stat']),
-                    masterBuyAgreement: readText(payload['ItemVendMasterBuyAgreement'], master.masterBuyAgreement),
-                    rowPointer: readText(payload['RowPointer']),
-                    snapshotDate: parseDateTokenToIso(rawRow.businessDate),
-                  };
-                })
-                .filter(Boolean)
-                .sort((a, b) => {
-                  const itemCompare = String(a.item || '').localeCompare(String(b.item || ''), undefined, { sensitivity: 'base', numeric: true });
-                  if (itemCompare !== 0) return itemCompare;
-                  const vendorCompare = String(a.vendorName || a.vendorId || '').localeCompare(String(b.vendorName || b.vendorId || ''), undefined, { sensitivity: 'base', numeric: true });
-                  if (vendorCompare !== 0) return vendorCompare;
-                  return String(b.effectiveDate || '').localeCompare(String(a.effectiveDate || ''));
-                });
-            })()
-          : [];
-
         const aprSgpWorkbook = shouldBuildWholesaleOrderLines
           ? await readAprSgpGmpaWorkbook(companyId).catch(() => null)
           : null;
@@ -10244,7 +10087,6 @@ export async function GET(request: NextRequest) {
             topProducts: topProductsSummary,
             wholesaleReportMode: wholesaleProductsReportMode,
             wholesaleOrderLines: canonicalWholesaleOrderLines,
-            wholesaleVendorPricingRows,
             aprSgpGmpa: aprSgpWorkbook
               ? {
                   sourceDateIso: aprSgpWorkbook.sourceDateIso,

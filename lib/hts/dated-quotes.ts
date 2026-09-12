@@ -19,6 +19,7 @@ type QuoteDbRow = {
   tradeProgram: string;
   asOfDate: Date;
   releaseName: string | null;
+  htsDescription: string | null;
   dutyRatePct: number | null;
   specialRatePct: number | null;
   section301RatePct: number | null;
@@ -40,6 +41,7 @@ function serializeQuote(row: QuoteDbRow): HtsRateQuoteRow {
     tradeProgram: row.tradeProgram,
     asOfDate: asYmd(row.asOfDate),
     releaseName: row.releaseName,
+    htsDescription: row.htsDescription,
     dutyRatePct: row.dutyRatePct == null ? null : Number(row.dutyRatePct),
     specialRatePct: row.specialRatePct == null ? null : Number(row.specialRatePct),
     section301RatePct: row.section301RatePct == null ? null : Number(row.section301RatePct),
@@ -87,7 +89,7 @@ export async function loadHtsQuotesByIdentity(
 
   const rows = await prisma.$queryRaw<QuoteDbRow[]>`
     SELECT
-      "id", "htsCode", "originCountry", "tradeProgram", "asOfDate", "releaseName",
+      "id", "htsCode", "originCountry", "tradeProgram", "asOfDate", "releaseName", "htsDescription",
       "dutyRatePct", "specialRatePct", "section301RatePct", "section232RatePct", "ieepaRatePct",
       "additionalRatePct", "tariffRatePct", "dutyRateText", "specialRateText", "additionalDutiesText", "fetchedAt"
     FROM "HtsRateQuote"
