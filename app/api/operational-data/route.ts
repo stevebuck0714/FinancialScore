@@ -8871,6 +8871,137 @@ export async function GET(request: NextRequest) {
         });
 
       case 'products':
+        // Vendor Pricing is sourced exclusively from the latest SLItemVends and
+        // SLItemVendPrices snapshots. Do not run the much larger product-sales
+        // enrichment pipeline for this report mode.
+        if (isWholesaleProductsReportRequest && wholesaleProductsReportMode === 'vendor') {
+          const rawDelegate = (prisma as any).inforRawRecord;
+          const readText = (...values: unknown[]) => {
+            for (const value of values) {
+              const text = String(value ?? '').trim();
+              if (text) return text;
+            }
+            return '';
+          };
+          const readNumber = (...values: unknown[]) => {
+            for (const value of values) {
+              const text = String(value ?? '').replace(/[$,]/g, '').trim();
+              if (!text) continue;
+              const parsed = Number(text);
+              if (Number.isFinite(parsed)) return parsed;
+            }
+            return null;
+          };
+          let wholesaleVendorPricingRows: any[] = [];
+          if (rawDelegate?.findMany) {
+            const [latestVendorMasterDate, latestVendorPriceDate] = await Promise.all([
+              rawDelegate.findFirst({
+                where: { companyId, platform: { in: ['INFOR_M3', 'INFOR_CSI'] }, miProgram: 'SLItemVends' },
+                select: { businessDate: true },
+                orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
+              }),
+              rawDelegate.findFirst({
+                where: { companyId, platform: { in: ['INFOR_M3', 'INFOR_CSI'] }, miProgram: 'SLItemVendPrices' },
+                select: { businessDate: true },
+                orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
+              }),
+            ]);
+            const [masterRawRows, priceRawRows] = await Promise.all([
+              latestVendorMasterDate?.businessDate
+                ? rawDelegate.findMany({
+                    where: {
+                      companyId,
+                      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+                      miProgram: 'SLItemVends',
+                      businessDate: latestVendorMasterDate.businessDate,
+                    },
+                    select: { payload: true, businessDate: true },
+                    take: 50000,
+                  })
+                : [],
+              latestVendorPriceDate?.businessDate
+                ? rawDelegate.findMany({
+                    where: {
+                      companyId,
+                      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+                      miProgram: 'SLItemVendPrices',
+                      businessDate: latestVendorPriceDate.businessDate,
+                    },
+                    select: { payload: true, businessDate: true },
+                    take: 50000,
+                  })
+                : [],
+            ]);
+            const masterByItemVendor = new Map<string, any>();
+            const keyFor = (item: unknown, vendorId: unknown) =>
+              `${readText(item).toUpperCase()}||${readText(vendorId).toUpperCase()}`;
+            for (const rawRow of masterRawRows as any[]) {
+              const payload = rawRow?.payload && typeof rawRow.payload === 'object' ? rawRow.payload : null;
+              if (!payload) continue;
+              const item = readText(payload.Item, payload._ItemId);
+              const vendorId = readText(payload.VendNum);
+              const key = keyFor(item, vendorId);
+              if (!key.replace(/\|/g, '') || masterByItemVendor.has(key)) continue;
+              masterByItemVendor.set(key, {
+                vendorName: readText(payload.VendaddrName, payload.VendAddrName),
+                vendorItem: readText(payload.VendItem),
+                rank: readNumber(payload.Rank),
+                masterBuyAgreement: readText(payload.MasterBuyAgreement),
+              });
+            }
+            wholesaleVendorPricingRows = (priceRawRows as any[])
+              .map((rawRow) => {
+                const payload = rawRow?.payload && typeof rawRow.payload === 'object' ? rawRow.payload : null;
+                if (!payload) return null;
+                const item = readText(payload.Item, payload._ItemId);
+                const vendorId = readText(payload.VendNum);
+                if (!item || !vendorId) return null;
+                const master = masterByItemVendor.get(keyFor(item, vendorId)) || {};
+                const actualNoAdj = readNumber(payload.BrkCostConv_1, payload.BrkCost_1);
+                const formalContracts = readNumber(payload.BrkCost_1);
+                const vendorPricingSheet = actualNoAdj ?? formalContracts;
+                return {
+                  source: 'SLItemVendPrices', item, vendorId,
+                  vendorName: readText(payload.VendAddrName, payload.VendaddrName, master.vendorName),
+                  vendorItem: readText(payload.ItemVendVendItem, master.vendorItem),
+                  rank: readNumber(payload.ItemvendRank, master.rank),
+                  effectiveDate: parseDateTokenToIso(payload.EffectDate) || parseDateTokenToIso(payload.RecordDate) || parseDateTokenToIso(rawRow.businessDate),
+                  effectiveDateRaw: readText(payload.EffectDate, payload.RecordDate),
+                  breakQty1: readNumber(payload.BrkQty_1),
+                  actualNoAdj, formalContracts, vendorPricingSheet,
+                  difference: actualNoAdj != null && vendorPricingSheet != null ? Number((actualNoAdj - vendorPricingSheet).toFixed(4)) : null,
+                  updatedDiff: actualNoAdj != null && vendorPricingSheet != null ? Number((actualNoAdj - vendorPricingSheet).toFixed(4)) : null,
+                  unitBrokerageCost: readNumber(payload.UnitBrokerageCost),
+                  unitDutyCost: readNumber(payload.UnitDutyCost),
+                  unitFreightCost: readNumber(payload.UnitFreightCost),
+                  unitInsuranceCost: readNumber(payload.UnitInsuranceCost),
+                  unitLocalFreightCost: readNumber(payload.UnitLocFrtCost),
+                  currencyCode: readText(payload.VendorCurrCode),
+                  refType: readText(payload.RefType),
+                  status: readText(payload.Stat),
+                  masterBuyAgreement: readText(payload.ItemVendMasterBuyAgreement, master.masterBuyAgreement),
+                  rowPointer: readText(payload.RowPointer),
+                  snapshotDate: parseDateTokenToIso(rawRow.businessDate),
+                };
+              })
+              .filter(Boolean)
+              .sort((a, b) =>
+                String(a.item || '').localeCompare(String(b.item || ''), undefined, { sensitivity: 'base', numeric: true }) ||
+                String(a.vendorName || a.vendorId || '').localeCompare(String(b.vendorName || b.vendorId || ''), undefined, { sensitivity: 'base', numeric: true }) ||
+                String(b.effectiveDate || '').localeCompare(String(a.effectiveDate || ''))
+              );
+          }
+          return cacheOperationalPayload({
+            records: [],
+            summary: {
+              wholesaleReportMode: 'vendor',
+              wholesaleVendorPricingRows,
+              wholesaleOrderLines: [],
+              topProducts: [],
+              realEstateReports: getRealEstateReportsForSummary(),
+            },
+          });
+        }
         // Get product sales data
         const isInforForProducts =
           normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';

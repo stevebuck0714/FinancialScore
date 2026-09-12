@@ -629,6 +629,9 @@ function applyProgramEndpointPropertyPolicy(endpointPath: string, explicitProgra
   const [path] = raw.split('?');
   const programId = String(explicitProgramId || inferProgramIdFromEndpointPath(path)).trim().toUpperCase();
   let next = sanitizeEndpointPathProperties(raw, programId);
+  if (programId === 'SLITEMS' && /\/IDORequestService\/ido\/load\//i.test(next)) {
+    next = unionCsiProperties(next, SLITEMS_FREIGHT_PROPERTIES);
+  }
   const enforced = ENFORCED_PROGRAM_PROPERTIES[programId];
   if (enforced && /\/IDORequestService\/ido\/load\//i.test(next)) {
     next = ensureCsiProperties(next, enforced);
@@ -1752,6 +1755,16 @@ const SL_COITEMS_SAFE_PROPERTIES = [
   'DueDate',
 ];
 const MAX_CSI_PAGES_PER_REQUEST = 20;
+// Required by the SGP Freight report. These are unioned with a company's saved
+// SLItems projection at request time, preserving any company-specific fields.
+const SLITEMS_FREIGHT_PROPERTIES = [
+  'Item', 'Description', 'Stat', 'ProductCode', 'PMTCode', 'ChangeDate', 'RecordDate',
+  'AvgUCost', 'AvgMatlCost', 'CurUCost', 'CurMatCost', 'CurMatlCost', 'DerUnitCost',
+  'DerQtyOnHand', 'UnitCost', 'UnitWeight', 'BoxCubicDim', 'Height', 'Width', 'Length',
+  'HtsCode', 'DerNonNettableStock', 'DerSafetyStock', 'DerQtyOrdered', 'OrderMult',
+  'OrderMin', 'Revision', 'Country', 'Origin', 'CostType', 'CostMethod', 'PlanCode',
+  'RatePerDay', 'LeadTime', 'ReasonCode', 'StatusChgUserCode',
+];
 const OPTIONAL_CSI_GL_SUMMARY_PROGRAMS = new Set([
   'GLACCTPERIODBALANCES',
   'SLGLACCTPERIODBALANCES',
@@ -1765,6 +1778,27 @@ function ensureCsiProperties(endpointPath: string, properties: string[]): string
   const [path, queryString = ''] = endpointPath.split('?');
   const params = new URLSearchParams(queryString);
   params.set('properties', properties.join(','));
+  if (!params.get('recordCap')) params.set('recordCap', '1000');
+  const next = params.toString();
+  return next ? `${path}?${next}` : path;
+}
+
+function unionCsiProperties(endpointPath: string, requiredProperties: string[]): string {
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  const current = String(params.get('properties') || '')
+    .split(',')
+    .map((property) => property.trim())
+    .filter(Boolean);
+  const present = new Set(current.map((property) => property.toLowerCase()));
+  const merged = [...current];
+  for (const property of requiredProperties) {
+    if (!present.has(property.toLowerCase())) {
+      merged.push(property);
+      present.add(property.toLowerCase());
+    }
+  }
+  params.set('properties', merged.join(','));
   if (!params.get('recordCap')) params.set('recordCap', '1000');
   const next = params.toString();
   return next ? `${path}?${next}` : path;

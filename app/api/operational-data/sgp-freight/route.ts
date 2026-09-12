@@ -103,6 +103,12 @@ export async function PATCH(request: NextRequest) {
     if (!patches.length && !assumptionsPatch) {
       return NextResponse.json({ error: 'items or assumptions are required' }, { status: 400 });
     }
+    if (patches.length) {
+      return NextResponse.json(
+        { error: 'SGP Freight item fields are managed by the Infor SLItems sync and cannot be edited.' },
+        { status: 403 }
+      );
+    }
 
     await ensureCompanyItemFreightTable();
     if (assumptionsPatch) {

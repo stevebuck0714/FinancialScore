@@ -261,12 +261,23 @@ function serializeFreight(
     htsCode?: string | null;
     countryOfOrigin?: string | null;
     qtyOnHand?: number | null;
+    nonNettableStock?: number | null;
+    safetyStock?: number | null;
+    allocatedQty?: number | null;
     itemDescription?: string | null;
     revision?: string | null;
     unitCost?: number | null;
     currentUnitCost?: number | null;
     productCode?: string | null;
+    costType?: string | null;
+    costMethod?: string | null;
+    plannerCode?: string | null;
+    ratePerDay?: number | null;
+    leadTime?: number | null;
     materialStatus?: string | null;
+    reason?: string | null;
+    lastChange?: string | null;
+    sheetUser?: string | null;
     heightIn?: number | null;
     widthIn?: number | null;
     lengthIn?: number | null;
@@ -278,26 +289,21 @@ function serializeFreight(
   },
   assumptions: SgpFreightAssumptions
 ): CompanyItemFreightRow {
-  const userOwned = Boolean(row.userEditedAt);
-  const heightIn = userOwned ? asNullableNumber(row.heightIn) : firstNumber(asNullableNumber(row.heightIn), extras?.heightIn);
-  const widthIn = userOwned ? asNullableNumber(row.widthIn) : firstNumber(asNullableNumber(row.widthIn), extras?.widthIn);
-  const lengthIn = userOwned ? asNullableNumber(row.lengthIn) : firstNumber(asNullableNumber(row.lengthIn), extras?.lengthIn);
-  const cbm = effectiveCbm({ ...row, heightIn, widthIn, lengthIn }) ?? (userOwned ? null : extras?.cbm ?? null);
-  const origin = firstText(row.countryOfOrigin, extras?.countryOfOrigin);
+  const heightIn = firstNumber(extras?.heightIn, asNullableNumber(row.heightIn));
+  const widthIn = firstNumber(extras?.widthIn, asNullableNumber(row.widthIn));
+  const lengthIn = firstNumber(extras?.lengthIn, asNullableNumber(row.lengthIn));
+  const cbm = extras?.cbm ?? effectiveCbm({ ...row, heightIn, widthIn, lengthIn });
+  const origin = firstText(extras?.countryOfOrigin, row.countryOfOrigin);
   const vendorCoo = firstText(row.spreadsheetVendorCoo);
-  const unitCost = userOwned ? asNullableNumber(row.unitCost) : firstNumber(asNullableNumber(row.unitCost), extras?.unitCost);
-  const currentUnitCost = userOwned
-    ? asNullableNumber(row.currentUnitCost)
-    : firstNumber(asNullableNumber(row.currentUnitCost), extras?.currentUnitCost);
+  const unitCost = firstNumber(extras?.unitCost, asNullableNumber(row.unitCost));
+  const currentUnitCost = firstNumber(extras?.currentUnitCost, asNullableNumber(row.currentUnitCost));
   const shipmentType = deriveShipmentType(row.shipmentType, row.spreadsheetVendorCoo || origin);
   const calculated = calcItemFreight({
     cbm,
     shipmentType,
     unitCost,
     currentUnitCost,
-    orderMultiple: userOwned
-      ? asNullableNumber(row.orderMultiple)
-      : firstNumber(asNullableNumber(row.orderMultiple), extras?.orderMultiple),
+    orderMultiple: firstNumber(extras?.orderMultiple, asNullableNumber(row.orderMultiple)),
     assumptions,
   });
   return {
@@ -305,49 +311,41 @@ function serializeFreight(
     companyId: row.companyId,
     itemSku: row.itemSku,
     itemDescription: firstText(extras?.itemDescription, row.itemDescription),
-    revision: firstText(row.revision, extras?.revision),
-    quantityOrdered: userOwned
-      ? asNullableNumber(row.quantityOrdered)
-      : firstNumber(asNullableNumber(row.quantityOrdered), extras?.quantityOrdered),
-    orderMultiple: userOwned
-      ? asNullableNumber(row.orderMultiple)
-      : firstNumber(asNullableNumber(row.orderMultiple), extras?.orderMultiple),
+    revision: firstText(extras?.revision, row.revision),
+    quantityOrdered: firstNumber(extras?.quantityOrdered, asNullableNumber(row.quantityOrdered)),
+    orderMultiple: firstNumber(extras?.orderMultiple, asNullableNumber(row.orderMultiple)),
     heightIn,
     widthIn,
-    orderMinimum: userOwned
-      ? asNullableNumber(row.orderMinimum)
-      : firstNumber(asNullableNumber(row.orderMinimum), extras?.orderMinimum),
+    orderMinimum: firstNumber(extras?.orderMinimum, asNullableNumber(row.orderMinimum)),
     lengthIn,
     cbm,
     cbmIsManual: Boolean(row.cbmIsManual) || (!heightIn && !widthIn && !lengthIn && cbm != null),
-    unitWeight: userOwned
-      ? asNullableNumber(row.unitWeight)
-      : firstNumber(asNullableNumber(row.unitWeight), extras?.unitWeight),
+    unitWeight: firstNumber(extras?.unitWeight, asNullableNumber(row.unitWeight)),
     unitCost,
     currentUnitCost,
     percentOfContainer: calculated.percentOfContainer,
     estimatedFreightCurrent: calculated.estimatedFreightCurrent,
     estimatedFreightFuture: calculated.estimatedFreightFuture,
-    vendorId: firstText(row.spreadsheetVendorId, extras?.vendorId),
-    vendorName: firstText(row.spreadsheetVendorName, extras?.vendorName),
+    vendorId: firstText(extras?.vendorId, row.spreadsheetVendorId),
+    vendorName: firstText(extras?.vendorName, row.spreadsheetVendorName),
     vendorCoo,
     shipmentType,
-    htsCode: firstText(row.htsCode, extras?.htsCode),
+    htsCode: firstText(extras?.htsCode, row.htsCode),
     countryOfOrigin: origin,
     qtyOnHand: firstNumber(extras?.qtyOnHand, asNullableNumber(row.spreadsheetQtyOnHand)),
-    productCode: firstText(row.productCode, extras?.productCode),
-    costType: firstText(row.costType),
-    costMethod: firstText(row.costMethod),
-    plannerCode: firstText(row.plannerCode),
-    ratePerDay: asNullableNumber(row.ratePerDay),
-    leadTime: asNullableNumber(row.leadTime),
-    materialStatus: firstText(row.materialStatus, extras?.materialStatus),
-    reason: firstText(row.reason),
-    lastChange: firstText(row.lastChange),
-    sheetUser: firstText(row.sheetUser),
-    nonNettableStock: asNullableNumber(row.nonNettableStock),
-    safetyStock: asNullableNumber(row.safetyStock),
-    allocatedQty: asNullableNumber(row.allocatedQty),
+    productCode: firstText(extras?.productCode, row.productCode),
+    costType: firstText(extras?.costType, row.costType),
+    costMethod: firstText(extras?.costMethod, row.costMethod),
+    plannerCode: firstText(extras?.plannerCode, row.plannerCode),
+    ratePerDay: firstNumber(extras?.ratePerDay, asNullableNumber(row.ratePerDay)),
+    leadTime: firstNumber(extras?.leadTime, asNullableNumber(row.leadTime)),
+    materialStatus: firstText(extras?.materialStatus, row.materialStatus),
+    reason: firstText(extras?.reason, row.reason),
+    lastChange: firstText(extras?.lastChange, row.lastChange),
+    sheetUser: firstText(extras?.sheetUser, row.sheetUser),
+    nonNettableStock: firstNumber(extras?.nonNettableStock, asNullableNumber(row.nonNettableStock)),
+    safetyStock: firstNumber(extras?.safetyStock, asNullableNumber(row.safetyStock)),
+    allocatedQty: firstNumber(extras?.allocatedQty, asNullableNumber(row.allocatedQty)),
     identitySource: row.identitySource || 'spreadsheet',
     lastSpreadsheetSeedAt: toIso(row.lastSpreadsheetSeedAt),
     userEditedAt: toIso(row.userEditedAt),
@@ -759,10 +757,23 @@ type CsiItemFacts = {
   description: string | null;
   revision: string | null;
   qtyOnHand: number | null;
+  nonNettableStock: number | null;
+  safetyStock: number | null;
+  allocatedQty: number | null;
   unitCost: number | null;
   currentUnitCost: number | null;
+  htsCode: string | null;
+  countryOfOrigin: string | null;
   productCode: string | null;
+  costType: string | null;
+  costMethod: string | null;
+  plannerCode: string | null;
+  ratePerDay: number | null;
+  leadTime: number | null;
   materialStatus: string | null;
+  reason: string | null;
+  lastChange: string | null;
+  sheetUser: string | null;
   cbm: number | null;
   unitWeight: number | null;
   heightIn: number | null;
@@ -829,17 +840,30 @@ async function loadCsiItemFacts(companyId: string): Promise<Map<string, CsiItemF
       description: payloadText(payload, ['Description', 'description', 'ITDS']),
       revision: payloadText(payload, ['Revision', 'revision', 'Rev']),
       qtyOnHand: payloadNumber(payload, ['DerQtyOnHand', 'QtyOnHand', 'qtyOnHand']),
+      nonNettableStock: payloadNumber(payload, ['DerNonNettableStock', 'NonNettableStock']),
+      safetyStock: payloadNumber(payload, ['DerSafetyStock', 'SafetyStock']),
+      allocatedQty: payloadNumber(payload, ['DerQtyAllocCo', 'QtyAllocCo', 'AllocatedQty']),
       unitCost: payloadNumber(payload, ['UnitCost', 'AvgUCost', 'DerUnitCost', 'AvgMatlCost']),
       currentUnitCost: payloadNumber(payload, ['CurUCost', 'CurMatCost', 'CurMatlCost']),
+      htsCode: payloadText(payload, ['HtsCode', 'HTSCode', 'Hts']),
+      countryOfOrigin: payloadText(payload, ['Country', 'Origin', 'NAFTACountryOfOrigin']),
       productCode: payloadText(payload, ['ProductCode', 'PMTCode']),
+      costType: payloadText(payload, ['CostType']),
+      costMethod: payloadText(payload, ['CostMethod']),
+      plannerCode: payloadText(payload, ['PlanCode', 'PlannerCode']),
+      ratePerDay: payloadNumber(payload, ['RatePerDay']),
+      leadTime: payloadNumber(payload, ['LeadTime']),
       materialStatus: payloadText(payload, ['Stat', 'Status', 'MaterialStatus']),
+      reason: payloadText(payload, ['ReasonCode']),
+      lastChange: payloadText(payload, ['ChangeDate']),
+      sheetUser: payloadText(payload, ['StatusChgUserCode']),
       cbm: payloadNumber(payload, ['BoxCubicDim', 'CubicDim', 'CBM', 'Cbm']),
       unitWeight: payloadNumber(payload, ['UnitWeight', 'Weight', 'DerUnitWeight']),
       heightIn: payloadNumber(payload, ['Height', 'BoxHeight', 'HeightIn']),
       widthIn: payloadNumber(payload, ['Width', 'BoxWidth', 'WidthIn']),
       lengthIn: payloadNumber(payload, ['Length', 'BoxLength', 'LengthIn']),
-      quantityOrdered: payloadNumber(payload, ['QtyOrdered', 'QuantityOrdered', 'OnOrder']),
-      orderMultiple: payloadNumber(payload, ['OrderMultiple', 'LotSize', 'QtyMult']),
+      quantityOrdered: payloadNumber(payload, ['DerQtyOrdered', 'QtyOrdered', 'QuantityOrdered', 'OnOrder']),
+      orderMultiple: payloadNumber(payload, ['OrderMult', 'OrderMultiple', 'LotSize', 'QtyMult']),
       orderMinimum: payloadNumber(payload, ['OrderMin', 'MinLotSize', 'OrderMinimum']),
     });
   }
@@ -868,7 +892,55 @@ export async function listCompanyItemFreight(companyId: string): Promise<Company
     loadCsiItemFacts(companyId).catch(() => new Map()),
     getCompanyItemFreightSettings(companyId),
   ]);
-  return rows.map((row) => {
+  const existingItems = new Set(rows.map((row) => normalizeItemSku(row.itemSku).toUpperCase()).filter(Boolean));
+  const csiOnlyRows: FreightDbRow[] = [...csiByItem.keys()]
+    .filter((itemSku) => !existingItems.has(itemSku))
+    .map((itemSku) => ({
+      id: `infor-slitems:${companyId}:${itemSku}`,
+      companyId,
+      itemSku,
+      itemDescription: null,
+      revision: null,
+      quantityOrdered: null,
+      orderMultiple: null,
+      heightIn: null,
+      widthIn: null,
+      orderMinimum: null,
+      lengthIn: null,
+      cbm: null,
+      cbmIsManual: false,
+      unitWeight: null,
+      unitCost: null,
+      currentUnitCost: null,
+      spreadsheetCbm: null,
+      spreadsheetFreightCurrent: null,
+      spreadsheetFreightFuture: null,
+      spreadsheetVendorId: null,
+      spreadsheetVendorName: null,
+      spreadsheetVendorCoo: null,
+      shipmentType: null,
+      htsCode: null,
+      countryOfOrigin: null,
+      spreadsheetQtyOnHand: null,
+      productCode: null,
+      costType: null,
+      costMethod: null,
+      plannerCode: null,
+      ratePerDay: null,
+      leadTime: null,
+      materialStatus: null,
+      reason: null,
+      lastChange: null,
+      sheetUser: null,
+      nonNettableStock: null,
+      safetyStock: null,
+      allocatedQty: null,
+      identitySource: 'infor',
+      lastSpreadsheetSeedAt: null,
+      userEditedAt: null,
+      updatedAt: new Date(),
+    }));
+  return [...rows, ...csiOnlyRows].map((row) => {
     const key = normalizeItemSku(row.itemSku).toUpperCase();
     const vendor = vendorByItem.get(key) || vendorByItem.get(row.itemSku);
     const csi = csiByItem.get(key);
@@ -876,10 +948,23 @@ export async function listCompanyItemFreight(companyId: string): Promise<Company
       vendorId: vendor?.vendorId || null,
       vendorName: vendor?.vendorName || null,
       qtyOnHand: csi?.qtyOnHand ?? null,
+      nonNettableStock: csi?.nonNettableStock ?? null,
+      safetyStock: csi?.safetyStock ?? null,
+      allocatedQty: csi?.allocatedQty ?? null,
       itemDescription: csi?.description || null,
       revision: csi?.revision || null,
+      htsCode: csi?.htsCode || null,
+      countryOfOrigin: csi?.countryOfOrigin || null,
       productCode: csi?.productCode || null,
+      costType: csi?.costType || null,
+      costMethod: csi?.costMethod || null,
+      plannerCode: csi?.plannerCode || null,
+      ratePerDay: csi?.ratePerDay ?? null,
+      leadTime: csi?.leadTime ?? null,
       materialStatus: csi?.materialStatus || null,
+      reason: csi?.reason || null,
+      lastChange: csi?.lastChange || null,
+      sheetUser: csi?.sheetUser || null,
       heightIn: csi?.heightIn ?? null,
       widthIn: csi?.widthIn ?? null,
       lengthIn: csi?.lengthIn ?? null,

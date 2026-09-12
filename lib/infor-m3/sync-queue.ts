@@ -17,6 +17,7 @@ import {
 import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
+import { warmWholesaleVendorPricingCache } from '@/lib/operations/wholesale-vendor-pricing-warmup';
 
 const DEFAULT_LEASE_SECONDS = 420;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -2197,6 +2198,16 @@ async function processTask(
       companyId: task.companyId,
       platform: String(task.run.platform || 'INFOR_M3'),
     });
+    if (String(task.run.platform || '').toUpperCase() === 'INFOR_M3') {
+      const vendorPricingWarmup = await warmWholesaleVendorPricingCache(task.companyId);
+      if (!vendorPricingWarmup.ok && !vendorPricingWarmup.skipped) {
+        console.warn('Vendor Pricing cache warm-up failed after Infor sync completion:', {
+          companyId: task.companyId,
+          runId: task.runId,
+          error: vendorPricingWarmup.error,
+        });
+      }
+    }
     const company = await db().company.findUnique({
       where: { id: task.companyId },
       select: { accountingSystem: true },
