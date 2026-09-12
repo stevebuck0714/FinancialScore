@@ -8894,40 +8894,58 @@ export async function GET(request: NextRequest) {
           };
           let wholesaleVendorPricingRows: any[] = [];
           if (rawDelegate?.findMany) {
-            const [latestVendorMasterDate, latestVendorPriceDate] = await Promise.all([
-              rawDelegate.findFirst({
-                where: { companyId, platform: { in: ['INFOR_M3', 'INFOR_CSI'] }, miProgram: 'SLItemVends' },
+            // The nightly CSI vendor feeds are deltas (often a single row), not
+            // complete replacements. Start at the newest substantial snapshot,
+            // then overlay all later changes by stable row pointer.
+            const latestCompleteSnapshotDate = async (program: 'SLItemVends' | 'SLItemVendPrices') => {
+              const snapshots = await prisma.$queryRaw<Array<{ businessDate: Date }>>(Prisma.sql`
+                SELECT "businessDate"
+                FROM "InforRawRecord"
+                WHERE "companyId" = ${companyId}
+                  AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
+                  AND "miProgram" = ${program}
+                  AND "businessDate" IS NOT NULL
+                GROUP BY "businessDate"
+                HAVING COUNT(*) >= 100
+                ORDER BY "businessDate" DESC
+                LIMIT 1
+              `).catch(() => []);
+              if (snapshots[0]?.businessDate) return snapshots[0].businessDate;
+              const latest = await rawDelegate.findFirst({
+                where: { companyId, platform: { in: ['INFOR_M3', 'INFOR_CSI'] }, miProgram: program },
                 select: { businessDate: true },
                 orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
-              }),
-              rawDelegate.findFirst({
-                where: { companyId, platform: { in: ['INFOR_M3', 'INFOR_CSI'] }, miProgram: 'SLItemVendPrices' },
-                select: { businessDate: true },
-                orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
-              }),
+              });
+              return latest?.businessDate || null;
+            };
+            const [vendorMasterBaselineDate, vendorPriceBaselineDate] = await Promise.all([
+              latestCompleteSnapshotDate('SLItemVends'),
+              latestCompleteSnapshotDate('SLItemVendPrices'),
             ]);
             const [masterRawRows, priceRawRows] = await Promise.all([
-              latestVendorMasterDate?.businessDate
+              vendorMasterBaselineDate
                 ? rawDelegate.findMany({
                     where: {
                       companyId,
                       platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
                       miProgram: 'SLItemVends',
-                      businessDate: latestVendorMasterDate.businessDate,
+                      businessDate: { gte: vendorMasterBaselineDate },
                     },
-                    select: { payload: true, businessDate: true },
+                    select: { payload: true, businessDate: true, fetchedAt: true, createdAt: true },
+                    orderBy: [{ businessDate: 'asc' }, { fetchedAt: 'asc' }, { createdAt: 'asc' }],
                     take: 50000,
                   })
                 : [],
-              latestVendorPriceDate?.businessDate
+              vendorPriceBaselineDate
                 ? rawDelegate.findMany({
                     where: {
                       companyId,
                       platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
                       miProgram: 'SLItemVendPrices',
-                      businessDate: latestVendorPriceDate.businessDate,
+                      businessDate: { gte: vendorPriceBaselineDate },
                     },
-                    select: { payload: true, businessDate: true },
+                    select: { payload: true, businessDate: true, fetchedAt: true, createdAt: true },
+                    orderBy: [{ businessDate: 'asc' }, { fetchedAt: 'asc' }, { createdAt: 'asc' }],
                     take: 50000,
                   })
                 : [],
@@ -8941,7 +8959,7 @@ export async function GET(request: NextRequest) {
               const item = readText(payload.Item, payload._ItemId);
               const vendorId = readText(payload.VendNum);
               const key = keyFor(item, vendorId);
-              if (!key.replace(/\|/g, '') || masterByItemVendor.has(key)) continue;
+              if (!key.replace(/\|/g, '')) continue;
               masterByItemVendor.set(key, {
                 vendorName: readText(payload.VendaddrName, payload.VendAddrName),
                 vendorItem: readText(payload.VendItem),
@@ -8949,7 +8967,19 @@ export async function GET(request: NextRequest) {
                 masterBuyAgreement: readText(payload.MasterBuyAgreement),
               });
             }
-            wholesaleVendorPricingRows = (priceRawRows as any[])
+            const latestPriceRows = new Map<string, any>();
+            for (const rawRow of priceRawRows as any[]) {
+              const payload = rawRow?.payload && typeof rawRow.payload === 'object' ? rawRow.payload : null;
+              if (!payload) continue;
+              const item = readText(payload.Item, payload._ItemId);
+              const vendorId = readText(payload.VendNum);
+              const rowPointer = readText(payload.RowPointer);
+              // RowPointer identifies a CSI vendor-price row. Legacy snapshots
+              // without it still retain distinct item/vendor/effective-date rows.
+              const key = rowPointer || `${keyFor(item, vendorId)}||${readText(payload.EffectDate, payload.RecordDate)}`;
+              if (item && vendorId) latestPriceRows.set(key, rawRow);
+            }
+            wholesaleVendorPricingRows = [...latestPriceRows.values()]
               .map((rawRow) => {
                 const payload = rawRow?.payload && typeof rawRow.payload === 'object' ? rawRow.payload : null;
                 if (!payload) return null;
