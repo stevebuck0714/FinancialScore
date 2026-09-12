@@ -37,7 +37,7 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function configuredSlItemsMongooseConfig(metadata: unknown): string {
+function configuredIdoMongooseConfig(metadata: unknown, idoName: string): string {
   const source = asRecord(metadata);
   const programSets: unknown[] = [
     source.accountingPrograms,
@@ -45,15 +45,15 @@ function configuredSlItemsMongooseConfig(metadata: unknown): string {
   ];
   for (const programSet of programSets) {
     if (!Array.isArray(programSet)) continue;
-    const slItems = programSet
+    const program = programSet
       .map(asRecord)
-      .find((program) => String(program.miProgram || '').trim().toUpperCase() === 'SLITEMS');
-    if (!slItems) continue;
+      .find((item) => String(item.miProgram || '').trim().toUpperCase() === idoName.toUpperCase());
+    if (!program) continue;
     const config = String(
-      slItems.mongooseConfig ??
-      slItems.mongoose_configuration ??
-      slItems.mongooseConfiguration ??
-      slItems.configName ??
+      program.mongooseConfig ??
+      program.mongoose_configuration ??
+      program.mongooseConfiguration ??
+      program.configName ??
       ''
     ).trim();
     if (config) return config;
@@ -77,9 +77,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const discoverSlItemsFields = request.nextUrl.searchParams.get('mode') === 'slitems-fields';
-    const endpointPath = discoverSlItemsFields
-      ? '/APR_PRD/CSI/IDORequestService/ido/info/SLItems'
+    const discoverIdoName =
+      request.nextUrl.searchParams.get('mode') === 'slcustomers-fields'
+        ? 'SLCustomers'
+        : request.nextUrl.searchParams.get('mode') === 'slitems-fields'
+        ? 'SLItems'
+        : '';
+    const endpointPath = discoverIdoName
+      ? `/APR_PRD/CSI/IDORequestService/ido/info/${discoverIdoName}`
       : request.nextUrl.searchParams.get('path');
     const requestedSite = String(request.nextUrl.searchParams.get('site') || '').trim();
     if (!endpointPath) {
@@ -118,18 +123,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const connection = discoverSlItemsFields
+    const connection = discoverIdoName
       ? await prisma.accountingConnection.findUnique({
           where: { companyId_platform: { companyId, platform: 'INFOR_M3' } },
           select: { connectionMetadata: true },
         })
       : null;
-    const mongooseConfig = discoverSlItemsFields
-      ? configuredSlItemsMongooseConfig(connection?.connectionMetadata)
+    const mongooseConfig = discoverIdoName
+      ? configuredIdoMongooseConfig(connection?.connectionMetadata, discoverIdoName)
       : '';
-    if (discoverSlItemsFields && !mongooseConfig) {
+    if (discoverIdoName && !mongooseConfig) {
       return NextResponse.json(
-        { error: 'SLItems Mongoose configuration is not configured for this company.' },
+        { error: `${discoverIdoName} Mongoose configuration is not configured for this company.` },
         { status: 400 }
       );
     }
@@ -144,7 +149,7 @@ export async function GET(request: NextRequest) {
     const inforPayload = asRecord(result.body);
     const inforSuccess = inforPayload.Success !== false;
     const inforMessage = String(inforPayload.Message || '').trim() || null;
-    const fields = discoverSlItemsFields ? inforPropertyNames(result.body) : [];
+    const fields = discoverIdoName ? inforPropertyNames(result.body) : [];
     return NextResponse.json(
       {
         ok: result.ok && inforSuccess,
@@ -159,8 +164,9 @@ export async function GET(request: NextRequest) {
           expiresIn: result.token.expiresIn,
           scope: result.token.scope,
         },
-        ...(discoverSlItemsFields
+        ...(discoverIdoName
           ? {
+              ido: discoverIdoName,
               fields,
               recordFound: fields.length > 0,
               mongooseConfigApplied: Boolean(mongooseConfig),

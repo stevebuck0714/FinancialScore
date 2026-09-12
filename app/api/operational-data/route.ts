@@ -3615,7 +3615,10 @@ export async function GET(request: NextRequest) {
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
             ]),
             dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate, {
-              skipVolatileInforRawProducts: isWholesaleProductsReportRequest,
+              // Vendor pricing is assembled directly from these CSI raw rows.
+              // Its cache must invalidate whenever either vendor feed changes.
+              skipVolatileInforRawProducts:
+                isWholesaleProductsReportRequest && wholesaleProductsReportMode !== 'vendor',
             }),
           }
         : null;
@@ -3659,7 +3662,7 @@ export async function GET(request: NextRequest) {
           headers: privateCacheHeaders(operationalCacheTtlSeconds, 300),
         });
       }
-      if (isWholesaleProductsReportRequest) {
+      if (isWholesaleProductsReportRequest && wholesaleProductsReportMode !== 'vendor') {
         const stalePayload = await readLatestDerivedApiCache<any>({
           namespace: operationalCache.namespace,
           cacheKey: operationalCache.cacheKey,

@@ -9032,7 +9032,7 @@ function FinancialScorePage() {
           : [];
       const visibleFieldNames = discoveryFields.length ? discoveryFields : fieldNames;
       const summary = visibleFieldNames.length
-        ? `Probe OK (${data.status}) — SLItems fields: ${visibleFieldNames.join(', ')}`
+        ? `Probe OK (${data.status}) — SLItems metadata returned ${visibleFieldNames.length.toLocaleString()} fields.`
         : `Probe OK (${data.status}) - ${data.url}${siteParam ? ` (site: ${siteParam})` : ''}`;
       setInforProbeSummary(summary);
       alert(summary);
