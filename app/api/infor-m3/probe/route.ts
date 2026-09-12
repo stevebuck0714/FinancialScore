@@ -37,6 +37,11 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function idoNameFromPath(path: string): string {
+  const match = /\/ido\/(?:load|info)\/([A-Za-z0-9_]+)/i.exec(path);
+  return match ? match[1] : '';
+}
+
 function configuredIdoMongooseConfig(metadata: unknown, idoName: string): string {
   const source = asRecord(metadata);
   const programSets: unknown[] = [
@@ -123,14 +128,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const connection = discoverIdoName
+    // CSI rejects any IDO request without a Mongoose configuration header, so resolve it
+    // for explicit paths too rather than only for the discovery modes.
+    const requestedIdoName = discoverIdoName || idoNameFromPath(endpointPath);
+    const connection = requestedIdoName
       ? await prisma.accountingConnection.findUnique({
           where: { companyId_platform: { companyId, platform: 'INFOR_M3' } },
           select: { connectionMetadata: true },
         })
       : null;
-    const mongooseConfig = discoverIdoName
-      ? configuredIdoMongooseConfig(connection?.connectionMetadata, discoverIdoName)
+    const mongooseConfig = requestedIdoName
+      ? configuredIdoMongooseConfig(connection?.connectionMetadata, requestedIdoName)
       : '';
     if (discoverIdoName && !mongooseConfig) {
       return NextResponse.json(
