@@ -8351,6 +8351,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       />
                                                     </label>
                                                     <button
+                                                      type="button"
                                                       onClick={() => {
                                                         const site = requireCompanyCsiSite(company.id);
                                                         if (!site) return;
@@ -11663,6 +11664,7 @@ export default function SiteAdminDashboard(props: any) {
                                         />
                                       </label>
                                       <button
+                                        type="button"
                                         onClick={() => {
                                           const site = requireCompanyCsiSite(businessCompany.id);
                                           if (!site) return;
