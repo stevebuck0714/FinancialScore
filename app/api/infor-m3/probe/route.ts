@@ -144,14 +144,17 @@ export async function GET(request: NextRequest) {
         ...(mongooseConfig ? { 'X-Infor-MongooseConfig': mongooseConfig } : {}),
       },
     });
+    const inforPayload = asRecord(result.body);
+    const inforSuccess = inforPayload.Success !== false;
+    const inforMessage = String(inforPayload.Message || '').trim() || null;
     const record = discoverSlItemsFields ? firstInforRecord(result.body) : null;
     return NextResponse.json(
       {
-        ok: result.ok,
+        ok: result.ok && inforSuccess,
         source,
         companyId,
         site: requestedSite || null,
-        status: result.status,
+        status: result.ok && inforSuccess ? result.status : 502,
         url: result.url,
         token: {
           tokenEndpoint: result.token.tokenEndpoint,
@@ -160,10 +163,16 @@ export async function GET(request: NextRequest) {
           scope: result.token.scope,
         },
         ...(discoverSlItemsFields
-          ? { fields: record ? Object.keys(record).sort() : [], recordFound: Boolean(record) }
+          ? {
+              fields: record ? Object.keys(record).sort() : [],
+              recordFound: Boolean(record),
+              mongooseConfigApplied: Boolean(mongooseConfig),
+              inforSuccess,
+              inforMessage,
+            }
           : { data: result.body }),
       },
-      { status: result.ok ? 200 : result.status }
+      { status: result.ok && inforSuccess ? 200 : 502 }
     );
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
