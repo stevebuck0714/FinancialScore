@@ -64,6 +64,7 @@ export type CompanyItemDutyPatch = {
   countryOfOrigin?: string | null;
   tradeProgram?: string | null;
   qtyUnit?: string | null;
+  dutyCode?: string | null;
   enteredValuePerPiece?: number | null;
   dutyPerPiece?: number | null;
   tariffPerPiece?: number | null;
@@ -171,6 +172,7 @@ export async function ensureCompanyItemDutyTable(): Promise<void> {
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "lastRateReleaseName" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "tariffHtsCode" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyCode" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyCodeSource" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyDescription" TEXT`);
 }
 
@@ -379,7 +381,10 @@ async function upsertSeedItems(companyId: string, items: SeedItem[], mode: 'spre
             WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."countryOfOrigin"
             ELSE COALESCE(NULLIF("CompanyItemDuty"."countryOfOrigin", ''), EXCLUDED."countryOfOrigin")
           END,
-          "dutyCode" = COALESCE(NULLIF(EXCLUDED."dutyCode", ''), "CompanyItemDuty"."dutyCode"),
+          "dutyCode" = CASE
+            WHEN COALESCE("CompanyItemDuty"."dutyCodeSource", '') = 'user' THEN "CompanyItemDuty"."dutyCode"
+            ELSE COALESCE(NULLIF(EXCLUDED."dutyCode", ''), "CompanyItemDuty"."dutyCode")
+          END,
           "dutyDescription" = COALESCE(NULLIF(EXCLUDED."dutyDescription", ''), "CompanyItemDuty"."dutyDescription"),
           "tradeProgram" = CASE
             WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."tradeProgram"
@@ -659,6 +664,7 @@ export async function updateCompanyItemDuties(
       patch.countryOfOrigin === undefined ? undefined : String(patch.countryOfOrigin || '').trim() || null;
     const tradeProgram = patch.tradeProgram === undefined ? undefined : asTradeProgram(patch.tradeProgram);
     const qtyUnit = patch.qtyUnit === undefined ? undefined : asQtyUnit(patch.qtyUnit);
+    const dutyCode = patch.dutyCode === undefined ? undefined : String(patch.dutyCode || '').trim().toUpperCase() || null;
     const enteredValuePerPiece =
       patch.enteredValuePerPiece === undefined ? undefined : asNullableNumber(patch.enteredValuePerPiece);
     const dutyPerPiece = patch.dutyPerPiece === undefined ? undefined : asNullableNumber(patch.dutyPerPiece);
@@ -680,6 +686,8 @@ export async function updateCompanyItemDuties(
         "countryOfOrigin" = CASE WHEN ${countryOfOrigin !== undefined} THEN ${countryOfOrigin} ELSE "countryOfOrigin" END,
         "tradeProgram" = CASE WHEN ${tradeProgram !== undefined} THEN ${tradeProgram} ELSE "tradeProgram" END,
         "qtyUnit" = CASE WHEN ${qtyUnit !== undefined} THEN ${qtyUnit} ELSE "qtyUnit" END,
+        "dutyCode" = CASE WHEN ${dutyCode !== undefined} THEN ${dutyCode} ELSE "dutyCode" END,
+        "dutyCodeSource" = CASE WHEN ${dutyCode !== undefined} THEN 'user' ELSE "dutyCodeSource" END,
         "enteredValuePerPiece" = CASE WHEN ${enteredValuePerPiece !== undefined} THEN ${enteredValuePerPiece} ELSE "enteredValuePerPiece" END,
         "enteredValueSource" = CASE WHEN ${enteredValuePerPiece !== undefined} THEN 'user' ELSE "enteredValueSource" END,
         "dutyPerPiece" = CASE WHEN ${dutyPerPiece !== undefined} THEN ${dutyPerPiece} ELSE "dutyPerPiece" END,

@@ -4,39 +4,21 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 import {
   ensureCompanyItemDutyTable,
-  listCompanyItemDuties,
-  refreshCompanyItemDuties,
   updateCompanyItemDuties,
   type CompanyItemDutyPatch,
-  type CompanyItemDutyRow,
 } from '@/lib/hts/item-duty-overlay';
-import { loadPrimaryVendorByItem } from '@/lib/operations/vendor-monthly-forecast-db';
+import {
+  buildDutiesTariffsPayload,
+  readDutiesTariffsCache,
+  writeDutiesTariffsCache,
+} from '@/lib/hts/duties-tariffs-cache';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-async function appliedCogsPayload(companyId: string) {
-  const { loadMonthlyHtsDutyCogs } = await import('@/lib/hts/apply-duty-cogs');
-  const monthly = await loadMonthlyHtsDutyCogs(companyId).catch(() => new Map());
-  return Array.from(monthly.values());
-}
-
 async function rebuildAppliedCogs(companyId: string) {
   const { rebuildCompanyItemDutyApplications } = await import('@/lib/hts/apply-duty-cogs');
   return rebuildCompanyItemDutyApplications(companyId);
-}
-
-async function withVendorNames(companyId: string, items: CompanyItemDutyRow[]): Promise<CompanyItemDutyRow[]> {
-  const vendorByItem = await loadPrimaryVendorByItem(companyId).catch(() => new Map());
-  return items.map((item) => {
-    const sku = String(item.itemSku || '').trim();
-    const vendor = vendorByItem.get(sku.toUpperCase()) || vendorByItem.get(sku);
-    return {
-      ...item,
-      vendorId: vendor?.vendorId || null,
-      vendorName: vendor?.vendorName || null,
-    };
-  });
 }
 
 async function assertDutiesAccess(companyId: string): Promise<NextResponse | null> {
@@ -91,23 +73,26 @@ export async function GET(request: NextRequest) {
     if (denied) return denied;
 
     const filter = request.nextUrl.searchParams.get('filter') === 'needs_hts' ? 'needs_hts' : 'all';
-    await ensureCompanyItemDutyTable();
-    const sync = await refreshCompanyItemDuties(companyId);
-    const allItems = await withVendorNames(companyId, await listCompanyItemDuties(companyId, 'all'));
+    // Page reads must be read-only: the overnight sync warmup owns workbook
+    // seeding, identity discovery, and the full cached report build.
+    let payload = await readDutiesTariffsCache(companyId);
+    if (!payload) {
+      payload = await buildDutiesTariffsPayload(companyId);
+      await writeDutiesTariffsCache(companyId, payload).catch((error) => {
+        console.warn('Duties & Tariffs cache write after cold read failed:', error);
+      });
+    }
+    const allItems = payload.items;
     const items = filter === 'needs_hts' ? allItems.filter((item) => item.needsHtsInput) : allItems;
-    const spreadsheetItems = allItems.filter(
-      (item) => item.htsInputSource === 'spreadsheet' || Boolean(item.lastSpreadsheetSeedAt)
-    ).length;
-    const monthlyCogs = await appliedCogsPayload(companyId);
     return NextResponse.json({
       ok: true,
       companyId,
       filter,
-      spreadsheetItems,
-      discovered: sync.discovered,
-      missingHtsCount: allItems.filter((item) => item.needsHtsInput).length,
+      spreadsheetItems: payload.spreadsheetItems,
+      discovered: payload.discovered,
+      missingHtsCount: payload.missingHtsCount,
       items,
-      monthlyCogs,
+      monthlyCogs: payload.monthlyCogs,
     });
   } catch (error) {
     console.error('Duties & tariffs list failed:', error);
@@ -130,13 +115,14 @@ export async function PATCH(request: NextRequest) {
     if (!patches.length) return NextResponse.json({ error: 'items are required' }, { status: 400 });
 
     await ensureCompanyItemDutyTable();
-    const items = await withVendorNames(companyId, await updateCompanyItemDuties(companyId, patches));
+    await updateCompanyItemDuties(companyId, patches);
     const applied = await rebuildAppliedCogs(companyId).catch((error) => {
       console.warn('HTS duty COGS rebuild after save skipped:', error);
       return null;
     });
-    const monthlyCogs = await appliedCogsPayload(companyId);
-    return NextResponse.json({ ok: true, companyId, updated: items.length, items, applied, monthlyCogs });
+    const payload = await buildDutiesTariffsPayload(companyId);
+    await writeDutiesTariffsCache(companyId, payload);
+    return NextResponse.json({ ok: true, companyId, updated: patches.length, items: payload.items, applied, monthlyCogs: payload.monthlyCogs });
   } catch (error) {
     console.error('Duties & tariffs update failed:', error);
     return NextResponse.json(
@@ -161,9 +147,9 @@ export async function POST(request: NextRequest) {
       console.warn('HTS duty COGS rebuild after rate refresh skipped:', error);
       return null;
     });
-    const items = await withVendorNames(companyId, await listCompanyItemDuties(companyId, 'all'));
-    const monthlyCogs = await appliedCogsPayload(companyId);
-    return NextResponse.json({ ok: true, companyId, ...result, items, applied, monthlyCogs });
+    const payload = await buildDutiesTariffsPayload(companyId);
+    await writeDutiesTariffsCache(companyId, payload);
+    return NextResponse.json({ ok: true, companyId, ...result, items: payload.items, applied, monthlyCogs: payload.monthlyCogs });
   } catch (error) {
     console.error('Duties & tariffs rate refresh failed:', error);
     return NextResponse.json(

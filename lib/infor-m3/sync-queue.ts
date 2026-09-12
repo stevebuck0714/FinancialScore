@@ -18,6 +18,7 @@ import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-f
 import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { warmWholesaleVendorPricingCache } from '@/lib/operations/wholesale-vendor-pricing-warmup';
+import { refreshAndWarmDutiesTariffsCache } from '@/lib/hts/duties-tariffs-cache';
 
 const DEFAULT_LEASE_SECONDS = 420;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -2207,6 +2208,13 @@ async function processTask(
           error: vendorPricingWarmup.error,
         });
       }
+      await refreshAndWarmDutiesTariffsCache(task.companyId).catch((error) => {
+        console.warn('Duties & Tariffs cache warm-up failed after Infor sync completion:', {
+          companyId: task.companyId,
+          runId: task.runId,
+          error: errorToMessage(error, 'unknown error'),
+        });
+      });
     }
     const company = await db().company.findUnique({
       where: { id: task.companyId },

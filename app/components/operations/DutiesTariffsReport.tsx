@@ -92,8 +92,8 @@ const SORT_COLUMNS: Array<{ key: DutySortKey; label: string; align?: 'left' | 'r
   { key: 'countryOfOrigin', label: 'Origin' },
   { key: 'tradeProgram', label: 'Program' },
   { key: 'qtyUnit', label: 'Unit' },
-  { key: 'dutyCode', label: 'Code', width: 88, title: '(D1) Code from the SGP Duty & Tariffs sheet.' },
-  { key: 'dutyDescription', label: 'Description', width: 220, title: 'Description from the SGP Duty & Tariffs sheet.' },
+  { key: 'dutyCode', label: 'Duty Code', width: 88, title: 'User-maintained duty code. Existing values were imported from the SGP Duty & Tariffs sheet.' },
+  { key: 'dutyDescription', label: 'Description', width: 220, title: 'Official description from the HTS rate source.' },
   { key: 'enteredValuePerPiece', label: 'Value $', align: 'right', title: 'Customs entered value per unit. Seeded from SGP material cost. Duty and tariff dollars = this value × the % rates.' },
   { key: 'dutyRatePct', label: 'Duty %', align: 'right' },
   { key: 'specialRatePct', label: 'Special %', align: 'right' },
@@ -169,6 +169,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
 
   const load = useCallback(async (nextFilter: 'all' | 'needs_hts') => {
     if (!selectedCompanyId) return;
+    await Promise.resolve();
     setLoading(true);
     setError(null);
     try {
@@ -191,7 +192,10 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   }, [selectedCompanyId]);
 
   useEffect(() => {
-    void load(filter);
+    const timer = window.setTimeout(() => {
+      void load(filter);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [filter, load]);
 
   const updateRow = (id: string, patch: Partial<CompanyItemDutyRow>) => {
@@ -219,6 +223,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
             countryOfOrigin: row.countryOfOrigin,
             tradeProgram: row.tradeProgram,
             qtyUnit: row.qtyUnit,
+            dutyCode: row.dutyCode,
             enteredValuePerPiece: row.enteredValuePerPiece,
           })),
         }),
@@ -265,28 +270,34 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     });
   }, [items]);
 
-  const selectedVendor = vendorFilter === ALL_VENDORS_KEY
+  const effectiveVendorFilter =
+    vendorFilter === ALL_VENDORS_KEY || vendorOptions.some((vendor) => vendor.key === vendorFilter)
+      ? vendorFilter
+      : ALL_VENDORS_KEY;
+
+  const selectedVendor = effectiveVendorFilter === ALL_VENDORS_KEY
     ? null
-    : vendorOptions.find((vendor) => vendor.key === vendorFilter) || null;
+    : vendorOptions.find((vendor) => vendor.key === effectiveVendorFilter) || null;
 
   const visibleItems = useMemo(
-    () => (vendorFilter === ALL_VENDORS_KEY ? items : items.filter((row) => rowVendorKey(row) === vendorFilter)),
-    [items, vendorFilter]
+    () => (effectiveVendorFilter === ALL_VENDORS_KEY ? items : items.filter((row) => rowVendorKey(row) === effectiveVendorFilter)),
+    [items, effectiveVendorFilter]
   );
 
   const loadMonthlySummary = useCallback(async () => {
     if (!selectedCompanyId) return;
+    await Promise.resolve();
     setSummaryLoading(true);
     setSummaryError(null);
     try {
       const vendorPayload =
-        vendorFilter === ALL_VENDORS_KEY
+        effectiveVendorFilter === ALL_VENDORS_KEY
           ? {}
-          : vendorFilter === UNASSIGNED_VENDOR_KEY
+          : effectiveVendorFilter === UNASSIGNED_VENDOR_KEY
             ? { unassigned: true }
-            : vendorFilter.startsWith('id:')
-              ? { vendorId: vendorFilter.slice(3) }
-              : { vendorName: vendorFilter.slice(5) };
+            : effectiveVendorFilter.startsWith('id:')
+              ? { vendorId: effectiveVendorFilter.slice(3) }
+              : { vendorName: effectiveVendorFilter.slice(5) };
       const response = await fetch('/api/operational-data/duties-tariffs/monthly', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -306,17 +317,20 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     } finally {
       setSummaryLoading(false);
     }
-  }, [selectedCompanyId, vendorFilter]);
+  }, [selectedCompanyId, effectiveVendorFilter]);
 
   useEffect(() => {
     if (!summaryOpen) return;
-    void loadMonthlySummary();
+    const timer = window.setTimeout(() => {
+      void loadMonthlySummary();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [summaryOpen, loadMonthlySummary]);
 
   const summaryScopeLabel =
-    vendorFilter === ALL_VENDORS_KEY
+    effectiveVendorFilter === ALL_VENDORS_KEY
       ? 'All vendors'
-      : vendorOptions.find((vendor) => vendor.key === vendorFilter)?.label || 'Selected vendor';
+      : vendorOptions.find((vendor) => vendor.key === effectiveVendorFilter)?.label || 'Selected vendor';
 
   const summaryTotals = useMemo(
     () =>
@@ -349,13 +363,6 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     () => [...visibleItems].sort((left, right) => compareDutyRows(left, right, sortKey, sortDir)),
     [visibleItems, sortKey, sortDir]
   );
-
-  useEffect(() => {
-    if (vendorFilter === ALL_VENDORS_KEY) return;
-    if (!vendorOptions.some((vendor) => vendor.key === vendorFilter)) {
-      setVendorFilter(ALL_VENDORS_KEY);
-    }
-  }, [vendorFilter, vendorOptions]);
 
   const lastRateAsOfDate = useMemo(() => {
     const dates = items.map((row) => String(row.lastRateAsOfDate || '').slice(0, 10)).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
@@ -461,7 +468,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
             </button>
           ) : null}
           <select
-            value={vendorFilter}
+            value={effectiveVendorFilter}
             onChange={(event) => setVendorFilter(event.target.value)}
             style={{ ...inputStyle, width: 280 }}
           >
@@ -607,10 +614,10 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
               <tr>
                 <td colSpan={SORT_COLUMNS.length} style={{ padding: 24, color: '#64748b' }}>
                   {filter === 'needs_hts'
-                    ? vendorFilter === ALL_VENDORS_KEY
+                    ? effectiveVendorFilter === ALL_VENDORS_KEY
                       ? 'No items need HTS input. Switch to All items, or upload the SGP workbook / wait for new SKUs to load.'
                       : 'No items for this vendor need HTS input. Switch to All items or All vendors.'
-                    : vendorFilter === ALL_VENDORS_KEY
+                    : effectiveVendorFilter === ALL_VENDORS_KEY
                     ? 'No items yet. Upload the SGP workbook or open this page after products have synced.'
                     : 'No items for this vendor. Switch to All vendors.'}
                 </td>
@@ -662,11 +669,13 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                     <option value="other">Other</option>
                   </select>
                 </td>
-                <td
-                  title={row.dutyCode || undefined}
-                  style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: 88, minWidth: 88, maxWidth: 110, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 700 }}
-                >
-                  {row.dutyCode || '—'}
+                <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: 88, minWidth: 88 }}>
+                  <input
+                    value={row.dutyCode || ''}
+                    onChange={(event) => updateRow(row.id, { dutyCode: event.target.value.toUpperCase() || null })}
+                    placeholder="Duty code"
+                    style={{ ...inputStyle, fontWeight: 700 }}
+                  />
                 </td>
                 <td
                   title={row.dutyDescription || undefined}

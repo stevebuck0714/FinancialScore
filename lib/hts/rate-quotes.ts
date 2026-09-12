@@ -9,6 +9,7 @@ export type HtsRateQuoteRow = {
   tradeProgram: string;
   asOfDate: string;
   releaseName: string | null;
+  htsDescription: string | null;
   dutyRatePct: number | null;
   specialRatePct: number | null;
   section301RatePct: number | null;
@@ -29,6 +30,7 @@ type QuoteDbRow = {
   tradeProgram: string;
   asOfDate: Date;
   releaseName: string | null;
+  htsDescription: string | null;
   dutyRatePct: number | null;
   specialRatePct: number | null;
   section301RatePct: number | null;
@@ -55,6 +57,7 @@ export async function ensureHtsRateQuoteTable(): Promise<void> {
           "tradeProgram" TEXT NOT NULL DEFAULT 'none',
           "asOfDate" TIMESTAMP(3) NOT NULL,
           "releaseName" TEXT,
+          "htsDescription" TEXT,
           "dutyRatePct" DOUBLE PRECISION,
           "specialRatePct" DOUBLE PRECISION,
           "section301RatePct" DOUBLE PRECISION,
@@ -71,6 +74,7 @@ export async function ensureHtsRateQuoteTable(): Promise<void> {
           CONSTRAINT "HtsRateQuote_pkey" PRIMARY KEY ("id")
         )
       `);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "HtsRateQuote" ADD COLUMN IF NOT EXISTS "htsDescription" TEXT`);
       await prisma.$executeRawUnsafe(`
         CREATE UNIQUE INDEX IF NOT EXISTS "HtsRateQuote_hts_origin_program_date_key"
           ON "HtsRateQuote"("htsCode", "originCountry", "tradeProgram", "asOfDate")
@@ -103,6 +107,7 @@ function serializeQuote(row: QuoteDbRow): HtsRateQuoteRow {
     tradeProgram: row.tradeProgram,
     asOfDate: asYmd(row.asOfDate),
     releaseName: row.releaseName,
+    htsDescription: row.htsDescription,
     dutyRatePct: row.dutyRatePct == null ? null : Number(row.dutyRatePct),
     specialRatePct: row.specialRatePct == null ? null : Number(row.specialRatePct),
     section301RatePct: row.section301RatePct == null ? null : Number(row.section301RatePct),
@@ -126,7 +131,7 @@ export async function getHtsRateQuote(params: {
   const asOf = utcMidnightForEstDate(params.asOfDate);
   const rows = await prisma.$queryRaw<QuoteDbRow[]>`
     SELECT
-      "id", "htsCode", "originCountry", "tradeProgram", "asOfDate", "releaseName",
+      "id", "htsCode", "originCountry", "tradeProgram", "asOfDate", "releaseName", "htsDescription",
       "dutyRatePct", "specialRatePct", "section301RatePct", "section232RatePct", "ieepaRatePct",
       "additionalRatePct", "tariffRatePct", "dutyRateText", "specialRateText", "additionalDutiesText", "fetchedAt"
     FROM "HtsRateQuote"
@@ -145,6 +150,7 @@ export async function upsertHtsRateQuote(input: {
   tradeProgram: string;
   asOfDate: string;
   releaseName: string | null;
+  htsDescription: string | null;
   dutyRatePct: number | null;
   specialRatePct: number | null;
   section301RatePct: number | null;
@@ -161,12 +167,12 @@ export async function upsertHtsRateQuote(input: {
   const id = randomUUID();
   const rows = await prisma.$queryRaw<QuoteDbRow[]>`
     INSERT INTO "HtsRateQuote" (
-      "id", "htsCode", "originCountry", "tradeProgram", "asOfDate", "releaseName",
+      "id", "htsCode", "originCountry", "tradeProgram", "asOfDate", "releaseName", "htsDescription",
       "dutyRatePct", "specialRatePct", "section301RatePct", "section232RatePct", "ieepaRatePct",
       "additionalRatePct", "tariffRatePct", "dutyRateText", "specialRateText", "additionalDutiesText",
       "unit1", "fetchedAt", "createdAt"
     ) VALUES (
-      ${id}, ${input.htsCode}, ${input.originCountry}, ${input.tradeProgram}, ${asOf}, ${input.releaseName},
+      ${id}, ${input.htsCode}, ${input.originCountry}, ${input.tradeProgram}, ${asOf}, ${input.releaseName}, ${input.htsDescription},
       ${input.dutyRatePct}, ${input.specialRatePct}, ${input.section301RatePct}, ${input.section232RatePct}, ${input.ieepaRatePct},
       ${input.additionalRatePct}, ${input.tariffRatePct}, ${input.dutyRateText}, ${input.specialRateText}, ${input.additionalDutiesText},
       ${input.unit1 || null}, NOW(), NOW()
@@ -174,6 +180,7 @@ export async function upsertHtsRateQuote(input: {
     ON CONFLICT ("htsCode", "originCountry", "tradeProgram", "asOfDate")
     DO UPDATE SET
       "releaseName" = EXCLUDED."releaseName",
+      "htsDescription" = EXCLUDED."htsDescription",
       "dutyRatePct" = EXCLUDED."dutyRatePct",
       "specialRatePct" = EXCLUDED."specialRatePct",
       "section301RatePct" = EXCLUDED."section301RatePct",
@@ -187,7 +194,7 @@ export async function upsertHtsRateQuote(input: {
       "unit1" = EXCLUDED."unit1",
       "fetchedAt" = NOW()
     RETURNING
-      "id", "htsCode", "originCountry", "tradeProgram", "asOfDate", "releaseName",
+      "id", "htsCode", "originCountry", "tradeProgram", "asOfDate", "releaseName", "htsDescription",
       "dutyRatePct", "specialRatePct", "section301RatePct", "section232RatePct", "ieepaRatePct",
       "additionalRatePct", "tariffRatePct", "dutyRateText", "specialRateText", "additionalDutiesText", "fetchedAt"
   `;

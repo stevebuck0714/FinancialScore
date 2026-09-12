@@ -49,7 +49,7 @@ function extrasWereResolved(quote: HtsRateQuoteRow): boolean {
 function quoteLooksPopulated(quote: HtsRateQuoteRow): boolean {
   const hasColumn1 =
     quote.dutyRatePct != null || quote.specialRatePct != null || Boolean(quote.dutyRateText) || Boolean(quote.specialRateText);
-  return hasColumn1 && extrasWereResolved(quote);
+  return hasColumn1 && Boolean(quote.htsDescription) && extrasWereResolved(quote);
 }
 
 function originKey(value: string | null | undefined): string {
@@ -79,6 +79,10 @@ async function resolveQuoteFromUsitc(params: {
 
   const dutyRateText = String(line.general || '').trim() || null;
   const specialRateText = String(line.special || '').trim() || null;
+  const htsDescription = String(line.description || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || null;
   const footnoteText = (line.footnotes || []).map((note) => note.value).join(' ');
   const dutyRatePct = parseAdValoremPct(dutyRateText);
   const specialRatePct = parseSpecialPct(specialRateText, params.tradeProgram, dutyRatePct);
@@ -153,6 +157,7 @@ async function resolveQuoteFromUsitc(params: {
     tradeProgram: params.tradeProgram,
     asOfDate: params.asOfDate,
     releaseName: params.releaseName,
+    htsDescription,
     dutyRatePct,
     specialRatePct,
     section301RatePct: buckets.section301,
@@ -280,6 +285,7 @@ export async function refreshCompanyItemDutyRates(
         "additionalRatePct" = ${quote.additionalRatePct},
         "tariffRatePct" = ${quote.tariffRatePct},
         "tariffHtsCode" = ${tariffHtsCode},
+        "dutyDescription" = ${quote.htsDescription},
         "dutyPerPiece" = ${dutyPerPiece},
         "tariffPerPiece" = ${tariffPerPiece},
         "rateSource" = 'hts',
