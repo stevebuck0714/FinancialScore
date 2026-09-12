@@ -65,7 +65,7 @@ import {
   type ProductMarginItemOverlay,
 } from '@/lib/operations/product-margin-calc';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
-import { addEstCalendarDays, addEstCalendarMonths, formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, previousEstCalendarDate, toLocalInputDate } from '@/app/utils/date';
+import { addEstCalendarDays, addEstCalendarMonths, formatDateInputLabel, formatDateSafeUtc, formatEstDate, parseDateSafeUtc, previousEstCalendarDate, toLocalInputDate } from '@/app/utils/date';
 import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
 import { localeForCurrency } from '@/lib/constants/currencies';
 import PageCurrencyBadge from '../PageCurrencyBadge';
@@ -593,10 +593,12 @@ const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_CLIENT_CACHE_VERSION = 'customer-revenue-source-v11-monthly-customer-history';
 const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v6';
-const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v4-vendor-snapshot-deltas';
+const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v5-est-day-scoped';
 const REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION = 'real-estate-sector-53-reports-v1';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
-const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Infor re-syncs this report every night, so a stored payload must never outlive the
+// EST day it was fetched in. The key carries the fetch day; this is only a backstop.
+const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const operationalDataCacheStore = new Map<string, { fetchedAt: number; data: any }>();
 const operationalDataInflightStore = new Map<string, Promise<any>>();
@@ -2093,6 +2095,7 @@ export default function OperationsTab({
       startDate,
       endDate,
       '42',
+      formatEstDate(),
       WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION,
     ].join('|');
 
