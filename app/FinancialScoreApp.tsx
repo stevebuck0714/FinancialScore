@@ -8972,8 +8972,9 @@ function FinancialScorePage() {
   const probeInforM3 = async (targetCompanyId?: string, site?: string, pathOverride?: string) => {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) return;
+    const discoverSlItemsFields = pathOverride === '__DISCOVER_SLITEMS_FIELDS__';
     const probePath = String(pathOverride || inforProbePath).trim();
-    if (!probePath) {
+    if (!discoverSlItemsFields && !probePath) {
       alert('Please enter an Infor CSI probe path');
       return;
     }
@@ -8990,13 +8991,18 @@ function FinancialScorePage() {
     try {
       const siteParam = String(site || '').trim();
       const response = await fetch(
-        `/api/infor-m3/probe?companyId=${companyId}${siteParam ? `&site=${encodeURIComponent(siteParam)}` : ''}&path=${encodeURIComponent(probePath)}`
+        discoverSlItemsFields
+          ? `/api/infor-m3/probe?companyId=${companyId}${siteParam ? `&site=${encodeURIComponent(siteParam)}` : ''}&mode=slitems-fields`
+          : `/api/infor-m3/probe?companyId=${companyId}${siteParam ? `&site=${encodeURIComponent(siteParam)}` : ''}&path=${encodeURIComponent(probePath)}`
       );
       const data = await response.json();
       if (!response.ok || !data.ok) {
         throw new Error(data.details || data.error || 'Probe failed');
       }
 
+      const discoveryFields = Array.isArray(data?.fields)
+        ? data.fields.filter((field: unknown) => typeof field === 'string').sort()
+        : [];
       const probeBody =
         typeof data?.data === 'string'
           ? (() => {
@@ -9024,8 +9030,9 @@ function FinancialScorePage() {
         firstItem && typeof firstItem === 'object' && !Array.isArray(firstItem)
           ? Object.keys(firstItem).sort()
           : [];
-      const summary = fieldNames.length
-        ? `Probe OK (${data.status}) — SLItems fields: ${fieldNames.join(', ')}`
+      const visibleFieldNames = discoveryFields.length ? discoveryFields : fieldNames;
+      const summary = visibleFieldNames.length
+        ? `Probe OK (${data.status}) — SLItems fields: ${visibleFieldNames.join(', ')}`
         : `Probe OK (${data.status}) - ${data.url}${siteParam ? ` (site: ${siteParam})` : ''}`;
       setInforProbeSummary(summary);
       alert(summary);

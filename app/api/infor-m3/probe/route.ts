@@ -22,6 +22,18 @@ function isAllowedReadPath(path: string): boolean {
   return isReadScope && !isBlocked;
 }
 
+function firstInforRecord(body: unknown): Record<string, unknown> | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const payload = body as Record<string, unknown>;
+  const candidates = [payload.Items, payload.items, payload.results, payload.records, payload.MIRecord];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    const first = candidate.find((row) => row && typeof row === 'object' && !Array.isArray(row));
+    if (first) return first as Record<string, unknown>;
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
@@ -38,7 +50,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const endpointPath = request.nextUrl.searchParams.get('path');
+    const discoverSlItemsFields = request.nextUrl.searchParams.get('mode') === 'slitems-fields';
+    const endpointPath = discoverSlItemsFields
+      ? '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?properties=*&recordCap=1'
+      : request.nextUrl.searchParams.get('path');
     const requestedSite = String(request.nextUrl.searchParams.get('site') || '').trim();
     if (!endpointPath) {
       return NextResponse.json(
@@ -80,6 +95,7 @@ export async function GET(request: NextRequest) {
       timeoutMs: 15000,
       headers: requestedSite ? { 'X-Infor-Site': requestedSite } : undefined,
     });
+    const record = discoverSlItemsFields ? firstInforRecord(result.body) : null;
     return NextResponse.json(
       {
         ok: result.ok,
@@ -94,7 +110,9 @@ export async function GET(request: NextRequest) {
           expiresIn: result.token.expiresIn,
           scope: result.token.scope,
         },
-        data: result.body,
+        ...(discoverSlItemsFields
+          ? { fields: record ? Object.keys(record).sort() : [], recordFound: Boolean(record) }
+          : { data: result.body }),
       },
       { status: result.ok ? 200 : result.status }
     );

@@ -8357,7 +8357,7 @@ export default function SiteAdminDashboard(props: any) {
                                                         probeInforM3?.(
                                                           company.id,
                                                           site,
-                                                          '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?properties=*&recordCap=1'
+                                                          '__DISCOVER_SLITEMS_FIELDS__'
                                                         );
                                                       }}
                                                       disabled={inforBusy || !inforConnected}
@@ -11669,7 +11669,7 @@ export default function SiteAdminDashboard(props: any) {
                                           probeInforM3?.(
                                             businessCompany.id,
                                             site,
-                                            '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?properties=*&recordCap=1'
+                                            '__DISCOVER_SLITEMS_FIELDS__'
                                           );
                                         }}
                                         disabled={inforBusy || !inforConnected}
