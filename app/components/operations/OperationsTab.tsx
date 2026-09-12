@@ -2001,7 +2001,7 @@ export default function OperationsTab({
         companyId: selectedCompanyId,
         ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
-      const response = await fetch(`/api/operational-data?${params}`);
+      const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
       if (!response.ok) throw new Error('Failed to load operational data');
       const data = await response.json();
       setSummary(data.summary);
@@ -2144,7 +2144,10 @@ export default function OperationsTab({
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 90000);
     const request = fetch(`/api/operational-data?${params}`, {
-      cache: options?.forceRefresh ? 'no-store' : 'default',
+      // This report is cached server-side and again in the versioned client store
+      // below. An HTTP-cached copy is keyed only by the URL, so it would pin a stale
+      // payload for the whole TTL without revalidating.
+      cache: 'no-store',
       signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) {

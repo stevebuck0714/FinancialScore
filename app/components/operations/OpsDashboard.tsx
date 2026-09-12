@@ -223,7 +223,7 @@ export default function OpsDashboard({
         ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
-      const response = await fetch(`/api/operational-data?${params}`);
+      const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
       const data = await response.json();
       setCustomerData(data);
     } catch (error) {
@@ -246,7 +246,7 @@ export default function OpsDashboard({
         ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
-      const response = await fetch(`/api/operational-data?${params}`);
+      const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
       const data = await response.json();
       setArData(data);
     } catch (error) {
@@ -269,7 +269,7 @@ export default function OpsDashboard({
         ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
-      const response = await fetch(`/api/operational-data?${params}`);
+      const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
       const data = await response.json();
       setApData(data);
     } catch (error) {
@@ -292,7 +292,7 @@ export default function OpsDashboard({
         ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
-      const response = await fetch(`/api/operational-data?${params}`);
+      const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
       const data = await response.json();
       setProductData(data);
     } catch (error) {
@@ -315,7 +315,7 @@ export default function OpsDashboard({
         ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
-      const response = await fetch(`/api/operational-data?${params}`);
+      const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
       const data = await response.json();
       setInventoryData(data);
     } catch (error) {
@@ -338,7 +338,7 @@ export default function OpsDashboard({
         ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
       
-      const response = await fetch(`/api/operational-data?${params}`);
+      const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
       const data = await response.json();
       setCashData(data);
     } catch (error) {
@@ -361,7 +361,7 @@ export default function OpsDashboard({
         ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
       });
 
-      const response = await fetch(`/api/operational-data?${params}`);
+      const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
       const data = await response.json();
       setEbitdaData(data);
     } catch (error) {

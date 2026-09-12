@@ -5014,7 +5014,7 @@ function FinancialScorePage() {
       customerQualityParams.set('refreshConcentration', '1');
     }
 
-    fetch(`/api/operational-data?${customerQualityParams.toString()}`)
+    fetch(`/api/operational-data?${customerQualityParams.toString()}`, { cache: 'no-store' })
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) {

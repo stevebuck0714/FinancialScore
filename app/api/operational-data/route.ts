@@ -67,7 +67,6 @@ import {
 } from '@/lib/operational/retail-subcategory-history';
 import { buildAprSgpItemCustomerPartKeys, buildAprSgpMatchKeys, readAprSgpGmpaWorkbook } from '@/lib/operational/apr-sgp-gmpa';
 import { hashCacheParts, readDerivedApiCache, readLatestDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
-import { privateCacheHeaders } from '@/lib/http-cache';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 import { isEstBusinessDay } from '@/lib/time/eastern';
@@ -88,6 +87,10 @@ const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v4-vendor-snapshot-deltas';
+// The server cache TTL must not become a browser max-age. A stored HTTP response is
+// keyed only by URL, so it carries no dataVersion and can outlive a corrected payload
+// for the whole TTL without ever revalidating. Serve from DerivedApiCache instead.
+const OPERATIONAL_RESPONSE_HEADERS = { 'Cache-Control': 'private, no-store' };
 type WholesaleProductsReportMode = 'all' | 'margin' | 'raw' | 'vendor';
 const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
 const GENE_SOLUTIONS_MOCK_FINANCIAL_SOURCE = 'GENE_SOLUTIONS_MOCK';
@@ -3656,7 +3659,7 @@ export async function GET(request: NextRequest) {
       if (cachedPayload) {
         const presentedCached = await presentOperationalPayload(cachedPayload);
         return NextResponse.json(presentedCached, {
-          headers: privateCacheHeaders(operationalCacheTtlSeconds, 300),
+          headers: OPERATIONAL_RESPONSE_HEADERS,
         });
       }
       if (isWholesaleProductsReportRequest && wholesaleProductsReportMode !== 'vendor') {
@@ -3667,7 +3670,7 @@ export async function GET(request: NextRequest) {
         if (stalePayload) {
           const presentedStale = await presentOperationalPayload(stalePayload);
           return NextResponse.json(presentedStale, {
-            headers: privateCacheHeaders(operationalCacheTtlSeconds, 300),
+            headers: OPERATIONAL_RESPONSE_HEADERS,
           });
         }
       }
@@ -3691,7 +3694,7 @@ export async function GET(request: NextRequest) {
           console.warn('Operational data cache write failed:', error);
         });
       }
-      return NextResponse.json(presented, { headers: privateCacheHeaders(operationalCacheTtlSeconds, 300) });
+      return NextResponse.json(presented, { headers: OPERATIONAL_RESPONSE_HEADERS });
     };
     const mockDataDisabledResponse = (dataType: string) => NextResponse.json(
       {
