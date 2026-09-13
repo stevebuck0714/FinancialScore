@@ -568,7 +568,7 @@ async function loadInforItemDutyIdentities(companyId: string): Promise<InforDuty
 // is never pushed back to Infor, a value typed on the page stands until Infor itself carries
 // one, at which point Infor is authoritative again. Nothing here touches an item Infor has
 // no HtsCode for.
-async function overlayDutyIdentityFromInfor(companyId: string): Promise<number> {
+export async function overlayDutyIdentityFromInfor(companyId: string): Promise<number> {
   const [identities, matchingDutySkus] = await Promise.all([
     loadInforItemDutyIdentities(companyId),
     loadDutySkuResolver(companyId),

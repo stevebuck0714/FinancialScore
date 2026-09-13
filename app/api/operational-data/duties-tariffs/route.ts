@@ -142,9 +142,14 @@ export async function POST(request: NextRequest) {
 
     const action = String(body.action || request.nextUrl.searchParams.get('action') || '').trim();
     if (action === 'rebuild-hts-from-infor') {
-      const { clearDutyHtsIdentity, refreshCompanyItemDuties } = await import('@/lib/hts/item-duty-overlay');
+      // Deliberately narrow: HTS and origin come only from Infor, so this skips the
+      // workbook parse and identity discovery that the nightly warmup owns. Those made
+      // the request exceed the function timeout and are irrelevant to the classification.
+      const { clearDutyHtsIdentity, overlayDutyIdentityFromInfor } = await import(
+        '@/lib/hts/item-duty-overlay'
+      );
       const cleared = await clearDutyHtsIdentity(companyId);
-      const refreshed = await refreshCompanyItemDuties(companyId);
+      const overlaid = await overlayDutyIdentityFromInfor(companyId);
       const resetPayload = await buildDutiesTariffsPayload(companyId);
       await writeDutiesTariffsCache(companyId, resetPayload);
       return NextResponse.json({
@@ -152,7 +157,8 @@ export async function POST(request: NextRequest) {
         companyId,
         action,
         cleared,
-        ...refreshed,
+        overlaid,
+        missingHtsCount: resetPayload.missingHtsCount,
         items: resetPayload.items,
         monthlyCogs: resetPayload.monthlyCogs,
       });
