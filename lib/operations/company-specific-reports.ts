@@ -116,6 +116,13 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     sectorCategories: ['42'],
   },
   {
+    key: 'productsReports',
+    label: 'Reports',
+    tabKey: 'products_skus',
+    group: 'Products',
+    sectorCategories: ['42'],
+  },
+  {
     key: 'groupsMarginAnalysis',
     label: 'Group Margin Analysis',
     tabKey: 'groups',

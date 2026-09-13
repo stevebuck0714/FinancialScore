@@ -32,6 +32,7 @@ import ProductForecastRollupReport from './ProductForecastRollupReport';
 import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
 import ProductRevenueRollupReport from './ProductRevenueRollupReport';
 import ProductGoalUpdateReport from './ProductGoalUpdateReport';
+import ProductReportsChart from './ProductReportsChart';
 import DutiesTariffsReport from './DutiesTariffsReport';
 import SgpFreightReport from './SgpFreightReport';
 import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
@@ -226,7 +227,7 @@ type WipLineItemSortKey =
   | 'wipValue'
   | 'contractValue'
   | 'invoicedValue';
-type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'retailForecast' | 'merchandiseProfitability';
+type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'reports' | 'retailForecast' | 'merchandiseProfitability';
 type VendorReportView = 'vendorPricing' | 'monthlyForecast' | 'forecastRollup' | 'dutiesTariffs' | 'sgpFreight';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
@@ -1254,7 +1255,8 @@ export default function OperationsTab({
       productReportView === 'forecastRollup' ||
       productReportView === 'monthlyRevenue' ||
       productReportView === 'revenueRollup' ||
-      productReportView === 'goalUpdate')) ||
+      productReportView === 'goalUpdate' ||
+      productReportView === 'reports')) ||
     isVendorsTab ||
     isGroupsTab;
   const usesDutiesTariffsDedicatedView = isVendorsTab;
@@ -2145,7 +2147,9 @@ export default function OperationsTab({
       ...(options?.forceRefresh ? { refreshWholesaleProducts: '1' } : {}),
     });
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 90000);
+    // Must outlast a cold server-side build, otherwise the first request after a
+    // deploy aborts here and the rebuilt payload is never shown.
+    const timeoutId = window.setTimeout(() => controller.abort(), 280000);
     const request = fetch(`/api/operational-data?${params}`, {
       // This report is cached server-side and again in the versioned client store
       // below. An HTTP-cached copy is keyed only by the URL, so it would pin a stale
@@ -2183,7 +2187,9 @@ export default function OperationsTab({
       productReportView === 'forecastRollup' ||
       productReportView === 'monthlyRevenue' ||
       productReportView === 'revenueRollup' ||
-      productReportView === 'goalUpdate');
+      productReportView === 'goalUpdate' ||
+      // Reports owns its own month range picker, so the daily range bar is hidden.
+      productReportView === 'reports');
   const isThirteenWeekCashForecastViewActive =
     (activeTab === 'forecast' && activeAccrualBasisForecastTab === 'cash-forecast') ||
     activeTab === 'working_capital_forecast' ||
@@ -2820,6 +2826,7 @@ export default function OperationsTab({
           productReportView === 'monthlyRevenue' ||
           productReportView === 'revenueRollup' ||
           productReportView === 'goalUpdate' ||
+          productReportView === 'reports' ||
           resolveModuleKey(tab) === 'vendors' ||
           resolveModuleKey(tab) === 'groups')
       ) {
@@ -9020,6 +9027,7 @@ export default function OperationsTab({
     const isRevenueRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueRollup');
     const isGoalUpdateEnabled = isWholesaleProductSector && isSectionEnabled('productsGoalUpdate');
     const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
+    const isProductReportsEnabled = isWholesaleProductSector && isSectionEnabled('productsReports');
     const isDutiesTariffsEnabled =
       isSectionEnabled('vendorsDutiesTariffs') || isSectionEnabled('productsDutiesTariffs');
     const isSgpFreightEnabled = isSectionEnabled('vendorsSgpFreight');
@@ -9027,6 +9035,7 @@ export default function OperationsTab({
     const isMerchandiseProfitabilityEnabled = isRetailProductSector && isSectionEnabled('productsMerchandiseProfitability');
     const hasAnyProductsReportEnabled =
       isProductPerformanceEnabled ||
+      isProductReportsEnabled ||
       isRetailForecastingEnabled ||
       isMerchandiseProfitabilityEnabled ||
       isRevenueForecastEnabled ||
@@ -9060,6 +9069,8 @@ export default function OperationsTab({
         ? 'revenueRollup'
         : isGoalUpdateEnabled
         ? 'goalUpdate'
+        : isProductReportsEnabled
+        ? 'reports'
         : isMerchandiseProfitabilityEnabled
         ? 'merchandiseProfitability'
         : isRetailForecastingEnabled
@@ -9084,12 +9095,15 @@ export default function OperationsTab({
         ? fallbackProductReportView
         : productReportView === 'performance' && !isProductPerformanceEnabled
         ? fallbackProductReportView
+        : productReportView === 'reports' && !isProductReportsEnabled
+        ? fallbackProductReportView
         : productReportView === 'merchandiseProfitability' && !isMerchandiseProfitabilityEnabled
         ? fallbackProductReportView
         : productReportView === 'retailForecast' && !isRetailForecastingEnabled
         ? fallbackProductReportView
         : productReportView;
     const shouldRenderProductPerformance = effectiveProductReportView === 'performance' && isProductPerformanceEnabled;
+    const shouldRenderProductReports = effectiveProductReportView === 'reports' && isProductReportsEnabled;
     const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
     const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
     const shouldRenderVendorPricing = isWholesaleVendorsTab && isVendorPricingEnabled;
@@ -10657,6 +10671,24 @@ export default function OperationsTab({
             }}
           >
             Performance
+          </button>
+        )}
+        {isProductReportsEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('reports')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'reports' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'reports' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            Reports
           </button>
         )}
         {isMerchandiseProfitabilityEnabled && (
@@ -12433,6 +12465,22 @@ export default function OperationsTab({
           },
         ],
       },
+      productsReports: {
+        title: 'What Reports shows',
+        sections: [
+          {
+            body:
+              'This charts monthly revenue dollars for SGP Baseline, SGP Growth, SGP Stretch, Forecasted Adj., and Actuals across the month range you pick. Any line can be toggled off to compare the rest.',
+          },
+          {
+            heading: 'Where the numbers come from',
+            body: [
+              'SGP Baseline, Growth, and Stretch are the monthly revenue goals typed on Goal Update for each year in the range.',
+              'Forecasted Adj. is the Forecast - ADJ dollars from Monthly Revenue, and Actuals is booked revenue for the same month. Actuals stop at each year\'s Data thru month so an in-progress month is not drawn as a drop.',
+            ],
+          },
+        ],
+      },
     };
 
     // Renders the small "What is this?" link in the upper-right of each chart
@@ -12794,6 +12842,22 @@ export default function OperationsTab({
           <ProductGoalUpdateReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsGoalUpdate')}
+          />
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (shouldRenderProductReports) {
+      return (
+        <div style={{ padding: '8px 12px 16px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            {productPageTitle}
+          </h2>
+          {productViewSwitcher}
+          <ProductReportsChart
+            selectedCompanyId={selectedCompanyId}
+            onOpenInfo={() => setProductChartInfoKey('productsReports')}
           />
           {renderProductChartInfoModal()}
         </div>

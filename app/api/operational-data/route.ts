@@ -72,7 +72,10 @@ import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashb
 import { isEstBusinessDay } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// A cold wholesale products report build exceeds 60s. Being killed at the old
+// limit meant the cache was never written, so every later request rebuilt from
+// scratch and failed the same way instead of falling back to a stored payload.
+export const maxDuration = 300;
 
 const OPERATIONAL_DATA_CACHE_TTL_SECONDS = 120;
 const OPERATIONAL_HEAVY_DATA_CACHE_TTL_SECONDS = 30 * 60;

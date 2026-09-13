@@ -119,6 +119,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsRevenueRollup', label: 'Revenue Rollup', group: 'Products' },
   { key: 'productsGoalUpdate', label: 'Goal Update', group: 'Products' },
   { key: 'productsPerformance', label: 'Performance', group: 'Products' },
+  { key: 'productsReports', label: 'Reports', group: 'Products' },
   { key: 'groupsMarginAnalysis', label: 'Group Margin Analysis', group: 'Group' },
   { key: 'groupsMonthlyForecast', label: 'Monthly Forecast', group: 'Group' },
   { key: 'groupsForecastRollup', label: 'Forecast Rollup', group: 'Group' },

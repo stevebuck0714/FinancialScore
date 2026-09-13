@@ -20,8 +20,10 @@ import {
   loadProductForecastLinesWithCatalog,
 } from '@/lib/operations/product-catalog-carryforward';
 
+import { withProductReportCache } from '@/lib/operations/product-report-cache';
+
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function asText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -37,61 +39,74 @@ export async function GET(request: NextRequest) {
     const denied = await assertProductsForecastAccess(companyId);
     if (denied) return denied;
 
-    await ensureProductRevenueForecastTables();
-
     const year = asForecastYear(request.nextUrl.searchParams.get('year'));
     const customerId = String(request.nextUrl.searchParams.get('customerId') || '').trim();
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();
-
-    const settings = await prisma.productRevenueForecastSettings.findUnique({
-      where: { companyId_year: { companyId, year } },
-    });
-
-    const { customers: customerPayload, catalogSourceYear } = await listProductForecastCustomersWithCatalog(
-      companyId,
-      year
+    const includeTotals = String(request.nextUrl.searchParams.get('includeTotals') || '') === '1';
+    const refresh = ['1', 'true', 'yes'].includes(
+      String(request.nextUrl.searchParams.get('refresh') || '').trim().toLowerCase()
     );
 
-    if (!customerId && !customerName) {
-      const includeTotals = String(request.nextUrl.searchParams.get('includeTotals') || '') === '1';
-      let totals = null;
-      if (includeTotals) {
-        const companyLines = await loadProductForecastLinesWithCatalog({ companyId, year });
-        const shipped = await loadCsiMonthlyShippedActuals({ companyId, year });
-        totals = summarizeForecastQtyMonths(
-          withCsiShippedActuals(companyLines.map(serializeForecastLine), shipped)
+    const { payload } = await withProductReportCache({
+      namespace: 'product-forecast-report',
+      companyId,
+      keyParts: ['forecast', year, customerId, customerName, includeTotals ? 'totals' : 'no-totals'],
+      refresh,
+      build: async () => {
+        await ensureProductRevenueForecastTables();
+
+        const settings = await prisma.productRevenueForecastSettings.findUnique({
+          where: { companyId_year: { companyId, year } },
+        });
+
+        const { customers: customerPayload, catalogSourceYear } = await listProductForecastCustomersWithCatalog(
+          companyId,
+          year
         );
-      }
-      return NextResponse.json({
-        year,
-        catalogSourceYear,
-        dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
-        customers: customerPayload,
-        totals,
-        lines: [],
-      });
-    }
 
-    const lines = await loadProductForecastLinesWithCatalog({
-      companyId,
-      year,
-      customerId,
-      customerName,
-    });
-    const shipped = await loadCsiMonthlyShippedActuals({
-      companyId,
-      year,
-      customerId,
-      customerName,
+        if (!customerId && !customerName) {
+          let totals = null;
+          if (includeTotals) {
+            const companyLines = await loadProductForecastLinesWithCatalog({ companyId, year });
+            const shipped = await loadCsiMonthlyShippedActuals({ companyId, year });
+            totals = summarizeForecastQtyMonths(
+              withCsiShippedActuals(companyLines.map(serializeForecastLine), shipped)
+            );
+          }
+          return {
+            year,
+            catalogSourceYear,
+            dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
+            customers: customerPayload,
+            totals,
+            lines: [],
+          };
+        }
+
+        const lines = await loadProductForecastLinesWithCatalog({
+          companyId,
+          year,
+          customerId,
+          customerName,
+        });
+        const shipped = await loadCsiMonthlyShippedActuals({
+          companyId,
+          year,
+          customerId,
+          customerName,
+        });
+
+        return {
+          year,
+          catalogSourceYear,
+          dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
+          customers: customerPayload,
+          lines: withCsiShippedActuals(lines.map(serializeForecastLine), shipped),
+        };
+      },
     });
 
-    return NextResponse.json({
-      year,
-      catalogSourceYear,
-      dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
-      customers: customerPayload,
-      lines: withCsiShippedActuals(lines.map(serializeForecastLine), shipped),
-    });
+    return NextResponse.json(payload);
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || 'Failed to load revenue forecast' },
@@ -137,7 +152,7 @@ export async function PUT(request: NextRequest) {
       lines,
     });
 
-    const saved = await loadProductForecastLines({
+    const saved = await loadProductForecastLinesWithCatalog({
       companyId,
       year,
       customerId,

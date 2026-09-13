@@ -12,9 +12,10 @@ import {
   upsertRevenueLines,
 } from '@/lib/operations/product-revenue-actual-db';
 import { workbookUpdatedDate } from '@/lib/operations/product-revenue-actual';
+import { withProductReportCache } from '@/lib/operations/product-report-cache';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function asText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -30,17 +31,29 @@ export async function GET(request: NextRequest) {
     const denied = await assertProductsForecastAccess(companyId);
     if (denied) return denied;
 
-    await ensureProductRevenueTables();
-
     const year = asForecastYear(request.nextUrl.searchParams.get('year'));
     const customerId = String(request.nextUrl.searchParams.get('customerId') || '').trim();
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();
-    const dataset = await loadRevenueDataset({ companyId, year, customerId, customerName });
+    const refresh = ['1', 'true', 'yes'].includes(
+      String(request.nextUrl.searchParams.get('refresh') || '').trim().toLowerCase()
+    );
 
-    return NextResponse.json({
-      ...dataset,
-      workbookUpdated: workbookUpdatedDate(dataset.dataThru),
+    const { payload } = await withProductReportCache({
+      namespace: 'product-revenue-report',
+      companyId,
+      keyParts: ['revenue', year, customerId, customerName],
+      refresh,
+      build: async () => {
+        await ensureProductRevenueTables();
+        const dataset = await loadRevenueDataset({ companyId, year, customerId, customerName });
+        return {
+          ...dataset,
+          workbookUpdated: workbookUpdatedDate(dataset.dataThru),
+        };
+      },
     });
+
+    return NextResponse.json(payload);
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || 'Failed to load monthly revenue' },
