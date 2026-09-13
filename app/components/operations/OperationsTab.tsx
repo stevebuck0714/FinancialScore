@@ -33,6 +33,7 @@ import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
 import ProductRevenueRollupReport from './ProductRevenueRollupReport';
 import ProductGoalUpdateReport from './ProductGoalUpdateReport';
 import ProductReportsChart from './ProductReportsChart';
+import ProductYtdGapReport from './ProductYtdGapReport';
 import DutiesTariffsReport from './DutiesTariffsReport';
 import SgpFreightReport from './SgpFreightReport';
 import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
@@ -227,7 +228,7 @@ type WipLineItemSortKey =
   | 'wipValue'
   | 'contractValue'
   | 'invoicedValue';
-type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'reports' | 'retailForecast' | 'merchandiseProfitability';
+type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'reports' | 'ytdGap' | 'retailForecast' | 'merchandiseProfitability';
 type VendorReportView = 'vendorPricing' | 'monthlyForecast' | 'forecastRollup' | 'dutiesTariffs' | 'sgpFreight';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
@@ -1256,7 +1257,8 @@ export default function OperationsTab({
       productReportView === 'monthlyRevenue' ||
       productReportView === 'revenueRollup' ||
       productReportView === 'goalUpdate' ||
-      productReportView === 'reports')) ||
+      productReportView === 'reports' ||
+      productReportView === 'ytdGap')) ||
     isVendorsTab ||
     isGroupsTab;
   const usesDutiesTariffsDedicatedView = isVendorsTab;
@@ -2189,7 +2191,9 @@ export default function OperationsTab({
       productReportView === 'revenueRollup' ||
       productReportView === 'goalUpdate' ||
       // Reports owns its own month range picker, so the daily range bar is hidden.
-      productReportView === 'reports');
+      productReportView === 'reports' ||
+      // YTD Gap Analysis is year-scoped and has its own year picker.
+      productReportView === 'ytdGap');
   const isThirteenWeekCashForecastViewActive =
     (activeTab === 'forecast' && activeAccrualBasisForecastTab === 'cash-forecast') ||
     activeTab === 'working_capital_forecast' ||
@@ -2827,6 +2831,7 @@ export default function OperationsTab({
           productReportView === 'revenueRollup' ||
           productReportView === 'goalUpdate' ||
           productReportView === 'reports' ||
+          productReportView === 'ytdGap' ||
           resolveModuleKey(tab) === 'vendors' ||
           resolveModuleKey(tab) === 'groups')
       ) {
@@ -9028,6 +9033,7 @@ export default function OperationsTab({
     const isGoalUpdateEnabled = isWholesaleProductSector && isSectionEnabled('productsGoalUpdate');
     const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
     const isProductReportsEnabled = isWholesaleProductSector && isSectionEnabled('productsReports');
+    const isProductYtdGapEnabled = isWholesaleProductSector && isSectionEnabled('productsYtdGap');
     const isDutiesTariffsEnabled =
       isSectionEnabled('vendorsDutiesTariffs') || isSectionEnabled('productsDutiesTariffs');
     const isSgpFreightEnabled = isSectionEnabled('vendorsSgpFreight');
@@ -9036,6 +9042,7 @@ export default function OperationsTab({
     const hasAnyProductsReportEnabled =
       isProductPerformanceEnabled ||
       isProductReportsEnabled ||
+      isProductYtdGapEnabled ||
       isRetailForecastingEnabled ||
       isMerchandiseProfitabilityEnabled ||
       isRevenueForecastEnabled ||
@@ -9071,6 +9078,8 @@ export default function OperationsTab({
         ? 'goalUpdate'
         : isProductReportsEnabled
         ? 'reports'
+        : isProductYtdGapEnabled
+        ? 'ytdGap'
         : isMerchandiseProfitabilityEnabled
         ? 'merchandiseProfitability'
         : isRetailForecastingEnabled
@@ -9097,6 +9106,8 @@ export default function OperationsTab({
         ? fallbackProductReportView
         : productReportView === 'reports' && !isProductReportsEnabled
         ? fallbackProductReportView
+        : productReportView === 'ytdGap' && !isProductYtdGapEnabled
+        ? fallbackProductReportView
         : productReportView === 'merchandiseProfitability' && !isMerchandiseProfitabilityEnabled
         ? fallbackProductReportView
         : productReportView === 'retailForecast' && !isRetailForecastingEnabled
@@ -9104,6 +9115,7 @@ export default function OperationsTab({
         : productReportView;
     const shouldRenderProductPerformance = effectiveProductReportView === 'performance' && isProductPerformanceEnabled;
     const shouldRenderProductReports = effectiveProductReportView === 'reports' && isProductReportsEnabled;
+    const shouldRenderProductYtdGap = effectiveProductReportView === 'ytdGap' && isProductYtdGapEnabled;
     const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
     const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
     const shouldRenderVendorPricing = isWholesaleVendorsTab && isVendorPricingEnabled;
@@ -10689,6 +10701,24 @@ export default function OperationsTab({
             }}
           >
             Reports
+          </button>
+        )}
+        {isProductYtdGapEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('ytdGap')}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'ytdGap' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'ytdGap' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            YTD Gap Analysis
           </button>
         )}
         {isMerchandiseProfitabilityEnabled && (
@@ -12470,13 +12500,37 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'This charts monthly revenue dollars for SGP Baseline, SGP Growth, SGP Stretch, Forecasted Adj., and Actuals across the month range you pick. Any line can be toggled off to compare the rest.',
+              'This charts monthly revenue dollars for SGP Baseline, SGP Growth, SGP Stretch, Forecasted, Forecast - ADJ, and Actuals across the month range you pick. Any line can be toggled off to compare the rest.',
           },
           {
             heading: 'Where the numbers come from',
             body: [
               'SGP Baseline, Growth, and Stretch are the monthly revenue goals typed on Goal Update for each year in the range.',
-              'Forecasted Adj. is the Forecast - ADJ dollars from Monthly Revenue, and Actuals is booked revenue for the same month. Actuals stop at each year\'s Data thru month so an in-progress month is not drawn as a drop.',
+              'Forecasted is the original forecast dollars from Monthly Revenue and Forecast - ADJ is the adjusted forecast, so the two can be tracked against each other.',
+              'Actuals is booked revenue for the same month. Actuals stop at each year\'s Data thru month so an in-progress month is not drawn as a drop.',
+            ],
+          },
+        ],
+      },
+      productsYtdGap: {
+        title: 'What YTD Gap Analysis shows',
+        sections: [
+          {
+            body:
+              'Year-to-date revenue dollars for every line item, so management can see where the original forecast and the adjusted forecast are running ahead of or behind booked actuals. Rows start at parent group and expand to the customer and SKU behind each number.',
+          },
+          {
+            heading: 'How the YTD window is set',
+            body: [
+              'Every column stops at the Data thru month, so Forecasted, Forecast - ADJ, and Actuals all cover the same months. Comparing a full-year forecast against a partial year of actuals would show a shortfall on every line.',
+            ],
+          },
+          {
+            heading: 'Reading the gaps',
+            body: [
+              'Gap vs Forecasted is Actuals minus the original forecast, and Gap vs Forecast - ADJ is Actuals minus the adjusted forecast. Green means actuals came in above plan, red means below. The percentage next to each gap is actuals as a share of that plan.',
+              'SGP Baseline, Growth, and Stretch are company-wide monthly goals, so they appear only in the summary above the table, totalled over the same YTD window. They are not split across line items.',
+              'Forecasted $ depends on the Jan-1 contract price for each SKU, so a line missing from the saved price list reads $0 on that column.',
             ],
           },
         ],
@@ -12858,6 +12912,22 @@ export default function OperationsTab({
           <ProductReportsChart
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsReports')}
+          />
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (shouldRenderProductYtdGap) {
+      return (
+        <div style={{ padding: '8px 12px 16px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            {productPageTitle}
+          </h2>
+          {productViewSwitcher}
+          <ProductYtdGapReport
+            selectedCompanyId={selectedCompanyId}
+            onOpenInfo={() => setProductChartInfoKey('productsYtdGap')}
           />
           {renderProductChartInfoModal()}
         </div>

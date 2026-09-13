@@ -14,7 +14,7 @@ import {
 import { FORECAST_MONTHS, FORECAST_MONTH_LABELS, type ForecastMonth } from '@/lib/operations/product-revenue-forecast';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
-type SeriesKey = 'sgpBaseline' | 'sgpGrowth' | 'sgpStretch' | 'forecastAdj' | 'actual';
+type SeriesKey = 'sgpBaseline' | 'sgpGrowth' | 'sgpStretch' | 'forecast' | 'forecastAdj' | 'actual';
 
 type ChartRow = {
   monthKey: string;
@@ -22,6 +22,7 @@ type ChartRow = {
   sgpBaseline: number | null;
   sgpGrowth: number | null;
   sgpStretch: number | null;
+  forecast: number | null;
   forecastAdj: number | null;
   actual: number | null;
 };
@@ -32,7 +33,10 @@ const SERIES: Array<{ key: SeriesKey; label: string; color: string }> = [
   { key: 'sgpBaseline', label: 'SGP Baseline', color: '#0ea5e9' },
   { key: 'sgpGrowth', label: 'SGP Growth', color: '#f59e0b' },
   { key: 'sgpStretch', label: 'SGP Stretch', color: '#ef4444' },
-  { key: 'forecastAdj', label: 'Forecasted Adj.', color: '#7c3aed' },
+  // Named as the Revenue Rollup names them: "Forecasted" is the original
+  // forecast, "Forecast - ADJ" the adjusted one.
+  { key: 'forecast', label: 'Forecasted', color: '#0891b2' },
+  { key: 'forecastAdj', label: 'Forecast - ADJ', color: '#7c3aed' },
   { key: 'actual', label: 'Actuals', color: '#16a34a' },
 ];
 
@@ -141,6 +145,7 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
     sgpBaseline: true,
     sgpGrowth: true,
     sgpStretch: true,
+    forecast: true,
     forecastAdj: true,
     actual: true,
   });
@@ -206,13 +211,18 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
         ? (goalsJson.monthlyRevenueGoals as MonthlyGoal[])
         : [];
 
-      const revenueMonths = new Map<string, { adjusted: number; actual: number }>();
+      const revenueMonths = new Map<string, { forecast: number; adjusted: number; actual: number }>();
       const actualThroughByYear = new Map<number, number>();
       for (const entry of revenueByYear) {
-        const months = (entry.json?.totals?.months || {}) as Record<string, { adjusted?: number; ytd?: number }>;
+        const months = (entry.json?.totals?.months || {}) as Record<
+          string,
+          { estimated?: number; adjusted?: number; ytd?: number }
+        >;
         for (const month of FORECAST_MONTHS) {
           const bucket = months[String(month)] || {};
           revenueMonths.set(monthKey(entry.year, month), {
+            // "estimated" is the original forecast in dollars, before adjustments.
+            forecast: Number(bucket.estimated || 0),
             adjusted: Number(bucket.adjusted || 0),
             actual: Number(bucket.ytd || 0),
           });
@@ -246,6 +256,7 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
           sgpBaseline: goalValue(goal?.baseline),
           sgpGrowth: goalValue(goal?.growth),
           sgpStretch: goalValue(goal?.stretch),
+          forecast: revenue ? revenue.forecast : null,
           forecastAdj: revenue ? revenue.adjusted : null,
           actual: revenue && month <= actualThrough ? revenue.actual : null,
         };
@@ -282,7 +293,8 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
           </h3>
           <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>
             Monthly revenue in dollars. SGP Baseline, Growth, and Stretch come from the Goal Update monthly goals.
-            Forecasted Adj. and Actuals come from Monthly Revenue for each year in the range.
+            Forecasted, Forecast - ADJ, and Actuals come from Monthly Revenue for each year in the range, so the
+            original forecast can be tracked against the adjusted forecast and booked actuals.
           </div>
         </div>
         {onOpenInfo ? (

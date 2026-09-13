@@ -123,6 +123,13 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     sectorCategories: ['42'],
   },
   {
+    key: 'productsYtdGap',
+    label: 'YTD Gap Analysis',
+    tabKey: 'products_skus',
+    group: 'Products',
+    sectorCategories: ['42'],
+  },
+  {
     key: 'groupsMarginAnalysis',
     label: 'Group Margin Analysis',
     tabKey: 'groups',
