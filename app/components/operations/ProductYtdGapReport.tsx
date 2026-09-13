@@ -185,9 +185,8 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>YTD Gap Analysis</h3>
-          <div style={{ marginTop: 4, fontSize: 12, color: '#64748b', maxWidth: 760, lineHeight: 1.5 }}>
-            Year-to-date revenue dollars per line item, comparing the original forecast and the adjusted forecast
-            against booked actuals. Every column covers the same months so the gap is like-for-like.
+          <div style={{ marginTop: 4, fontSize: 12, color: '#64748b', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
+            Year-to-date revenue dollars per line item, comparing the original forecast and the adjusted forecast against booked actuals. Every column covers the same months so the gap is like-for-like.
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

@@ -9009,6 +9009,7 @@ export default function OperationsTab({
               forecastRollup: isSectionEnabled('groupsForecastRollup'),
               monthlyRevenue: isSectionEnabled('groupsMonthlyRevenue'),
               revenueRollup: isSectionEnabled('groupsRevenueRollup'),
+              ytdGap: isSectionEnabled('groupsYtdGap'),
             }}
           />
         </div>

@@ -126,6 +126,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'groupsForecastRollup', label: 'Forecast Rollup', group: 'Group' },
   { key: 'groupsMonthlyRevenue', label: 'Monthly Revenue', group: 'Group' },
   { key: 'groupsRevenueRollup', label: 'Revenue Rollup', group: 'Group' },
+  { key: 'groupsYtdGap', label: 'YTD Gap Analysis', group: 'Group' },
   { key: 'productsRetailForecasting', label: 'Retail Forecasting / Monthly Inventory Report', group: 'Products' },
   { key: 'productsMerchandiseProfitability', label: 'Merchandise Profitability', group: 'Products' },
   { key: 'productsPriceCostComparison', label: 'Weekly Price-Cost Comparison', group: 'Products' },
@@ -1712,7 +1713,7 @@ export default function SiteAdminDashboard(props: any) {
       const mapped = OPERATIONAL_HUB_SECTION_OPTIONS
         .filter((item) => item.group === sourceGroup)
         .filter((item) => !isCompanySpecificReportForSector(item.key, companySectorCategory))
-        .filter((item) => !['productsVendorPricing', 'vendorsDutiesTariffs', 'vendorsSgpFreight', 'vendorsMonthlyForecast', 'vendorsForecastRollup', 'groupsMarginAnalysis', 'groupsMonthlyForecast', 'groupsForecastRollup', 'groupsMonthlyRevenue', 'groupsRevenueRollup', 'hiringOpenJobs', 'hiringApplicantPipeline', 'hiringFunnelByRole', 'hiringTimeToFillByJob', 'hiringApplicantsByJob', 'hiringPostingPerformance', 'hiringOnboardingPipeline', 'lsWorkforceSummary', 'lsCompensationByRole', 'lsEmployeeCompensationRoster', 'lsHeadcountByRole', 'lsHeadcountByDepartment', 'lsLocationPayTypeMix', 'lsBillRateLevelCoverage', 'lsPtoBalances'].includes(item.key))
+        .filter((item) => !['productsVendorPricing', 'vendorsDutiesTariffs', 'vendorsSgpFreight', 'vendorsMonthlyForecast', 'vendorsForecastRollup', 'groupsMarginAnalysis', 'groupsMonthlyForecast', 'groupsForecastRollup', 'groupsMonthlyRevenue', 'groupsRevenueRollup', 'groupsYtdGap', 'hiringOpenJobs', 'hiringApplicantPipeline', 'hiringFunnelByRole', 'hiringTimeToFillByJob', 'hiringApplicantsByJob', 'hiringPostingPerformance', 'hiringOnboardingPipeline', 'lsWorkforceSummary', 'lsCompensationByRole', 'lsEmployeeCompensationRoster', 'lsHeadcountByRole', 'lsHeadcountByDepartment', 'lsLocationPayTypeMix', 'lsBillRateLevelCoverage', 'lsPtoBalances'].includes(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'orders_sales' || !WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'inventory' || !WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS.has(item.key))

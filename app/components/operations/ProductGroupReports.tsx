@@ -21,13 +21,15 @@ import {
   type ProductGroupDataset,
   type ProductGroupRow,
 } from '@/lib/operations/product-group-types';
+import ProductYtdGapReport from './ProductYtdGapReport';
 
 export type GroupReportView =
   | 'marginAnalysis'
   | 'monthlyForecast'
   | 'forecastRollup'
   | 'monthlyRevenue'
-  | 'revenueRollup';
+  | 'revenueRollup'
+  | 'ytdGap';
 
 type ProductGroupReportsProps = {
   selectedCompanyId: string;
@@ -62,6 +64,7 @@ const VIEW_ORDER: Array<{ key: GroupReportView; label: string }> = [
   { key: 'forecastRollup', label: 'Forecast Rollup' },
   { key: 'monthlyRevenue', label: 'Monthly Revenue' },
   { key: 'revenueRollup', label: 'Revenue Rollup' },
+  { key: 'ytdGap', label: 'YTD Gap Analysis' },
 ];
 
 function currentYear(): number {
@@ -268,35 +271,54 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
       title: 'Revenue Rollup',
       body: 'Quarterly and annual revenue $ by Customer Group, with every SKU listed under the group total.',
     },
+    ytdGap: {
+      title: 'YTD Gap Analysis',
+      body: 'Year-to-date revenue $ by Customer Group, comparing the original forecast and the adjusted forecast against booked actuals.',
+    },
   };
 
   const shiftMonth = (delta: number) => {
     setMonth(((((month - 1 + delta) % 12) + 12) % 12) + 1 as ForecastMonth);
   };
 
+  const viewSwitcher = (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      {availableViews.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={() => setView(item.key)}
+          style={{
+            border: '1px solid #cbd5e1',
+            borderRadius: 999,
+            padding: '8px 12px',
+            background: view === item.key ? '#e0e7ff' : '#ffffff',
+            color: view === item.key ? '#3730a3' : '#334155',
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // YTD Gap Analysis owns its own year picker and aggregate, so the shared
+  // group/year/month controls and the group dataset fetch below do not apply.
+  if (view === 'ytdGap') {
+    return (
+      <div>
+        {viewSwitcher}
+        <ProductYtdGapReport selectedCompanyId={selectedCompanyId} />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-        {availableViews.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setView(item.key)}
-            style={{
-              border: '1px solid #cbd5e1',
-              borderRadius: 999,
-              padding: '8px 12px',
-              background: view === item.key ? '#e0e7ff' : '#ffffff',
-              color: view === item.key ? '#3730a3' : '#334155',
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontSize: 12,
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {viewSwitcher}
 
       <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#1e293b' }}>{copy[view].title}</h3>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>{copy[view].body}</p>
