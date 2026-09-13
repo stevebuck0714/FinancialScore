@@ -140,6 +140,24 @@ export async function POST(request: NextRequest) {
     const denied = await assertDutiesAccess(companyId);
     if (denied) return denied;
 
+    const action = String(body.action || request.nextUrl.searchParams.get('action') || '').trim();
+    if (action === 'reset-hts-ownership') {
+      const { clearDutyHtsUserOwnership, refreshCompanyItemDuties } = await import('@/lib/hts/item-duty-overlay');
+      const cleared = await clearDutyHtsUserOwnership(companyId);
+      const refreshed = await refreshCompanyItemDuties(companyId);
+      const resetPayload = await buildDutiesTariffsPayload(companyId);
+      await writeDutiesTariffsCache(companyId, resetPayload);
+      return NextResponse.json({
+        ok: true,
+        companyId,
+        action,
+        cleared,
+        ...refreshed,
+        items: resetPayload.items,
+        monthlyCogs: resetPayload.monthlyCogs,
+      });
+    }
+
     const asOfDate = String(body.asOfDate || request.nextUrl.searchParams.get('asOfDate') || '').trim() || null;
     const { refreshCompanyItemDutyRates } = await import('@/lib/hts/refresh-item-duty-rates');
     const result = await refreshCompanyItemDutyRates(companyId, asOfDate);

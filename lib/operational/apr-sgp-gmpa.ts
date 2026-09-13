@@ -183,6 +183,12 @@ const ORIGIN_NAME_TO_CODE: Record<string, string> = {
   'SOUTH KOREA': 'KR',
   KOREA: 'KR',
   'REPUBLIC OF KOREA': 'KR',
+  // Infor CSI stores the ISO 3166 long form on SLItems.Country.
+  'KOREA, REPUBLIC OF': 'KR',
+  'TAIWAN, PROVINCE OF CHINA': 'TW',
+  MALAYSIA: 'MY',
+  THAILAND: 'TH',
+  'VIET NAM': 'VN',
   'UNITED STATES': 'US',
   USA: 'US',
   'UNITED STATES OF AMERICA': 'US',

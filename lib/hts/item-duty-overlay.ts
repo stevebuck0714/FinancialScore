@@ -174,6 +174,10 @@ export async function ensureCompanyItemDutyTable(): Promise<void> {
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyCode" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyCodeSource" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyDescription" TEXT`);
+  // Program and Unit are user-owned independently of the HTS code. They used to share
+  // "htsInputSource", so handing HTS ownership to Infor would have let the workbook
+  // overwrite a user's trade program.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "programInputSource" TEXT`);
 }
 
 export function normalizeItemSku(value: unknown): string {
@@ -387,12 +391,12 @@ async function upsertSeedItems(companyId: string, items: SeedItem[], mode: 'spre
           END,
           "dutyDescription" = COALESCE(NULLIF(EXCLUDED."dutyDescription", ''), "CompanyItemDuty"."dutyDescription"),
           "tradeProgram" = CASE
-            WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."tradeProgram"
+            WHEN COALESCE("CompanyItemDuty"."programInputSource", '') = 'user' THEN "CompanyItemDuty"."tradeProgram"
             WHEN EXCLUDED."tradeProgram" IS NOT NULL AND EXCLUDED."tradeProgram" <> 'none' THEN EXCLUDED."tradeProgram"
             ELSE "CompanyItemDuty"."tradeProgram"
           END,
           "qtyUnit" = CASE
-            WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."qtyUnit"
+            WHEN COALESCE("CompanyItemDuty"."programInputSource", '') = 'user' THEN "CompanyItemDuty"."qtyUnit"
             WHEN EXCLUDED."qtyUnit" IS NOT NULL AND EXCLUDED."qtyUnit" <> 'piece' THEN EXCLUDED."qtyUnit"
             ELSE COALESCE("CompanyItemDuty"."qtyUnit", EXCLUDED."qtyUnit")
           END,
@@ -444,25 +448,10 @@ export async function seedCompanyItemDutiesFromSgp(companyId: string): Promise<{
   return seedCompanyItemDutiesFromParsedRows(companyId, workbook?.rows || []);
 }
 
-async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<number> {
-  const [identities, freightRows, dutySkus] = await Promise.all([
-    loadSpreadsheetDutyIdentities(companyId).catch((error) => {
-      console.warn('Duty spreadsheet identity load failed:', error);
-      return [];
-    }),
-    prisma.$queryRaw<Array<{ itemSku: string | null; htsCode: string | null; countryOfOrigin: string | null }>>`
-      SELECT "itemSku", "htsCode", "countryOfOrigin"
-      FROM "CompanyItemFreight"
-      WHERE "companyId" = ${companyId}
-        AND (
-          COALESCE(NULLIF("htsCode", ''), '') <> ''
-          OR COALESCE(NULLIF("countryOfOrigin", ''), '') <> ''
-        )
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{ itemSku: string }>>`
-      SELECT "itemSku" FROM "CompanyItemDuty" WHERE "companyId" = ${companyId}
-    `.catch(() => []),
-  ]);
+async function loadDutySkuResolver(companyId: string): Promise<(itemSkuRaw: unknown) => string[]> {
+  const dutySkus = await prisma.$queryRaw<Array<{ itemSku: string }>>`
+    SELECT "itemSku" FROM "CompanyItemDuty" WHERE "companyId" = ${companyId}
+  `.catch(() => []);
   const canonicalSkuByUpper = new Map(
     (dutySkus || []).map((row) => [normalizeItemSku(row.itemSku).toUpperCase(), normalizeItemSku(row.itemSku)])
   );
@@ -476,7 +465,7 @@ async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<
       dutySkusByLookupKey.set(key, list);
     }
   }
-  const matchingDutySkus = (itemSkuRaw: unknown): string[] => {
+  return (itemSkuRaw: unknown): string[] => {
     const normalizedSku = normalizeItemSku(itemSkuRaw);
     if (!normalizedSku) return [];
     for (const key of skuLookupKeys(normalizedSku)) {
@@ -486,6 +475,25 @@ async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<
     const exact = canonicalSkuByUpper.get(normalizedSku.toUpperCase());
     return exact ? [exact] : [normalizedSku];
   };
+}
+
+async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<number> {
+  const [identities, freightRows, matchingDutySkus] = await Promise.all([
+    loadSpreadsheetDutyIdentities(companyId).catch((error) => {
+      console.warn('Duty spreadsheet identity load failed:', error);
+      return [];
+    }),
+    prisma.$queryRaw<Array<{ itemSku: string | null; htsCode: string | null; countryOfOrigin: string | null }>>`
+      SELECT "itemSku", "htsCode", "countryOfOrigin"
+      FROM "CompanyItemFreight"
+      WHERE "companyId" = ${companyId}
+        AND (
+          COALESCE(NULLIF("htsCode", ''), '') <> ''
+          OR COALESCE(NULLIF("countryOfOrigin", ''), '') <> ''
+        )
+    `.catch(() => []),
+    loadDutySkuResolver(companyId),
+  ]);
   const bySku = new Map<string, SeedItem>();
   const add = (
     itemSkuRaw: unknown,
@@ -531,6 +539,110 @@ async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<
   const items = Array.from(bySku.values());
   if (!items.length) return 0;
   return upsertSeedItems(companyId, items, 'spreadsheet');
+}
+
+type InforDutyIdentity = { itemSku: string; htsCode: string | null; countryOfOrigin: string | null };
+
+// SLItems is the system of record for HTS classification and country of origin. Read the
+// newest record per item rather than only the newest business date, so this is correct
+// whether Infor sends a full nightly snapshot or a small delta. The window is bounded so
+// the scan does not grow with sync history.
+async function loadInforItemDutyIdentities(companyId: string): Promise<InforDutyIdentity[]> {
+  const rows = await prisma
+    .$queryRaw<Array<{ item: string | null; hts: string | null; country: string | null }>>(Prisma.sql`
+      SELECT DISTINCT ON (upper(btrim("payload"->>'Item')))
+        "payload"->>'Item' AS item,
+        "payload"->>'HtsCode' AS hts,
+        COALESCE(NULLIF("payload"->>'Country', ''), NULLIF("payload"->>'Origin', '')) AS country
+      FROM "InforRawRecord"
+      WHERE "companyId" = ${companyId}
+        AND upper(COALESCE("miProgram", '')) = 'SLITEMS'
+        AND "businessDate" IS NOT NULL
+        AND "businessDate" >= (
+          SELECT MAX("businessDate") - INTERVAL '30 days'
+          FROM "InforRawRecord"
+          WHERE "companyId" = ${companyId}
+            AND upper(COALESCE("miProgram", '')) = 'SLITEMS'
+        )
+        AND NULLIF(btrim(COALESCE("payload"->>'Item', '')), '') IS NOT NULL
+      ORDER BY upper(btrim("payload"->>'Item')), "businessDate" DESC, "fetchedAt" DESC
+    `)
+    .catch((error) => {
+      console.warn('Infor SLItems duty identity load failed:', error);
+      return [] as Array<{ item: string | null; hts: string | null; country: string | null }>;
+    });
+  const identities: InforDutyIdentity[] = [];
+  for (const row of rows || []) {
+    const itemSku = normalizeItemSku(row.item);
+    if (!itemSku) continue;
+    const htsCode = normalizeHtsCode(row.hts);
+    const countryOfOrigin = normalizeOriginCode(row.country);
+    if (!htsCode && !countryOfOrigin) continue;
+    identities.push({ itemSku, htsCode, countryOfOrigin });
+  }
+  return identities;
+}
+
+// Runs after the spreadsheet overlay so Infor wins over the workbook. Where Infor has no
+// classification the workbook seeds it, and the user fills what is still blank; because HTS
+// is never pushed back to Infor, a value typed on the page stands until Infor itself carries
+// one, at which point Infor is authoritative again. Nothing here touches an item Infor has
+// no HtsCode for.
+async function overlayDutyIdentityFromInfor(companyId: string): Promise<number> {
+  const [identities, matchingDutySkus] = await Promise.all([
+    loadInforItemDutyIdentities(companyId),
+    loadDutySkuResolver(companyId),
+  ]);
+  if (!identities.length) return 0;
+  const bySku = new Map<string, InforDutyIdentity>();
+  for (const identity of identities) {
+    for (const itemSku of matchingDutySkus(identity.itemSku)) {
+      const key = itemSku.toUpperCase();
+      const existing = bySku.get(key);
+      if (!existing) {
+        bySku.set(key, { itemSku, htsCode: identity.htsCode, countryOfOrigin: identity.countryOfOrigin });
+        continue;
+      }
+      existing.htsCode = existing.htsCode || identity.htsCode;
+      existing.countryOfOrigin = existing.countryOfOrigin || identity.countryOfOrigin;
+    }
+  }
+  const items = Array.from(bySku.values());
+  if (!items.length) return 0;
+  let updated = 0;
+  const chunkSize = 500;
+  for (let index = 0; index < items.length; index += chunkSize) {
+    const chunk = items.slice(index, index + chunkSize);
+    const values = Prisma.join(
+      chunk.map(
+        (item) => Prisma.sql`(${item.itemSku.toUpperCase()}::text, ${item.htsCode}::text, ${item.countryOfOrigin}::text)`
+      )
+    );
+    const rows = await prisma
+      .$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        UPDATE "CompanyItemDuty" AS d
+        SET
+          "htsCode" = COALESCE(v."htsCode", d."htsCode"),
+          "countryOfOrigin" = COALESCE(v."countryOfOrigin", d."countryOfOrigin"),
+          "htsInputSource" = CASE WHEN v."htsCode" IS NOT NULL THEN 'infor' ELSE d."htsInputSource" END,
+          "updatedAt" = NOW()
+        FROM (VALUES ${values}) AS v("itemSku", "htsCode", "countryOfOrigin")
+        WHERE d."companyId" = ${companyId}
+          AND upper(btrim(d."itemSku")) = v."itemSku"
+          AND (
+            (v."htsCode" IS NOT NULL AND v."htsCode" <> COALESCE(d."htsCode", ''))
+            OR (v."countryOfOrigin" IS NOT NULL AND v."countryOfOrigin" <> COALESCE(d."countryOfOrigin", ''))
+            OR (v."htsCode" IS NOT NULL AND COALESCE(d."htsInputSource", '') <> 'infor')
+          )
+        RETURNING d."id"
+      `)
+      .catch((error) => {
+        console.warn('Infor duty identity overlay failed:', error);
+        return [] as Array<{ id: string }>;
+      });
+    updated += rows.length;
+  }
+  return updated;
 }
 
 async function loadIdentitySkus(companyId: string): Promise<SeedItem[]> {
@@ -631,6 +743,21 @@ export async function listCompanyItemDuties(
   return rows.map(serializeCompanyItemDuty);
 }
 
+// Saving the report used to stamp every submitted row as user-owned even when nothing
+// changed, which froze HTS, Origin, Program and Unit against every later refresh. Clearing
+// the flag hands those columns back to Infor and the workbook; a genuine edit re-sets it.
+export async function clearDutyHtsUserOwnership(companyId: string): Promise<number> {
+  await ensureCompanyItemDutyTable();
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    UPDATE "CompanyItemDuty"
+    SET "htsInputSource" = NULL, "updatedAt" = NOW()
+    WHERE "companyId" = ${companyId}
+      AND COALESCE("htsInputSource", '') = 'user'
+    RETURNING "id"
+  `;
+  return rows.length;
+}
+
 export async function refreshCompanyItemDuties(companyId: string): Promise<{
   spreadsheetItems: number;
   discovered: number;
@@ -644,6 +771,10 @@ export async function refreshCompanyItemDuties(companyId: string): Promise<{
   const identities = await syncCompanyItemDutyIdentities(companyId);
   const overlaid = await overlayDutyHtsFromSpreadsheetSources(companyId).catch((error) => {
     console.warn('Duty spreadsheet HTS overlay failed:', error);
+    return 0;
+  });
+  await overlayDutyIdentityFromInfor(companyId).catch((error) => {
+    console.warn('Duty Infor HTS overlay failed:', error);
     return 0;
   });
   return { spreadsheetItems: Math.max(seeded.itemCount, overlaid), discovered: identities.discovered };
@@ -671,12 +802,28 @@ export async function updateCompanyItemDuties(
     const tariffPerPiece = patch.tariffPerPiece === undefined ? undefined : asNullableNumber(patch.tariffPerPiece);
     const itemDescription =
       patch.itemDescription === undefined ? undefined : String(patch.itemDescription || '').trim() || null;
-    const rateSource: RateSource | undefined =
-      dutyPerPiece !== undefined || tariffPerPiece !== undefined ? 'user' : undefined;
-    const htsInputSource =
-      htsCode !== undefined || countryOfOrigin !== undefined || tradeProgram !== undefined || qtyUnit !== undefined
-        ? 'user'
-        : undefined;
+    // The report saves every visible row, not just edited ones, so ownership has to
+    // follow an actual value change. Marking a field 'user' on submission alone would
+    // freeze it against the Infor and spreadsheet refreshes for good.
+    const htsIdentityChanged = Prisma.sql`(
+      (${htsCode !== undefined} AND COALESCE(${htsCode ?? null}::text, '') <> COALESCE("htsCode", ''))
+      OR (${countryOfOrigin !== undefined} AND COALESCE(${countryOfOrigin ?? null}::text, '') <> COALESCE("countryOfOrigin", ''))
+    )`;
+    const programChanged = Prisma.sql`(
+      (${tradeProgram !== undefined} AND COALESCE(${tradeProgram ?? null}::text, '') <> COALESCE("tradeProgram", ''))
+      OR (${qtyUnit !== undefined} AND COALESCE(${qtyUnit ?? null}::text, '') <> COALESCE("qtyUnit", ''))
+    )`;
+    const dutyCodeChanged = Prisma.sql`(
+      ${dutyCode !== undefined} AND COALESCE(${dutyCode ?? null}::text, '') <> COALESCE("dutyCode", '')
+    )`;
+    const enteredValueChanged = Prisma.sql`(
+      ${enteredValuePerPiece !== undefined}
+      AND COALESCE(${enteredValuePerPiece ?? null}::double precision, -1) <> COALESCE("enteredValuePerPiece", -1)
+    )`;
+    const rateChanged = Prisma.sql`(
+      (${dutyPerPiece !== undefined} AND COALESCE(${dutyPerPiece ?? null}::double precision, -1) <> COALESCE("dutyPerPiece", -1))
+      OR (${tariffPerPiece !== undefined} AND COALESCE(${tariffPerPiece ?? null}::double precision, -1) <> COALESCE("tariffPerPiece", -1))
+    )`;
 
     const rows = await prisma.$queryRaw<Array<{ id: string }>>`
       UPDATE "CompanyItemDuty"
@@ -687,14 +834,19 @@ export async function updateCompanyItemDuties(
         "tradeProgram" = CASE WHEN ${tradeProgram !== undefined} THEN ${tradeProgram} ELSE "tradeProgram" END,
         "qtyUnit" = CASE WHEN ${qtyUnit !== undefined} THEN ${qtyUnit} ELSE "qtyUnit" END,
         "dutyCode" = CASE WHEN ${dutyCode !== undefined} THEN ${dutyCode} ELSE "dutyCode" END,
-        "dutyCodeSource" = CASE WHEN ${dutyCode !== undefined} THEN 'user' ELSE "dutyCodeSource" END,
+        "dutyCodeSource" = CASE WHEN ${dutyCodeChanged} THEN 'user' ELSE "dutyCodeSource" END,
         "enteredValuePerPiece" = CASE WHEN ${enteredValuePerPiece !== undefined} THEN ${enteredValuePerPiece} ELSE "enteredValuePerPiece" END,
-        "enteredValueSource" = CASE WHEN ${enteredValuePerPiece !== undefined} THEN 'user' ELSE "enteredValueSource" END,
+        "enteredValueSource" = CASE WHEN ${enteredValueChanged} THEN 'user' ELSE "enteredValueSource" END,
         "dutyPerPiece" = CASE WHEN ${dutyPerPiece !== undefined} THEN ${dutyPerPiece} ELSE "dutyPerPiece" END,
         "tariffPerPiece" = CASE WHEN ${tariffPerPiece !== undefined} THEN ${tariffPerPiece} ELSE "tariffPerPiece" END,
-        "rateSource" = CASE WHEN ${rateSource !== undefined} THEN ${rateSource} ELSE "rateSource" END,
-        "htsInputSource" = CASE WHEN ${htsInputSource !== undefined} THEN ${htsInputSource} ELSE "htsInputSource" END,
-        "userEditedAt" = NOW(),
+        "rateSource" = CASE WHEN ${rateChanged} THEN 'user' ELSE "rateSource" END,
+        "htsInputSource" = CASE WHEN ${htsIdentityChanged} THEN 'user' ELSE "htsInputSource" END,
+        "programInputSource" = CASE WHEN ${programChanged} THEN 'user' ELSE "programInputSource" END,
+        "userEditedAt" = CASE
+          WHEN ${htsIdentityChanged} OR ${programChanged} OR ${dutyCodeChanged} OR ${enteredValueChanged} OR ${rateChanged}
+          THEN NOW()
+          ELSE "userEditedAt"
+        END,
         "updatedAt" = NOW()
       WHERE "companyId" = ${companyId}
         AND (
