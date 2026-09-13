@@ -141,14 +141,14 @@ export async function POST(request: NextRequest) {
     if (denied) return denied;
 
     const action = String(body.action || request.nextUrl.searchParams.get('action') || '').trim();
-    if (action === 'rebuild-hts-from-infor') {
-      // Deliberately narrow: HTS and origin come only from Infor, so this skips the
-      // workbook parse and identity discovery that the nightly warmup owns. Those made
-      // the request exceed the function timeout and are irrelevant to the classification.
-      const { clearDutyHtsIdentity, overlayDutyIdentityFromInfor } = await import(
+    if (action === 'reset-hts-ownership') {
+      // Deliberately narrow: releasing the stale flags and applying Infor needs neither the
+      // workbook parse nor identity discovery, which the nightly warmup owns and which made
+      // this request exceed the function timeout.
+      const { clearDutyHtsUserOwnership, overlayDutyIdentityFromInfor } = await import(
         '@/lib/hts/item-duty-overlay'
       );
-      const cleared = await clearDutyHtsIdentity(companyId);
+      const cleared = await clearDutyHtsUserOwnership(companyId);
       const overlaid = await overlayDutyIdentityFromInfor(companyId);
       const resetPayload = await buildDutiesTariffsPayload(companyId);
       await writeDutiesTariffsCache(companyId, resetPayload);
