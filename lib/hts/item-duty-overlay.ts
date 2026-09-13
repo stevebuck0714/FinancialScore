@@ -302,8 +302,11 @@ function aggregateSgpRows(rows: AprSgpGmpaRow[]): SeedItem[] {
     const next: SeedItem = {
       itemSku,
       itemDescription: null,
-      htsCode: normalizeHtsCode(row.htsCode),
-      countryOfOrigin: normalizeOriginCode(row.countryOfOrigin),
+      // HTS and origin are Infor's alone. The workbook is not a fallback for them: an
+      // item Infor has not classified stays blank so it shows up as needing user input
+      // instead of silently carrying a stale workbook code.
+      htsCode: null,
+      countryOfOrigin: null,
       dutyCode: null,
       dutyDescription: null,
       tradeProgram: asTradeProgram(row.tradeProgram),
@@ -312,7 +315,7 @@ function aggregateSgpRows(rows: AprSgpGmpaRow[]): SeedItem[] {
       dutyPerPiece: firstNonNullNumber(row.projectedDutiesPerPiece, row.sgpDutiesPerPiece),
       tariffPerPiece: firstNonNullNumber(row.projectedTariffPerPiece, row.sgpTariffPerPiece),
       identitySource: 'spreadsheet',
-      htsInputSource: normalizeHtsCode(row.htsCode) ? 'spreadsheet' : null,
+      htsInputSource: null,
     };
     const existing = bySku.get(itemSku);
     if (!existing) {
@@ -321,14 +324,11 @@ function aggregateSgpRows(rows: AprSgpGmpaRow[]): SeedItem[] {
     }
     bySku.set(itemSku, {
       ...existing,
-      htsCode: existing.htsCode || next.htsCode,
-      countryOfOrigin: existing.countryOfOrigin || next.countryOfOrigin,
       tradeProgram: existing.tradeProgram === 'none' ? next.tradeProgram : existing.tradeProgram,
       qtyUnit: existing.qtyUnit === 'piece' ? next.qtyUnit : existing.qtyUnit,
       enteredValuePerPiece: existing.enteredValuePerPiece ?? next.enteredValuePerPiece,
       dutyPerPiece: existing.dutyPerPiece ?? next.dutyPerPiece,
       tariffPerPiece: existing.tariffPerPiece ?? next.tariffPerPiece,
-      htsInputSource: existing.htsInputSource || next.htsInputSource,
     });
   }
   return Array.from(bySku.values());
@@ -477,65 +477,45 @@ async function loadDutySkuResolver(companyId: string): Promise<(itemSkuRaw: unkn
   };
 }
 
-async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<number> {
-  const [identities, freightRows, matchingDutySkus] = await Promise.all([
+// The workbook contributes the duty code only. HTS and origin come from Infor, and the
+// description comes from the HTS import, so the stored freight HTS column is no longer read
+// here either: it holds workbook values and was why Duties disagreed with Infor.
+async function overlayDutyCodesFromSpreadsheet(companyId: string): Promise<number> {
+  const [identities, matchingDutySkus] = await Promise.all([
     loadSpreadsheetDutyIdentities(companyId).catch((error) => {
       console.warn('Duty spreadsheet identity load failed:', error);
       return [];
     }),
-    prisma.$queryRaw<Array<{ itemSku: string | null; htsCode: string | null; countryOfOrigin: string | null }>>`
-      SELECT "itemSku", "htsCode", "countryOfOrigin"
-      FROM "CompanyItemFreight"
-      WHERE "companyId" = ${companyId}
-        AND (
-          COALESCE(NULLIF("htsCode", ''), '') <> ''
-          OR COALESCE(NULLIF("countryOfOrigin", ''), '') <> ''
-        )
-    `.catch(() => []),
     loadDutySkuResolver(companyId),
   ]);
   const bySku = new Map<string, SeedItem>();
-  const add = (
-    itemSkuRaw: unknown,
-    htsCodeRaw: unknown,
-    originRaw: unknown,
-    dutyCodeRaw?: unknown,
-    dutyDescriptionRaw?: unknown
-  ) => {
-    const htsCode = normalizeHtsCode(htsCodeRaw);
-    const countryOfOrigin = normalizeOriginCode(originRaw);
+  const add = (itemSkuRaw: unknown, dutyCodeRaw: unknown) => {
     const dutyCode = String(dutyCodeRaw || '').trim().toUpperCase() || null;
-    const dutyDescription = String(dutyDescriptionRaw || '').trim() || null;
-    if (!htsCode && !countryOfOrigin && !dutyCode && !dutyDescription) return;
+    if (!dutyCode) return;
     for (const itemSku of matchingDutySkus(itemSkuRaw)) {
       const existing = bySku.get(itemSku.toUpperCase());
       if (!existing) {
         bySku.set(itemSku.toUpperCase(), {
           itemSku,
           itemDescription: null,
-          htsCode,
-          countryOfOrigin,
+          htsCode: null,
+          countryOfOrigin: null,
           dutyCode,
-          dutyDescription,
+          dutyDescription: null,
           tradeProgram: 'none',
           qtyUnit: 'piece',
           enteredValuePerPiece: null,
           dutyPerPiece: null,
           tariffPerPiece: null,
           identitySource: 'spreadsheet',
-          htsInputSource: htsCode ? 'spreadsheet' : null,
+          htsInputSource: null,
         });
         continue;
       }
-      existing.htsCode = existing.htsCode || htsCode;
-      existing.countryOfOrigin = existing.countryOfOrigin || countryOfOrigin;
       existing.dutyCode = existing.dutyCode || dutyCode;
-      existing.dutyDescription = existing.dutyDescription || dutyDescription;
-      existing.htsInputSource = existing.htsInputSource || (htsCode ? 'spreadsheet' : null);
     }
   };
-  for (const row of identities) add(row.itemSku, row.htsCode, row.countryOfOrigin, row.dutyCode, row.dutyDescription);
-  for (const row of freightRows || []) add(row.itemSku, row.htsCode, row.countryOfOrigin);
+  for (const row of identities) add(row.itemSku, row.dutyCode);
   const items = Array.from(bySku.values());
   if (!items.length) return 0;
   return upsertSeedItems(companyId, items, 'spreadsheet');
@@ -743,16 +723,28 @@ export async function listCompanyItemDuties(
   return rows.map(serializeCompanyItemDuty);
 }
 
-// Saving the report used to stamp every submitted row as user-owned even when nothing
-// changed, which froze HTS, Origin, Program and Unit against every later refresh. Clearing
-// the flag hands those columns back to Infor and the workbook; a genuine edit re-sets it.
-export async function clearDutyHtsUserOwnership(companyId: string): Promise<number> {
+// Every stored HTS predates Infor being the source: it was seeded from the workbook and
+// then flagged user-owned wholesale by a single Save, so none of it can be trusted or told
+// apart. This clears the classification so the following refresh repopulates it from Infor
+// alone, leaving the rest genuinely blank for user input rather than workbook-derived. The
+// description goes with it because the HTS import owns that and rewrites it per quote.
+export async function clearDutyHtsIdentity(companyId: string): Promise<number> {
   await ensureCompanyItemDutyTable();
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     UPDATE "CompanyItemDuty"
-    SET "htsInputSource" = NULL, "updatedAt" = NOW()
+    SET
+      "htsCode" = NULL,
+      "countryOfOrigin" = NULL,
+      "htsInputSource" = NULL,
+      "dutyDescription" = NULL,
+      "updatedAt" = NOW()
     WHERE "companyId" = ${companyId}
-      AND COALESCE("htsInputSource", '') = 'user'
+      AND (
+        COALESCE("htsCode", '') <> ''
+        OR COALESCE("countryOfOrigin", '') <> ''
+        OR COALESCE("dutyDescription", '') <> ''
+        OR "htsInputSource" IS NOT NULL
+      )
     RETURNING "id"
   `;
   return rows.length;
@@ -769,8 +761,8 @@ export async function refreshCompanyItemDuties(companyId: string): Promise<{
   });
   const seeded = await seedCompanyItemDutiesFromSgp(companyId);
   const identities = await syncCompanyItemDutyIdentities(companyId);
-  const overlaid = await overlayDutyHtsFromSpreadsheetSources(companyId).catch((error) => {
-    console.warn('Duty spreadsheet HTS overlay failed:', error);
+  const overlaid = await overlayDutyCodesFromSpreadsheet(companyId).catch((error) => {
+    console.warn('Duty spreadsheet duty-code overlay failed:', error);
     return 0;
   });
   await overlayDutyIdentityFromInfor(companyId).catch((error) => {

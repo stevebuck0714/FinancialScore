@@ -141,9 +141,9 @@ export async function POST(request: NextRequest) {
     if (denied) return denied;
 
     const action = String(body.action || request.nextUrl.searchParams.get('action') || '').trim();
-    if (action === 'reset-hts-ownership') {
-      const { clearDutyHtsUserOwnership, refreshCompanyItemDuties } = await import('@/lib/hts/item-duty-overlay');
-      const cleared = await clearDutyHtsUserOwnership(companyId);
+    if (action === 'rebuild-hts-from-infor') {
+      const { clearDutyHtsIdentity, refreshCompanyItemDuties } = await import('@/lib/hts/item-duty-overlay');
+      const cleared = await clearDutyHtsIdentity(companyId);
       const refreshed = await refreshCompanyItemDuties(companyId);
       const resetPayload = await buildDutiesTariffsPayload(companyId);
       await writeDutiesTariffsCache(companyId, resetPayload);
