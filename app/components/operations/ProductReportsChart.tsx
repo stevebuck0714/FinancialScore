@@ -95,9 +95,37 @@ function monthLabel(key: string): string {
   return `${FORECAST_MONTH_LABELS[parsed.month as ForecastMonth]} ${parsed.year}`;
 }
 
+// A goal that was never typed comes back as null, and Number(null) is 0, which
+// would draw a real line flat along zero instead of leaving it out.
 function goalValue(value: unknown): number | null {
+  if (value == null || value === '') return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+async function fetchReportJson(
+  url: string,
+  label: string
+): Promise<{ json: any | null; error: string | null }> {
+  try {
+    const response = await fetch(url, { cache: 'no-store' });
+    const text = await response.text();
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = null;
+    }
+    if (!response.ok) {
+      // A gateway timeout answers with HTML, so fall back to the status code
+      // rather than reporting a generic failure with no cause.
+      const detail = json?.error || (text ? text.slice(0, 120) : '');
+      return { json: null, error: `${label}: HTTP ${response.status}${detail ? ` — ${detail}` : ''}` };
+    }
+    return { json, error: null };
+  } catch (err: any) {
+    return { json: null, error: `${label}: ${err?.message || 'request failed'}` };
+  }
 }
 
 type ProductReportsChartProps = {
@@ -143,23 +171,34 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
         year: String(years[0]),
         years: years.join(','),
       });
-      const [goalsJson, revenueByYear] = await Promise.all([
-        fetch(`/api/operational-data/product-goals?${goalParams.toString()}`)
-          .then(async (response) => {
-            const json = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(json?.error || 'Failed to load SGP goals');
-            return json;
-          }),
+      const problems: string[] = [];
+      // Goals and revenue come from separate endpoints. Keep them independent so
+      // one failing source still renders the other instead of an empty chart.
+      const [goalsResult, revenueResults] = await Promise.all([
+        fetchReportJson(`/api/operational-data/product-goals?${goalParams.toString()}`, 'SGP goals'),
         Promise.all(
           years.map(async (year) => {
             const params = new URLSearchParams({ companyId: selectedCompanyId, year: String(year) });
-            const response = await fetch(`/api/operational-data/product-revenue?${params.toString()}`);
-            const json = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(json?.error || 'Failed to load monthly revenue');
-            return { year, json };
+            const result = await fetchReportJson(
+              `/api/operational-data/product-revenue?${params.toString()}`,
+              `Monthly Revenue ${year}`
+            );
+            return { year, result };
           })
         ),
       ]);
+
+      const goalsJson = goalsResult.json || {};
+      if (goalsResult.error) problems.push(goalsResult.error);
+      const revenueByYear = revenueResults
+        .filter((entry) => {
+          if (entry.result.error) {
+            problems.push(entry.result.error);
+            return false;
+          }
+          return true;
+        })
+        .map((entry) => ({ year: entry.year, json: entry.result.json || {} }));
 
       const goalsByYear = (goalsJson?.monthlyGoalsByYear || {}) as Record<string, MonthlyGoal[]>;
       // A single-year request answers with the flat monthlyRevenueGoals array instead.
@@ -212,6 +251,7 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
         };
       });
       setRows(nextRows);
+      setError(problems.length > 0 ? problems.join(' · ') : null);
     } catch (err: any) {
       setError(err?.message || 'Failed to load report data');
       setRows([]);
