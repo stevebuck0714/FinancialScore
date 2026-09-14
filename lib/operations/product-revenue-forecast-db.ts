@@ -15,6 +15,7 @@ import {
   normalizeAdjustedQtyMap,
   normalizeMonthQtyMap,
   type CsiShippedActuals,
+  type CsiInvoicedRevenueActuals,
   type MonthQtyMap,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
@@ -608,6 +609,45 @@ export async function loadCsiMonthlyShippedActuals(params: {
     }
   }
   return { ok: false, asOf: null, byExact: new Map(), byItem: new Map() };
+}
+
+export async function loadCsiMonthlyInvoicedRevenueActuals(params: {
+  companyId: string;
+  year: number;
+  customerId?: string;
+  customerName?: string;
+}): Promise<CsiInvoicedRevenueActuals> {
+  try {
+    const rows = await queryCsiShippedDeltas({
+      ...params,
+      qtySql: Prisma.sql`COALESCE(s."invoicedAmount", 0)`,
+    });
+    const byExact = new Map<string, MonthQtyMap>();
+    const byItem = new Map<string, MonthQtyMap>();
+    let asOf: string | null = null;
+    for (const row of rows) {
+      const month = Number(row.month || 0);
+      const amount = Number(row.qty || 0);
+      const customerId = String(row.customerId || '');
+      const itemSku = String(row.itemSku || '');
+      const itemId = String(row.itemId || '');
+      const customerPn = String(row.customerPn || '');
+      addShippedQty(byExact, forecastActualsExactKey(customerId, itemSku, customerPn), month, amount);
+      addShippedQty(byItem, forecastActualsItemKey(customerId, itemSku), month, amount);
+      if (itemId && itemId.toUpperCase() !== itemSku.toUpperCase()) {
+        addShippedQty(byExact, forecastActualsExactKey(customerId, itemId, customerPn), month, amount);
+        addShippedQty(byItem, forecastActualsItemKey(customerId, itemId), month, amount);
+      }
+      if (row.asOf) {
+        const iso = new Date(row.asOf).toISOString().slice(0, 10);
+        if (!asOf || iso > asOf) asOf = iso;
+      }
+    }
+    return { ok: true, asOf, byExact, byItem };
+  } catch (error) {
+    console.error('[product-forecast] CSI invoiced revenue actuals failed', error);
+    return { ok: false, asOf: null, byExact: new Map(), byItem: new Map() };
+  }
 }
 
 export function withCsiShippedActuals<T extends {

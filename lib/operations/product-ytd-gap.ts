@@ -71,7 +71,7 @@ export type YtdGapDataset = {
   priceCount: number;
   totals: YtdGapTotals;
   groups: YtdGapGroup[];
-  comparison: YtdComparisonDataset;
+  comparison?: YtdComparisonDataset;
 };
 
 /**
@@ -238,14 +238,9 @@ function buildYtdComparison(params: {
 export async function loadProductYtdGapDataset(params: {
   companyId: string;
   year: number;
+  includeComparison?: boolean;
 }): Promise<YtdGapDataset> {
-  const dataset = await loadProductGroupDataset(params);
-  const comparisonYears = [params.year - 2, params.year - 1, params.year];
-  const comparisonHistorical = await Promise.all(
-    comparisonYears
-      .filter((year) => year !== dataset.year)
-      .map(async (year) => ({ year, dataset: await loadProductGroupDataset({ companyId: params.companyId, year }) }))
-  );
+  const dataset = await loadProductGroupDataset({ ...params, useInforActualRevenue: true });
   const throughMonth = resolveThroughMonth({ year: dataset.year, dataThru: dataset.dataThru });
   const months = monthsThrough(throughMonth);
   const remaining = monthsAfter(throughMonth);
@@ -294,15 +289,46 @@ export async function loadProductYtdGapDataset(params: {
       annualGoals: await loadYtdGoals({ ...params, throughMonth: 12 }),
     },
     groups,
-    comparison: buildYtdComparison({
-      years: comparisonYears,
-      throughMonth,
-      datasets: [
-        ...comparisonHistorical.map((entry) => ({ year: entry.year, rows: entry.dataset.rows })),
-        { year: dataset.year, rows: dataset.rows },
-      ],
-    }),
+    ...(params.includeComparison
+      ? {
+          comparison: await loadYtdComparison({
+            companyId: params.companyId,
+            year: dataset.year,
+            currentRows: dataset.rows,
+            throughMonth,
+          }),
+        }
+      : {}),
   };
+}
+
+async function loadYtdComparison(params: {
+  companyId: string;
+  year: number;
+  currentRows: ProductGroupRow[];
+  throughMonth: number;
+}): Promise<YtdComparisonDataset> {
+  const years = [params.year - 2, params.year - 1, params.year];
+  const historical = await Promise.all(
+    years
+      .filter((year) => year !== params.year)
+      .map(async (year) => ({
+        year,
+        dataset: await loadProductGroupDataset({
+          companyId: params.companyId,
+          year,
+          useInforActualRevenue: true,
+        }),
+      }))
+  );
+  return buildYtdComparison({
+    years,
+    throughMonth: params.throughMonth,
+    datasets: [
+      ...historical.map((entry) => ({ year: entry.year, rows: entry.dataset.rows })),
+      { year: params.year, rows: params.currentRows },
+    ],
+  });
 }
 
 /**

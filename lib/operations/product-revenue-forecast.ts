@@ -227,6 +227,8 @@ export type CsiShippedActuals = {
   byItem: Map<string, MonthQtyMap>;
 };
 
+export type CsiInvoicedRevenueActuals = CsiShippedActuals;
+
 export function emptyCsiShippedActuals(ok = false): CsiShippedActuals {
   return { ok, asOf: null, byExact: new Map(), byItem: new Map() };
 }
@@ -258,6 +260,33 @@ export function overlayShippedActuals<T extends {
       if (Number.isFinite(shipped) && shipped > 0) next[key] = shipped;
     }
     return { ...line, actualQty: next };
+  });
+}
+
+/**
+ * Invoiced dollars replace workbook revenue for the reporting views that use
+ * Infor as their actuals source. An unmatched forecast line intentionally
+ * receives $0: this avoids mixing Infor actuals with workbook actuals.
+ */
+export function overlayInvoicedRevenueActuals<T extends {
+  customerId: string;
+  itemSku: string;
+  customerPartNumber: string;
+  actualRevenue: MonthQtyMap;
+}>(lines: T[], actuals: CsiInvoicedRevenueActuals): T[] {
+  if (!actuals.ok) return lines;
+  const itemCounts = new Map<string, number>();
+  for (const line of lines) {
+    const key = forecastActualsItemKey(line.customerId, line.itemSku);
+    itemCounts.set(key, (itemCounts.get(key) || 0) + 1);
+  }
+  return lines.map((line) => {
+    const exact = actuals.byExact.get(
+      forecastActualsExactKey(line.customerId, line.itemSku, line.customerPartNumber)
+    );
+    const itemKey = forecastActualsItemKey(line.customerId, line.itemSku);
+    const byItem = itemCounts.get(itemKey) === 1 ? actuals.byItem.get(itemKey) : undefined;
+    return { ...line, actualRevenue: exact || byItem || emptyMonthQtyMap() };
   });
 }
 

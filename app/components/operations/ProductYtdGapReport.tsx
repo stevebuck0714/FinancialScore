@@ -99,6 +99,8 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
   const [year, setYear] = useState<number>(() => estYear());
   const [dataset, setDataset] = useState<YtdGapDataset | null>(null);
   const [loading, setLoading] = useState(false);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [comparison, setComparison] = useState<YtdGapDataset['comparison']>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [analysisView, setAnalysisView] = useState<AnalysisView>('ytd');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -109,9 +111,11 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
     async (refresh = false) => {
       if (!selectedCompanyId) {
         setDataset(null);
+        setComparison(undefined);
         return;
       }
       setLoading(true);
+      setComparison(undefined);
       setError(null);
       try {
         const params = new URLSearchParams({ companyId: selectedCompanyId, year: String(year) });
@@ -138,6 +142,29 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
       }
     },
     [selectedCompanyId, year]
+  );
+
+  const loadComparison = useCallback(
+    async (refresh = false) => {
+      if (!selectedCompanyId || comparisonLoading) return;
+      setComparisonLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ companyId: selectedCompanyId, year: String(year), comparison: '1' });
+        if (refresh) params.set('refresh', '1');
+        const response = await fetch(`/api/operational-data/product-ytd-gap?${params.toString()}`, { cache: 'no-store' });
+        const text = await response.text();
+        const json = text ? JSON.parse(text) : null;
+        if (!response.ok) throw new Error(json?.error || `HTTP ${response.status}`);
+        if (!json?.comparison) throw new Error('Historical YTD comparison is unavailable');
+        setComparison(json.comparison);
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load historical YTD comparison');
+      } finally {
+        setComparisonLoading(false);
+      }
+    },
+    [comparisonLoading, selectedCompanyId, year]
   );
 
   useEffect(() => {
@@ -194,7 +221,6 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
 
   const totals = dataset?.totals || null;
   const goals = analysisView === 'ytd' ? totals?.goals || null : totals?.annualGoals || null;
-  const comparison = dataset?.comparison || null;
   const windowLabel = dataset?.throughMonthLabel
     ? `January–${dataset.throughMonthLabel} ${dataset.year}`
     : `${dataset?.year ?? year}`;
@@ -214,6 +240,7 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
     setExpanded({});
     setSortKey(view === 'ytd' ? 'actual' : view === 'annual' ? 'projectedRevenue' : 'label');
     setSortAsc(false);
+    if (view === 'comparison' && !comparison) void loadComparison();
   };
 
   const sortHeader = (key: SortKey, label: string, align: 'left' | 'right' = 'right') => (
@@ -255,20 +282,20 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
           </select>
           <button
             type="button"
-            onClick={() => void load(true)}
-            disabled={loading || !selectedCompanyId}
+            onClick={() => void (analysisView === 'comparison' ? loadComparison(true) : load(true))}
+            disabled={loading || comparisonLoading || !selectedCompanyId}
             style={{
               border: '1px solid #4338ca',
               borderRadius: 8,
               padding: '6px 12px',
-              background: loading ? '#c7d2fe' : '#4f46e5',
+              background: loading || comparisonLoading ? '#c7d2fe' : '#4f46e5',
               color: '#ffffff',
               fontWeight: 700,
               fontSize: 12,
-              cursor: loading ? 'default' : 'pointer',
+              cursor: loading || comparisonLoading ? 'default' : 'pointer',
             }}
           >
-            {loading ? 'Loading…' : 'Refresh'}
+            {loading || comparisonLoading ? 'Loading…' : 'Refresh'}
           </button>
           {onOpenInfo ? (
             <button
@@ -409,6 +436,11 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
 
       {analysisView === 'comparison' && comparison ? (
         <YtdComparisonTable comparison={comparison} expanded={expanded} setExpanded={setExpanded} />
+      ) : null}
+      {analysisView === 'comparison' && !comparison ? (
+        <div style={{ padding: '28px 0', color: '#64748b', fontSize: 13 }}>
+          {comparisonLoading ? 'Loading historical YTD comparison…' : 'Historical YTD comparison is unavailable.'}
+        </div>
       ) : null}
 
       {analysisView !== 'comparison' && (loading && !dataset ? (

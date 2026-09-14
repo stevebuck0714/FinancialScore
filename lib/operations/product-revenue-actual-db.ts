@@ -2,12 +2,14 @@ import prisma from '@/lib/prisma';
 import {
   emptyMonthQtyMap,
   normalizeMonthQtyMap,
+  overlayInvoicedRevenueActuals,
 } from '@/lib/operations/product-revenue-forecast';
 import {
   assertProductsForecastAccess,
   asForecastYear,
   asOptionalIsoDay,
   ensureProductRevenueForecastTables,
+  loadCsiMonthlyInvoicedRevenueActuals,
   loadCsiMonthlyShippedActuals,
   normalizeForecastLineInput,
   serializeForecastLine,
@@ -136,6 +138,18 @@ export async function ensureProductRevenueTables(): Promise<void> {
 
 function asText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function lastCompleteMonthFromSnapshot(asOf: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(asOf);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isInteger(year) || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day >= lastDay) return asOf;
+  return new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
 }
 
 function newId(): string {
@@ -750,8 +764,9 @@ export async function loadRevenueDataset(params: {
   customerId?: string;
   customerName?: string;
   includeAllLines?: boolean;
+  useInforActualRevenue?: boolean;
 }) {
-  const { companyId, year, customerId, customerName } = params;
+  const { companyId, year, customerId, customerName, useInforActualRevenue } = params;
   const scopedCustomerId = String(customerId || '').trim();
   const scopedCustomerName = String(customerName || '').trim();
   const revenueLineSql = scopedCustomerId
@@ -777,7 +792,7 @@ export async function loadRevenueDataset(params: {
       ? [companyId, year, scopedCustomerName]
       : [companyId, year];
   const catalogSourceYear = await latestProductCatalogSourceYear(companyId, year);
-  const [settingsRows, forecastSettings, forecastRaw, revenueRows, priceRows, sourcePriceRows, shipped, catalogCustomers] = await Promise.all([
+  const [settingsRows, forecastSettings, forecastRaw, revenueRows, priceRows, sourcePriceRows, shipped, invoicedRevenue, catalogCustomers] = await Promise.all([
     prisma.$queryRawUnsafe<RevenueSettingsRow[]>(
       `SELECT "dataThru", "shippingDays" FROM "ProductRevenueSettings" WHERE "companyId" = $1 AND "year" = $2 LIMIT 1`,
       companyId,
@@ -815,6 +830,14 @@ export async function loadRevenueDataset(params: {
       customerId: scopedCustomerId || undefined,
       customerName: scopedCustomerName || undefined,
     }),
+    useInforActualRevenue
+      ? loadCsiMonthlyInvoicedRevenueActuals({
+          companyId,
+          year,
+          customerId: scopedCustomerId || undefined,
+          customerName: scopedCustomerName || undefined,
+        })
+      : Promise.resolve(null),
     listProductForecastCustomersWithCatalog(companyId, year),
   ]);
   const settings = settingsRows[0] || null;
@@ -894,7 +917,10 @@ export async function loadRevenueDataset(params: {
     });
   }
 
-  const allLines = Array.from(joinedByKey.values()).sort((a, b) => {
+  const allLinesWithActuals = useInforActualRevenue && invoicedRevenue
+    ? overlayInvoicedRevenueActuals(Array.from(joinedByKey.values()), invoicedRevenue)
+    : Array.from(joinedByKey.values());
+  const allLines = allLinesWithActuals.sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     return a.itemSku.localeCompare(b.itemSku);
   });
@@ -923,11 +949,14 @@ export async function loadRevenueDataset(params: {
   const customers = Array.from(customersMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 
   const includeLines = Boolean(customerId || customerName || params.includeAllLines);
-  const dataThru = settings?.dataThru
+  const workbookDataThru = settings?.dataThru
     ? new Date(settings.dataThru).toISOString().slice(0, 10)
     : forecastSettings?.dataThru
       ? forecastSettings.dataThru.toISOString().slice(0, 10)
       : null;
+  const dataThru = useInforActualRevenue && invoicedRevenue?.ok && invoicedRevenue.asOf
+    ? lastCompleteMonthFromSnapshot(invoicedRevenue.asOf) || workbookDataThru
+    : workbookDataThru;
   return {
     year,
     catalogSourceYear,
