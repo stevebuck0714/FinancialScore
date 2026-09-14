@@ -273,6 +273,17 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
         >
           <Metric label="YTD Actuals" value={fmtMoney(totals.actual)} />
           <Metric
+            label="YTD Actuals + Forecast - ADJ"
+            value={fmtMoney(totals.projectedActualsForecastAdj)}
+            hint="Actuals through data thru; Forecast - ADJ after"
+          />
+          <Metric
+            label="vs Full-Year Forecasted"
+            value={fmtSignedMoney(totals.projectedActualsForecastAdj - totals.annualForecast)}
+            hint={fmtAttainment(totals.projectedActualsForecastAdj, totals.annualForecast)}
+            color={gapColor(totals.projectedActualsForecastAdj - totals.annualForecast)}
+          />
+          <Metric
             label="vs Forecasted"
             value={fmtSignedMoney(totals.actual - totals.forecast)}
             hint={fmtAttainment(totals.actual, totals.forecast)}

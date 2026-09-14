@@ -14,7 +14,7 @@ import {
 import { FORECAST_MONTHS, FORECAST_MONTH_LABELS, type ForecastMonth } from '@/lib/operations/product-revenue-forecast';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
-type SeriesKey = 'sgpBaseline' | 'sgpGrowth' | 'sgpStretch' | 'forecast' | 'forecastAdj' | 'actual';
+type SeriesKey = 'sgpBaseline' | 'sgpGrowth' | 'sgpStretch' | 'forecast' | 'forecastAdj' | 'actual' | 'actualsForecastAdj';
 
 type ChartRow = {
   monthKey: string;
@@ -25,6 +25,7 @@ type ChartRow = {
   forecast: number | null;
   forecastAdj: number | null;
   actual: number | null;
+  actualsForecastAdj: number | null;
 };
 
 type MonthlyGoal = { month: number; baseline: number | null; growth: number | null; stretch: number | null };
@@ -38,6 +39,7 @@ const SERIES: Array<{ key: SeriesKey; label: string; color: string }> = [
   { key: 'forecast', label: 'Forecasted', color: '#0891b2' },
   { key: 'forecastAdj', label: 'Forecast - ADJ', color: '#7c3aed' },
   { key: 'actual', label: 'Actuals', color: '#16a34a' },
+  { key: 'actualsForecastAdj', label: 'Actuals + Forecast - ADJ', color: '#d97706' },
 ];
 
 const MIN_YEAR = 2018;
@@ -148,6 +150,7 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
     forecast: true,
     forecastAdj: true,
     actual: true,
+    actualsForecastAdj: true,
   });
   const [rows, setRows] = useState<ChartRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -259,6 +262,10 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
           forecast: revenue ? revenue.forecast : null,
           forecastAdj: revenue ? revenue.adjusted : null,
           actual: revenue && month <= actualThrough ? revenue.actual : null,
+          // Actual booked revenue through the last complete month, followed by
+          // Forecast - ADJ for the rest of the year. These are monthly values,
+          // not a cumulative annual projection.
+          actualsForecastAdj: revenue ? (month <= actualThrough ? revenue.actual : revenue.adjusted) : null,
         };
       });
       setRows(nextRows);
@@ -294,7 +301,8 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
           <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>
             Monthly revenue in dollars. SGP Baseline, Growth, and Stretch come from the Goal Update monthly goals.
             Forecasted, Forecast - ADJ, and Actuals come from Monthly Revenue for each year in the range, so the
-            original forecast can be tracked against the adjusted forecast and booked actuals.
+            original forecast can be tracked against the adjusted forecast and booked actuals. Actuals + Forecast - ADJ
+            uses booked actuals through the last complete month, then Forecast - ADJ for subsequent months.
           </div>
         </div>
         {onOpenInfo ? (
