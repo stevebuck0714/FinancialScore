@@ -45,14 +45,19 @@ export async function GET(request: NextRequest) {
         properties: Array.isArray(body?.Properties) ? body.Properties : [],
       });
     }
-    const idos = asItems(result.body)
+    const catalogItems = asItems(result.body);
+    const idos = catalogItems
       .map((item) => ({
-        name: String(item.Name || item.name || '').trim(),
-        description: String(item.Description || item.description || '').trim(),
+        name: String(item.Name || item.name || item.IDOName || item.idoName || item.CollectionName || '').trim(),
+        description: String(item.Description || item.description || item.Caption || '').trim(),
       }))
       .filter((item) => /inv|invoice/i.test(`${item.name} ${item.description}`))
       .sort((left, right) => left.name.localeCompare(right.name));
-    return NextResponse.json({ idos });
+    return NextResponse.json({
+      idos,
+      catalogItemCount: catalogItems.length,
+      catalogSample: catalogItems.slice(0, 20),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'IDO discovery failed.';
     return NextResponse.json({ error: message }, { status: 500 });
