@@ -39,6 +39,28 @@ export type YtdGapTotals = YtdGapLine & {
   annualGoals: YtdGapGoals;
 };
 
+export type YtdComparisonLine = {
+  key: string;
+  itemSku: string;
+  customerPartNumber: string;
+  customerName: string;
+  actualByYear: Record<string, number>;
+  currentAdjusted: number;
+};
+
+export type YtdComparisonGroup = YtdComparisonLine & {
+  label: string;
+  skuCount: number;
+  lines: YtdComparisonLine[];
+};
+
+export type YtdComparisonDataset = {
+  years: number[];
+  throughMonth: number;
+  groups: YtdComparisonGroup[];
+  totals: YtdComparisonLine;
+};
+
 export type YtdGapDataset = {
   year: number;
   dataThru: string | null;
@@ -49,6 +71,7 @@ export type YtdGapDataset = {
   priceCount: number;
   totals: YtdGapTotals;
   groups: YtdGapGroup[];
+  comparison: YtdComparisonDataset;
 };
 
 /**
@@ -112,11 +135,117 @@ function toLine(
   };
 }
 
+function comparisonLineKey(row: ProductGroupRow): string {
+  return [
+    row.customerGroup,
+    row.customerName,
+    row.itemSku,
+    row.customerPartNumber,
+  ]
+    .map((value) => String(value || '').trim().toUpperCase())
+    .join('||');
+}
+
+function buildYtdComparison(params: {
+  datasets: Array<{ year: number; rows: ProductGroupRow[] }>;
+  years: number[];
+  throughMonth: number;
+}): YtdComparisonDataset {
+  const months = monthsThrough(params.throughMonth);
+  const currentYear = params.years[params.years.length - 1];
+  const groups = new Map<string, {
+    key: string;
+    label: string;
+    skuCount: number;
+    actualByYear: Record<string, number>;
+    currentAdjusted: number;
+    lines: Map<string, YtdComparisonLine>;
+  }>();
+
+  for (const source of params.datasets) {
+    for (const row of source.rows) {
+      const groupKey = row.customerGroup || 'Unassigned';
+      let group = groups.get(groupKey);
+      if (!group) {
+        group = {
+          key: groupKey,
+          label: groupKey,
+          skuCount: 0,
+          actualByYear: {},
+          currentAdjusted: 0,
+          lines: new Map(),
+        };
+        groups.set(groupKey, group);
+      }
+      group.actualByYear[String(source.year)] = sumMonths(row.actualRevenue, months);
+      if (source.year === currentYear) {
+        group.currentAdjusted = sumMonths(row.estimatedAdjusted, months);
+        group.skuCount = row.skuCount;
+      }
+
+      for (const line of row.lines) {
+        const key = comparisonLineKey(line);
+        let comparisonLine = group.lines.get(key);
+        if (!comparisonLine) {
+          comparisonLine = {
+            key,
+            itemSku: line.itemSku,
+            customerPartNumber: line.customerPartNumber,
+            customerName: line.customerName,
+            actualByYear: {},
+            currentAdjusted: 0,
+          };
+          group.lines.set(key, comparisonLine);
+        }
+        comparisonLine.actualByYear[String(source.year)] = sumMonths(line.actualRevenue, months);
+        if (source.year === currentYear) {
+          comparisonLine.currentAdjusted = sumMonths(line.estimatedAdjusted, months);
+        }
+      }
+    }
+  }
+
+  const comparisonGroups = Array.from(groups.values())
+    .map((group): YtdComparisonGroup => ({
+      key: group.key,
+      label: group.label,
+      skuCount: group.skuCount,
+      actualByYear: group.actualByYear,
+      currentAdjusted: group.currentAdjusted,
+      itemSku: '',
+      customerPartNumber: '',
+      customerName: '',
+      lines: Array.from(group.lines.values()).sort((left, right) => left.key.localeCompare(right.key)),
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+  const totals: YtdComparisonLine = {
+    key: 'totals',
+    itemSku: '',
+    customerPartNumber: '',
+    customerName: '',
+    actualByYear: Object.fromEntries(
+      params.years.map((year) => [
+        String(year),
+        comparisonGroups.reduce((sum, group) => sum + (group.actualByYear[String(year)] || 0), 0),
+      ])
+    ),
+    currentAdjusted: comparisonGroups.reduce((sum, group) => sum + group.currentAdjusted, 0),
+  };
+
+  return { years: params.years, throughMonth: params.throughMonth, groups: comparisonGroups, totals };
+}
+
 export async function loadProductYtdGapDataset(params: {
   companyId: string;
   year: number;
 }): Promise<YtdGapDataset> {
   const dataset = await loadProductGroupDataset(params);
+  const comparisonYears = [params.year - 2, params.year - 1, params.year];
+  const comparisonHistorical = await Promise.all(
+    comparisonYears
+      .filter((year) => year !== dataset.year)
+      .map(async (year) => ({ year, dataset: await loadProductGroupDataset({ companyId: params.companyId, year }) }))
+  );
   const throughMonth = resolveThroughMonth({ year: dataset.year, dataThru: dataset.dataThru });
   const months = monthsThrough(throughMonth);
   const remaining = monthsAfter(throughMonth);
@@ -165,6 +294,14 @@ export async function loadProductYtdGapDataset(params: {
       annualGoals: await loadYtdGoals({ ...params, throughMonth: 12 }),
     },
     groups,
+    comparison: buildYtdComparison({
+      years: comparisonYears,
+      throughMonth,
+      datasets: [
+        ...comparisonHistorical.map((entry) => ({ year: entry.year, rows: entry.dataset.rows })),
+        { year: dataset.year, rows: dataset.rows },
+      ],
+    }),
   };
 }
 

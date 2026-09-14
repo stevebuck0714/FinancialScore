@@ -2,14 +2,20 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { estYear } from '@/lib/time/eastern';
-import type { YtdGapDataset, YtdGapGroup, YtdGapLine } from '@/lib/operations/product-ytd-gap';
+import type {
+  YtdComparisonGroup,
+  YtdComparisonLine,
+  YtdGapDataset,
+  YtdGapGroup,
+  YtdGapLine,
+} from '@/lib/operations/product-ytd-gap';
 
 type ProductYtdGapReportProps = {
   selectedCompanyId: string;
   onOpenInfo?: () => void;
 };
 
-type AnalysisView = 'ytd' | 'annual';
+type AnalysisView = 'ytd' | 'annual' | 'comparison';
 type SortKey =
   | 'label'
   | 'forecast'
@@ -59,7 +65,7 @@ function yearOptions(): number[] {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 }
 
-function lineLabel(line: YtdGapLine): string {
+function lineLabel(line: Pick<YtdGapLine, 'itemSku' | 'customerPartNumber'>): string {
   const sku = String(line.itemSku || '').trim();
   const pn = String(line.customerPartNumber || '').trim();
   if (sku && pn && sku.toUpperCase() !== pn.toUpperCase()) return `${sku} · ${pn}`;
@@ -188,6 +194,7 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
 
   const totals = dataset?.totals || null;
   const goals = analysisView === 'ytd' ? totals?.goals || null : totals?.annualGoals || null;
+  const comparison = dataset?.comparison || null;
   const windowLabel = dataset?.throughMonthLabel
     ? `January–${dataset.throughMonthLabel} ${dataset.year}`
     : `${dataset?.year ?? year}`;
@@ -205,7 +212,7 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
   const selectAnalysisView = (view: AnalysisView) => {
     setAnalysisView(view);
     setExpanded({});
-    setSortKey(view === 'ytd' ? 'actual' : 'projectedRevenue');
+    setSortKey(view === 'ytd' ? 'actual' : view === 'annual' ? 'projectedRevenue' : 'label');
     setSortAsc(false);
   };
 
@@ -228,7 +235,9 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
           <div style={{ marginTop: 4, fontSize: 12, color: '#64748b', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
             {analysisView === 'ytd'
               ? 'Year-to-date revenue dollars per line item, comparing the adjusted forecast against booked actuals through the last complete month.'
-              : 'Projected full-year revenue: booked actuals through the last complete month plus Forecast - ADJ for the remaining months.'}
+              : analysisView === 'annual'
+              ? 'Projected full-year revenue: booked actuals through the last complete month plus Forecast - ADJ for the remaining months.'
+              : 'Compare matching year-to-date actual revenue across the current year and the prior two years.'}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -289,6 +298,7 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
         {([
           ['ytd', 'YTD Analysis'],
           ['annual', 'Annual Analysis'],
+          ['comparison', 'YTD Comparison'],
         ] as const).map(([view, label]) => {
           const selected = analysisView === view;
           return (
@@ -318,8 +328,8 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
 
       {dataset ? (
         <div style={{ fontSize: 12, color: '#334155' }}>
-          {analysisView === 'ytd' ? 'YTD window: ' : 'Annual projection: '}
-          <strong>{analysisView === 'ytd' ? windowLabel : dataset.year}</strong>
+          {analysisView === 'ytd' || analysisView === 'comparison' ? 'YTD window: ' : 'Annual projection: '}
+          <strong>{analysisView === 'ytd' || analysisView === 'comparison' ? windowLabel : dataset.year}</strong>
           {dataset.dataThru ? ` · Data thru ${dataset.dataThru}` : ''}
           {` · ${dataset.groups.length} groups · ${dataset.groups.reduce((sum, group) => sum + group.lines.length, 0)} line items`}
         </div>
@@ -337,7 +347,7 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
         </div>
       ) : null}
 
-      {totals && goals ? (
+      {analysisView !== 'comparison' && totals && goals ? (
         <div
           style={{
             display: 'flex',
@@ -397,7 +407,11 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
         </div>
       ) : null}
 
-      {loading && !dataset ? (
+      {analysisView === 'comparison' && comparison ? (
+        <YtdComparisonTable comparison={comparison} expanded={expanded} setExpanded={setExpanded} />
+      ) : null}
+
+      {analysisView !== 'comparison' && (loading && !dataset ? (
         <div style={{ padding: '28px 0', color: '#64748b', fontSize: 13 }}>Loading YTD gap analysis…</div>
       ) : !dataset || dataset.groups.length === 0 ? (
         !loading ? (
@@ -575,7 +589,7 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -596,6 +610,109 @@ function Metric({
       <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: 0.3 }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 800, color: color || '#0f172a' }}>{value}</div>
       {hint ? <div style={{ fontSize: 11, color: '#94a3b8' }}>{hint}</div> : null}
+    </div>
+  );
+}
+
+function YtdComparisonTable({
+  comparison,
+  expanded,
+  setExpanded,
+}: {
+  comparison: NonNullable<YtdGapDataset['comparison']>;
+  expanded: Record<string, boolean>;
+  setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+}) {
+  const [oldestYear, priorYear, currentYear] = comparison.years;
+  const actual = (row: YtdComparisonLine, year: number) => row.actualByYear[String(year)] || 0;
+  const cells = (row: YtdComparisonLine, emphasize = false) => {
+    const oldest = actual(row, oldestYear);
+    const prior = actual(row, priorYear);
+    const current = actual(row, currentYear);
+    const gap = current - row.currentAdjusted;
+    const style = emphasize ? { ...td, fontWeight: 800 } : td;
+    return (
+      <>
+        <td style={style}>{fmtMoney(oldest)}</td>
+        <td style={style}>{fmtMoney(prior)}</td>
+        <td style={{ ...style, color: gapColor(prior - oldest) }}>{fmtSignedMoney(prior - oldest)}</td>
+        <td style={style}>{fmtMoney(current)}</td>
+        <td style={{ ...style, color: gapColor(current - prior) }}>{fmtSignedMoney(current - prior)}</td>
+        <td style={style}>{fmtMoney(row.currentAdjusted)}</td>
+        <td style={{ ...style, color: gapColor(gap) }}>{fmtSignedMoney(gap)}</td>
+        <td style={style}>{fmtAttainment(current, row.currentAdjusted)}</td>
+      </>
+    );
+  };
+
+  return (
+    <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 620 }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1180 }}>
+        <thead>
+          <tr>
+            <th style={{ ...th, textAlign: 'left' }}>Group / Line item</th>
+            <th style={th}>{`${oldestYear}\nYTD Actuals`}</th>
+            <th style={th}>{`${priorYear}\nYTD Actuals`}</th>
+            <th style={th}>{`$ Change\n${priorYear} vs ${oldestYear}`}</th>
+            <th style={th}>{`${currentYear}\nYTD Actuals`}</th>
+            <th style={th}>{`$ Change\n${currentYear} vs ${priorYear}`}</th>
+            <th style={th}>{`${currentYear} YTD\nForecast - ADJ`}</th>
+            <th style={th}>{`${currentYear} Actuals -\nForecast - ADJ`}</th>
+            <th style={th}>{`% of Forecast - ADJ\n${currentYear} YTD`}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {comparison.groups.map((group: YtdComparisonGroup) => {
+            const isOpen = Boolean(expanded[group.key]);
+            return (
+              <React.Fragment key={group.key}>
+                <tr style={{ background: '#ffffff' }}>
+                  <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>
+                    <button
+                      type="button"
+                      onClick={() => setExpanded((previous) => ({ ...previous, [group.key]: !previous[group.key] }))}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        font: 'inherit',
+                        color: '#0f172a',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: 0,
+                      }}
+                      aria-expanded={isOpen}
+                    >
+                      <span style={{ color: '#64748b', fontSize: 11, width: 10 }}>{isOpen ? '▼' : '▶'}</span>
+                      {group.label}
+                      <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: 11 }}>
+                        {group.lines.length} {group.lines.length === 1 ? 'line' : 'lines'}
+                      </span>
+                    </button>
+                  </td>
+                  {cells(group, true)}
+                </tr>
+                {isOpen
+                  ? group.lines.map((line) => (
+                      <tr key={line.key} style={{ background: '#f8fafc' }}>
+                        <td style={{ ...td, textAlign: 'left', paddingLeft: 34, color: '#334155' }}>
+                          <div style={{ fontWeight: 600 }}>{lineLabel(line)}</div>
+                          {line.customerName ? <div style={{ fontSize: 11, color: '#64748b' }}>{line.customerName}</div> : null}
+                        </td>
+                        {cells(line)}
+                      </tr>
+                    ))
+                  : null}
+              </React.Fragment>
+            );
+          })}
+          <tr style={{ background: '#fffbeb', borderTop: '2px solid #f59e0b' }}>
+            <td style={{ ...td, textAlign: 'left', fontWeight: 800 }}>Company total</td>
+            {cells(comparison.totals, true)}
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

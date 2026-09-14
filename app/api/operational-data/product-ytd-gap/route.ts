@@ -28,9 +28,9 @@ export async function GET(request: NextRequest) {
     const { payload } = await withProductReportCache({
       namespace: 'product-ytd-gap',
       companyId,
-      // The annual view extends the response shape; do not serve a cached
-      // pre-annual payload that lacks its projected revenue fields.
-      keyParts: ['ytd-gap-v2', year],
+      // The annual and comparison views extend the response shape; do not
+      // serve an older payload that lacks projected or historical values.
+      keyParts: ['ytd-gap-v3', year],
       refresh,
       build: async () => {
         await ensureProductRevenueTables();
