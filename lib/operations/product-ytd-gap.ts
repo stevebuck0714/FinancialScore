@@ -17,6 +17,9 @@ export type YtdGapLine = {
   forecast: number;
   adjusted: number;
   actual: number;
+  annualForecast: number;
+  annualAdjusted: number;
+  projectedRevenue: number;
 };
 
 export type YtdGapGroup = YtdGapLine & {
@@ -33,10 +36,7 @@ export type YtdGapGoals = {
 
 export type YtdGapTotals = YtdGapLine & {
   goals: YtdGapGoals;
-  /** Actual booked revenue through dataThru plus Forecast - ADJ for later months. */
-  projectedActualsForecastAdj: number;
-  /** Original forecast for every month of the selected year. */
-  annualForecast: number;
+  annualGoals: YtdGapGoals;
 };
 
 export type YtdGapDataset = {
@@ -93,7 +93,11 @@ function sumMonths(map: unknown, months: readonly ForecastMonth[]): number {
   return months.reduce((sum, month) => sum + monthQty(map as Record<string, number>, month), 0);
 }
 
-function toLine(row: ProductGroupRow, months: ForecastMonth[]): YtdGapLine {
+function toLine(
+  row: ProductGroupRow,
+  months: ForecastMonth[],
+  remainingMonths: ForecastMonth[]
+): YtdGapLine {
   return {
     key: row.key,
     itemSku: row.itemSku,
@@ -102,6 +106,9 @@ function toLine(row: ProductGroupRow, months: ForecastMonth[]): YtdGapLine {
     forecast: sumMonths(row.estimated, months),
     adjusted: sumMonths(row.estimatedAdjusted, months),
     actual: sumMonths(row.actualRevenue, months),
+    annualForecast: sumMonths(row.estimated, FORECAST_MONTHS),
+    annualAdjusted: sumMonths(row.estimatedAdjusted, FORECAST_MONTHS),
+    projectedRevenue: sumMonths(row.actualRevenue, months) + sumMonths(row.estimatedAdjusted, remainingMonths),
   };
 }
 
@@ -115,10 +122,10 @@ export async function loadProductYtdGapDataset(params: {
   const remaining = monthsAfter(throughMonth);
 
   const groups: YtdGapGroup[] = dataset.rows.map((row) => ({
-    ...toLine(row, months),
+    ...toLine(row, months, remaining),
     label: row.customerGroup || 'Unassigned',
     skuCount: row.skuCount,
-    lines: row.lines.map((line) => toLine(line, months)),
+    lines: row.lines.map((line) => toLine(line, months, remaining)),
   }));
 
   const totals = groups.reduce(
@@ -127,14 +134,23 @@ export async function loadProductYtdGapDataset(params: {
       forecast: acc.forecast + group.forecast,
       adjusted: acc.adjusted + group.adjusted,
       actual: acc.actual + group.actual,
+      annualForecast: acc.annualForecast + group.annualForecast,
+      annualAdjusted: acc.annualAdjusted + group.annualAdjusted,
+      projectedRevenue: acc.projectedRevenue + group.projectedRevenue,
     }),
-    { key: 'totals', itemSku: '', customerPartNumber: '', customerName: '', forecast: 0, adjusted: 0, actual: 0 }
+    {
+      key: 'totals',
+      itemSku: '',
+      customerPartNumber: '',
+      customerName: '',
+      forecast: 0,
+      adjusted: 0,
+      actual: 0,
+      annualForecast: 0,
+      annualAdjusted: 0,
+      projectedRevenue: 0,
+    }
   );
-  const projectedActualsForecastAdj = dataset.rows.reduce(
-    (sum, row) => sum + sumMonths(row.actualRevenue, months) + sumMonths(row.estimatedAdjusted, remaining),
-    0
-  );
-  const annualForecast = dataset.rows.reduce((sum, row) => sum + sumMonths(row.estimated, FORECAST_MONTHS), 0);
 
   return {
     year: dataset.year,
@@ -146,8 +162,7 @@ export async function loadProductYtdGapDataset(params: {
     totals: {
       ...totals,
       goals: await loadYtdGoals({ ...params, throughMonth }),
-      projectedActualsForecastAdj,
-      annualForecast,
+      annualGoals: await loadYtdGoals({ ...params, throughMonth: 12 }),
     },
     groups,
   };

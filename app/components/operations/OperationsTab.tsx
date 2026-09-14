@@ -12518,19 +12518,20 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'Year-to-date revenue dollars for every line item, so management can see where the original forecast and the adjusted forecast are running ahead of or behind booked actuals. Rows start at parent group and expand to the customer and SKU behind each number.',
+              'Use the YTD Analysis page to compare booked actuals against the adjusted forecast through the Data thru month. Use the Annual Analysis page to project full-year revenue from booked actuals through that month plus Forecast - ADJ for the remaining months. Rows start at parent group and expand to the customer and SKU behind each number.',
           },
           {
-            heading: 'How the YTD window is set',
+            heading: 'How each analysis is calculated',
             body: [
-              'Every column stops at the Data thru month, so Forecasted, Forecast - ADJ, and Actuals all cover the same months. Comparing a full-year forecast against a partial year of actuals would show a shortfall on every line.',
+              'YTD Analysis stops every column at the Data thru month, so Forecast - ADJ and Actuals cover the same months.',
+              'Annual Analysis uses booked Actuals through Data thru, then Forecast - ADJ for every remaining month. Its variance is projected year-end revenue minus the full-year plan.',
             ],
           },
           {
             heading: 'Reading the gaps',
             body: [
-              'Gap vs Forecasted is Actuals minus the original forecast, and Gap vs Forecast - ADJ is Actuals minus the adjusted forecast. Green means actuals came in above plan, red means below. The percentage next to each gap is actuals as a share of that plan.',
-              'SGP Baseline, Growth, and Stretch are company-wide monthly goals, so they appear only in the summary above the table, totalled over the same YTD window. They are not split across line items.',
+              'Green variances are above plan and red variances are below plan. The percentage next to each variance is actual or projected revenue as a share of that plan.',
+              'SGP Baseline, Growth, and Stretch are company-wide monthly goals, so they appear only in the summary above each table. They are totalled through Data thru on the YTD page and for all 12 months on the Annual page; they are not split across line items.',
               'Forecasted $ depends on the Jan-1 contract price for each SKU, so a line missing from the saved price list reads $0 on that column.',
             ],
           },
