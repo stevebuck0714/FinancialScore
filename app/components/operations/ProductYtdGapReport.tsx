@@ -168,6 +168,16 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
   const windowLabel = dataset?.throughMonthLabel
     ? `January–${dataset.throughMonthLabel} ${dataset.year}`
     : `${dataset?.year ?? year}`;
+  const projectedVariance = totals ? totals.projectedActualsForecastAdj - totals.annualForecast : null;
+  const projectedGapHint =
+    projectedVariance == null || Math.round(projectedVariance) === 0
+      ? 'On forecast'
+      : projectedVariance > 0
+      ? 'Above forecast'
+      : 'Below forecast';
+  const projectedRevenueHint = dataset?.throughMonthLabel
+    ? `YTD Actuals + Forecast - ADJ after ${dataset.throughMonthLabel}`
+    : 'YTD Actuals + Forecast - ADJ';
 
   const sortHeader = (key: SortKey, label: string, align: 'left' | 'right' = 'right') => (
     <th
@@ -273,24 +283,18 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
         >
           <Metric label="YTD Actuals" value={fmtMoney(totals.actual)} />
           <Metric
-            label="YTD Actuals + Forecast - ADJ"
+            label="Projected Year-End Revenue"
             value={fmtMoney(totals.projectedActualsForecastAdj)}
-            hint="Actuals through data thru; Forecast - ADJ after"
+            hint={projectedRevenueHint}
           />
           <Metric
             label="vs Full-Year Forecasted"
-            value={fmtSignedMoney(totals.projectedActualsForecastAdj - totals.annualForecast)}
-            hint={fmtAttainment(totals.projectedActualsForecastAdj, totals.annualForecast)}
-            color={gapColor(totals.projectedActualsForecastAdj - totals.annualForecast)}
+            value={fmtSignedMoney(projectedVariance)}
+            hint={`${projectedGapHint} · ${fmtAttainment(totals.projectedActualsForecastAdj, totals.annualForecast)}`}
+            color={gapColor(projectedVariance ?? 0)}
           />
           <Metric
-            label="vs Forecasted"
-            value={fmtSignedMoney(totals.actual - totals.forecast)}
-            hint={fmtAttainment(totals.actual, totals.forecast)}
-            color={gapColor(totals.actual - totals.forecast)}
-          />
-          <Metric
-            label="vs Forecast - ADJ"
+            label="YTD vs Forecast - ADJ"
             value={fmtSignedMoney(totals.actual - totals.adjusted)}
             hint={fmtAttainment(totals.actual, totals.adjusted)}
             color={gapColor(totals.actual - totals.adjusted)}
