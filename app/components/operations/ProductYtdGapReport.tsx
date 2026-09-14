@@ -352,6 +352,13 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
           {analysisView === 'ytd' ? (
             <>
               <Metric label="YTD Actuals" value={fmtMoney(totals.actual)} />
+              <Metric label="YTD Forecasted" value={fmtMoney(totals.forecast)} />
+              <Metric
+                label="YTD vs Forecasted"
+                value={fmtSignedMoney(totals.actual - totals.forecast)}
+                hint={fmtAttainment(totals.actual, totals.forecast)}
+                color={gapColor(totals.actual - totals.forecast)}
+              />
               <Metric label="YTD Forecast - ADJ" value={fmtMoney(totals.adjusted)} />
               <Metric
                 label="YTD vs Forecast - ADJ"
@@ -406,9 +413,12 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
                 {sortHeader('label', 'Group / Line item', 'left')}
                 {analysisView === 'ytd' ? (
                   <>
-                    {sortHeader('adjusted', 'YTD\nForecast - ADJ')}
                     {sortHeader('actual', 'YTD\nActuals')}
-                    {sortHeader('gapAdjusted', 'YTD vs\nForecast - ADJ')}
+                    {sortHeader('forecast', 'YTD\nForecasted')}
+                    {sortHeader('gapForecast', 'YTD Actuals -\nForecasted')}
+                    <th style={th}>{'% of\nForecasted'}</th>
+                    {sortHeader('adjusted', 'YTD\nForecast - ADJ')}
+                    {sortHeader('gapAdjusted', 'YTD Actuals -\nForecast - ADJ')}
                     <th style={th}>{'% of\nForecast - ADJ'}</th>
                   </>
                 ) : (
@@ -456,8 +466,13 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
                       </td>
                       {analysisView === 'ytd' ? (
                         <>
-                          <td style={td}>{fmtMoney(group.adjusted)}</td>
                           <td style={{ ...td, fontWeight: 700 }}>{fmtMoney(group.actual)}</td>
+                          <td style={td}>{fmtMoney(group.forecast)}</td>
+                          <td style={{ ...td, color: gapColor(group.actual - group.forecast), fontWeight: 700 }}>
+                            {fmtSignedMoney(group.actual - group.forecast)}
+                          </td>
+                          <td style={td}>{fmtAttainment(group.actual, group.forecast)}</td>
+                          <td style={td}>{fmtMoney(group.adjusted)}</td>
                           <td style={{ ...td, color: gapColor(group.actual - group.adjusted), fontWeight: 700 }}>
                             {fmtSignedMoney(group.actual - group.adjusted)}
                           </td>
@@ -490,8 +505,13 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
                             </td>
                             {analysisView === 'ytd' ? (
                               <>
-                                <td style={td}>{fmtMoney(line.adjusted)}</td>
                                 <td style={td}>{fmtMoney(line.actual)}</td>
+                                <td style={td}>{fmtMoney(line.forecast)}</td>
+                                <td style={{ ...td, color: gapColor(line.actual - line.forecast) }}>
+                                  {fmtSignedMoney(line.actual - line.forecast)}
+                                </td>
+                                <td style={td}>{fmtAttainment(line.actual, line.forecast)}</td>
+                                <td style={td}>{fmtMoney(line.adjusted)}</td>
                                 <td style={{ ...td, color: gapColor(line.actual - line.adjusted) }}>
                                   {fmtSignedMoney(line.actual - line.adjusted)}
                                 </td>
@@ -523,8 +543,13 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
                   <td style={{ ...td, textAlign: 'left', fontWeight: 800 }}>Company total</td>
                   {analysisView === 'ytd' ? (
                     <>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.adjusted)}</td>
                       <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.actual)}</td>
+                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.forecast)}</td>
+                      <td style={{ ...td, fontWeight: 800, color: gapColor(totals.actual - totals.forecast) }}>
+                        {fmtSignedMoney(totals.actual - totals.forecast)}
+                      </td>
+                      <td style={{ ...td, fontWeight: 800 }}>{fmtAttainment(totals.actual, totals.forecast)}</td>
+                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.adjusted)}</td>
                       <td style={{ ...td, fontWeight: 800, color: gapColor(totals.actual - totals.adjusted) }}>
                         {fmtSignedMoney(totals.actual - totals.adjusted)}
                       </td>
