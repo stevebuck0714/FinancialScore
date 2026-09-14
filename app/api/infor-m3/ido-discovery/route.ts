@@ -18,6 +18,9 @@ export async function GET(request: NextRequest) {
   try {
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
     const ido = String(request.nextUrl.searchParams.get('ido') || '').trim();
+    const sample = ['1', 'true', 'yes'].includes(
+      String(request.nextUrl.searchParams.get('sample') || '').trim().toLowerCase()
+    );
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { accountingSystem: true },
@@ -29,7 +32,9 @@ export async function GET(request: NextRequest) {
     if (!credentials) return NextResponse.json({ error: 'Infor CSI credentials are unavailable.' }, { status: 409 });
 
     const endpointPath = ido
-      ? `/APR_PRD/CSI/IDORequestService/ido/info/${encodeURIComponent(ido)}`
+      ? sample
+        ? `/APR_PRD/CSI/IDORequestService/ido/load/${encodeURIComponent(ido)}?properties=*&recordCap=1`
+        : `/APR_PRD/CSI/IDORequestService/ido/info/${encodeURIComponent(ido)}`
       : '/APR_PRD/CSI/IDORequestService/ido/load/IDOs?properties=Name,Description&recordCap=1000';
     const result = await callInforIonApi(credentials, endpointPath, {
       timeoutMs: 30_000,
@@ -40,9 +45,15 @@ export async function GET(request: NextRequest) {
     }
     if (ido) {
       const body = result.body as { Properties?: unknown };
+      const sampleItems = sample ? asItems(result.body) : [];
       return NextResponse.json({
         ido,
-        properties: Array.isArray(body?.Properties) ? body.Properties : [],
+        properties: sample
+          ? Array.from(new Set(sampleItems.flatMap((item) => Object.keys(item)))).sort()
+          : Array.isArray(body?.Properties)
+            ? body.Properties
+            : [],
+        recordCount: sampleItems.length,
       });
     }
     const catalogItems = asItems(result.body);
