@@ -127,6 +127,42 @@ export async function ensureProductRevenueTables(): Promise<void> {
           CONSTRAINT "ProductGoalUpdate_pkey" PRIMARY KEY ("companyId", "year")
         )
       `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ProductInvoiceLineFact" (
+          "id" TEXT NOT NULL,
+          "companyId" TEXT NOT NULL,
+          "invoiceNo" TEXT NOT NULL,
+          "invoiceSequence" TEXT NOT NULL DEFAULT '',
+          "orderId" TEXT NOT NULL DEFAULT '',
+          "orderLineId" TEXT NOT NULL DEFAULT '',
+          "sourceLineKey" TEXT NOT NULL DEFAULT '',
+          "invoiceDate" TIMESTAMP(3) NOT NULL,
+          "customerId" TEXT,
+          "customerName" TEXT NOT NULL DEFAULT '',
+          "customerPartNumber" TEXT NOT NULL DEFAULT '',
+          "itemSku" TEXT NOT NULL,
+          "quantity" DOUBLE PRECISION NOT NULL DEFAULT 0,
+          "revenue" DOUBLE PRECISION NOT NULL,
+          "sourceProgram" TEXT NOT NULL DEFAULT 'SLInvItems',
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "ProductInvoiceLineFact_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS "ProductInvoiceLineFact_source_key"
+          ON "ProductInvoiceLineFact"(
+            "companyId", "invoiceNo", "invoiceSequence", "orderId", "orderLineId", "itemSku", "sourceLineKey"
+          )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "ProductInvoiceLineFact_company_invoiceDate_idx"
+          ON "ProductInvoiceLineFact"("companyId", "invoiceDate")
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "ProductInvoiceLineFact_company_customer_item_idx"
+          ON "ProductInvoiceLineFact"("companyId", "customerId", "itemSku")
+      `);
       await ensureProductRevenueForecastTables();
     })().catch((error) => {
       ensureTablesOnce = null;

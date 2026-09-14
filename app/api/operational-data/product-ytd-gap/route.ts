@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
       companyId,
       // Cache the expensive three-year comparison separately from the normal
       // YTD/annual payload so it is calculated only when its tab is opened.
-      // v5/v2 switch actual revenue to Infor invoiced dollars.
-      keyParts: [includeComparison ? 'ytd-comparison-v2' : 'ytd-gap-v5', year],
+      // v6/v3 use posted Infor invoice-line facts for actual revenue.
+      keyParts: [includeComparison ? 'ytd-comparison-v3' : 'ytd-gap-v6', year],
       refresh,
       build: async () => {
         await ensureProductRevenueTables();

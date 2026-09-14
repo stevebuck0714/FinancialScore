@@ -45,7 +45,13 @@ export async function GET(request: NextRequest) {
       refresh,
       build: async () => {
         await ensureProductRevenueTables();
-        const dataset = await loadRevenueDataset({ companyId, year, customerId, customerName });
+        const dataset = await loadRevenueDataset({
+          companyId,
+          year,
+          customerId,
+          customerName,
+          useInforActualRevenue: true,
+        });
         return {
           ...dataset,
           workbookUpdated: workbookUpdatedDate(dataset.dataThru),
@@ -99,7 +105,13 @@ export async function PUT(request: NextRequest) {
       lines,
     });
 
-    const dataset = await loadRevenueDataset({ companyId, year, customerId, customerName });
+    const dataset = await loadRevenueDataset({
+      companyId,
+      year,
+      customerId,
+      customerName,
+      useInforActualRevenue: true,
+    });
     return NextResponse.json({
       ok: true,
       ...dataset,

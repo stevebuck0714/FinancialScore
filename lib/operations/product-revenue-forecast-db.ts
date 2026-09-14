@@ -523,7 +523,10 @@ async function queryCsiShippedDeltas(params: {
             NULLIF(TRIM(COALESCE(s."customerId", '')), '') AS "customerId",
             NULLIF(TRIM(COALESCE(s."sku", '')), '') AS "itemSku",
             NULLIF(TRIM(COALESCE(s."itemId", s."itemName", '')), '') AS "itemId",
-            NULLIF(TRIM(COALESCE(s."customerPn", '')), '') AS "customerPn",
+            -- Some deployed databases predate the customerPn column. Reading
+            -- the row JSON preserves that optional key when present without
+            -- failing the entire Infor actuals query when it is absent.
+            NULLIF(TRIM(COALESCE(to_jsonb(s) ->> 'customerPn', '')), '') AS "customerPn",
             date_trunc('month', s."snapshotDate") AS month_start,
             ${params.qtySql} AS qty,
             s."snapshotDate" AS as_of
@@ -618,10 +621,30 @@ export async function loadCsiMonthlyInvoicedRevenueActuals(params: {
   customerName?: string;
 }): Promise<CsiInvoicedRevenueActuals> {
   try {
-    const rows = await queryCsiShippedDeltas({
-      ...params,
-      qtySql: Prisma.sql`COALESCE(s."invoicedAmount", 0)`,
-    });
+    const start = new Date(Date.UTC(params.year, 0, 1));
+    const end = new Date(Date.UTC(params.year + 1, 0, 1));
+    const rows = await prisma.$queryRaw<Array<{
+      customerId: string | null;
+      itemSku: string | null;
+      customerPn: string | null;
+      month: number | null;
+      qty: number | null;
+      asOf: Date | null;
+    }>>(Prisma.sql`
+      SELECT
+        "customerId",
+        "itemSku",
+        "customerPartNumber" AS "customerPn",
+        EXTRACT(MONTH FROM "invoiceDate")::int AS month,
+        SUM("revenue")::double precision AS qty,
+        MAX("invoiceDate") AS "asOf"
+      FROM "ProductInvoiceLineFact"
+      WHERE "companyId" = ${params.companyId}
+        AND "invoiceDate" >= ${start}
+        AND "invoiceDate" < ${end}
+      GROUP BY 1, 2, 3, 4
+    `);
+    if (rows.length === 0) return { ok: false, asOf: null, byExact: new Map(), byItem: new Map() };
     const byExact = new Map<string, MonthQtyMap>();
     const byItem = new Map<string, MonthQtyMap>();
     let asOf: string | null = null;

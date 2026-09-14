@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { computeDailyPnlMovementsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { syncErpDailyFinancialsFromGL } from '@/lib/financial/sync-erp-daily-financials';
 import { captureFilledOrderLines, ensureCustomerOrderLineFilledTables, type FilledOrderLineInput } from '@/lib/operations/product-order-filled';
+import { ensureProductRevenueTables } from '@/lib/operations/product-revenue-actual-db';
 import { estCalendarDateUtc } from '@/lib/time/eastern';
 import { ensureUnmappedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 
@@ -150,6 +151,15 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     module: 'Sales',
     miProgram: 'SLCoitems',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?properties=CoNum,CoLine,CoRelease,CustNum,CustItem,Item,Description,QtyOrdered,QtyShipped,QtyInvoiced,QtyReturned,Price,ExtPrice,Cost,MatlCost,ExtMatlCost,Disc,RepPrice,Whse,Stat,DueDate,PromiseDate,OrderDate,ShipDate,RecordDate,RowPointer&recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Sales',
+    miProgram: 'SLInvItems',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLInvItems?properties=InvNum,InvSeq,CoNum,CoLine,CoRelease,CustNum,CustItem,Item,Description,QtyInvoiced,Price,ExtPrice,Disc,InvDate,RecordDate,RowPointer&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -1990,7 +2000,7 @@ function classifyModuleFromProgramId(
   if (programId === 'SLCUSTOMERS') return 'customer';
   if (programId === 'SLBANKHDRS' || programId === 'SLBANKHDR') return 'cash';
   if (programId === 'SLITEMLOCS' || programId === 'SLITEMS' || programId === 'SLITEMWHSES') return 'inventory';
-  if (programId === 'SLCOITEMS' || programId === 'SLCOS' || programId === 'SLCOHDRS' || programId === 'SLINVHDRS')
+  if (programId === 'SLCOITEMS' || programId === 'SLCOS' || programId === 'SLCOHDRS' || programId === 'SLINVHDRS' || programId === 'SLINVITEMS')
     return 'sales';
 
   return null;
@@ -2022,6 +2032,7 @@ const INFOR_RAW_MIN_BUSINESS_DATE_COMPACT = '20230101'; // YYYYMMDD
 
 const INFOR_RAW_DATE_FIELDS_BY_PROGRAM: Record<string, string[]> = {
   SLARTRANS: ['InvDate', 'RecordDate'],
+  SLINVITEMS: ['InvDate', 'RecordDate'],
   SLAPTRX: ['InvDate', 'DistDate', 'RecordDate'],
   SLVCHHDRS: ['InvDate', 'RecordDate', 'DistDate'],
   SLAPTRXPS: ['InvDate', 'DistDate', 'RecordDate'],
@@ -5048,6 +5059,67 @@ async function resetAndSeedCustomerOrderLineSnapshotFromPriorDay(params: {
       { maxWait: 10000, timeout: 120000 }
     )
   );
+}
+
+async function saveProductInvoiceLines(
+  companyId: string,
+  records: Record<string, unknown>[],
+  context: { miProgram: string }
+): Promise<number> {
+  if (records.length === 0) return 0;
+  await ensureProductRevenueTables();
+  const rows = records.flatMap((record, index) => {
+    const invoiceNo = pickString(record, ['InvNum', 'invoiceNo', 'InvoiceNum', 'IVNO']);
+    const invoiceDate = parseMaybeDate(pickString(record, ['InvDate', 'invoiceDate', 'IVDT', 'RecordDate']));
+    const itemSku = pickString(record, ['Item', 'item', 'ITNO', 'sku', 'itemCode']);
+    if (!invoiceNo || !invoiceDate || !itemSku) return [];
+    const quantity = pickNumber(record, ['QtyInvoiced', 'qtyInvoiced', 'InvoicedQty']);
+    const unitPrice = pickNumber(record, ['Price', 'price', 'UnitPrice']);
+    // CSI invoice-line ExtPrice is the posted product amount, net of line discounts.
+    const extPrice = pickNumber(record, ['ExtPrice', 'extPrice', 'LineAmount', 'lineAmount', 'Amount', 'amount']);
+    const revenue = extPrice !== 0 ? extPrice : quantity * unitPrice;
+    const sourceLineKey =
+      pickString(record, ['RowPointer', 'rowPointer', '_ItemId', 'itemId']) ||
+      `${invoiceNo}|${pickString(record, ['InvSeq', 'invoiceSequence']) || ''}|${pickString(record, ['CoNum', 'orderId']) || ''}|${pickString(record, ['CoLine', 'lineNo']) || ''}|${itemSku}|${index}`;
+    return [{
+      id: randomUUID(),
+      companyId,
+      invoiceNo,
+      invoiceSequence: pickString(record, ['InvSeq', 'invoiceSequence']) || '',
+      orderId: pickString(record, ['CoNum', 'orderId']) || '',
+      orderLineId: `${pickString(record, ['CoLine', 'lineNo']) || ''}-${pickString(record, ['CoRelease', 'releaseNo']) || ''}`,
+      sourceLineKey,
+      invoiceDate,
+      customerId: pickString(record, ['CustNum', 'custNum', 'CustomerId']),
+      customerName: pickString(record, ['DerCustName', 'CustName', 'customerName']) || '',
+      customerPartNumber: pickString(record, ['CustItem', 'custItem', 'customerPn', 'customerPartNumber']) || '',
+      itemSku,
+      quantity,
+      revenue,
+      sourceProgram: context.miProgram,
+    }];
+  });
+  for (let start = 0; start < rows.length; start += 500) {
+    const chunk = rows.slice(start, start + 500);
+    const values = chunk.map((row) => Prisma.sql`(
+      ${row.id}, ${row.companyId}, ${row.invoiceNo}, ${row.invoiceSequence}, ${row.orderId}, ${row.orderLineId},
+      ${row.sourceLineKey}, ${row.invoiceDate}, ${row.customerId}, ${row.customerName}, ${row.customerPartNumber},
+      ${row.itemSku}, ${row.quantity}, ${row.revenue}, ${row.sourceProgram}
+    )`);
+    await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "ProductInvoiceLineFact" (
+        "id","companyId","invoiceNo","invoiceSequence","orderId","orderLineId","sourceLineKey","invoiceDate",
+        "customerId","customerName","customerPartNumber","itemSku","quantity","revenue","sourceProgram"
+      ) VALUES ${Prisma.join(values)}
+      ON CONFLICT ("companyId","invoiceNo","invoiceSequence","orderId","orderLineId","itemSku","sourceLineKey")
+      DO UPDATE SET
+        "invoiceDate" = EXCLUDED."invoiceDate", "customerId" = EXCLUDED."customerId",
+        "customerName" = EXCLUDED."customerName", "customerPartNumber" = EXCLUDED."customerPartNumber",
+        "quantity" = EXCLUDED."quantity", "revenue" = EXCLUDED."revenue",
+        "updatedAt" = CURRENT_TIMESTAMP
+    `);
+  }
+  return rows.length;
 }
 
 async function saveCustomerOrderLines(
@@ -10140,6 +10212,7 @@ export async function syncInforM3OperationalData(
                   );
                 }
                 const isSlcoitemsProgram = String(salesProgramId || '').toUpperCase() === 'SLCOITEMS';
+                const isSlInvItemsProgram = String(salesProgramId || '').toUpperCase() === 'SLINVITEMS';
                 const salesRowsCreated = isSlcoitemsProgram
                   ? await saveProductSales(companyId, snapshotDate, frequency, records)
                   : 0;
@@ -10155,6 +10228,9 @@ export async function syncInforM3OperationalData(
                   );
                 }
                 const salesProgram = salesProgramId;
+                const invoiceLineRowsCreated = isSlInvItemsProgram
+                  ? await saveProductInvoiceLines(companyId, recordsAfterDateWindow, context)
+                  : 0;
                 let slcosHydrationResult: { loaded: number; message?: string } | null = null;
                 const invoiceHeaderRowsCreated =
                   salesProgram === 'SLINVHDRS'
@@ -10217,7 +10293,7 @@ export async function syncInforM3OperationalData(
                   // so Contract Total / Invoiced / Remaining stay in sync with sales data.
                   await upsertArContractSupportTables(companyId, snapshotDate, frequency);
                 }
-                moduleRecordsCreated = salesRowsCreated + contractRowsCreated + invoiceHeaderRowsCreated;
+                moduleRecordsCreated = salesRowsCreated + contractRowsCreated + invoiceHeaderRowsCreated + invoiceLineRowsCreated;
               }
               break;
             case 'inventory':
