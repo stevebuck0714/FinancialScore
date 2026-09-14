@@ -8,6 +8,7 @@ import PageCurrencyBadge from './PageCurrencyBadge';
 import { getCogsTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { filterClosedReportingMonths } from '@/lib/date-utils';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 
 const LEGACY_COGS_KEYS = [
   'cogsPayroll',
@@ -330,17 +331,7 @@ export default function TrendAnalysisView({
                       toNumber(m.trainingCert) + toNumber(m.mealsEntertainment) + toNumber(m.otherExpense);
                     return revenue - cogs - operatingExpenses;
                   case 'EBITDA':
-                    const rev = toNumber(m.revenue);
-                    const cog = toNumber(m.cogsTotal);
-                    // Calculate total operating expenses (excluding interest expense)
-                    const operatingExpensesEbitda = toNumber(m.payroll) + toNumber(m.ownerBasePay) + toNumber(m.benefits) +
-                      toNumber(m.insurance) + toNumber(m.professionalFees) + toNumber(m.subcontractors) +
-                      toNumber(m.rent) + toNumber(m.taxLicense) + toNumber(m.phoneComm) + toNumber(m.infrastructure) +
-                      toNumber(m.autoTravel) + toNumber(m.salesExpense) + toNumber(m.marketing) +
-                      toNumber(m.trainingCert) + toNumber(m.mealsEntertainment) + toNumber(m.otherExpense);
-                    const depreciation = toNumber(m.depreciationAmortization);
-                    const ebit = rev - cog - operatingExpensesEbitda;
-                    return ebit + depreciation;
+                    return calculateEbitda(m);
                   case 'Cash':
                     return toNumber(m.cash);
                   case 'Accounts Receivable':

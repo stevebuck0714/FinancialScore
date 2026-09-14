@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getReportDataCatalog, type ReportFieldCatalogItem } from '@/lib/custom-reports/report-data-catalog';
+import { calculateEbitda, calculateEbitdaMargin } from '@/lib/financial/ebitda';
 import {
   getDatasetColumn,
   getReportDataset,
@@ -83,6 +84,13 @@ function buildValues(row: any) {
   const nonOperatingExpense = toNumber(row.nonOperatingExpense);
   const grossProfit = revenue - cogsTotal;
   const netIncome = revenue - cogsTotal - expense + nonOperatingIncome - nonOperatingExpense;
+  const ebitdaFinancials = {
+    revenue,
+    cogsTotal,
+    expense,
+    interestExpense,
+    depreciationAmortization: toNumber(row.depreciationAmortization),
+  };
 
   return {
     revenue,
@@ -90,9 +98,8 @@ function buildValues(row: any) {
     grossProfit,
     grossMarginPct: revenue ? grossProfit / revenue : 0,
     expense,
-    // Simplified report-builder EBITDA proxy until a dedicated saved-report metric layer is added.
-    ebitda: revenue - cogsTotal - expense,
-    ebitdaMarginPct: revenue ? (revenue - cogsTotal - expense) / revenue : 0,
+    ebitda: calculateEbitda(ebitdaFinancials),
+    ebitdaMarginPct: calculateEbitdaMargin(ebitdaFinancials),
     interestExpense,
     interestExpenseToRevenuePct: revenue ? interestExpense / revenue : 0,
     netIncome,

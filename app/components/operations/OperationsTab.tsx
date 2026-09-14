@@ -33,6 +33,7 @@ import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
 import ProductRevenueRollupReport from './ProductRevenueRollupReport';
 import ProductGoalUpdateReport from './ProductGoalUpdateReport';
 import ProductReportsChart from './ProductReportsChart';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 import ProductYtdGapReport from './ProductYtdGapReport';
 import DutiesTariffsReport from './DutiesTariffsReport';
 import SgpFreightReport from './SgpFreightReport';
@@ -17486,7 +17487,13 @@ Strategies to Improve the CCC
       const cogs = getFirstNumber(row, ['cogsTotal', 'cogs', 'costOfGoodsSold']) || 0;
       const grossProfit = getFirstNumber(row, ['grossProfit', 'grossMarginDollars']) ?? (revenue - cogs);
       const operatingExpenses = getFirstNumber(row, ['operatingExpenses', 'sga', 'sgAndA', 'expense']) || 0;
-      const ebitda = getFirstNumber(row, ['ebitda', 'EBITDA']) ?? (grossProfit - operatingExpenses);
+      const ebitda = calculateEbitda({
+        revenue,
+        cogsTotal: cogs,
+        expense: operatingExpenses,
+        interestExpense: getFirstNumber(row, ['interestExpense', 'interest']) || 0,
+        depreciationAmortization: getFirstNumber(row, ['depreciationAmortization', 'depreciation', 'amortization']) || 0,
+      });
       const inventory = getFirstNumber(row, ['inventory', 'averageInventory', 'inventoryOnHandDollars']) || 0;
       const priorInventory = prior ? (getFirstNumber(prior, ['inventory', 'averageInventory', 'inventoryOnHandDollars']) || inventory) : inventory;
       const avgInventory = (inventory + priorInventory) / 2;
@@ -17499,13 +17506,16 @@ Strategies to Improve the CCC
       const employees = importedEmployees ?? (Number.isFinite(manualEmployees) && manualEmployees > 0 ? manualEmployees : null);
       const priorRevenue = prior ? (getFirstNumber(prior, ['revenue', 'sales', 'netSales']) || 0) : null;
       const priorCogs = prior ? (getFirstNumber(prior, ['cogsTotal', 'cogs', 'costOfGoodsSold']) || 0) : null;
-      const priorGrossProfit = prior
-        ? (getFirstNumber(prior, ['grossProfit', 'grossMarginDollars']) ?? ((priorRevenue || 0) - (priorCogs || 0)))
-        : null;
       const priorOperatingExpenses = prior ? (getFirstNumber(prior, ['operatingExpenses', 'sga', 'sgAndA', 'expense']) || 0) : null;
       const priorEbitda =
-        prior && priorGrossProfit != null && priorOperatingExpenses != null
-          ? (getFirstNumber(prior, ['ebitda', 'EBITDA']) ?? (priorGrossProfit - priorOperatingExpenses))
+        prior && priorRevenue != null && priorCogs != null && priorOperatingExpenses != null
+          ? calculateEbitda({
+            revenue: priorRevenue,
+            cogsTotal: priorCogs,
+            expense: priorOperatingExpenses,
+            interestExpense: getFirstNumber(prior, ['interestExpense', 'interest']) || 0,
+            depreciationAmortization: getFirstNumber(prior, ['depreciationAmortization', 'depreciation', 'amortization']) || 0,
+          })
           : null;
       const deltaRevenue = priorRevenue == null ? null : revenue - priorRevenue;
       const deltaEbitda = priorEbitda == null ? null : ebitda - priorEbitda;

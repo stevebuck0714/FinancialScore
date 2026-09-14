@@ -69,6 +69,7 @@ import { buildAprSgpItemCustomerPartKeys, buildAprSgpMatchKeys, readAprSgpGmpaWo
 import { hashCacheParts, readDerivedApiCache, readLatestDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
+import { isActiveCustomerRow, loadActiveCustomerKeys } from '@/lib/accounting/active-customer-filter';
 import { isEstBusinessDay } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
@@ -3845,6 +3846,9 @@ export async function GET(request: NextRequest) {
 
     switch (type) {
       case 'customers': {
+        const activeCustomerKeys = await loadActiveCustomerKeys(companyId);
+        const filterInactiveCustomers = <T extends { customerId?: string | null; customerName?: string | null }>(rows: T[]) =>
+          rows.filter((row) => isActiveCustomerRow(row, activeCustomerKeys));
         const normalizedAccountingSystemKey = normalizedAccountingSystem.replace(/[\s-]+/g, '_');
         const isInforCompany =
           normalizedAccountingSystemKey === 'INFOR_M3' ||
@@ -3904,6 +3908,7 @@ export async function GET(request: NextRequest) {
               ...salesData,
             ].sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
           }
+          salesData = filterInactiveCustomers(salesData);
           let basis: 'raw_slartrans_invoice' | 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
           let bookingsSourceData: any[] = salesData;
           let orderLineSalesData: any[] = [];
@@ -4034,7 +4039,7 @@ export async function GET(request: NextRequest) {
               valueFormat: metric === 'revenue' ? 'currency' : 'number',
             };
           };
-          const monthlyCustomerSnapshotRows = await prisma.customerSalesSnapshot.findMany({
+          const monthlyCustomerSnapshotRows = filterInactiveCustomers(await prisma.customerSalesSnapshot.findMany({
             where: {
               companyId,
               frequency: 'monthly',
@@ -4042,7 +4047,7 @@ export async function GET(request: NextRequest) {
             },
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
-          });
+          }));
           const customerHistorySourceRows = normalizeCustomerHistoryRows(
             rawInvoiceSalesData.length > 0
               ? rawInvoiceSalesData
@@ -4065,7 +4070,7 @@ export async function GET(request: NextRequest) {
           };
           const customerHistoryStart = new Date(Date.UTC(endDate.getUTCFullYear() - 3, 0, 1));
           const customerHistoricalStart = new Date(Math.min(startDate.getTime(), customerHistoryStart.getTime()));
-          const historicalCustomerSnapshotRows = await prisma.customerSalesSnapshot.findMany({
+          const historicalCustomerSnapshotRows = filterInactiveCustomers(await prisma.customerSalesSnapshot.findMany({
             where: {
               companyId,
               frequency: 'monthly',
@@ -4073,7 +4078,7 @@ export async function GET(request: NextRequest) {
             },
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
-          });
+          }));
           const historicalRawInvoiceRows = isInforCompany
             ? await deriveCustomerSalesFromRawInvoices(companyId, customerHistoricalStart, endDate)
             : [];
@@ -4193,14 +4198,14 @@ export async function GET(request: NextRequest) {
             59,
             999
           ));
-          const customerSnapshotRowsForConcentration = await prisma.customerSalesSnapshot.findMany({
+          const customerSnapshotRowsForConcentration = filterInactiveCustomers(await prisma.customerSalesSnapshot.findMany({
             where: {
               companyId,
               snapshotDate: { gte: concentrationStart, lte: concentrationEnd },
             },
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
-          });
+          }));
           const orderLineSalesRowsForConcentration = isInforCompany
             ? await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, concentrationStart, concentrationEnd)
             : [];
@@ -4277,14 +4282,14 @@ export async function GET(request: NextRequest) {
               return monthKey && !rawInvoiceMonthsForConcentration.has(monthKey) && !orderLineMonthsForConcentration.has(monthKey);
             }),
           ];
-          const customerSnapshotRowsForNewCustomerHistory = await prisma.customerSalesSnapshot.findMany({
+          const customerSnapshotRowsForNewCustomerHistory = filterInactiveCustomers(await prisma.customerSalesSnapshot.findMany({
             where: {
               companyId,
               snapshotDate: { gte: newCustomerLookbackStart, lte: concentrationEnd },
             },
             orderBy: { snapshotDate: 'asc' },
             take: 100000,
-          });
+          }));
           const orderLineSalesRowsForNewCustomerHistory = isInforCompany
             ? await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, newCustomerLookbackStart, concentrationEnd)
             : [];
@@ -11582,7 +11587,8 @@ export async function GET(request: NextRequest) {
           return NextResponse.json(buildCustomersSitesMock(companyId));
         }
         const requestedFrequency = frequency === 'weekly' || frequency === 'monthly' ? frequency : 'daily';
-        const salesRows = await prisma.customerSalesSnapshot.findMany({
+        const activeCustomerKeys = await loadActiveCustomerKeys(companyId);
+        const salesRows = (await prisma.customerSalesSnapshot.findMany({
           where: {
             companyId,
             frequency: requestedFrequency,
@@ -11597,7 +11603,7 @@ export async function GET(request: NextRequest) {
           },
           orderBy: { snapshotDate: 'asc' },
           take: 50000,
-        });
+        })).filter((row) => isActiveCustomerRow(row, activeCustomerKeys));
         if (salesRows.length === 0) {
           return NextResponse.json(emptyCustomersSitesPayload(endDate));
         }

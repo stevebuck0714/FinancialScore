@@ -1,5 +1,6 @@
 import type { MonthlyDataRow } from '../types';
 import { filterClosedReportingMonths } from '@/lib/date-utils';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 
 export type RatioTrendPoint = {
   month: string;
@@ -159,6 +160,7 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
     let ltmNetProfit: number | null = null;
     let ltmInterestExpense: number | null = null;
     let ltmDepreciation: number | null = null;
+    let ltmEbitda: number | null = null;
     let avgInventory_ltm: number | null = null;
     let avgAr_ltm: number | null = null;
     let avgAp_ltm: number | null = null;
@@ -169,6 +171,7 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
       let cogsSum = 0;
       let interestSum = 0;
       let depSum = 0;
+      let ebitdaSum = 0;
       let opExpSum = 0;
       let invSum = 0;
       let arSum = 0;
@@ -181,6 +184,7 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
         cogsSum += toNumber(r.cogsTotal);
         interestSum += toNumber(r.interestExpense);
         depSum += toNumber(r.depreciationAmortization);
+        ebitdaSum += calculateEbitda(r);
         opExpSum +=
           toNumber(r.payroll) + toNumber(r.ownerBasePay) + toNumber(r.benefits) +
           toNumber(r.insurance) + toNumber(r.professionalFees) + toNumber(r.subcontractors) +
@@ -215,6 +219,7 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
       ltmCogs = cogsSum;
       ltmInterestExpense = interestSum;
       ltmDepreciation = depSum;
+      ltmEbitda = ebitdaSum;
       ltmNetProfit = revSum - cogsSum - opExpSum - interestSum;
       avgInventory_ltm = invSum / LTM_MONTHS;
       avgAr_ltm = arSum / LTM_MONTHS;
@@ -269,8 +274,8 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
     const roa =
       ltmNetProfit !== null && avgAssets_ltm && avgAssets_ltm > 0 ? ltmNetProfit / avgAssets_ltm : null;
     const ebitdaMargin =
-      ltmRevenue !== null && ltmRevenue > 0 && ltmEbit !== null && ltmDepreciation !== null
-        ? (ltmEbit + ltmDepreciation) / ltmRevenue
+      ltmRevenue !== null && ltmRevenue > 0 && ltmEbitda !== null
+        ? ltmEbitda / ltmRevenue
         : null;
     const ebitMargin =
       ltmRevenue !== null && ltmRevenue > 0 && ltmEbit !== null ? ltmEbit / ltmRevenue : null;

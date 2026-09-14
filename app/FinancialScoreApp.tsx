@@ -24,6 +24,7 @@ import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath'
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { getOverviewPrintOptions } from '@/lib/operations/overview-print-options';
 import { waitForNextAuthSession } from '@/lib/auth/wait-for-nextauth-session';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 
 const PERFORMANCE_ANALYSIS_TABS = [
   { id: 'pa-overview', label: 'Overview' },
@@ -10262,7 +10263,13 @@ function FinancialScorePage() {
     const ebit = revenue - cogsTotal - expense;
     // EBITDA = EBIT + Interest Expense + Depreciation + Amortization
     // (Add back interest expense that was included in operating expenses)
-    const ebitda = ebit + interestExpense + depreciationAmortization;
+    const ebitda = calculateEbitda({
+      revenue,
+      cogsTotal,
+      expense,
+      interestExpense,
+      depreciationAmortization,
+    });
 
     
     return {
@@ -10526,8 +10533,8 @@ function FinancialScorePage() {
       
       // EBIT and EBITDA Margins: Income statement / Income statement = use current month values
       // EBIT = Earnings Before Interest and Taxes, so add back interest expense
-      const currentMonthEBIT = (cur.revenue || 0) - (cur.cogsTotal || 0) - (cur.expense || 0) + (cur.interestExpense || 0);
-      const currentMonthEBITDA = currentMonthEBIT + (cur.depreciationAmortization || 0);
+      const currentMonthEBITDA = calculateEbitda(cur);
+      const currentMonthEBIT = currentMonthEBITDA - (cur.depreciationAmortization || 0);
       const ebitMargin = (cur.revenue || 0) > 0 ? currentMonthEBIT / cur.revenue : 0;
       const ebitdaMargin = (cur.revenue || 0) > 0 ? currentMonthEBITDA / cur.revenue : 0;
       
@@ -11485,7 +11492,13 @@ function FinancialScorePage() {
     const ttmDepreciation = last12.reduce((sum, m) => sum + asNumber((m as any).depreciationAmortization), 0);
     const ttmInterest = last12.reduce((sum, m) => sum + asNumber((m as any).interestExpense), 0);
     const ttmNetIncome = ttmRevenue - ttmCogs - ttmExpense;
-    const ttmEbitda = ttmNetIncome + ttmDepreciation + ttmInterest;
+    const ttmEbitda = calculateEbitda({
+      revenue: ttmRevenue,
+      cogsTotal: ttmCogs,
+      expense: ttmExpense,
+      interestExpense: ttmInterest,
+      depreciationAmortization: ttmDepreciation,
+    });
     const ttmSdeFromSaved = asNumber((sdeAnalysisTotalsState as any).qualityOfEarnings);
     const ttmSde = ttmSdeFromSaved !== 0 ? ttmSdeFromSaved : ttmEbitda;
 
@@ -12283,8 +12296,14 @@ function FinancialScorePage() {
     ).sort((a, b) => a.localeCompare(b));
 
     const totalRevenueByQuarter = quarters.map((q) => q.revenueTotal);
-    const ebitdaByQuarter = quarters.map(
-      (q) => q.revenueTotal - q.cogsTotal - q.expenseTotal + q.interestTotal + q.daTotal
+    const ebitdaByQuarter = quarters.map((q) =>
+      calculateEbitda({
+        revenue: q.revenueTotal,
+        cogsTotal: q.cogsTotal,
+        expense: q.expenseTotal,
+        interestExpense: q.interestTotal,
+        depreciationAmortization: q.daTotal,
+      })
     );
     const grossMarginByQuarter = quarters.map((q) =>
       q.revenueTotal !== 0 ? ((q.revenueTotal - q.cogsTotal) / q.revenueTotal) * 100 : 0
@@ -22202,7 +22221,13 @@ function FinancialScorePage() {
                 const expense = Number((m as any)?.expense) || 0;
                 const interest = Number((m as any)?.interestExpense) || 0;
                 const da = Number((m as any)?.depreciationAmortization) || 0;
-                const ebitda = revenue - cogs - expense + interest + da;
+                const ebitda = calculateEbitda({
+                  revenue,
+                  cogsTotal: cogs,
+                  expense,
+                  interestExpense: interest,
+                  depreciationAmortization: da,
+                });
                 const prev = byYear.get(year) || { revenue: 0, ebitda: 0 };
                 byYear.set(year, {
                   revenue: prev.revenue + revenue,
@@ -22691,7 +22716,13 @@ function FinancialScorePage() {
                 const interest = Number((m as any)?.interestExpense) || 0;
                 const depreciation = Number((m as any)?.depreciationAmortization) || 0;
                 const netIncome = revenue - cogs - expense;
-                const ebitda = netIncome + interest + depreciation;
+                const ebitda = calculateEbitda({
+                  revenue,
+                  cogsTotal: cogs,
+                  expense,
+                  interestExpense: interest,
+                  depreciationAmortization: depreciation,
+                });
                 const prevFixedAssets = idx > 0 ? Number((recent[idx - 1] as any)?.fixedAssets) || 0 : Number((m as any)?.fixedAssets) || 0;
                 const fixedAssets = Number((m as any)?.fixedAssets) || 0;
                 const prevAr = idx > 0 ? Number((recent[idx - 1] as any)?.ar) || 0 : Number((m as any)?.ar) || 0;

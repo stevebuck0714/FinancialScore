@@ -7,6 +7,7 @@ import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { getSectorSchema, getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import { isAtlanticPrecisionCompany } from '@/lib/operations/company-specific-reports';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 import {
   CONTRACT_PROGRAM_REVENUE_FIELD,
   lastProductAdjMonthKey,
@@ -1399,7 +1400,13 @@ export default function FinancialForecastTab({
       const totalOpex = Object.values(opexDetails).reduce((sum, v) => sum + v, 0);
       const grossProfit = totalRevenue - totalCogs;
       const operatingIncome = grossProfit - totalOpex;
-      const ebitda = operatingIncome + (Number(opexDetails.depreciationAmortization) || 0);
+      const ebitda = calculateEbitda({
+        revenue: totalRevenue,
+        cogsTotal: totalCogs,
+        expense: totalOpex,
+        interestExpense: Number(opexDetails.interestExpense) || 0,
+        depreciationAmortization: Number(opexDetails.depreciationAmortization) || 0,
+      });
       const taxableIncome = Math.max(operatingIncome, 0);
       const incomeTaxPct = Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx]) || 0;
       const enteredTaxAmount = Number(opexAmountByRow[INCOME_TAX_PCT_KEY]?.[idx]);
@@ -1529,7 +1536,13 @@ export default function FinancialForecastTab({
         const totalOpex = Object.values(actual.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
         const grossProfit = totalRevenue - totalCogs;
         const operatingIncome = grossProfit - totalOpex;
-        const ebitda = operatingIncome + (Number(actual.opexDetails?.depreciationAmortization) || 0);
+        const ebitda = calculateEbitda({
+          revenue: totalRevenue,
+          cogsTotal: totalCogs,
+          expense: totalOpex,
+          interestExpense: Number(actual.opexDetails?.interestExpense) || 0,
+          depreciationAmortization: Number(actual.opexDetails?.depreciationAmortization) || 0,
+        });
         const totalIncomeTaxes = Number(actual.incomeTaxes) || 0;
         const netIncome = operatingIncome - totalIncomeTaxes;
         return {

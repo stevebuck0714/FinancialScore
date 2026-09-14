@@ -13,6 +13,7 @@
  */
 
 import type { MonthlyDataRow } from '@/app/types';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 
 /**
  * Financial ratios and metrics available for covenant calculations
@@ -89,24 +90,10 @@ export interface CovenantDataAccess {
 }
 
 /**
- * Calculate EBITDA from monthly financial data
- * EBITDA = Revenue - COGS - Operating Expenses + Interest Expense + Depreciation & Amortization
- */
-function calculateEBITDA(data: MonthlyDataRow): number {
-  const revenue = data.revenue || 0;
-  const cogs = data.cogsTotal || 0;
-  const operatingExpenses = data.expense || 0;
-  const interestExpense = data.interestExpense || 0;
-  const depreciation = data.depreciationAmortization || 0;
-
-  return revenue - cogs - operatingExpenses + interestExpense + depreciation;
-}
-
-/**
  * Calculate financial ratios from monthly data
  */
 function calculateRatios(data: MonthlyDataRow): CovenantFinancialRatios {
-  const ebitda = calculateEBITDA(data);
+  const ebitda = calculateEbitda(data);
   const totalDebt = (data.ltd || 0) + (data.loc || 0); // Funded debt: long-term debt + current LOC
   const cash = data.cash || 0;
   const netDebt = totalDebt - cash;

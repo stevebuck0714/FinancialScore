@@ -7,6 +7,7 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getBenchmarkValue } from '@/app/utils/data-processing';
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 import { retrieveDocumentChunks } from '@/lib/company-documents/retrieve-chunks';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 import { createModelText } from '@/lib/openai-helpers';
 import { searchExternalWeb } from '@/lib/ask-corelytics/externalSearch';
 import { buildExternalQueryPlan } from '@/lib/ask-corelytics/externalQueryBuilder';
@@ -32,14 +33,8 @@ function buildRatioSnapshot(month: any, benchmarks: any[]): RatioSnapshot[] {
   const cogs = month.cogsTotal || 0;
   const grossProfit = revenue - cogs;
 
-  const operatingExpenses = (month.payroll || 0) + (month.ownerBasePay || 0) + (month.benefits || 0) +
-    (month.insurance || 0) + (month.professionalFees || 0) + (month.subcontractors || 0) +
-    (month.rent || 0) + (month.taxLicense || 0) + (month.phoneComm || 0) + (month.infrastructure || 0) +
-    (month.autoTravel || 0) + (month.salesExpense || 0) + (month.marketing || 0) +
-    (month.trainingCert || 0) + (month.mealsEntertainment || 0) + (month.otherExpense || 0);
-
-  const ebit = grossProfit - operatingExpenses;
-  const ebitda = ebit + (month.depreciationAmortization || 0);
+  const ebitda = calculateEbitda(month);
+  const ebit = ebitda - (month.depreciationAmortization || 0);
   const netProfit = ebit - (month.interestExpense || 0);
 
   const cash = month.cash || 0;

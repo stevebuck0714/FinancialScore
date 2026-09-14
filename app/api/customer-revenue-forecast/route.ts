@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
+import { filterActiveCustomerRows } from '@/lib/accounting/active-customer-filter';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,13 +99,14 @@ export async function GET(request: NextRequest) {
         take: 100000,
       }),
     ]);
+    const activeActuals = await filterActiveCustomerRows(companyId, actuals);
     const revenueInputs = scopedPayload(settings?.revenueGrowthByRow, basisMode);
     const forecast = asObject(revenueInputs.__customerRevenueForecast);
 
     return NextResponse.json({
       forecast,
       updatedAt: settings?.updatedAt || null,
-      actuals: actuals.map((row) => ({
+      actuals: activeActuals.map((row) => ({
         monthKey: row.snapshotDate.toISOString().slice(0, 7),
         customerId: row.customerId || '',
         customerName: row.customerName,

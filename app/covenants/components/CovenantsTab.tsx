@@ -7,6 +7,7 @@ import type { MonthlyDataRow, User } from '../../types';
 import LoansManagement from './LoansManagement';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 
 interface Loan {
   id: string;
@@ -914,8 +915,7 @@ export default function CovenantsTab({
     const revenue = m.revenue || 0;
     const cogs = m.cogsTotal || m.totalCogs || 0;
     const expense = m.expense || 0;
-    const ebit = m.ebit || (revenue - cogs - expense);
-    const ebitda = m.ebitda || (ebit + (m.depreciationAmortization || 0) + (m.interestExpense || 0));
+    const ebitda = calculateEbitda({ ...m, revenue, cogsTotal: cogs, expense });
     const netProfit = m.netProfit || m.netIncome || (revenue - cogs - expense);
 
     // Balance sheet items - use SAME extraction as RatiosTab

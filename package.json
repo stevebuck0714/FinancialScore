@@ -24,6 +24,7 @@
     "db:clear-users": "tsx scripts/clear-users.ts",
     "db:clear-all": "tsx scripts/clear-all-users.ts",
     "db:update-admin": "tsx scripts/update-admin-email.ts",
+    "audit:ebitda-mappings": "tsx scripts/audit-ebitda-account-mappings.ts",
     "import:benchmarks": "tsx scripts/import-benchmarks.ts",
     "cleanup:devices": "tsx scripts/cleanup-expired-devices.ts",
     "test:infor-security": "tsx scripts/test-infor-security.ts",

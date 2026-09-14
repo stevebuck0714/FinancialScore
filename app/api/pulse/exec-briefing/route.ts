@@ -22,6 +22,7 @@ import {
   DEFAULT_BASE_CURRENCY,
   resolveDisplayCurrency,
 } from '@/lib/constants/currencies';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 import { applyReportingCurrencyIfNeeded } from '@/lib/fx/reporting';
 import { getCompanyCurrencySettings } from '@/lib/currency/company-currency';
 
@@ -355,7 +356,7 @@ function rowsInUtcDateRange(rows: any[], start: Date, end: Date): any[] {
 }
 
 function ebitda(row: any): number {
-  return asNumber(row?.revenue) - asNumber(row?.cogsTotal) - asNumber(row?.expense) + asNumber(row?.depreciationAmortization);
+  return calculateEbitda(row);
 }
 
 function isZeroIncomeActivityRow(row: any): boolean {

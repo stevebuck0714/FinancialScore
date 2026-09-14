@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/account-mapping-seed';
+import { extractQuickBooksDesktopCustomerMaster } from '@/lib/quickbooks-desktop/customer-master-seed';
 import { loadQuickBooksDesktopBackfillPayloads } from '@/lib/quickbooks-desktop/backfill-payloads';
 import { getQuickBooksDesktopVariant, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
 
@@ -119,6 +120,10 @@ export async function POST(request: NextRequest) {
       );
     }
     const payloadToStore = bodyPayload || storedPayload;
+    const customerMasterSnapshot = extractQuickBooksDesktopCustomerMaster(payload);
+    const activeCustomerIds = customerMasterSnapshot
+      .filter((customer) => customer.isActive)
+      .map((customer) => customer.customerId);
 
     let seedSummary = {
       extracted: 0,
@@ -208,6 +213,11 @@ export async function POST(request: NextRequest) {
           },
           quickbooksDesktopAccountSeedSnapshot: seedSummary.accountSnapshot,
           quickbooksDesktopActiveAccountIds: seedSummary.activeAccountIds,
+          ...(customerMasterSnapshot.length > 0 ? {
+            quickbooksDesktopCustomerMasterLastSeededAt: new Date().toISOString(),
+            quickbooksDesktopCustomerMasterSnapshot: customerMasterSnapshot,
+            quickbooksDesktopActiveCustomerIds: activeCustomerIds,
+          } : {}),
         } as any,
         errorMessage: null,
       },
@@ -233,6 +243,11 @@ export async function POST(request: NextRequest) {
           },
           quickbooksDesktopAccountSeedSnapshot: seedSummary.accountSnapshot,
           quickbooksDesktopActiveAccountIds: seedSummary.activeAccountIds,
+          ...(customerMasterSnapshot.length > 0 ? {
+            quickbooksDesktopCustomerMasterLastSeededAt: new Date().toISOString(),
+            quickbooksDesktopCustomerMasterSnapshot: customerMasterSnapshot,
+            quickbooksDesktopActiveCustomerIds: activeCustomerIds,
+          } : {}),
         } as any,
       },
     });

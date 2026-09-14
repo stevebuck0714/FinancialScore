@@ -21,6 +21,7 @@ import { formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/uti
 import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
 import { resolveDisplayCurrency, localeForCurrency } from '@/lib/constants/currencies';
 import { isEstBusinessDay } from '@/lib/time/eastern';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 
 interface OpsDashboardProps {
   selectedCompanyId: string;
@@ -631,11 +632,10 @@ export default function OpsDashboard({
       if (!acc[period]) {
         acc[period] = { period, ebitda: 0 };
       }
-      const revenue = Number(record.revenue || 0);
-      const cogsTotal = Number(record.cogsTotal || record.cogs || 0);
-      const operatingExpense = Number(record.expense || 0);
-      const depreciationAmortization = Number(record.depreciationAmortization || 0);
-      acc[period].ebitda += revenue - cogsTotal - operatingExpense + depreciationAmortization;
+      acc[period].ebitda += calculateEbitda({
+        ...record,
+        cogsTotal: record.cogsTotal ?? record.cogs,
+      });
       return acc;
     }, {});
     return Object.values(periodTrend);

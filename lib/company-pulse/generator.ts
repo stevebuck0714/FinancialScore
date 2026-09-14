@@ -13,6 +13,7 @@ import {
 } from '@/lib/pulse-alerts';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { formatMoney as formatMoneyShared } from '@/lib/format/currency';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 import {
   buildSectorExceptionAlerts,
   getSectorMetricCoverage,
@@ -193,7 +194,7 @@ function summarizeFinancialRows(rows: DailyFinancialRow[]): {
       acc.revenue += revenue;
       acc.grossProfit += revenue - cogs;
       acc.expense += expense;
-      acc.ebitda += revenue - cogs - expense + asNumber(row.depreciationAmortization);
+      acc.ebitda += calculateEbitda(row);
       return acc;
     },
     { revenue: 0, grossProfit: 0, expense: 0, ebitda: 0 }

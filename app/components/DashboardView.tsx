@@ -8,6 +8,7 @@ import { getBenchmarkValue } from '../utils/data-processing';
 import { buildRatioTrendData } from '../utils/ratio-trend-data';
 import { formatMoneyCompact } from '@/lib/format/currency';
 import { DEFAULT_BASE_CURRENCY } from '@/lib/constants/currencies';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 import PageCurrencyBadge from './PageCurrencyBadge';
 
 // Dynamic imports for charts
@@ -1260,10 +1261,7 @@ export default function DashboardView({
                 }
                 if (widget === 'EBITDA') {
                   return <LineChart key={widget} title="EBITDA" data={monthly.map(m => {
-                    const grossProfit = (m.revenue || 0) - (m.cogsTotal || 0);
-                    const ebit = grossProfit - (m.expense || 0);
-                    const depreciation = m.depreciationAmortization || 0;
-                    return { month: m.month, value: ebit + depreciation };
+                    return { month: m.month, value: calculateEbitda(m) };
                   })} color="#f59e0b" compact formatter={compactMoney} />;
                 }
                 if (widget === 'Net Income') {

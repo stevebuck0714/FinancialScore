@@ -1,4 +1,5 @@
 import { getSdeSectorBenchmarks } from './sde-sector-benchmarks';
+import { calculateEbitda } from '@/lib/financial/ebitda';
 
 export type SdeRecommendationPriority = 'High' | 'Medium' | 'Low';
 export type SdeRecommendationModule = 'Revenue Quality' | 'Working Capital' | 'Cash Flow Quality';
@@ -269,8 +270,13 @@ export function computeSdeRecommendationsFromMonthly(
   ];
 
   const cfSeries = recent24.map((row, idx) => {
-    // Align EBITDA baseline to SDE panel math: Revenue - COGS - Expense + Interest + D&A.
-    const ebitda = (row.revenue - row.cogs - row.expense) + row.interest + row.depreciation;
+    const ebitda = calculateEbitda({
+      revenue: row.revenue,
+      cogsTotal: row.cogs,
+      expense: row.expense,
+      interestExpense: row.interest,
+      depreciationAmortization: row.depreciation,
+    });
     // Align OCF with financial reports: net income + depreciation + change in working capital.
     const netIncomeForCashFlow = row.revenue - row.cogs - row.expense;
     const priorFixedAssets = idx > 0 ? recent24[idx - 1].fixedAssets : row.fixedAssets;
