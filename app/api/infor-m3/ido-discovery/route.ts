@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { normalizeInforSystem } from '@/lib/infor-m3/system';
+import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -16,7 +18,14 @@ export async function GET(request: NextRequest) {
   try {
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
     const ido = String(request.nextUrl.searchParams.get('ido') || '').trim();
-    const { credentials } = await getInforM3CredentialsWithOptionalEnvFallback(companyId, 'INFOR_CSI');
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { accountingSystem: true },
+    });
+    const { credentials } = await getInforM3CredentialsWithOptionalEnvFallback(
+      companyId,
+      normalizeInforSystem(company?.accountingSystem)
+    );
     if (!credentials) return NextResponse.json({ error: 'Infor CSI credentials are unavailable.' }, { status: 409 });
 
     const endpointPath = ido
