@@ -275,6 +275,7 @@ export async function proxy(request: NextRequest) {
   const hasValidLastActivity = Number.isFinite(lastActivityMs)
   const isIdleExpired =
     !DISABLE_IDLE_TIMEOUT &&
+    !isPublicRoute &&
     Boolean(token) &&
     hasValidLastActivity &&
     Date.now() - lastActivityMs > IDLE_TIMEOUT_MS
