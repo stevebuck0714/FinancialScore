@@ -1366,6 +1366,15 @@ function applyCsiSourceWindowAndSort(
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
+  if (moduleType === 'sales' && ido === 'SLINVITEMS') {
+    const filter = buildSlInvHdrsWindowFilter(window);
+    if (!filter) return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
+    if (!params.get('filter')) params.set('filter', filter);
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
+    if (!params.get('recordCap')) params.set('recordCap', '1000');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
+  }
 
   if (moduleType === 'gl' && ido === 'SLLEDGERS') {
     const filter = buildSlLedgersPeriodFilter(window, row.site);
