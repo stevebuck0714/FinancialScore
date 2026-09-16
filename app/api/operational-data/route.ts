@@ -3606,7 +3606,11 @@ export async function GET(request: NextRequest) {
               // Bust stale AP payloads. Companies explicitly configured with
               // a balance-sheet anchor must always use books totals, even if
               // their accounting-system label is not normalized as INFOR_CSI.
-              cacheType === 'ap-aging' || cacheType === 'ap' ? 'ap-books-anchor-v2' : null,
+              // v3: QBD/QBO KPI cards follow APAgingSnapshot (same as the trend
+              // chart) instead of re-aged APOpenBillSnapshot totals.
+              cacheType === 'ap-aging' || cacheType === 'ap'
+                ? 'ap-books-anchor-v3-qbd-authoritative-kpis'
+                : null,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
@@ -7862,6 +7866,7 @@ export async function GET(request: NextRequest) {
         const apFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isQuickBooksCompany && !isQuickBooksDesktopCompany && frequency !== 'monthly' ? 'monthly' : frequency;
         const apOpenRowCap = Math.max(limit * 50, 5000);
+        const apSnapshotTake = isQuickBooksDesktopCompany ? Math.max(limit, 365) : limit;
         data = await prisma.aPAgingSnapshot.findMany({
           where: {
             companyId,
@@ -7869,8 +7874,15 @@ export async function GET(request: NextRequest) {
             snapshotDate: dateFilter,
           },
           orderBy: { snapshotDate: 'desc' },
-          take: limit,
+          take: apSnapshotTake,
         });
+        // QBD mirrors AR: drop weekend/holiday snapshot rows so KPI "as of"
+        // matches the chart tip after the client filters non-business days.
+        if (isQuickBooksDesktopCompany && Array.isArray(data) && data.length > 0) {
+          data = data
+            .filter((row: any) => isBusinessSnapshotDate(new Date(row.snapshotDate)))
+            .slice(0, limit) as any;
+        }
 
         // Fallback: derive AP trend from real daily financial snapshots when AP aging snapshots are unavailable.
         // This keeps AP page reports populated with real data in tenants where AP IDOs are not exposed.
@@ -8826,33 +8838,39 @@ export async function GET(request: NextRequest) {
 
         // When the GL anchor is applied (Infor companies with an AP anchor
         // configured), the chart and KPIs share that single source of truth.
-        // Only fall back to computedApFromOpen (APOpenBillSnapshot SQL) when
-        // no GL anchor is in play — that's the case for QuickBooks tenants
-        // and any company without an AP balance-sheet anchor configured.
-        const effectiveApMetrics = apGlAnchorApplied
-          ? apMetrics
-          : computedApFromOpen
-          ? {
-              totalAP: Number(computedApFromOpen.totalAP || 0),
-              currentPct:
-                computedApFromOpen.totalAP > 0
-                  ? (Number(computedApFromOpen.current || 0) / Number(computedApFromOpen.totalAP || 0)) * 100
-                  : 0,
-              over30Pct:
-                computedApFromOpen.totalAP > 0
-                  ? ((Number(computedApFromOpen.days31to60 || 0) +
-                      Number(computedApFromOpen.days61to90 || 0) +
-                      Number(computedApFromOpen.days90plus || 0)) /
-                      Number(computedApFromOpen.totalAP || 0)) *
-                    100
-                  : 0,
-              over90Pct:
-                computedApFromOpen.totalAP > 0
-                  ? (Number(computedApFromOpen.days90plus || 0) / Number(computedApFromOpen.totalAP || 0)) * 100
-                  : 0,
-              dpo: Number(apMetrics?.dpo || 0),
-            }
-          : apMetrics;
+        // QuickBooks mirrors AR: APAgingSnapshot (Aging Summary report) is
+        // authoritative for BOTH the trend chart and KPI cards. Open-bill
+        // snapshots stay for vendor/bill detail panels only — using them to
+        // rebuild KPI totals made cards disagree with a correct chart
+        // (seen on 5 Generation Bakers / QBD).
+        // Only fall back to computedApFromOpen when neither source applies.
+        const useQbApAgingSnapshots =
+          isQuickBooksCompany && Array.isArray(data) && data.length > 0;
+        const effectiveApMetrics =
+          apGlAnchorApplied || useQbApAgingSnapshots
+            ? apMetrics
+            : computedApFromOpen
+            ? {
+                totalAP: Number(computedApFromOpen.totalAP || 0),
+                currentPct:
+                  computedApFromOpen.totalAP > 0
+                    ? (Number(computedApFromOpen.current || 0) / Number(computedApFromOpen.totalAP || 0)) * 100
+                    : 0,
+                over30Pct:
+                  computedApFromOpen.totalAP > 0
+                    ? ((Number(computedApFromOpen.days31to60 || 0) +
+                        Number(computedApFromOpen.days61to90 || 0) +
+                        Number(computedApFromOpen.days90plus || 0)) /
+                        Number(computedApFromOpen.totalAP || 0)) *
+                      100
+                    : 0,
+                over90Pct:
+                  computedApFromOpen.totalAP > 0
+                    ? (Number(computedApFromOpen.days90plus || 0) / Number(computedApFromOpen.totalAP || 0)) * 100
+                    : 0,
+                dpo: Number(apMetrics?.dpo || 0),
+              }
+            : apMetrics;
 
         // True when any day in the window carries an aging allocation. Keying
         // this to the newest row alone reported "no detail to age" whenever the
