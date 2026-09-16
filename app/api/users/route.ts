@@ -13,7 +13,10 @@ import { auditUserOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import { createUserSchema, validateInput } from '@/lib/validation-schemas';
 import { grantUserCompanyAccess } from '@/lib/user-company-access';
 import { sendWelcomeUserEmail } from '@/lib/email';
-import { getCompanyInvites } from '@/lib/company-invites';
+import {
+  getCompanyInvites,
+  materializePendingCompanyInvites,
+} from '@/lib/company-invites';
 
 const DEFAULT_ALLOWED_SECTIONS = [
   'ask-corelytics',
@@ -137,6 +140,7 @@ export async function GET(request: NextRequest) {
       createdAt: Date;
       homeCompanyId?: string | null;
       isExternalCompanyUser?: boolean;
+      invitePending?: boolean;
       companyAccess?: Array<{
         companyId: string;
         companyRole: string | null;
@@ -151,6 +155,14 @@ export async function GET(request: NextRequest) {
     }> = [];
 
     if (companyId) {
+      // Backfill stub users + membership for pending invites created before
+      // invitees were materialized into Manage Users.
+      try {
+        await materializePendingCompanyInvites(companyId);
+      } catch (backfillErr) {
+        console.error('[users] Failed to materialize pending invites:', backfillErr);
+      }
+
       const memberships = await prisma.userCompanyAccess.findMany({
         where: {
           companyId,
