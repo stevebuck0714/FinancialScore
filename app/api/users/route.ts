@@ -234,6 +234,17 @@ export async function GET(request: NextRequest) {
         invitePending:
           pendingInviteByUserId.has(String(m.user.id)) ||
           pendingInviteByEmail.has(String(m.user.email || '').toLowerCase()),
+        employerCompanyName:
+          pendingInviteByUserId.get(String(m.user.id))?.employerCompanyName ||
+          pendingInviteByEmail.get(String(m.user.email || '').toLowerCase())
+            ?.employerCompanyName ||
+          companyInvites.find(
+            (invite) =>
+              String(invite?.status || '') === 'accepted' &&
+              String(invite?.acceptedByUserId || '') === String(m.user.id) &&
+              String(invite?.employerCompanyName || '').trim(),
+          )?.employerCompanyName ||
+          undefined,
       }));
 
       if (company?.consultantId) {

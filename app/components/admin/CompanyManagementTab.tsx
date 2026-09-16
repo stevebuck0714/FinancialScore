@@ -48,6 +48,8 @@ interface CompanyManagementTabProps {
   setExistingCompanyUserName: (name: string) => void;
   existingCompanyUserEmail: string;
   setExistingCompanyUserEmail: (email: string) => void;
+  existingCompanyUserCompanyName: string;
+  setExistingCompanyUserCompanyName: (name: string) => void;
   newAssessmentUserName: string;
   setNewAssessmentUserName: (name: string) => void;
   newAssessmentUserTitle: string;
@@ -298,6 +300,8 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           setExistingCompanyUserName={props.setExistingCompanyUserName}
           existingCompanyUserEmail={props.existingCompanyUserEmail}
           setExistingCompanyUserEmail={props.setExistingCompanyUserEmail}
+          existingCompanyUserCompanyName={props.existingCompanyUserCompanyName}
+          setExistingCompanyUserCompanyName={props.setExistingCompanyUserCompanyName}
           newAssessmentUserName={props.newAssessmentUserName}
           setNewAssessmentUserName={props.setNewAssessmentUserName}
           newAssessmentUserTitle={props.newAssessmentUserTitle}
@@ -355,6 +359,8 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           setExistingCompanyUserName={props.setExistingCompanyUserName}
           existingCompanyUserEmail={props.existingCompanyUserEmail}
           setExistingCompanyUserEmail={props.setExistingCompanyUserEmail}
+          existingCompanyUserCompanyName={props.existingCompanyUserCompanyName}
+          setExistingCompanyUserCompanyName={props.setExistingCompanyUserCompanyName}
           newAssessmentUserName={props.newAssessmentUserName}
           setNewAssessmentUserName={props.setNewAssessmentUserName}
           newAssessmentUserTitle={props.newAssessmentUserTitle}

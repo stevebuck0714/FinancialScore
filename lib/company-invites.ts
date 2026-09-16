@@ -16,6 +16,8 @@ export type CompanyUserInvite = {
   createdByEmail: string;
   /** Pre-created User row so Manage Users can assign rights before join. */
   pendingUserId?: string;
+  /** Employer / affiliation entered when inviting an external user. */
+  employerCompanyName?: string;
   acceptedAt?: string;
   acceptedByUserId?: string;
 };

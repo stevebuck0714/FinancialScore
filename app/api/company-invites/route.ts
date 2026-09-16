@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     const companyId = String(body?.companyId || '').trim();
     const name = String(body?.name || '').trim();
     const email = String(body?.email || '').trim().toLowerCase();
+    const employerCompanyName = String(body?.employerCompanyName || '').trim();
     const userType = normalizeUserType(body?.userType);
 
     if (!companyId || !name || !email || !userType) {
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
               isExternalCompanyUser:
                 Boolean(linkedUser.companyId) && String(linkedUser.companyId) !== String(companyId),
               invitePending: false,
+              employerCompanyName: employerCompanyName || undefined,
             }
           : existingUser,
       });
@@ -168,6 +170,7 @@ export async function POST(request: NextRequest) {
       createdByUserId: context.userId,
       createdByEmail: context.email,
       pendingUserId: pendingUser.id,
+      ...(employerCompanyName ? { employerCompanyName } : {}),
     };
 
     const updatedUDA = upsertCompanyInvites(company.userDefinedAllocations, [
@@ -212,11 +215,122 @@ export async function POST(request: NextRequest) {
         companyId,
         isExternalCompanyUser: true,
         invitePending: true,
+        employerCompanyName: employerCompanyName || undefined,
       },
     });
   } catch (error: any) {
     return NextResponse.json(
       { error: error?.message || 'Failed to create invite' },
+      { status: 500 },
+    );
+  }
+}
+
+/** Update employer company name for an external invitee already on the company. */
+export async function PATCH(request: NextRequest) {
+  try {
+    const context = await requireAuth();
+    const body = await request.json();
+    const companyId = String(body?.companyId || '').trim();
+    const userId = String(body?.userId || '').trim();
+    const employerCompanyName = String(body?.employerCompanyName || '').trim();
+
+    if (!companyId || !userId || !employerCompanyName) {
+      return NextResponse.json(
+        { error: 'companyId, userId, and employerCompanyName are required' },
+        { status: 400 },
+      );
+    }
+
+    const hasAccess = await validateCompanyAccess(companyId);
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (context.role === 'USER') {
+      if (!(await isCompanyAdminForCompany(context.userId, companyId))) {
+        return NextResponse.json(
+          { error: 'Forbidden: Only company admins can update invitee company names' },
+          { status: 403 },
+        );
+      }
+    }
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, userDefinedAllocations: true },
+    });
+    if (!company) {
+      return NextResponse.json({ error: 'Company not found' }, { status: 404 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const membership = await prisma.userCompanyAccess.findUnique({
+      where: {
+        userId_companyId: { userId, companyId },
+      },
+      select: { id: true },
+    });
+    if (!membership) {
+      return NextResponse.json(
+        { error: 'User does not have access to this company' },
+        { status: 404 },
+      );
+    }
+
+    const invites = getCompanyInvites(company.userDefinedAllocations);
+    let matched = false;
+    const nextInvites = invites.map((invite) => {
+      const matchesUser =
+        String(invite?.pendingUserId || '') === userId ||
+        String(invite?.acceptedByUserId || '') === userId ||
+        String(invite?.email || '').toLowerCase() ===
+          String(user.email || '').toLowerCase();
+      if (!matchesUser) return invite;
+      matched = true;
+      return { ...invite, employerCompanyName };
+    });
+
+    if (!matched) {
+      // No invite record (e.g. linked existing account) — store a lightweight marker invite.
+      nextInvites.push({
+        id: crypto.randomUUID(),
+        email: String(user.email || '').toLowerCase(),
+        name: '',
+        userType: 'COMPANY',
+        tokenHash: '',
+        status: 'accepted',
+        expiresAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        createdByUserId: context.userId,
+        createdByEmail: context.email,
+        pendingUserId: userId,
+        acceptedByUserId: userId,
+        acceptedAt: new Date().toISOString(),
+        employerCompanyName,
+      });
+    }
+
+    const updatedUDA = upsertCompanyInvites(company.userDefinedAllocations, nextInvites);
+    await prisma.company.update({
+      where: { id: companyId },
+      data: { userDefinedAllocations: updatedUDA as any },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      userId,
+      employerCompanyName,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error?.message || 'Failed to update employer company name' },
       { status: 500 },
     );
   }

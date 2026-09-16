@@ -1585,6 +1585,7 @@ function FinancialScorePage() {
   const [newCompanyUserPassword, setNewCompanyUserPassword] = useState('');
   const [existingCompanyUserName, setExistingCompanyUserName] = useState('');
   const [existingCompanyUserEmail, setExistingCompanyUserEmail] = useState('');
+  const [existingCompanyUserCompanyName, setExistingCompanyUserCompanyName] = useState('');
   // Separate state for Assessment Users (no phone field)
   const [newAssessmentUserName, setNewAssessmentUserName] = useState('');
   const [newAssessmentUserTitle, setNewAssessmentUserTitle] = useState('');
@@ -7444,6 +7445,7 @@ function FinancialScorePage() {
     setSelectedCompanyId('');
     setExistingCompanyUserName('');
     setExistingCompanyUserEmail('');
+    setExistingCompanyUserCompanyName('');
     setExistingAssessmentUserName('');
     setExistingAssessmentUserEmail('');
     setRawRows([]);
@@ -9706,12 +9708,18 @@ function FinancialScorePage() {
       userType === 'company' ? existingCompanyUserName.trim() : existingAssessmentUserName.trim();
     const email =
       userType === 'company' ? existingCompanyUserEmail.trim() : existingAssessmentUserEmail.trim();
+    const employerCompanyName =
+      userType === 'company' ? existingCompanyUserCompanyName.trim() : '';
     if (!name) {
       alert('Please enter the user name.');
       return;
     }
     if (!email) {
       alert('Please enter an email to grant access.');
+      return;
+    }
+    if (userType === 'company' && !employerCompanyName) {
+      alert('Please enter their company name.');
       return;
     }
 
@@ -9725,6 +9733,7 @@ function FinancialScorePage() {
           name,
           email,
           userType: userType.toUpperCase(),
+          ...(employerCompanyName ? { employerCompanyName } : {}),
         }),
       });
       const data = await response.json();
@@ -9747,6 +9756,8 @@ function FinancialScorePage() {
             (Boolean(user.companyId) && String(user.companyId) !== String(companyId)) ||
             Boolean(data?.pendingInvite),
           invitePending: Boolean(data?.pendingInvite || user.invitePending),
+          employerCompanyName:
+            user.employerCompanyName || employerCompanyName || undefined,
         };
         setUsers((prev) => {
           const existingIndex = prev.findIndex(
@@ -9776,6 +9787,7 @@ function FinancialScorePage() {
       if (userType === 'company') {
         setExistingCompanyUserName('');
         setExistingCompanyUserEmail('');
+        setExistingCompanyUserCompanyName('');
       } else {
         setExistingAssessmentUserName('');
         setExistingAssessmentUserEmail('');
@@ -15326,6 +15338,8 @@ function FinancialScorePage() {
               setExistingCompanyUserName={setExistingCompanyUserName}
               existingCompanyUserEmail={existingCompanyUserEmail}
               setExistingCompanyUserEmail={setExistingCompanyUserEmail}
+              existingCompanyUserCompanyName={existingCompanyUserCompanyName}
+              setExistingCompanyUserCompanyName={setExistingCompanyUserCompanyName}
               newAssessmentUserName={newAssessmentUserName}
               setNewAssessmentUserName={setNewAssessmentUserName}
               newAssessmentUserTitle={newAssessmentUserTitle}

@@ -19,6 +19,7 @@ interface User {
   homeCompanyId?: string | null;
   isExternalCompanyUser?: boolean;
   invitePending?: boolean;
+  employerCompanyName?: string | null;
   consultantId?: string | null;
   role?: string;
   userType?: string;
@@ -136,6 +137,8 @@ interface CompanyDetailsTabProps {
   setExistingCompanyUserName: (name: string) => void;
   existingCompanyUserEmail: string;
   setExistingCompanyUserEmail: (email: string) => void;
+  existingCompanyUserCompanyName: string;
+  setExistingCompanyUserCompanyName: (name: string) => void;
   newAssessmentUserName: string;
   setNewAssessmentUserName: (name: string) => void;
   newAssessmentUserTitle: string;
@@ -193,6 +196,8 @@ export default function CompanyDetailsTab({
   setExistingCompanyUserName,
   existingCompanyUserEmail,
   setExistingCompanyUserEmail,
+  existingCompanyUserCompanyName,
+  setExistingCompanyUserCompanyName,
   newAssessmentUserName,
   setNewAssessmentUserName,
   newAssessmentUserTitle,
@@ -1186,17 +1191,19 @@ export default function CompanyDetailsTab({
                                 <input
                                   type="text"
                                   name="existing_company_user_company"
-                                  placeholder="Company Name"
-                                  value=""
-                                  readOnly
+                                  placeholder="Their Company Name"
+                                  value={existingCompanyUserCompanyName}
+                                  onChange={(e) =>
+                                    setExistingCompanyUserCompanyName(
+                                      e.target.value,
+                                    )
+                                  }
                                   autoComplete="off"
                                   style={{
                                     padding: "8px",
                                     borderRadius: "6px",
                                     border: "1px solid #cbd5e1",
                                     fontSize: "12px",
-                                    background: "#f8fafc",
-                                    color: "#475569",
                                   }}
                                 />
                               </div>
@@ -1444,7 +1451,74 @@ export default function CompanyDetailsTab({
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    <span>{comp.name || "Selected Company"}</span>
+                                    {isExternalUser(u) ? (
+                                      <input
+                                        type="text"
+                                        defaultValue={
+                                          u.employerCompanyName?.trim() || ""
+                                        }
+                                        key={`${u.id}-${u.employerCompanyName || ""}`}
+                                        placeholder="Their company"
+                                        onClick={(event) =>
+                                          event.stopPropagation()
+                                        }
+                                        onBlur={async (event) => {
+                                          const next = event.target.value.trim();
+                                          const current =
+                                            u.employerCompanyName?.trim() || "";
+                                          if (!next || next === current) return;
+                                          try {
+                                            const res = await fetch(
+                                              "/api/company-invites",
+                                              {
+                                                method: "PATCH",
+                                                headers: {
+                                                  "Content-Type":
+                                                    "application/json",
+                                                },
+                                                body: JSON.stringify({
+                                                  companyId: comp.id,
+                                                  userId: u.id,
+                                                  employerCompanyName: next,
+                                                }),
+                                              },
+                                            );
+                                            const data = await res.json();
+                                            if (!res.ok) {
+                                              throw new Error(
+                                                data?.error ||
+                                                  "Failed to update company name",
+                                              );
+                                            }
+                                            onUserPermissionsUpdated?.({
+                                              ...u,
+                                              companyId: comp.id,
+                                              employerCompanyName: next,
+                                              isExternalCompanyUser: true,
+                                            });
+                                          } catch (err: any) {
+                                            alert(
+                                              err?.message ||
+                                                "Failed to update company name",
+                                            );
+                                          }
+                                        }}
+                                        style={{
+                                          width: "100%",
+                                          minWidth: 0,
+                                          padding: "4px 6px",
+                                          borderRadius: "4px",
+                                          border: "1px solid #cbd5e1",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          color: "#1e293b",
+                                        }}
+                                      />
+                                    ) : (
+                                      <span>
+                                        {comp.name || "Selected Company"}
+                                      </span>
+                                    )}
                                     <button
                                       onClick={(event) => {
                                         event.stopPropagation();
