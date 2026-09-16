@@ -184,24 +184,26 @@ export default function TeamManagementTab({
                     {member.isPrimaryContact ? (
                       <span style={{ fontSize: '12px', color: '#64748b' }}>All client companies</span>
                     ) : (
-                      <select
-                        multiple
-                        aria-label={`Assigned companies for ${member.name}`}
-                        defaultValue={member.assignedCompanyIds || []}
-                        disabled={isLoading}
-                        onChange={(event) => {
-                          const companyIds = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
-                          updateTeamMemberAssignments(member.id, companyIds);
-                        }}
-                        style={{ width: '100%', minHeight: '82px', padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
-                      >
-                        {companies.map((company) => (
-                          <option key={company.id} value={company.id}>{company.name || 'Unnamed company'}</option>
-                        ))}
-                      </select>
-                      <div style={{ marginTop: '4px', fontSize: '10px', color: '#64748b' }}>
-                        Hold Ctrl (Windows) or Cmd (Mac) to select multiple.
-                      </div>
+                      <>
+                        <select
+                          multiple
+                          aria-label={`Assigned companies for ${member.name}`}
+                          defaultValue={member.assignedCompanyIds || []}
+                          disabled={isLoading}
+                          onChange={(event) => {
+                            const companyIds = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
+                            updateTeamMemberAssignments(member.id, companyIds);
+                          }}
+                          style={{ width: '100%', minHeight: '82px', padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                        >
+                          {companies.map((company) => (
+                            <option key={company.id} value={company.id}>{company.name || 'Unnamed company'}</option>
+                          ))}
+                        </select>
+                        <div style={{ marginTop: '4px', fontSize: '10px', color: '#64748b' }}>
+                          Hold Ctrl (Windows) or Cmd (Mac) to select multiple.
+                        </div>
+                      </>
                     )}
                   </td>
                   <td style={{ padding: '12px' }}>
