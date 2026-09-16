@@ -11,6 +11,8 @@ export type CompanyUserInvite = {
   createdAt: string;
   createdByUserId: string;
   createdByEmail: string;
+  /** Pre-created User row so Manage Users can assign rights before join. */
+  pendingUserId?: string;
   acceptedAt?: string;
   acceptedByUserId?: string;
 };

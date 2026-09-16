@@ -59,8 +59,12 @@ export async function GET(request: NextRequest) {
 
     const existingUser = await prisma.user.findUnique({
       where: { email: invite.email.toLowerCase() },
-      select: { id: true },
+      select: { id: true, passwordResetToken: true },
     });
+    const isInviteStubUser =
+      Boolean(existingUser) &&
+      (String(invite.pendingUserId || '') === String(existingUser?.id || '') ||
+        String(existingUser?.passwordResetToken || '').startsWith('invite-pending:'));
 
     return NextResponse.json({
       company: { id: lookup.company.id, name: lookup.company.name },
@@ -69,7 +73,9 @@ export async function GET(request: NextRequest) {
         name: invite.name,
         userType: invite.userType,
         expiresAt: invite.expiresAt,
-        accountExists: Boolean(existingUser),
+        // Stub users were pre-created for Manage Users rights assignment; they
+        // still need to set a password on this page.
+        accountExists: Boolean(existingUser) && !isInviteStubUser,
       },
     });
   } catch (error: any) {
@@ -105,11 +111,17 @@ export async function POST(request: NextRequest) {
         id: true,
         email: true,
         name: true,
+        passwordResetToken: true,
       },
     });
 
-    if (!existingUser) {
-      if (!name) {
+    const isInviteStubUser =
+      Boolean(existingUser) &&
+      (String(invite.pendingUserId || '') === String(existingUser?.id || '') ||
+        String(existingUser?.passwordResetToken || '').startsWith('invite-pending:'));
+
+    if (!existingUser || isInviteStubUser) {
+      if (!name && !existingUser) {
         return NextResponse.json({ error: 'name is required for new users' }, { status: 400 });
       }
       const passwordValidation = validatePassword(password);
@@ -121,7 +133,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const passwordHash = existingUser ? null : await hashPassword(password);
+    const passwordHash =
+      !existingUser || isInviteStubUser ? await hashPassword(password) : null;
     const result = await prisma.$transaction(async (tx) => {
       let userId = existingUser?.id || '';
       if (!existingUser) {
@@ -139,6 +152,21 @@ export async function POST(request: NextRequest) {
           select: { id: true },
         });
         userId = created.id;
+      } else if (isInviteStubUser && passwordHash) {
+        await tx.user.update({
+          where: { id: existingUser.id },
+          data: {
+            name: name || existingUser.name,
+            passwordHash,
+            passwordResetToken: null,
+            passwordResetExpires: null,
+            userType: invite.userType,
+            companyId: company.id,
+            consultantId: company.consultantId || null,
+            companyRole: invite.userType === 'COMPANY' ? 'user' : null,
+          },
+        });
+        userId = existingUser.id;
       }
 
       await grantUserCompanyAccess({
@@ -164,7 +192,10 @@ export async function POST(request: NextRequest) {
         data: { userDefinedAllocations: updatedUDA as any },
       });
 
-      return { userId, existingAccount: Boolean(existingUser) };
+      return {
+        userId,
+        existingAccount: Boolean(existingUser) && !isInviteStubUser,
+      };
     });
 
     return NextResponse.json({

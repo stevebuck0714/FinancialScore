@@ -9733,16 +9733,20 @@ function FinancialScorePage() {
       }
 
       const linkedExistingUser = Boolean(data?.linkedExistingUser);
+      const inviteSent = Boolean(data?.inviteSent);
       const user = data?.user;
-      if (linkedExistingUser && user) {
+      if (user) {
         const normalizedUser = {
           ...user,
           homeCompanyId: user.companyId || null,
           companyId,
-          role: String(user.role || '').toLowerCase(),
-          userType: userType.toLowerCase(),
+          role: String(user.role || 'user').toLowerCase(),
+          userType: String(user.userType || userType).toLowerCase(),
           isExternalCompanyUser:
-            Boolean(user.companyId) && String(user.companyId) !== String(companyId),
+            Boolean(user.isExternalCompanyUser) ||
+            (Boolean(user.companyId) && String(user.companyId) !== String(companyId)) ||
+            Boolean(data?.pendingInvite),
+          invitePending: Boolean(data?.pendingInvite || user.invitePending),
         };
         setUsers((prev) => {
           const existingIndex = prev.findIndex(
@@ -9761,9 +9765,9 @@ function FinancialScorePage() {
         alert(
           `Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`,
         );
-      } else if (data?.inviteSent) {
+      } else if (inviteSent) {
         alert(
-          `Invite sent:\n\n${email}\n\nThe recipient can use the invite link to create/login and will complete MFA in production.`,
+          `Invite sent:\n\n${email}\n\nThey now appear in External Users so you can assign rights before they join. The recipient can use the invite link to create/login and will complete MFA in production.`,
         );
       } else {
         alert(`Invite processed for:\n\n${email}`);

@@ -11,6 +11,7 @@ import {
 import { sendCompanyUserInviteEmail } from '@/lib/email';
 import { grantUserCompanyAccess } from '@/lib/user-company-access';
 import { auditUserOperation } from '@/lib/audit-logger';
+import { generateSecureToken, hashPassword } from '@/lib/auth';
 
 const INVITE_EXPIRY_DAYS = Number(process.env.COMPANY_INVITE_EXPIRY_DAYS || 7);
 
@@ -19,6 +20,22 @@ function normalizeUserType(value: unknown): 'COMPANY' | 'ASSESSMENT' | null {
   if (v === 'COMPANY' || v === 'ASSESSMENT') return v;
   return null;
 }
+
+const invitedUserSelect = {
+  id: true,
+  name: true,
+  title: true,
+  phone: true,
+  email: true,
+  userType: true,
+  role: true,
+  companyId: true,
+  consultantId: true,
+  companyRole: true,
+  sidebarAccess: true,
+  operationalDashboardAccess: true,
+  createdAt: true,
+} as const;
 
 export async function POST(request: NextRequest) {
   try {
@@ -82,11 +99,49 @@ export async function POST(request: NextRequest) {
         companyId,
         invitedBy: context.userId,
       });
+      const linkedUser = await prisma.user.findUnique({
+        where: { id: existingUser.id },
+        select: invitedUserSelect,
+      });
       return NextResponse.json({
         linkedExistingUser: true,
-        user: existingUser,
+        user: linkedUser
+          ? {
+              ...linkedUser,
+              homeCompanyId: linkedUser.companyId,
+              companyId,
+              isExternalCompanyUser:
+                Boolean(linkedUser.companyId) && String(linkedUser.companyId) !== String(companyId),
+              invitePending: false,
+            }
+          : existingUser,
       });
     }
+
+    // New invitee: create a stub User + company access immediately so Manage Users
+    // can assign rights before they accept the invite and set a password.
+    const stubPasswordHash = await hashPassword(generateSecureToken());
+    const pendingUser = await prisma.user.create({
+      data: {
+        email,
+        name,
+        passwordHash: stubPasswordHash,
+        role: 'USER',
+        userType,
+        companyId,
+        consultantId: company.consultantId || null,
+        companyRole: userType === 'COMPANY' ? 'user' : null,
+        // Marker so accept-invite can safely set the first real password.
+        passwordResetToken: `invite-pending:${crypto.randomUUID()}`,
+        passwordResetExpires: new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+      },
+      select: invitedUserSelect,
+    });
+    await grantUserCompanyAccess({
+      userId: pendingUser.id,
+      companyId,
+      companyRole: userType === 'COMPANY' ? 'user' : undefined,
+    });
 
     const token = createInviteToken();
     const tokenHash = hashInviteToken(token);
@@ -112,6 +167,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(now).toISOString(),
       createdByUserId: context.userId,
       createdByEmail: context.email,
+      pendingUserId: pendingUser.id,
     };
 
     const updatedUDA = upsertCompanyInvites(company.userDefinedAllocations, [
@@ -137,17 +193,26 @@ export async function POST(request: NextRequest) {
       userType,
     });
 
-    await auditUserOperation('USER_CREATED', context.userId, {
+    await auditUserOperation('USER_CREATED', pendingUser.id, {
       action: 'company_user_invite_created',
       companyId,
       email,
       userType,
+      pendingInvite: true,
     });
 
     return NextResponse.json({
       inviteSent: true,
       email,
       expiresAt,
+      pendingInvite: true,
+      user: {
+        ...pendingUser,
+        homeCompanyId: pendingUser.companyId,
+        companyId,
+        isExternalCompanyUser: true,
+        invitePending: true,
+      },
     });
   } catch (error: any) {
     return NextResponse.json(
@@ -156,4 +221,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

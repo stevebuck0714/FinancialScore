@@ -18,6 +18,7 @@ interface User {
   companyId?: string;
   homeCompanyId?: string | null;
   isExternalCompanyUser?: boolean;
+  invitePending?: boolean;
   consultantId?: string | null;
   role?: string;
   userType?: string;
@@ -1402,6 +1403,21 @@ export default function CompanyDetailsTab({
                                       }}
                                     >
                                       {u.name || u.email}
+                                      {u.invitePending ? (
+                                        <span
+                                          style={{
+                                            marginLeft: "6px",
+                                            padding: "1px 6px",
+                                            borderRadius: "999px",
+                                            background: "#fff7ed",
+                                            color: "#c2410c",
+                                            fontSize: "10px",
+                                            fontWeight: "700",
+                                          }}
+                                        >
+                                          Invite pending
+                                        </span>
+                                      ) : null}
                                     </div>
                                   </div>
                                   <div

@@ -72,6 +72,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (String(user.passwordResetToken || '').startsWith('invite-pending:')) {
+      await auditLoginFailed(normalizedEmail, 'Invite pending acceptance');
+      return NextResponse.json(
+        {
+          error:
+            'This account has an open invite. Please use the invite link from your email to set a password before signing in.',
+        },
+        { status: 403 }
+      );
+    }
+
     const demoCompany = isDemoCompany(user.company);
     const demoExpired = isDemoExpired(user.company);
     if (demoExpired) {

@@ -186,11 +186,24 @@ export async function GET(request: NextRequest) {
         where: { id: companyId },
         select: { consultantId: true, userDefinedAllocations: true },
       });
+      const companyInvites = getCompanyInvites(company?.userDefinedAllocations);
       const acceptedInviteUserIds = new Set(
-        getCompanyInvites(company?.userDefinedAllocations)
+        companyInvites
           .filter((invite) => String(invite?.status || '') === 'accepted')
           .map((invite) => String(invite?.acceptedByUserId || ''))
           .filter(Boolean),
+      );
+      const pendingInviteByUserId = new Map(
+        companyInvites
+          .filter((invite) => String(invite?.status || '') === 'pending')
+          .map((invite) => [String(invite?.pendingUserId || ''), invite] as const)
+          .filter(([userId]) => Boolean(userId)),
+      );
+      const pendingInviteByEmail = new Map(
+        companyInvites
+          .filter((invite) => String(invite?.status || '') === 'pending')
+          .map((invite) => [String(invite?.email || '').toLowerCase(), invite] as const)
+          .filter(([email]) => Boolean(email)),
       );
 
       users = memberships.map((m) => ({
@@ -203,7 +216,12 @@ export async function GET(request: NextRequest) {
           (m.operationalDashboardAccess ?? m.user.operationalDashboardAccess) as any,
         isExternalCompanyUser:
           acceptedInviteUserIds.has(String(m.user.id)) ||
+          pendingInviteByUserId.has(String(m.user.id)) ||
+          pendingInviteByEmail.has(String(m.user.email || '').toLowerCase()) ||
           (Boolean(m.user.companyId) && String(m.user.companyId) !== String(companyId)),
+        invitePending:
+          pendingInviteByUserId.has(String(m.user.id)) ||
+          pendingInviteByEmail.has(String(m.user.email || '').toLowerCase()),
       }));
 
       if (company?.consultantId) {
