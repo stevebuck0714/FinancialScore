@@ -45,9 +45,18 @@ export default function TeamManagementTab({
   updateTeamMemberAssignments,
   isLoading
 }: TeamManagementTabProps) {
+  const assignableMembers = consultantTeamMembers.filter((member) => !member.isPrimaryContact);
+  const initialsFor = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || '?';
+
   return (
-    <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+    <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Team Management</h2>
         <button
           onClick={() => setShowAddTeamMemberForm(!showAddTeamMemberForm)}
@@ -125,7 +134,7 @@ export default function TeamManagementTab({
       )}
 
       <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-        Assign each team member only to the client companies they should access.
+        Manage your team and their client-company access.
       </div>
 
       {consultantTeamMembers.length === 0 ? (
@@ -139,29 +148,31 @@ export default function TeamManagementTab({
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Name</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Email</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Phone</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Title</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Role</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Actions</th>
+                <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Team Member</th>
+                <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Contact</th>
+                <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Access</th>
+                <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {consultantTeamMembers.map((member) => (
                 <tr key={member.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b' }}>{member.name}</td>
-                  <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>{member.email}</td>
-                  <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>{member.phone || '-'}</td>
-                  <td style={{ padding: '12px', fontSize: '14px', color: '#475569' }}>{member.title || '-'}</td>
-                  <td style={{ padding: '12px' }}>
+                  <td style={{ padding: '8px', fontSize: '13px', color: '#1e293b' }}>
+                    <div style={{ fontWeight: '600' }}>{member.name}</div>
+                    {member.title && <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>{member.title}</div>}
+                  </td>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>
+                    <div>{member.email}</div>
+                    {member.phone && <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>{member.phone}</div>}
+                  </td>
+                  <td style={{ padding: '8px' }}>
                     {member.isPrimaryContact ? (
                       <span style={{ 
-                        padding: '4px 12px', 
+                        padding: '3px 8px', 
                         background: '#fef3c7', 
                         color: '#92400e', 
                         borderRadius: '12px', 
-                        fontSize: '12px', 
+                        fontSize: '11px', 
                         fontWeight: '600' 
                       }}>
                         Primary Contact
@@ -175,17 +186,17 @@ export default function TeamManagementTab({
                         fontSize: '12px', 
                         fontWeight: '600' 
                       }}>
-                        Team Member
+                        Assigned by company
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '12px' }}>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>
                     {!member.isPrimaryContact && (
                       <button
                         onClick={() => removeTeamMember(member.id, member.name)}
                         disabled={isLoading}
                         style={{
-                          padding: '6px 12px',
+                          padding: '5px 9px',
                           background: '#fee2e2',
                           color: '#991b1b',
                           border: 'none',
@@ -207,23 +218,25 @@ export default function TeamManagementTab({
       )}
 
       {consultantTeamMembers.some((member) => !member.isPrimaryContact) && (
-        <div style={{ marginTop: '28px', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#334155', margin: '0 0 6px' }}>
+        <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '14px' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#334155', margin: '0 0 3px' }}>
             Company Assignments
           </h3>
-          <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 14px' }}>
+          <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>
             Select each consultant who should have access to a company. A company may be assigned to multiple team members.
           </p>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: '500px' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b', minWidth: '220px' }}>
+                  <th style={{ padding: '7px 8px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', width: '45%' }}>
                     Company
                   </th>
-                  {consultantTeamMembers.filter((member) => !member.isPrimaryContact).map((member) => (
-                    <th key={member.id} style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#64748b', minWidth: '140px' }}>
-                      {member.name}
+                  {assignableMembers.map((member) => (
+                    <th key={member.id} title={member.name} style={{ padding: '7px 3px', textAlign: 'center', fontSize: '11px', fontWeight: '600', color: '#64748b', width: `${55 / Math.max(assignableMembers.length, 1)}%` }}>
+                      <span aria-label={member.name} style={{ display: 'inline-flex', width: '24px', height: '24px', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: '#e0e7ff', color: '#3730a3' }}>
+                        {initialsFor(member.name)}
+                      </span>
                     </th>
                   ))}
                 </tr>
@@ -231,7 +244,7 @@ export default function TeamManagementTab({
               <tbody>
                 {companies.length === 0 ? (
                   <tr>
-                    <td colSpan={consultantTeamMembers.filter((member) => !member.isPrimaryContact).length + 1} style={{ padding: '18px 12px', color: '#64748b', fontSize: '13px' }}>
+                    <td colSpan={assignableMembers.length + 1} style={{ padding: '12px 8px', color: '#64748b', fontSize: '12px' }}>
                       No client companies are available to assign.
                     </td>
                   </tr>
@@ -240,13 +253,13 @@ export default function TeamManagementTab({
                     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                     .map((company) => (
                       <tr key={company.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px 12px', color: '#1e293b', fontSize: '14px', fontWeight: '500' }}>
+                        <td style={{ padding: '7px 8px', color: '#1e293b', fontSize: '13px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={company.name || 'Unnamed company'}>
                           {company.name || 'Unnamed company'}
                         </td>
-                        {consultantTeamMembers.filter((member) => !member.isPrimaryContact).map((member) => {
+                        {assignableMembers.map((member) => {
                           const isAssigned = (member.assignedCompanyIds || []).includes(company.id);
                           return (
-                            <td key={member.id} style={{ padding: '10px 12px', textAlign: 'center' }}>
+                            <td key={member.id} style={{ padding: '7px 3px', textAlign: 'center' }}>
                               <input
                                 type="checkbox"
                                 aria-label={`${isAssigned ? 'Remove' : 'Assign'} ${member.name} ${isAssigned ? 'from' : 'to'} ${company.name || 'this company'}`}
