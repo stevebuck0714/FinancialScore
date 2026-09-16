@@ -29,7 +29,7 @@ interface TeamManagementTabProps {
   addTeamMember: () => void;
   removeTeamMember: (id: string, name: string) => void;
   companies: Array<{ id: string; name: string | null }>;
-  updateTeamMemberAssignments: (id: string, companyIds: string[]) => void;
+  updateTeamMemberAssignments: (id: string, companyIds: string[]) => Promise<boolean>;
   isLoading: boolean;
 }
 
@@ -46,6 +46,7 @@ export default function TeamManagementTab({
   isLoading
 }: TeamManagementTabProps) {
   const assignableMembers = consultantTeamMembers.filter((member) => !member.isPrimaryContact);
+  const [assignmentDrafts, setAssignmentDrafts] = React.useState<Record<string, string[]>>({});
   const initialsFor = (name: string) =>
     name
       .split(/\s+/)
@@ -53,6 +54,15 @@ export default function TeamManagementTab({
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase())
       .join('') || '?';
+  const hasPendingAssignmentChanges = Object.keys(assignmentDrafts).length > 0;
+  const saveAssignments = async () => {
+    const remainingDrafts: Record<string, string[]> = {};
+    for (const [memberId, companyIds] of Object.entries(assignmentDrafts)) {
+      const saved = await updateTeamMemberAssignments(memberId, companyIds);
+      if (!saved) remainingDrafts[memberId] = companyIds;
+    }
+    setAssignmentDrafts(remainingDrafts);
+  };
 
   return (
     <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
@@ -219,9 +229,28 @@ export default function TeamManagementTab({
 
       {consultantTeamMembers.some((member) => !member.isPrimaryContact) && (
         <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '14px' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#334155', margin: '0 0 3px' }}>
-            Company Assignments
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '3px' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#334155', margin: 0 }}>
+              Company Assignments
+            </h3>
+            <button
+              type="button"
+              onClick={saveAssignments}
+              disabled={!hasPendingAssignmentChanges || isLoading}
+              style={{
+                padding: '6px 12px',
+                background: hasPendingAssignmentChanges && !isLoading ? '#2563eb' : '#cbd5e1',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: hasPendingAssignmentChanges && !isLoading ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {isLoading ? 'Saving...' : 'Save Assignments'}
+            </button>
+          </div>
           <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>
             Select each consultant who should have access to a company. A company may be assigned to multiple team members.
           </p>
@@ -257,7 +286,8 @@ export default function TeamManagementTab({
                           {company.name || 'Unnamed company'}
                         </td>
                         {assignableMembers.map((member) => {
-                          const isAssigned = (member.assignedCompanyIds || []).includes(company.id);
+                          const memberAssignments = assignmentDrafts[member.id] ?? member.assignedCompanyIds ?? [];
+                          const isAssigned = memberAssignments.includes(company.id);
                           return (
                             <td key={member.id} style={{ padding: '7px 3px', textAlign: 'center' }}>
                               <input
@@ -266,13 +296,16 @@ export default function TeamManagementTab({
                                 checked={isAssigned}
                                 disabled={isLoading}
                                 onChange={(event) => {
-                                  const nextAssignments = new Set(member.assignedCompanyIds || []);
+                                  const nextAssignments = new Set(memberAssignments);
                                   if (event.currentTarget.checked) {
                                     nextAssignments.add(company.id);
                                   } else {
                                     nextAssignments.delete(company.id);
                                   }
-                                  updateTeamMemberAssignments(member.id, Array.from(nextAssignments));
+                                  setAssignmentDrafts((drafts) => ({
+                                    ...drafts,
+                                    [member.id]: Array.from(nextAssignments),
+                                  }));
                                 }}
                                 style={{ width: '16px', height: '16px', cursor: isLoading ? 'not-allowed' : 'pointer' }}
                               />

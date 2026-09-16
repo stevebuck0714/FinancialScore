@@ -23,6 +23,7 @@ interface CompanyListTabProps {
   setShowDeleteConfirmation: (show: boolean) => void;
   onAddCompany: () => void;
   canManageCompanies: boolean;
+  teamMembers: Array<{ id: string; name: string; email: string; isPrimaryContact?: boolean; assignedCompanyIds?: string[] }>;
 }
 
 export default function CompanyListTab({
@@ -34,7 +35,8 @@ export default function CompanyListTab({
   setCompanyToDelete,
   setShowDeleteConfirmation,
   onAddCompany,
-  canManageCompanies
+  canManageCompanies,
+  teamMembers
 }: CompanyListTabProps) {
   return (
     <div style={{ background: 'white', borderRadius: '12px', padding: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
@@ -76,7 +78,14 @@ export default function CompanyListTab({
         <div>
           {(Array.isArray(companies) ? [...companies] : [])
             .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-            .map((company, index) => (
+            .map((company, index) => {
+              const assignedTeamMembers = teamMembers
+                .filter((member) => !member.isPrimaryContact && member.assignedCompanyIds?.includes(company.id))
+                .map((member) => ({ id: member.id, name: member.name, email: member.email }));
+              const displayAssignees =
+                assignedTeamMembers.length > 0 ? assignedTeamMembers : (company.assignedTeamMembers || []);
+
+              return (
               <div key={company.id}>
                 <div
                   style={{
@@ -114,7 +123,7 @@ export default function CompanyListTab({
                     {canManageCompanies && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '5px', fontSize: '11px', color: '#64748b' }}>
                         <span>Assigned to:</span>
-                        {company.assignedTeamMembers?.length ? company.assignedTeamMembers.map((member) => (
+                        {displayAssignees.length ? displayAssignees.map((member) => (
                           <span key={member.id} style={{ padding: '1px 6px', background: '#e0e7ff', color: '#3730a3', borderRadius: '10px' }}>
                             {member.name}
                           </span>
@@ -176,7 +185,8 @@ export default function CompanyListTab({
                   <div style={{ height: '1px', background: '#e2e8f0' }}></div>
                 )}
               </div>
-            ))}
+              );
+            })}
         </div>
       )}
     </div>

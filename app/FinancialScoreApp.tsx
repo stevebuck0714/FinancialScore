@@ -7765,7 +7765,7 @@ function FinancialScorePage() {
   };
 
   const updateTeamMemberAssignments = async (userId: string, companyIds: string[]) => {
-    if (!currentUser?.consultantId) return;
+    if (!currentUser?.consultantId) return false;
 
     setIsLoading(true);
     try {
@@ -7783,7 +7783,7 @@ function FinancialScorePage() {
       if (!response.ok) {
         alert(data.error || 'Failed to update company assignments');
         await fetchTeamMembers();
-        return;
+        return false;
       }
 
       setConsultantTeamMembers((members) =>
@@ -7812,10 +7812,12 @@ function FinancialScorePage() {
           })
         );
       }
+      return true;
     } catch (error) {
       console.error('Error updating team member assignments:', error);
       alert('Failed to update company assignments');
       await fetchTeamMembers();
+      return false;
     } finally {
       setIsLoading(false);
     }
