@@ -16,6 +16,7 @@ export interface UserContext {
   companyId: string | null
   consultantId: string | null
   companyRole?: string | null
+  isPrimaryContact?: boolean
 }
 
 const DEV_AUTH_BYPASS_ENABLED =
@@ -98,6 +99,7 @@ export async function getUserContext(): Promise<UserContext | null> {
             role: true,
             companyId: true,
             consultantId: true,
+            isPrimaryContact: true,
           },
         })
       : await prisma.user.findUnique({
@@ -108,6 +110,7 @@ export async function getUserContext(): Promise<UserContext | null> {
             role: true,
             companyId: true,
             consultantId: true,
+            isPrimaryContact: true,
           },
         })
 
@@ -120,18 +123,36 @@ export async function getUserContext(): Promise<UserContext | null> {
     role = role || normalizeRole(user.role || null)
     companyId = companyId || user.companyId || null
     consultantId = consultantId || user.consultantId || null
+    const isPrimaryContact = user.isPrimaryContact
+    return {
+      userId,
+      email,
+      role,
+      companyId: companyId || null,
+      consultantId: consultantId || null,
+      isPrimaryContact,
+    }
   }
 
   if (!userId || !email || !role) {
     return null
   }
   
+  const isPrimaryContact =
+    role === 'CONSULTANT'
+      ? (await prisma.user.findUnique({
+          where: { id: userId },
+          select: { isPrimaryContact: true },
+        }))?.isPrimaryContact ?? false
+      : false
+
   return {
     userId,
     email,
     role,
     companyId: companyId || null,
     consultantId: consultantId || null,
+    isPrimaryContact,
   }
 }
 
@@ -194,13 +215,14 @@ export async function validateCompanyAccess(targetCompanyId: string): Promise<bo
     return Boolean(membership)
   }
   
-  // Consultants can access their companies
+  // Only a firm's primary contact has portfolio-wide access. Other
+  // consultants must be explicitly assigned through UserCompanyAccess.
   if (context.role === 'CONSULTANT' && context.consultantId) {
     const company = await prisma.company.findUnique({
       where: { id: targetCompanyId },
       select: { consultantId: true }
     })
-    if (company?.consultantId === context.consultantId) {
+    if (context.isPrimaryContact && company?.consultantId === context.consultantId) {
       return true
     }
     await ensureLegacyCompanyAccess(context.userId)
@@ -417,18 +439,21 @@ export async function getAccessibleCompanyIds(): Promise<string[]> {
     return companies.map(c => c.id)
   }
   
-  // Consultants have access to their companies
+  // Primary contacts have portfolio-wide access; other consultants have only
+  // their explicitly assigned companies.
   if (context.role === 'CONSULTANT' && context.consultantId) {
-    const consultantCompanies = await prisma.company.findMany({
-      where: { consultantId: context.consultantId },
-      select: { id: true }
-    })
     await ensureLegacyCompanyAccess(context.userId)
     const userCompanyAccess = getUserCompanyAccessDelegate()
     const memberships = userCompanyAccess
       ? await userCompanyAccess.findMany({
           where: { userId: context.userId },
           select: { companyId: true },
+        })
+      : []
+    const consultantCompanies = context.isPrimaryContact
+      ? await prisma.company.findMany({
+          where: { consultantId: context.consultantId },
+          select: { id: true },
         })
       : []
     const idSet = new Set([

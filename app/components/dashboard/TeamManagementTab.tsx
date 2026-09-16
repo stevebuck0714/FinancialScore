@@ -5,12 +5,13 @@ import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
 
 interface TeamMember {
-  id: number;
+  id: string;
   name: string;
   email: string;
   phone?: string;
   title?: string;
   isPrimaryContact?: boolean;
+  assignedCompanyIds?: string[];
 }
 
 interface TeamManagementTabProps {
@@ -26,7 +27,9 @@ interface TeamManagementTabProps {
   };
   setNewTeamMember: (member: any) => void;
   addTeamMember: () => void;
-  removeTeamMember: (id: number, name: string) => void;
+  removeTeamMember: (id: string, name: string) => void;
+  companies: Array<{ id: string; name: string | null }>;
+  updateTeamMemberAssignments: (id: string, companyIds: string[]) => void;
   isLoading: boolean;
 }
 
@@ -38,6 +41,8 @@ export default function TeamManagementTab({
   setNewTeamMember,
   addTeamMember,
   removeTeamMember,
+  companies,
+  updateTeamMemberAssignments,
   isLoading
 }: TeamManagementTabProps) {
   return (
@@ -120,14 +125,14 @@ export default function TeamManagementTab({
       )}
 
       <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-        Manage users who can access your consultant dashboard and all client companies.
+        Assign each team member only to the client companies they should access.
       </div>
 
       {consultantTeamMembers.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
           <div style={{ fontSize: '48px', marginBottom: '12px' }}>👥</div>
           <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>No Team Members Yet</div>
-          <div style={{ fontSize: '14px' }}>Add team members to give them access to all your client companies</div>
+          <div style={{ fontSize: '14px' }}>Add a team member, then assign the client companies they can access.</div>
         </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -139,6 +144,7 @@ export default function TeamManagementTab({
                 <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Phone</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Title</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Role</th>
+                <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Assigned Companies</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Actions</th>
               </tr>
             </thead>
@@ -172,6 +178,30 @@ export default function TeamManagementTab({
                       }}>
                         Team Member
                       </span>
+                    )}
+                  </td>
+                  <td style={{ padding: '12px', minWidth: '220px' }}>
+                    {member.isPrimaryContact ? (
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>All client companies</span>
+                    ) : (
+                      <select
+                        multiple
+                        aria-label={`Assigned companies for ${member.name}`}
+                        defaultValue={member.assignedCompanyIds || []}
+                        disabled={isLoading}
+                        onChange={(event) => {
+                          const companyIds = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
+                          updateTeamMemberAssignments(member.id, companyIds);
+                        }}
+                        style={{ width: '100%', minHeight: '82px', padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                      >
+                        {companies.map((company) => (
+                          <option key={company.id} value={company.id}>{company.name || 'Unnamed company'}</option>
+                        ))}
+                      </select>
+                      <div style={{ marginTop: '4px', fontSize: '10px', color: '#64748b' }}>
+                        Hold Ctrl (Windows) or Cmd (Mac) to select multiple.
+                      </div>
                     )}
                   </td>
                   <td style={{ padding: '12px' }}>

@@ -332,10 +332,37 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const companyAssignments =
+      context.role === 'CONSULTANT' && context.isPrimaryContact && context.consultantId && companies.length > 0
+        ? await prisma.userCompanyAccess.findMany({
+            where: {
+              companyId: { in: companies.map((company: any) => company.id) },
+              user: {
+                consultantId: context.consultantId,
+                role: 'CONSULTANT',
+                isPrimaryContact: false,
+              },
+            },
+            select: {
+              companyId: true,
+              user: { select: { id: true, name: true, email: true } },
+            },
+          })
+        : [];
+    const assigneesByCompanyId = new Map<string, Array<{ id: string; name: string; email: string }>>();
+    for (const assignment of companyAssignments) {
+      const assignees = assigneesByCompanyId.get(assignment.companyId) || [];
+      assignees.push(assignment.user);
+      assigneesByCompanyId.set(assignment.companyId, assignees);
+    }
+
     const companiesWithResolvedSector = companies.map((company: any) => ({
       ...company,
       rawIndustrySectorCategory: company.industrySectorCategory || null,
       industrySectorCategory: resolveCompanyIndustrySectorCategory(company),
+      ...(context.isPrimaryContact
+        ? { assignedTeamMembers: assigneesByCompanyId.get(company.id) || [] }
+        : {}),
     }));
 
     console.log(`Retrieved ${companies.length} companies for user ${context.email}`);
@@ -466,12 +493,12 @@ export async function POST(request: NextRequest) {
       if (context.role === "SITEADMIN") {
         console.log("✅ Site admin access - validation passed");
       } else if (context.role === "CONSULTANT") {
-        if (context.consultantId !== rawConsultantId) {
+        if (context.consultantId !== rawConsultantId || !context.isPrimaryContact) {
           console.error("❌ Consultant trying to create company for different consultant");
           await auditForbiddenAccess("Company", rawConsultantId, "CREATE_FOR_CONSULTANT");
           return NextResponse.json(
             {
-              error: "Forbidden: You can only create companies for yourself",
+              error: "Forbidden: Only the consultant primary contact can create companies for this firm",
               debug: {
                 userRole: context.role,
                 userConsultantId: context.consultantId,
@@ -2116,6 +2143,13 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { error: "Company ID required" },
         { status: 400 },
+      );
+    }
+
+    if (context.role === 'CONSULTANT' && !context.isPrimaryContact) {
+      return NextResponse.json(
+        { error: 'Forbidden: Only the consultant primary contact can delete a company' },
+        { status: 403 },
       );
     }
 

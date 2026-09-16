@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
         role: true,
         consultantId: true,
         companyId: true,
+        isPrimaryContact: true,
       },
     });
     if (!sessionUser) {
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
         where: { id: companyId },
         select: { consultantId: true },
       });
-      if (company?.consultantId === sessionUser.consultantId) {
+      if (sessionUser.isPrimaryContact && company?.consultantId === sessionUser.consultantId) {
         hasAccess = true;
       } else {
         const membership = await prisma.userCompanyAccess.findUnique({

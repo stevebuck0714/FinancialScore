@@ -39,6 +39,8 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
       companyRole: true,
       sidebarAccess: true,
       operationalDashboardAccess: true,
+      consultantId: true,
+      isPrimaryContact: true,
     },
   });
   if (!userContext) return [];
@@ -81,6 +83,35 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
       });
 
       return allCompanies.map((company) => {
+        const membership = membershipByCompanyId.get(company.id);
+        return {
+          companyId: company.id,
+          name: company.name,
+          companyRole: membership?.companyRole || userContext.companyRole || 'admin',
+          sidebarAccess: membership?.sidebarAccess ?? userContext.sidebarAccess,
+          operationalDashboardAccess:
+            membership?.operationalDashboardAccess ?? userContext.operationalDashboardAccess,
+        };
+      });
+    }
+
+    if (userContext.role === 'CONSULTANT' && userContext.isPrimaryContact && userContext.consultantId) {
+      const membershipByCompanyId = new Map(
+        memberships.map((m) => [
+          m.companyId,
+          {
+            companyRole: m.companyRole,
+            sidebarAccess: m.sidebarAccess,
+            operationalDashboardAccess: m.operationalDashboardAccess,
+          },
+        ])
+      );
+      const firmCompanies = await prisma.company.findMany({
+        where: { consultantId: userContext.consultantId },
+        select: { id: true, name: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      return firmCompanies.map((company) => {
         const membership = membershipByCompanyId.get(company.id);
         return {
           companyId: company.id,

@@ -22,7 +22,8 @@ interface ConsultantDashboardProps {
   };
   setNewTeamMember: (member: any) => void;
   addTeamMember: () => void;
-  removeTeamMember: (id: number, name: string) => void;
+  removeTeamMember: (id: string, name: string) => void;
+  updateTeamMemberAssignments: (id: string, companyIds: string[]) => void;
   companies: any[];
   setCurrentView: (view: any) => void;
   setSelectedCompanyId: (id: string) => void;
@@ -48,6 +49,7 @@ export default function ConsultantDashboard({
   setNewTeamMember,
   addTeamMember,
   removeTeamMember,
+  updateTeamMemberAssignments,
   companies,
   setCurrentView,
   setSelectedCompanyId,
@@ -134,6 +136,7 @@ export default function ConsultantDashboard({
           setCompanyToDelete={setCompanyToDelete}
           setShowDeleteConfirmation={setShowDeleteConfirmation}
           onAddCompany={onAddCompany}
+          canManageCompanies={Boolean(currentUser?.isPrimaryContact)}
         />
       )}
 
@@ -147,6 +150,8 @@ export default function ConsultantDashboard({
           setNewTeamMember={setNewTeamMember}
           addTeamMember={addTeamMember}
           removeTeamMember={removeTeamMember}
+          companies={companies}
+          updateTeamMemberAssignments={updateTeamMemberAssignments}
           isLoading={isLoading}
         />
       )}

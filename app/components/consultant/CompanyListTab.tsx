@@ -10,6 +10,7 @@ interface Company {
   state?: string | null;
   subscriptionStatus?: string | null;
   businessId?: string;
+  assignedTeamMembers?: Array<{ id: string; name: string; email: string }>;
 }
 
 interface CompanyListTabProps {
@@ -21,6 +22,7 @@ interface CompanyListTabProps {
   setCompanyToDelete: (company: { companyId: string; businessId: string; companyName: string }) => void;
   setShowDeleteConfirmation: (show: boolean) => void;
   onAddCompany: () => void;
+  canManageCompanies: boolean;
 }
 
 export default function CompanyListTab({
@@ -31,7 +33,8 @@ export default function CompanyListTab({
   setCompanyManagementSubTab,
   setCompanyToDelete,
   setShowDeleteConfirmation,
-  onAddCompany
+  onAddCompany,
+  canManageCompanies
 }: CompanyListTabProps) {
   return (
     <div style={{ background: 'white', borderRadius: '12px', padding: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
@@ -39,7 +42,7 @@ export default function CompanyListTab({
         <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
           Your Companies ({companies.length}) - <span style={{ fontWeight: '400', color: '#64748b' }}>Select a Company to Get Started</span>
         </h2>
-        <button
+        {canManageCompanies && <button
           onClick={() => {
             onAddCompany();
           }}
@@ -61,7 +64,7 @@ export default function CompanyListTab({
           onMouseLeave={(e) => e.currentTarget.style.background = '#10b981'}
         >
           <span style={{ fontSize: '16px', fontWeight: '700' }}>+</span> Add Company
-        </button>
+        </button>}
       </div>
       
       {!Array.isArray(companies) || companies.length === 0 ? (
@@ -108,6 +111,16 @@ export default function CompanyListTab({
                         <span>{company.city}, {company.state}</span>
                       )}
                     </div>
+                    {canManageCompanies && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '5px', fontSize: '11px', color: '#64748b' }}>
+                        <span>Assigned to:</span>
+                        {company.assignedTeamMembers?.length ? company.assignedTeamMembers.map((member) => (
+                          <span key={member.id} style={{ padding: '1px 6px', background: '#e0e7ff', color: '#3730a3', borderRadius: '10px' }}>
+                            {member.name}
+                          </span>
+                        )) : <span>Unassigned</span>}
+                      </div>
+                    )}
                   </div>
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
@@ -124,7 +137,7 @@ export default function CompanyListTab({
                         Inactive
                       </div>
                     )}
-                    <button
+                    {canManageCompanies && <button
                       onClick={(e) => {
                         e.stopPropagation();
                         const businessId = company.businessId || company.id;
@@ -156,7 +169,7 @@ export default function CompanyListTab({
                       }}
                     >
                       Delete
-                    </button>
+                    </button>}
                   </div>
                 </div>
                 {index < companies.length - 1 && (

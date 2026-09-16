@@ -7764,6 +7764,63 @@ function FinancialScorePage() {
     }
   };
 
+  const updateTeamMemberAssignments = async (userId: string, companyIds: string[]) => {
+    if (!currentUser?.consultantId) return;
+
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/consultants/team', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          consultantId: currentUser.consultantId,
+          companyIds,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.error || 'Failed to update company assignments');
+        await fetchTeamMembers();
+        return;
+      }
+
+      setConsultantTeamMembers((members) =>
+        members.map((member) =>
+          member.id === userId ? { ...member, assignedCompanyIds: data.assignedCompanyIds } : member
+        )
+      );
+      const assignedMember = consultantTeamMembers.find((member) => member.id === userId);
+      if (assignedMember) {
+        const assignedCompanyIdSet = new Set<string>(data.assignedCompanyIds);
+        setCompanies((currentCompanies) =>
+          currentCompanies.map((company: any) => {
+            const currentAssignees = Array.isArray(company.assignedTeamMembers)
+              ? company.assignedTeamMembers.filter((member: any) => member.id !== userId)
+              : [];
+            return {
+              ...company,
+              assignedTeamMembers: assignedCompanyIdSet.has(company.id)
+                ? [...currentAssignees, {
+                    id: assignedMember.id,
+                    name: assignedMember.name,
+                    email: assignedMember.email,
+                  }]
+                : currentAssignees,
+            };
+          })
+        );
+      }
+    } catch (error) {
+      console.error('Error updating team member assignments:', error);
+      alert('Failed to update company assignments');
+      await fetchTeamMembers();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // QuickBooks Functions
   const checkQBStatus = async (companyId: string) => {
     try {
@@ -15131,6 +15188,7 @@ function FinancialScorePage() {
                 setNewTeamMember={setNewTeamMember}
                 addTeamMember={addTeamMember}
                 removeTeamMember={removeTeamMember}
+                updateTeamMemberAssignments={updateTeamMemberAssignments}
                 companies={companies}
                 setCurrentView={setCurrentView}
                 setSelectedCompanyId={setSelectedCompanyId}

@@ -2,6 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
+import { requireAuth } from '@/lib/tenant-security';
+
+async function requireTeamAdministrator(consultantId: string) {
+  const context = await requireAuth();
+  if (context.role === 'SITEADMIN') return context;
+  if (
+    context.role !== 'CONSULTANT' ||
+    context.consultantId !== consultantId ||
+    !context.isPrimaryContact
+  ) {
+    throw new Error('Forbidden: Consultant primary contact access required');
+  }
+  return context;
+}
+
+function authorizationErrorResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Unauthorized';
+  const status = message.startsWith('Unauthorized') ? 401 : 403;
+  return NextResponse.json({ error: message }, { status });
+}
 
 // GET all team members for a consultant
 export async function GET(request: NextRequest) {
@@ -14,6 +34,11 @@ export async function GET(request: NextRequest) {
         { error: 'Consultant ID is required' },
         { status: 400 }
       );
+    }
+    try {
+      await requireTeamAdministrator(consultantId);
+    } catch (error) {
+      return authorizationErrorResponse(error);
     }
 
     // Get all team members for this consultant
@@ -30,7 +55,11 @@ export async function GET(request: NextRequest) {
         title: true,
         isPrimaryContact: true,
         createdAt: true,
-        mfaEnabled: true
+        mfaEnabled: true,
+        companyAccess: {
+          where: { company: { consultantId } },
+          select: { companyId: true },
+        },
       },
       orderBy: [
         { isPrimaryContact: 'desc' }, // Primary contact first
@@ -38,7 +67,12 @@ export async function GET(request: NextRequest) {
       ]
     });
 
-    return NextResponse.json({ teamMembers });
+    return NextResponse.json({
+      teamMembers: teamMembers.map(({ companyAccess, ...teamMember }) => ({
+        ...teamMember,
+        assignedCompanyIds: companyAccess.map((access) => access.companyId),
+      })),
+    });
   } catch (error) {
     console.error('Error fetching team members:', error);
     return NextResponse.json(
@@ -59,6 +93,11 @@ export async function POST(request: NextRequest) {
         { error: 'Consultant ID, name, email, and password are required' },
         { status: 400 }
       );
+    }
+    try {
+      await requireTeamAdministrator(consultantId);
+    } catch (error) {
+      return authorizationErrorResponse(error);
     }
 
     // Validate password strength
@@ -149,6 +188,11 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
+    try {
+      await requireTeamAdministrator(consultantId);
+    } catch (error) {
+      return authorizationErrorResponse(error);
+    }
 
     // Get the user to check if they're primary contact
     const user = await prisma.user.findUnique({
@@ -198,13 +242,18 @@ export async function DELETE(request: NextRequest) {
 // PATCH - Update team member or transfer primary contact
 export async function PATCH(request: NextRequest) {
   try {
-    const { userId, consultantId, name, email, phone, title, transferPrimary } = await request.json();
+    const { userId, consultantId, name, email, phone, title, transferPrimary, companyIds } = await request.json();
 
     if (!userId || !consultantId) {
       return NextResponse.json(
         { error: 'User ID and Consultant ID are required' },
         { status: 400 }
       );
+    }
+    try {
+      await requireTeamAdministrator(consultantId);
+    } catch (error) {
+      return authorizationErrorResponse(error);
     }
 
     // Get the user
@@ -256,6 +305,54 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({
         message: 'Primary contact transferred successfully',
         user: result
+      });
+    }
+
+    if (companyIds !== undefined) {
+      if (user.isPrimaryContact) {
+        return NextResponse.json(
+          { error: 'Primary contact has access to all firm companies and cannot have assignments changed.' },
+          { status: 400 }
+        );
+      }
+      if (!Array.isArray(companyIds) || companyIds.some((id) => typeof id !== 'string')) {
+        return NextResponse.json({ error: 'companyIds must be an array of company IDs' }, { status: 400 });
+      }
+
+      const normalizedCompanyIds = [...new Set(companyIds.map((id) => id.trim()).filter(Boolean))];
+      const ownedCompanies = await prisma.company.findMany({
+        where: { id: { in: normalizedCompanyIds }, consultantId },
+        select: { id: true },
+      });
+      if (ownedCompanies.length !== normalizedCompanyIds.length) {
+        return NextResponse.json(
+          { error: 'Every assigned company must belong to this consultant firm.' },
+          { status: 400 }
+        );
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.userCompanyAccess.deleteMany({
+          where: {
+            userId,
+            company: { consultantId },
+          },
+        });
+        if (normalizedCompanyIds.length > 0) {
+          await tx.userCompanyAccess.createMany({
+            data: normalizedCompanyIds.map((companyId) => ({
+              userId,
+              companyId,
+              companyRole: 'user',
+            })),
+            skipDuplicates: true,
+          });
+        }
+      });
+
+      return NextResponse.json({
+        message: 'Team member company assignments updated successfully',
+        assignedCompanyIds: normalizedCompanyIds,
       });
     }
 
