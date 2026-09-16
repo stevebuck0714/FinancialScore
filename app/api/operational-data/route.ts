@@ -3609,7 +3609,7 @@ export async function GET(request: NextRequest) {
               // v3: QBD/QBO KPI cards follow APAgingSnapshot (same as the trend
               // chart) instead of re-aged APOpenBillSnapshot totals.
               cacheType === 'ap-aging' || cacheType === 'ap'
-                ? 'ap-books-anchor-v3-qbd-authoritative-kpis'
+                ? 'ap-books-anchor-v4-qbd-1to30-kpi'
                 : null,
               shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
@@ -7947,10 +7947,20 @@ export async function GET(request: NextRequest) {
         let apMetrics = latestAP
           ? ({
               totalAP: latestAP.totalAP,
+              current: Number(latestAP.current || 0),
+              days1to30: Number(latestAP.days1to30 || 0),
+              days31to60: Number(latestAP.days31to60 || 0),
+              days61to90: Number(latestAP.days61to90 || 0),
+              days90plus: Number(latestAP.days90plus || 0),
               currentPct: !latestApAgingKnown
                 ? null
                 : latestAP.totalAP > 0
                   ? (latestAP.current / latestAP.totalAP) * 100
+                  : 0,
+              days1to30Pct: !latestApAgingKnown
+                ? null
+                : latestAP.totalAP > 0
+                  ? (Number(latestAP.days1to30 || 0) / latestAP.totalAP) * 100
                   : 0,
               over30Pct: !latestApAgingKnown
                 ? null
@@ -8572,9 +8582,18 @@ export async function GET(request: NextRequest) {
             apMetrics = latestAP
               ? {
                   totalAP: Number(latestAP.totalAP || 0),
+                  current: Number(latestAP.current || 0),
+                  days1to30: Number(latestAP.days1to30 || 0),
+                  days31to60: Number(latestAP.days31to60 || 0),
+                  days61to90: Number(latestAP.days61to90 || 0),
+                  days90plus: Number(latestAP.days90plus || 0),
                   currentPct:
                     Number(latestAP.totalAP || 0) > 0
                       ? (Number(latestAP.current || 0) / Number(latestAP.totalAP || 0)) * 100
+                      : 0,
+                  days1to30Pct:
+                    Number(latestAP.totalAP || 0) > 0
+                      ? (Number(latestAP.days1to30 || 0) / Number(latestAP.totalAP || 0)) * 100
                       : 0,
                   over30Pct: Number(latestAP.over30Pct || 0),
                   over90Pct: Number(latestAP.over90Pct || 0),
@@ -8670,9 +8689,20 @@ export async function GET(request: NextRequest) {
             apMetrics = latestAP
               ? ({
                   totalAP: Number(latestAP.totalAP || 0),
+                  current: latestAllocatedAp ? Number(latestAllocatedAp.current || 0) : 0,
+                  days1to30: latestAllocatedAp ? Number(latestAllocatedAp.days1to30 || 0) : 0,
+                  days31to60: latestAllocatedAp ? Number(latestAllocatedAp.days31to60 || 0) : 0,
+                  days61to90: latestAllocatedAp ? Number(latestAllocatedAp.days61to90 || 0) : 0,
+                  days90plus: latestAllocatedAp ? Number(latestAllocatedAp.days90plus || 0) : 0,
                   currentPct:
                     latestAllocatedAp && Number(latestAllocatedAp.totalAP || 0) > 0
                       ? (Number(latestAllocatedAp.current || 0) /
+                          Number(latestAllocatedAp.totalAP || 0)) *
+                        100
+                      : null,
+                  days1to30Pct:
+                    latestAllocatedAp && Number(latestAllocatedAp.totalAP || 0) > 0
+                      ? (Number(latestAllocatedAp.days1to30 || 0) /
                           Number(latestAllocatedAp.totalAP || 0)) *
                         100
                       : null,
@@ -8807,7 +8837,13 @@ export async function GET(request: NextRequest) {
             apMetrics = latestAP
               ? ({
                   totalAP: Number(latestAP.totalAP || 0),
+                  current: 0,
+                  days1to30: 0,
+                  days31to60: 0,
+                  days61to90: 0,
+                  days90plus: 0,
                   currentPct: null,
+                  days1to30Pct: null,
                   over30Pct: null,
                   over90Pct: null,
                   dpo: null,
@@ -8852,9 +8888,18 @@ export async function GET(request: NextRequest) {
             : computedApFromOpen
             ? {
                 totalAP: Number(computedApFromOpen.totalAP || 0),
+                current: Number(computedApFromOpen.current || 0),
+                days1to30: Number(computedApFromOpen.days1to30 || 0),
+                days31to60: Number(computedApFromOpen.days31to60 || 0),
+                days61to90: Number(computedApFromOpen.days61to90 || 0),
+                days90plus: Number(computedApFromOpen.days90plus || 0),
                 currentPct:
                   computedApFromOpen.totalAP > 0
                     ? (Number(computedApFromOpen.current || 0) / Number(computedApFromOpen.totalAP || 0)) * 100
+                    : 0,
+                days1to30Pct:
+                  computedApFromOpen.totalAP > 0
+                    ? (Number(computedApFromOpen.days1to30 || 0) / Number(computedApFromOpen.totalAP || 0)) * 100
                     : 0,
                 over30Pct:
                   computedApFromOpen.totalAP > 0

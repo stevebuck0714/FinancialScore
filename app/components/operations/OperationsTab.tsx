@@ -8088,6 +8088,7 @@ export default function OperationsTab({
     // claim there is no past-due exposure rather than that none is known.
     const apAgingAllocationAvailable = summary?.agingAllocationAvailable !== false;
     const apCurrentPct = typeof summary?.currentPct === 'number' ? summary.currentPct : null;
+    const apDays1to30Pct = typeof summary?.days1to30Pct === 'number' ? summary.days1to30Pct : null;
     const apOver30Pct = typeof summary?.over30Pct === 'number' ? summary.over30Pct : null;
     const apOver90Pct = typeof summary?.over90Pct === 'number' ? summary.over90Pct : null;
     const apDpo = typeof summary?.dpo === 'number' ? summary.dpo : null;
@@ -8303,7 +8304,7 @@ export default function OperationsTab({
 
         {/* KPI Cards */}
         {summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '24px' }}>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total AP</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
@@ -8314,6 +8315,12 @@ export default function OperationsTab({
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: apCurrentPct === null ? '#94a3b8' : '#16a34a' }}>
                 {apPctLabel(apCurrentPct)}
+              </div>
+            </div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>1-30 Days</div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: apDays1to30Pct === null ? '#94a3b8' : '#f59e0b' }}>
+                {apPctLabel(apDays1to30Pct)}
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
