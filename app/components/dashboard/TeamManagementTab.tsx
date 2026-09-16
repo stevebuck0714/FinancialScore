@@ -144,7 +144,6 @@ export default function TeamManagementTab({
                 <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Phone</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Title</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Role</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Assigned Companies</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Actions</th>
               </tr>
             </thead>
@@ -180,32 +179,6 @@ export default function TeamManagementTab({
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '12px', minWidth: '220px' }}>
-                    {member.isPrimaryContact ? (
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>All client companies</span>
-                    ) : (
-                      <>
-                        <select
-                          multiple
-                          aria-label={`Assigned companies for ${member.name}`}
-                          defaultValue={member.assignedCompanyIds || []}
-                          disabled={isLoading}
-                          onChange={(event) => {
-                            const companyIds = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
-                            updateTeamMemberAssignments(member.id, companyIds);
-                          }}
-                          style={{ width: '100%', minHeight: '82px', padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
-                        >
-                          {companies.map((company) => (
-                            <option key={company.id} value={company.id}>{company.name || 'Unnamed company'}</option>
-                          ))}
-                        </select>
-                        <div style={{ marginTop: '4px', fontSize: '10px', color: '#64748b' }}>
-                          Hold Ctrl (Windows) or Cmd (Mac) to select multiple.
-                        </div>
-                      </>
-                    )}
-                  </td>
                   <td style={{ padding: '12px' }}>
                     {!member.isPrimaryContact && (
                       <button
@@ -230,6 +203,75 @@ export default function TeamManagementTab({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {consultantTeamMembers.some((member) => !member.isPrimaryContact) && (
+        <div style={{ marginTop: '28px', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#334155', margin: '0 0 6px' }}>
+            Company Assignments
+          </h3>
+          <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 14px' }}>
+            Select each consultant who should have access to a company. A company may be assigned to multiple team members.
+          </p>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#64748b', minWidth: '220px' }}>
+                    Company
+                  </th>
+                  {consultantTeamMembers.filter((member) => !member.isPrimaryContact).map((member) => (
+                    <th key={member.id} style={{ padding: '10px 12px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#64748b', minWidth: '140px' }}>
+                      {member.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {companies.length === 0 ? (
+                  <tr>
+                    <td colSpan={consultantTeamMembers.filter((member) => !member.isPrimaryContact).length + 1} style={{ padding: '18px 12px', color: '#64748b', fontSize: '13px' }}>
+                      No client companies are available to assign.
+                    </td>
+                  </tr>
+                ) : (
+                  [...companies]
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .map((company) => (
+                      <tr key={company.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px 12px', color: '#1e293b', fontSize: '14px', fontWeight: '500' }}>
+                          {company.name || 'Unnamed company'}
+                        </td>
+                        {consultantTeamMembers.filter((member) => !member.isPrimaryContact).map((member) => {
+                          const isAssigned = (member.assignedCompanyIds || []).includes(company.id);
+                          return (
+                            <td key={member.id} style={{ padding: '10px 12px', textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                aria-label={`${isAssigned ? 'Remove' : 'Assign'} ${member.name} ${isAssigned ? 'from' : 'to'} ${company.name || 'this company'}`}
+                                checked={isAssigned}
+                                disabled={isLoading}
+                                onChange={(event) => {
+                                  const nextAssignments = new Set(member.assignedCompanyIds || []);
+                                  if (event.currentTarget.checked) {
+                                    nextAssignments.add(company.id);
+                                  } else {
+                                    nextAssignments.delete(company.id);
+                                  }
+                                  updateTeamMemberAssignments(member.id, Array.from(nextAssignments));
+                                }}
+                                style={{ width: '16px', height: '16px', cursor: isLoading ? 'not-allowed' : 'pointer' }}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
