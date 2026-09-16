@@ -231,6 +231,9 @@ export default function CompanyDetailsTab({
     external: true,
   });
   const [savingUserId, setSavingUserId] = React.useState<string | null>(null);
+  const [externalCompanyNameDrafts, setExternalCompanyNameDrafts] = React.useState<Record<string, string>>({});
+  const [savingExternalCompanyNameUserId, setSavingExternalCompanyNameUserId] = React.useState<string | null>(null);
+  const [savedExternalCompanyNameUserIds, setSavedExternalCompanyNameUserIds] = React.useState<Record<string, boolean>>({});
   const [dataRoomPermissionsByUser, setDataRoomPermissionsByUser] =
     React.useState<Record<string, DataRoomPermissionRule>>({});
   const [dataRoomFolders, setDataRoomFolders] = React.useState<
@@ -1452,68 +1455,106 @@ export default function CompanyDetailsTab({
                                     }}
                                   >
                                     {isExternalUser(u) ? (
-                                      <input
-                                        type="text"
-                                        defaultValue={
-                                          u.employerCompanyName?.trim() || ""
-                                        }
-                                        key={`${u.id}-${u.employerCompanyName || ""}`}
-                                        placeholder="Their company"
-                                        onClick={(event) =>
-                                          event.stopPropagation()
-                                        }
-                                        onBlur={async (event) => {
-                                          const next = event.target.value.trim();
-                                          const current =
-                                            u.employerCompanyName?.trim() || "";
-                                          if (!next || next === current) return;
-                                          try {
-                                            const res = await fetch(
-                                              "/api/company-invites",
-                                              {
+                                      <>
+                                        <input
+                                          type="text"
+                                          value={
+                                            externalCompanyNameDrafts[u.id] ??
+                                            u.employerCompanyName?.trim() ??
+                                            ""
+                                          }
+                                          placeholder="Their company"
+                                          onClick={(event) => event.stopPropagation()}
+                                          onChange={(event) => {
+                                            setExternalCompanyNameDrafts((drafts) => ({
+                                              ...drafts,
+                                              [u.id]: event.target.value,
+                                            }));
+                                            setSavedExternalCompanyNameUserIds((saved) => ({
+                                              ...saved,
+                                              [u.id]: false,
+                                            }));
+                                          }}
+                                          style={{
+                                            width: "100%",
+                                            minWidth: 0,
+                                            padding: "4px 6px",
+                                            borderRadius: "4px",
+                                            border: "1px solid #cbd5e1",
+                                            fontSize: "12px",
+                                            fontWeight: "600",
+                                            color: "#1e293b",
+                                          }}
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={async (event) => {
+                                            event.stopPropagation();
+                                            const employerCompanyName = (
+                                              externalCompanyNameDrafts[u.id] ??
+                                              u.employerCompanyName ??
+                                              ""
+                                            ).trim();
+                                            if (!employerCompanyName) {
+                                              alert("Enter the external user's company name before saving.");
+                                              return;
+                                            }
+                                            setSavingExternalCompanyNameUserId(u.id);
+                                            try {
+                                              const res = await fetch("/api/company-invites", {
                                                 method: "PATCH",
-                                                headers: {
-                                                  "Content-Type":
-                                                    "application/json",
-                                                },
+                                                headers: { "Content-Type": "application/json" },
                                                 body: JSON.stringify({
                                                   companyId: comp.id,
                                                   userId: u.id,
-                                                  employerCompanyName: next,
+                                                  employerCompanyName,
                                                 }),
-                                              },
-                                            );
-                                            const data = await res.json();
-                                            if (!res.ok) {
-                                              throw new Error(
-                                                data?.error ||
-                                                  "Failed to update company name",
-                                              );
+                                              });
+                                              const data = await res.json();
+                                              if (!res.ok) {
+                                                throw new Error(data?.error || "Failed to update company name");
+                                              }
+                                              onUserPermissionsUpdated?.({
+                                                ...u,
+                                                companyId: comp.id,
+                                                employerCompanyName,
+                                                isExternalCompanyUser: true,
+                                              });
+                                              setExternalCompanyNameDrafts((drafts) => {
+                                                const next = { ...drafts };
+                                                delete next[u.id];
+                                                return next;
+                                              });
+                                              setSavedExternalCompanyNameUserIds((saved) => ({
+                                                ...saved,
+                                                [u.id]: true,
+                                              }));
+                                            } catch (err: any) {
+                                              alert(err?.message || "Failed to update company name");
+                                            } finally {
+                                              setSavingExternalCompanyNameUserId(null);
                                             }
-                                            onUserPermissionsUpdated?.({
-                                              ...u,
-                                              companyId: comp.id,
-                                              employerCompanyName: next,
-                                              isExternalCompanyUser: true,
-                                            });
-                                          } catch (err: any) {
-                                            alert(
-                                              err?.message ||
-                                                "Failed to update company name",
-                                            );
-                                          }
-                                        }}
-                                        style={{
-                                          width: "100%",
-                                          minWidth: 0,
-                                          padding: "4px 6px",
-                                          borderRadius: "4px",
-                                          border: "1px solid #cbd5e1",
-                                          fontSize: "12px",
-                                          fontWeight: "600",
-                                          color: "#1e293b",
-                                        }}
-                                      />
+                                          }}
+                                          disabled={savingExternalCompanyNameUserId === u.id}
+                                          style={{
+                                            padding: "4px 7px",
+                                            background: savedExternalCompanyNameUserIds[u.id] ? "#16a34a" : "#0f766e",
+                                            color: "white",
+                                            border: "none",
+                                            borderRadius: "4px",
+                                            fontSize: "10px",
+                                            fontWeight: "700",
+                                            cursor: savingExternalCompanyNameUserId === u.id ? "not-allowed" : "pointer",
+                                            whiteSpace: "nowrap",
+                                          }}
+                                        >
+                                          {savingExternalCompanyNameUserId === u.id
+                                            ? "Saving..."
+                                            : savedExternalCompanyNameUserIds[u.id]
+                                              ? "Saved"
+                                              : "Save"}
+                                        </button>
+                                      </>
                                     ) : (
                                       <span>
                                         {comp.name || "Selected Company"}

@@ -9837,7 +9837,7 @@ function FinancialScorePage() {
         );
       } else if (inviteSent) {
         alert(
-          `Invite sent:\n\n${email}\n\nThey now appear in External Users so you can assign rights before they join. The recipient can use the invite link to create/login and will complete MFA in production.`,
+          `Invite sent:\n\n${email}${employerCompanyName ? `\nCompany: ${employerCompanyName}` : ''}\n\nThey now appear in External Users so you can assign rights before they join. The recipient can use the invite link to create/login and will complete MFA in production.`,
         );
       } else {
         alert(`Invite processed for:\n\n${email}`);
