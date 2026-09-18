@@ -20,6 +20,7 @@ const SOURCE_LABELS: Record<string, string> = {
   [APR_SGP_GMPA_SOURCE_CODE]: APR_SGP_GMPA_LABEL,
   PLATOS_CLOSET_STORE_VISIT: 'MONTHLY STORE VISIT REPORT',
   PLATOS_INVENTORY: 'Monthly Inventory Report',
+  FOODREADY_AI: 'FoodReady AI',
   CREWTRACKS: 'Crewtracks',
   HILTI: 'Hilti',
   ICE_ENCOMPASS: 'ICE Encompass',

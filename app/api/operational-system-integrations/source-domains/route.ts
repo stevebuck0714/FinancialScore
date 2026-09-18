@@ -21,6 +21,7 @@ const SOURCE_PROVIDERS: Record<string, string> = {
   HUBSPOT_STANDARD: 'HUBSPOT',
   ICE_ENCOMPASS: 'SPREADSHEET_UPLOAD',
   LANTRAX_PROFIT_POWER: 'SPREADSHEET_UPLOAD',
+  FOODREADY_AI: 'SPREADSHEET_UPLOAD',
   APPLIED_EPIC_INSURANCE_SERVICES: 'SPREADSHEET_UPLOAD',
   [RAMQUEST_TITLE_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
   [RSMEANS_PM_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
@@ -37,6 +38,14 @@ const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
     { dataDomain: 'Line Items', sourceObject: 'Deal product line items and quantities', enabled: true },
     { dataDomain: 'Sales Activities', sourceObject: 'Calls, meetings, and tasks', enabled: true },
     { dataDomain: 'Deal Owners', sourceObject: 'HubSpot owners and sales-rep assignment details', enabled: true },
+  ],
+  FOODREADY_AI: [
+    { dataDomain: 'Inventory On Hand', sourceObject: 'Current ingredient, work-in-process, and finished-good quantities and values by location', enabled: true },
+    { dataDomain: 'Lots, Expiration & Traceability', sourceObject: 'Lot / batch identifiers, receipt dates, expiration dates, supplier links, and trace events', enabled: true },
+    { dataDomain: 'Inventory Movements', sourceObject: 'Receipts, consumption, production output, transfers, adjustments, and waste transactions', enabled: true },
+    { dataDomain: 'Items, Ingredients & Units', sourceObject: 'Item master, ingredients, SKUs, categories, units of measure, and reorder thresholds', enabled: true },
+    { dataDomain: 'Recipes & Production Batches', sourceObject: 'Recipes / BOMs, planned and actual production, yields, and ingredient consumption', enabled: true },
+    { dataDomain: 'Suppliers & Purchase Orders', sourceObject: 'Supplier master, purchase orders, expected receipts, and purchasing status', enabled: true },
   ],
   ICE_ENCOMPASS: [
     { dataDomain: 'Loans', sourceObject: 'Loan details and selected loan fields', enabled: true },

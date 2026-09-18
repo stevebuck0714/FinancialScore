@@ -29,6 +29,7 @@ const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'CREWTRACKS', label: 'Crewtracks', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'HILTI', label: 'Hilti', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: BAKERS_COGS_SOURCE_CODE, label: BAKERS_COGS_LABEL, sectorCategories: ['32'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'FOODREADY_AI', label: 'FoodReady AI', sectorCategories: ['32'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: APR_SGP_GMPA_SOURCE_CODE, label: APR_SGP_GMPA_LABEL, sectorCategories: ['32', '33', '42'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'ICE_ENCOMPASS', label: 'ICE Encompass', sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'LANTRAX_PROFIT_POWER', label: 'Profit Power Enterprise', sectorCategories: ['53'] },

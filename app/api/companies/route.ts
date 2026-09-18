@@ -1714,6 +1714,50 @@ export async function PATCH(request: NextRequest) {
       };
     }
 
+    const serviceAccessSettings = [
+      { requestKey: 'operationalReportingEnabledByAdmin', allocationKey: 'operationalReporting' },
+      { requestKey: 'askCorelyticsEnabledByAdmin', allocationKey: 'askCorelytics' },
+      { requestKey: 'expertAnalysisEnabledByAdmin', allocationKey: 'expertAnalysis' },
+    ] as const;
+    const requestedServiceAccessSettings = serviceAccessSettings.filter(
+      ({ requestKey }) => updateFields[requestKey] !== undefined,
+    );
+    if (requestedServiceAccessSettings.length > 0) {
+      if (context.role !== 'SITEADMIN') {
+        return NextResponse.json(
+          { error: 'Only site admins can update service access settings' },
+          { status: 403 },
+        );
+      }
+
+      const currentUDA =
+        updateData.userDefinedAllocations &&
+        typeof updateData.userDefinedAllocations === 'object' &&
+        !Array.isArray(updateData.userDefinedAllocations)
+          ? (updateData.userDefinedAllocations as Record<string, any>)
+          : (
+              existingCompany?.userDefinedAllocations &&
+              typeof existingCompany.userDefinedAllocations === 'object' &&
+              !Array.isArray(existingCompany.userDefinedAllocations)
+                ? (existingCompany.userDefinedAllocations as Record<string, any>)
+                : {}
+            );
+      const nextUDA = { ...currentUDA };
+      for (const { requestKey, allocationKey } of requestedServiceAccessSettings) {
+        const currentService =
+          nextUDA[allocationKey] &&
+          typeof nextUDA[allocationKey] === 'object' &&
+          !Array.isArray(nextUDA[allocationKey])
+            ? nextUDA[allocationKey] as Record<string, any>
+            : {};
+        nextUDA[allocationKey] = {
+          ...currentService,
+          enabledByAdmin: Boolean(updateFields[requestKey]),
+        };
+      }
+      updateData.userDefinedAllocations = nextUDA;
+    }
+
     const hasOperationalHubConfigUpdate = updateFields.operationalHubConfig !== undefined;
     if (hasOperationalHubConfigUpdate) {
       if (context.role !== 'SITEADMIN') {

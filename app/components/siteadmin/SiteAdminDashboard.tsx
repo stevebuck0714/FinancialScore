@@ -623,6 +623,7 @@ export default function SiteAdminDashboard(props: any) {
   const [savingDataRoomCompanyId, setSavingDataRoomCompanyId] = React.useState<string | null>(null);
   const [savingCustomReportsCompanyId, setSavingCustomReportsCompanyId] = React.useState<string | null>(null);
   const [savingFinancialScoreCompanyId, setSavingFinancialScoreCompanyId] = React.useState<string | null>(null);
+  const [savingServiceAccessKey, setSavingServiceAccessKey] = React.useState<string | null>(null);
   const [editingDataRoomPricingByCompany, setEditingDataRoomPricingByCompany] = React.useState<
     Record<string, { monthly: number; quarterly: number; annual: number }>
   >({});
@@ -2428,6 +2429,93 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const getServiceAccessEnabledByAdmin = (company: any, serviceKey: string) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const service =
+      uda?.[serviceKey] &&
+      typeof uda[serviceKey] === 'object' &&
+      !Array.isArray(uda[serviceKey])
+        ? uda[serviceKey]
+        : {};
+    return typeof service.enabledByAdmin === 'boolean' ? service.enabledByAdmin : true;
+  };
+
+  const saveServiceAccessEnabledByAdmin = async (
+    companyId: string,
+    serviceKey: 'operationalReporting' | 'askCorelytics' | 'expertAnalysis',
+    enabled: boolean,
+    label: string,
+  ) => {
+    const savingKey = `${companyId}:${serviceKey}`;
+    setSavingServiceAccessKey(savingKey);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          [`${serviceKey}EnabledByAdmin`]: enabled,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `Failed to update ${label} setting`);
+      }
+      const applyCompany = (items: any[]) =>
+        Array.isArray(items)
+          ? items.map((item: any) => (item.id === companyId ? { ...item, ...(data?.company || {}) } : item))
+          : items;
+      setCompanies(applyCompany);
+      setStandaloneBusinesses(applyCompany);
+      alert(enabled ? `${label} enabled for this company.` : `${label} disabled for this company.`);
+    } catch (error: any) {
+      alert(error?.message || `Failed to update ${label} setting`);
+    } finally {
+      setSavingServiceAccessKey(null);
+    }
+  };
+
+  const renderServiceAccessCard = (
+    company: any,
+    serviceKey: 'operationalReporting' | 'askCorelytics' | 'expertAnalysis',
+    label: string,
+    colors: { background: string; border: string; heading: string },
+  ) => {
+    const enabled = getServiceAccessEnabledByAdmin(company, serviceKey);
+    const saving = savingServiceAccessKey === `${company.id}:${serviceKey}`;
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: colors.background, borderRadius: '6px', border: `1px solid ${colors.border}` }}>
+        <h6 style={{ fontSize: '14px', fontWeight: '700', color: colors.heading, margin: 0 }}>{label}</h6>
+        <div style={{ fontSize: '11px', color: '#475569' }}>
+          Status: {enabled ? 'Enabled' : 'Disabled'}
+        </div>
+        <button
+          onClick={() => saveServiceAccessEnabledByAdmin(company.id, serviceKey, !enabled, label)}
+          disabled={saving}
+          style={{
+            padding: '6px 12px',
+            background: enabled ? '#dc2626' : '#2563eb',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: '700',
+            cursor: saving ? 'not-allowed' : 'pointer',
+            gridColumn: '3',
+            gridRow: '1',
+          }}
+        >
+          {enabled ? `Disable ${label}` : `Enable ${label}`}
+        </button>
+      </div>
+    );
+  };
+
   const getValuationEnabledByAdmin = (company: any) => {
     const uda =
       company?.userDefinedAllocations &&
@@ -2716,8 +2804,8 @@ export default function SiteAdminDashboard(props: any) {
     const savingEnabled = savingDigitalPresenceCompanyId === company.id;
 
     return (
-      <div style={{ padding: '4px 10px 10px 10px', background: '#fff7ed', borderRadius: '6px', border: '1px solid #fed7aa' }}>
-        <HeadingTag style={{ fontSize: '14px', fontWeight: '700', color: '#9a3412', marginBottom: '8px' }}>Digital Presence Pricing</HeadingTag>
+      <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#fff7ed', borderRadius: '6px', border: '1px solid #fed7aa' }}>
+        <HeadingTag style={{ fontSize: '14px', fontWeight: '700', color: '#9a3412', margin: 0 }}>Digital Presence Pricing</HeadingTag>
         {editingDigitalPresence ? (
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
@@ -2765,15 +2853,16 @@ export default function SiteAdminDashboard(props: any) {
           </div>
         ) : (
           <>
-            <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.7', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', gap: '12px', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>
               <div><strong>Monthly:</strong> ${getDigitalPresencePricing(company).monthly.toFixed(2)}</div>
               <div><strong>Quarterly:</strong> ${getDigitalPresencePricing(company).quarterly.toFixed(2)}</div>
               <div><strong>Annual:</strong> ${getDigitalPresencePricing(company).annual.toFixed(2)}</div>
+              <div><strong>Status:</strong> {getDigitalPresenceEnabledByAdmin(company) ? 'Enabled' : 'Disabled'} | Subscription: {getDigitalPresenceSubscriptionStatus(company)}</div>
             </div>
-            <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+            <div style={{ display: 'none' }}>
               Status: {getDigitalPresenceEnabledByAdmin(company) ? 'Enabled' : 'Disabled'} | Subscription: {getDigitalPresenceSubscriptionStatus(company)}
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', gridColumn: '3', gridRow: '1' }}>
               <button
                 onClick={() => saveDigitalPresenceEnabledByAdmin(company.id, !getDigitalPresenceEnabledByAdmin(company))}
                 disabled={savingEnabled}
@@ -4267,6 +4356,9 @@ export default function SiteAdminDashboard(props: any) {
       if (selected.some((source: any) => String(source?.sourceCode || '') === 'ICE_ENCOMPASS')) {
         loadOperationalSourceDataDomains(companyId, 'ICE_ENCOMPASS');
       }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === 'FOODREADY_AI')) {
+        loadOperationalSourceDataDomains(companyId, 'FOODREADY_AI');
+      }
       if (selected.some((source: any) => String(source?.sourceCode || '') === 'LANTRAX_PROFIT_POWER')) {
         loadOperationalSourceDataDomains(companyId, 'LANTRAX_PROFIT_POWER');
       }
@@ -5443,6 +5535,19 @@ export default function SiteAdminDashboard(props: any) {
         { dataDomain: 'Webhooks', sourceObject: 'Loan, document, condition, task, org/user events', enabled: true },
       ],
     },
+    FOODREADY_AI: {
+      label: 'FoodReady AI',
+      description: 'FoodReady inventory, lot traceability, production, recipe, purchasing, and supplier data for food-manufacturing operational reporting. FoodReady must provision the API or an approved export before this source can be connected.',
+      credentialFields: ['FoodReady API Base URL', 'Tenant / Account ID', 'API Key or OAuth Credentials', 'Webhook Signing Secret (if enabled)'],
+      domains: [
+        { dataDomain: 'Inventory On Hand', sourceObject: 'Current ingredient, work-in-process, and finished-good quantities and values by location', enabled: true },
+        { dataDomain: 'Lots, Expiration & Traceability', sourceObject: 'Lot / batch identifiers, receipt dates, expiration dates, supplier links, and trace events', enabled: true },
+        { dataDomain: 'Inventory Movements', sourceObject: 'Receipts, consumption, production output, transfers, adjustments, and waste transactions', enabled: true },
+        { dataDomain: 'Items, Ingredients & Units', sourceObject: 'Item master, ingredients, SKUs, categories, units of measure, and reorder thresholds', enabled: true },
+        { dataDomain: 'Recipes & Production Batches', sourceObject: 'Recipes / BOMs, planned and actual production, yields, and ingredient consumption', enabled: true },
+        { dataDomain: 'Suppliers & Purchase Orders', sourceObject: 'Supplier master, purchase orders, expected receipts, and purchasing status', enabled: true },
+      ],
+    },
     LANTRAX_PROFIT_POWER: {
       label: 'Profit Power Enterprise',
       description: 'Enterprise brokerage system data for listings, closings, commissions, agents, offices, receivables, escrow, and residential real estate operational analytics.',
@@ -5500,6 +5605,7 @@ export default function SiteAdminDashboard(props: any) {
     if (normalizedSourceCode === 'CREWTRACKS') return 8 + offset;
     if (normalizedSourceCode === 'HILTI') return 10 + offset;
     if (normalizedSourceCode === 'ICE_ENCOMPASS') return 12 + offset;
+    if (normalizedSourceCode === 'FOODREADY_AI') return 13 + offset;
     if (normalizedSourceCode === 'LANTRAX_PROFIT_POWER') return 14 + offset;
     if (normalizedSourceCode === RAMQUEST_TITLE_SOURCE_CODE) return 16 + offset;
     if (normalizedSourceCode === RSMEANS_PM_SOURCE_CODE) return 18 + offset;
@@ -9457,6 +9563,8 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(company.id, 'HILTI')}
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'ICE_ENCOMPASS')}
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(company.id, 'ICE_ENCOMPASS')}
+                                            {isOperationalSourceSelected(company.id, 'FOODREADY_AI') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'FOODREADY_AI')}
+                                            {isOperationalSourceSelected(company.id, 'FOODREADY_AI') && renderConstructionOperationalDataDomainsCard(company.id, 'FOODREADY_AI')}
                                             {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'LANTRAX_PROFIT_POWER')}
                                             {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(company.id, 'LANTRAX_PROFIT_POWER')}
                                             {isOperationalSourceSelected(company.id, RAMQUEST_TITLE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, RAMQUEST_TITLE_SOURCE_CODE)}
@@ -9499,9 +9607,9 @@ export default function SiteAdminDashboard(props: any) {
                                               border: '1px solid #cbd5e1',
                                             }}
                                           >
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1.8fr) repeat(5, minmax(180px, 1fr))', gap: '10px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '340px minmax(620px, 1fr)', gap: '10px', alignItems: 'start' }}>
                                             {/* Subscription Pricing */}
-                                            <div style={{ padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <div style={{ gridRow: 'span 8', padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
                                               {editing ? (
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -9782,8 +9890,8 @@ export default function SiteAdminDashboard(props: any) {
                                               )}
                                             </div>
 
-                                            <div style={{ padding: '4px 10px 10px 10px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
-                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#1e3a8a', marginBottom: '8px' }}>DataRoom Pricing</h6>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#1e3a8a', margin: 0 }}>DataRoom Pricing</h6>
                                               {editingDataRoomPricingByCompany[company.id] ? (
                                                 <div>
                                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
@@ -9863,15 +9971,16 @@ export default function SiteAdminDashboard(props: any) {
                                                 </div>
                                               ) : (
                                                 <>
-                                                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.7', marginBottom: '8px' }}>
+                                                  <div style={{ display: 'flex', gap: '12px', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>
                                                     <div><strong>Monthly:</strong> ${getDataRoomPricing(company).monthly.toFixed(2)}</div>
                                                     <div><strong>Quarterly:</strong> ${getDataRoomPricing(company).quarterly.toFixed(2)}</div>
                                                     <div><strong>Annual:</strong> ${getDataRoomPricing(company).annual.toFixed(2)}</div>
+                                                    <div><strong>Status:</strong> {getDataRoomEnabledByAdmin(company) ? 'Enabled' : 'Disabled'} | Subscription: {getDataRoomSubscriptionStatus(company)}</div>
                                                   </div>
-                                                  <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                                  <div style={{ display: 'none' }}>
                                                     Status: {getDataRoomEnabledByAdmin(company) ? 'Enabled' : 'Disabled'} | Subscription: {getDataRoomSubscriptionStatus(company)}
                                                   </div>
-                                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', gridColumn: '3', gridRow: '1' }}>
                                                     <button
                                                       onClick={() => saveDataRoomEnabledByAdmin(company.id, !getDataRoomEnabledByAdmin(company))}
                                                       disabled={savingDataRoomCompanyId === company.id}
@@ -9904,9 +10013,9 @@ export default function SiteAdminDashboard(props: any) {
                                                 </>
                                               )}
                                             </div>
-                                            <div style={{ padding: '4px 10px 10px 10px', background: '#ecfeff', borderRadius: '6px', border: '1px solid #a5f3fc' }}>
-                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#155e75', marginBottom: '8px' }}>Custom Reports</h6>
-                                              <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#ecfeff', borderRadius: '6px', border: '1px solid #a5f3fc' }}>
+                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#155e75', margin: 0 }}>Custom Reports</h6>
+                                              <div style={{ fontSize: '11px', color: '#475569' }}>
                                                 Status: {getCustomReportsEnabledByAdmin(company) ? 'Enabled' : 'Disabled'}
                                               </div>
                                               <button
@@ -9921,14 +10030,16 @@ export default function SiteAdminDashboard(props: any) {
                                                   fontSize: '12px',
                                                   fontWeight: '700',
                                                   cursor: savingCustomReportsCompanyId === company.id ? 'not-allowed' : 'pointer',
+                                                  gridColumn: '3',
+                                                  gridRow: '1',
                                                 }}
                                               >
                                                 {getCustomReportsEnabledByAdmin(company) ? 'Disable Custom Reports' : 'Enable Custom Reports'}
                                               </button>
                                             </div>
-                                            <div style={{ padding: '4px 10px 10px 10px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
-                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', marginBottom: '8px' }}>Corelytics Score</h6>
-                                              <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
+                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#166534', margin: 0 }}>Corelytics Score</h6>
+                                              <div style={{ fontSize: '11px', color: '#475569' }}>
                                                 Status: {getFinancialScoreEnabledByAdmin(company) ? 'Enabled' : 'Disabled'}
                                               </div>
                                               <button
@@ -9943,13 +10054,18 @@ export default function SiteAdminDashboard(props: any) {
                                                   fontSize: '12px',
                                                   fontWeight: '700',
                                                   cursor: savingFinancialScoreCompanyId === company.id ? 'not-allowed' : 'pointer',
+                                                  gridColumn: '3',
+                                                  gridRow: '1',
                                                 }}
                                               >
                                                 {getFinancialScoreEnabledByAdmin(company) ? 'Disable Corelytics Score' : 'Enable Corelytics Score'}
                                               </button>
                                             </div>
-                                            <div style={{ padding: '4px 10px 10px 10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
-                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#5b21b6', marginBottom: '8px' }}>Valuation Pricing</h6>
+                                            {renderServiceAccessCard(company, 'operationalReporting', 'Operational Reporting', { background: '#f0fdfa', border: '#99f6e4', heading: '#0f766e' })}
+                                            {renderServiceAccessCard(company, 'askCorelytics', 'Ask Corelytics', { background: '#eff6ff', border: '#bfdbfe', heading: '#1d4ed8' })}
+                                            {renderServiceAccessCard(company, 'expertAnalysis', 'Expert Analysis', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
+                                            <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
+                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#5b21b6', margin: 0 }}>Valuation</h6>
                                               {editingValuationPricingByCompany[company.id] ? (
                                                 <div>
                                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
@@ -10029,15 +10145,15 @@ export default function SiteAdminDashboard(props: any) {
                                                 </div>
                                               ) : (
                                                 <>
-                                                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.7', marginBottom: '8px' }}>
+                                                  <div style={{ display: 'flex', gap: '12px', fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>
                                                     <div><strong>Monthly:</strong> ${getValuationPricing(company).monthly.toFixed(2)}</div>
                                                     <div><strong>Quarterly:</strong> ${getValuationPricing(company).quarterly.toFixed(2)}</div>
                                                     <div><strong>Annual:</strong> ${getValuationPricing(company).annual.toFixed(2)}</div>
                                                   </div>
-                                                  <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                                  <div style={{ display: 'none' }}>
                                                     Status: {getValuationEnabledByAdmin(company) ? 'Enabled' : 'Disabled'} | Subscription: {getValuationSubscriptionStatus(company)}
                                                   </div>
-                                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', gridColumn: '3', gridRow: '1' }}>
                                                     <button
                                                       onClick={() => saveValuationEnabledByAdmin(company.id, !getValuationEnabledByAdmin(company))}
                                                       disabled={savingValuationCompanyId === company.id}
@@ -13128,6 +13244,8 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'HILTI')}
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'ICE_ENCOMPASS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'ICE_ENCOMPASS')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'FOODREADY_AI') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'FOODREADY_AI')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'FOODREADY_AI') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'FOODREADY_AI')}
                                   {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'LANTRAX_PROFIT_POWER')}
                                   {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'LANTRAX_PROFIT_POWER')}
                                   {isOperationalSourceSelected(businessCompany.id, RAMQUEST_TITLE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, RAMQUEST_TITLE_SOURCE_CODE)}
@@ -13166,9 +13284,9 @@ export default function SiteAdminDashboard(props: any) {
                                     border: '1px solid #cbd5e1',
                                   }}
                                 >
-                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 1.8fr) repeat(5, minmax(180px, 1fr))', gap: '10px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '340px minmax(620px, 1fr)', gap: '10px', alignItems: 'start' }}>
                                   {/* Subscription Pricing */}
-                                  <div style={{ padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
+                                  <div style={{ gridRow: 'span 8', padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
                                     {editing ? (
                                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -13449,8 +13567,8 @@ export default function SiteAdminDashboard(props: any) {
                                     )}
                                   </div>
 
-                                  <div style={{ padding: '4px 12px 12px 12px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
-                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e3a8a', marginBottom: '8px' }}>DataRoom Pricing</h4>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e3a8a', margin: 0 }}>DataRoom Pricing</h4>
                                     {editingDataRoomPricingByCompany[businessCompany.id] ? (
                                       <div>
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
@@ -13530,15 +13648,16 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     ) : (
                                       <>
-                                        <div style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6', marginBottom: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>
                                           <div><strong>Monthly:</strong> ${getDataRoomPricing(businessCompany).monthly.toFixed(2)}</div>
                                           <div><strong>Quarterly:</strong> ${getDataRoomPricing(businessCompany).quarterly.toFixed(2)}</div>
                                           <div><strong>Annual:</strong> ${getDataRoomPricing(businessCompany).annual.toFixed(2)}</div>
+                                          <div><strong>Status:</strong> {getDataRoomEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'} | Subscription: {getDataRoomSubscriptionStatus(businessCompany)}</div>
                                         </div>
-                                        <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                        <div style={{ display: 'none' }}>
                                           Status: {getDataRoomEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'} | Subscription: {getDataRoomSubscriptionStatus(businessCompany)}
                                         </div>
-                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', gridColumn: '3', gridRow: '1' }}>
                                           <button
                                             onClick={() => saveDataRoomEnabledByAdmin(businessCompany.id, !getDataRoomEnabledByAdmin(businessCompany))}
                                             disabled={savingDataRoomCompanyId === businessCompany.id}
@@ -13571,9 +13690,9 @@ export default function SiteAdminDashboard(props: any) {
                                       </>
                                     )}
                                   </div>
-                                  <div style={{ padding: '4px 12px 12px 12px', background: '#ecfeff', borderRadius: '6px', border: '1px solid #a5f3fc' }}>
-                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#155e75', marginBottom: '8px' }}>Custom Reports</h4>
-                                    <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#ecfeff', borderRadius: '6px', border: '1px solid #a5f3fc' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#155e75', margin: 0 }}>Custom Reports</h4>
+                                    <div style={{ fontSize: '11px', color: '#475569' }}>
                                       Status: {getCustomReportsEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'}
                                     </div>
                                     <button
@@ -13588,14 +13707,16 @@ export default function SiteAdminDashboard(props: any) {
                                         fontSize: '12px',
                                         fontWeight: '600',
                                         cursor: savingCustomReportsCompanyId === businessCompany.id ? 'not-allowed' : 'pointer',
+                                        gridColumn: '3',
+                                        gridRow: '1',
                                       }}
                                     >
                                       {getCustomReportsEnabledByAdmin(businessCompany) ? 'Disable Custom Reports' : 'Enable Custom Reports'}
                                     </button>
                                   </div>
-                                  <div style={{ padding: '4px 12px 12px 12px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
-                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '8px' }}>Corelytics Score</h4>
-                                    <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#166534', margin: 0 }}>Corelytics Score</h4>
+                                    <div style={{ fontSize: '11px', color: '#475569' }}>
                                       Status: {getFinancialScoreEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'}
                                     </div>
                                     <button
@@ -13610,13 +13731,18 @@ export default function SiteAdminDashboard(props: any) {
                                         fontSize: '12px',
                                         fontWeight: '600',
                                         cursor: savingFinancialScoreCompanyId === businessCompany.id ? 'not-allowed' : 'pointer',
+                                        gridColumn: '3',
+                                        gridRow: '1',
                                       }}
                                     >
                                       {getFinancialScoreEnabledByAdmin(businessCompany) ? 'Disable Corelytics Score' : 'Enable Corelytics Score'}
                                     </button>
                                   </div>
-                                  <div style={{ padding: '4px 12px 12px 12px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
-                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#5b21b6', marginBottom: '8px' }}>Valuation Pricing</h4>
+                                  {renderServiceAccessCard(businessCompany, 'operationalReporting', 'Operational Reporting', { background: '#f0fdfa', border: '#99f6e4', heading: '#0f766e' })}
+                                  {renderServiceAccessCard(businessCompany, 'askCorelytics', 'Ask Corelytics', { background: '#eff6ff', border: '#bfdbfe', heading: '#1d4ed8' })}
+                                  {renderServiceAccessCard(businessCompany, 'expertAnalysis', 'Expert Analysis', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#5b21b6', margin: 0 }}>Valuation</h4>
                                     {editingValuationPricingByCompany[businessCompany.id] ? (
                                       <div>
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
@@ -13696,15 +13822,16 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     ) : (
                                       <>
-                                        <div style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6', marginBottom: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>
                                           <div><strong>Monthly:</strong> ${getValuationPricing(businessCompany).monthly.toFixed(2)}</div>
                                           <div><strong>Quarterly:</strong> ${getValuationPricing(businessCompany).quarterly.toFixed(2)}</div>
                                           <div><strong>Annual:</strong> ${getValuationPricing(businessCompany).annual.toFixed(2)}</div>
+                                          <div><strong>Status:</strong> {getValuationEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'} | Subscription: {getValuationSubscriptionStatus(businessCompany)}</div>
                                         </div>
-                                        <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                        <div style={{ display: 'none' }}>
                                           Status: {getValuationEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'} | Subscription: {getValuationSubscriptionStatus(businessCompany)}
                                         </div>
-                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', gridColumn: '3', gridRow: '1' }}>
                                           <button
                                             onClick={() => saveValuationEnabledByAdmin(businessCompany.id, !getValuationEnabledByAdmin(businessCompany))}
                                             disabled={savingValuationCompanyId === businessCompany.id}

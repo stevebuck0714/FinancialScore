@@ -2166,6 +2166,22 @@ function FinancialScorePage() {
     const financialScore = selectedCompany?.userDefinedAllocations?.financialScore || {};
     return financialScore?.enabledByAdmin === true;
   }, [companies, financialScoreEnabledByCompany, selectedCompanyId]);
+  const companyServiceAccess = useMemo(() => {
+    if (!selectedCompanyId || !Array.isArray(companies)) {
+      return { operationalReporting: false, askCorelytics: false, expertAnalysis: false };
+    }
+    const allocations = (companies.find((company: any) => company.id === selectedCompanyId) as any)?.userDefinedAllocations || {};
+    const isEnabled = (service: any) =>
+      typeof service?.enabledByAdmin === 'boolean' ? service.enabledByAdmin : true;
+    return {
+      operationalReporting: isEnabled(allocations?.operationalReporting),
+      askCorelytics: isEnabled(allocations?.askCorelytics),
+      expertAnalysis: isEnabled(allocations?.expertAnalysis),
+    };
+  }, [companies, selectedCompanyId]);
+  const isOperationalReportingEnabledByAdmin = companyServiceAccess.operationalReporting;
+  const isAskCorelyticsEnabledByAdmin = companyServiceAccess.askCorelytics;
+  const isExpertAnalysisEnabledByAdmin = companyServiceAccess.expertAnalysis;
   const dataRoomSubscriptionStatus = dataRoomState.subscriptionStatus;
   const isDataRoomActive = dataRoomSubscriptionStatus === 'active';
   const digitalPresenceSubscriptionStatus = digitalPresenceState.subscriptionStatus;
@@ -2383,8 +2399,8 @@ function FinancialScorePage() {
       alert('Please select a company first.');
       return;
     }
-    if (view === 'valuation-reports' && !isValuationReportsEnabledByAdmin) {
-      alert('Valuation Reports are disabled for this company.');
+    if ((view === 'valuation' || view === 'valuation-reports') && !isValuationReportsEnabledByAdmin) {
+      alert('Valuation is disabled for this company.');
       return;
     }
 
@@ -2403,6 +2419,18 @@ function FinancialScorePage() {
     }
     if ((view === 'fs-score' || view === 'fs-insights') && !isFinancialScoreEnabledByAdmin) {
       alert('Corelytics Score is disabled for this company.');
+      return;
+    }
+    if (view === 'operations' && !isOperationalReportingEnabledByAdmin) {
+      alert('Operational Reporting is disabled for this company.');
+      return;
+    }
+    if (view === 'ai-analysis' && !isAskCorelyticsEnabledByAdmin) {
+      alert('Ask Corelytics is disabled for this company.');
+      return;
+    }
+    if (view.startsWith('pa-') && !isExpertAnalysisEnabledByAdmin) {
+      alert('Expert Analysis is disabled for this company.');
       return;
     }
 
@@ -14569,6 +14597,7 @@ function FinancialScorePage() {
               </h3>
             </div>
 
+            {isOperationalReportingEnabledByAdmin && hasCompanySectionAccess('operational-dashboard') && (
             <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={() => handleNavigation('operations')}
@@ -14587,6 +14616,7 @@ function FinancialScorePage() {
                 {currentView === 'operations' && '› '}OPERATIONAL REPORTING
               </h3>
             </div>
+            )}
 
             <div style={{ marginBottom: '16px' }}>
               <h3
@@ -14607,6 +14637,7 @@ function FinancialScorePage() {
               </h3>
             </div>
 
+            {isAskCorelyticsEnabledByAdmin && hasCompanySectionAccess('ask-corelytics') && (
             <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={() => handleNavigation('ai-analysis')}
@@ -14632,6 +14663,7 @@ function FinancialScorePage() {
                 {currentView === 'ai-analysis' && '› '}ASK CORELYTICS
               </h3>
             </div>
+            )}
 
             {hasCompanySectionAccess('financial-score') && isFinancialScoreEnabledByAdmin && (
               <div style={{ marginBottom: '16px' }}>
@@ -14663,6 +14695,7 @@ function FinancialScorePage() {
 
             {/* Expert Analysis */}
             <div style={{ marginBottom: '16px' }}>
+              {isExpertAnalysisEnabledByAdmin && hasCompanySectionAccess('expert-analysis') && (
               <h3
                 onClick={handleExpertAnalysisClick}
                 style={{
@@ -14685,7 +14718,8 @@ function FinancialScorePage() {
               >
                 {currentView.startsWith('pa-') && '› '}Expert Analysis
               </h3>
-              {hasCompanySectionAccess('valuation') && (
+              )}
+              {hasCompanySectionAccess('valuation') && isValuationReportsEnabledByAdmin && (
                 <h3
                   onClick={() => handleNavigation('valuation')}
                   style={{
