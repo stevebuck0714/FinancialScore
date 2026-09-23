@@ -260,6 +260,10 @@ export async function proxy(request: NextRequest) {
   // Check if this is a public route
   const isPublicRoute =
     publicRoutes.some((route) => pathname.startsWith(route)) ||
+    // Invite validation and acceptance are authorized by the unguessable,
+    // hashed invite token. Invitees cannot have a session until this endpoint
+    // lets them create their password, so it must bypass session auth.
+    pathname === '/api/company-invites/accept' ||
     pathname === '/api/support-ticket/demo-upgrade'
   const token = DISABLE_AUTH_SIGNIN ? null : await resolveAuthToken(request)
   const tokenDemoCompany = Boolean(token && (token as any).demoCompany)
