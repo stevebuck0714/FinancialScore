@@ -25,6 +25,11 @@ export type CompanyItemDutyRow = {
   vendorId: string | null;
   vendorName: string | null;
   htsCode: string | null;
+  specialHtsCode: string | null;
+  section301HtsCode: string | null;
+  section232HtsCode: string | null;
+  ieepaHtsCode: string | null;
+  additionalHtsCode: string | null;
   countryOfOrigin: string | null;
   tradeProgram: TradeProgram;
   qtyUnit: QtyUnit;
@@ -61,6 +66,11 @@ export type CompanyItemDutyPatch = {
   itemSku?: string;
   itemDescription?: string | null;
   htsCode?: string | null;
+  specialHtsCode?: string | null;
+  section301HtsCode?: string | null;
+  section232HtsCode?: string | null;
+  ieepaHtsCode?: string | null;
+  additionalHtsCode?: string | null;
   countryOfOrigin?: string | null;
   tradeProgram?: string | null;
   qtyUnit?: string | null;
@@ -76,6 +86,11 @@ type DutyDbRow = {
   itemSku: string;
   itemDescription: string | null;
   htsCode: string | null;
+  specialHtsCode: string | null;
+  section301HtsCode: string | null;
+  section232HtsCode: string | null;
+  ieepaHtsCode: string | null;
+  additionalHtsCode: string | null;
   countryOfOrigin: string | null;
   tradeProgram: string | null;
   qtyUnit: string | null;
@@ -118,6 +133,11 @@ export async function ensureCompanyItemDutyTable(): Promise<void> {
           "itemSku" TEXT NOT NULL,
           "itemDescription" TEXT,
           "htsCode" TEXT,
+          "specialHtsCode" TEXT,
+          "section301HtsCode" TEXT,
+          "section232HtsCode" TEXT,
+          "ieepaHtsCode" TEXT,
+          "additionalHtsCode" TEXT,
           "countryOfOrigin" TEXT,
           "tradeProgram" TEXT DEFAULT 'none',
           "qtyUnit" TEXT DEFAULT 'piece',
@@ -171,6 +191,11 @@ export async function ensureCompanyItemDutyTable(): Promise<void> {
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "lastRateAsOfDate" TIMESTAMP(3)`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "lastRateReleaseName" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "tariffHtsCode" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "specialHtsCode" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "section301HtsCode" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "section232HtsCode" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "ieepaHtsCode" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "additionalHtsCode" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyCode" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyCodeSource" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "dutyDescription" TEXT`);
@@ -236,6 +261,11 @@ export function serializeCompanyItemDuty(row: DutyDbRow): CompanyItemDutyRow {
     vendorId: null,
     vendorName: null,
     htsCode,
+    specialHtsCode: String(row.specialHtsCode || '').trim() || null,
+    section301HtsCode: String(row.section301HtsCode || '').trim() || null,
+    section232HtsCode: String(row.section232HtsCode || '').trim() || null,
+    ieepaHtsCode: String(row.ieepaHtsCode || '').trim() || null,
+    additionalHtsCode: String(row.additionalHtsCode || '').trim() || null,
     countryOfOrigin: String(row.countryOfOrigin || '').trim() || null,
     tradeProgram: asTradeProgram(row.tradeProgram),
     qtyUnit: asQtyUnit(row.qtyUnit),
@@ -753,7 +783,7 @@ export async function listCompanyItemDuties(
 ): Promise<CompanyItemDutyRow[]> {
   const rows = await prisma.$queryRaw<DutyDbRow[]>`
     SELECT
-      "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
+      "id", "companyId", "itemSku", "itemDescription", "htsCode", "specialHtsCode", "section301HtsCode", "section232HtsCode", "ieepaHtsCode", "additionalHtsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
       "tariffHtsCode", "dutyCode", "dutyDescription", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
       "dutyPerPiece", "tariffPerPiece", "dutyRatePct", "specialRatePct", "section301RatePct",
       "section232RatePct", "ieepaRatePct", "additionalRatePct", "tariffRatePct", "rateSource", "identitySource",
@@ -817,6 +847,11 @@ export async function updateCompanyItemDuties(
     if (!id && !itemSku) continue;
 
     const htsCode = patch.htsCode === undefined ? undefined : normalizeHtsCode(patch.htsCode);
+    const specialHtsCode = patch.specialHtsCode === undefined ? undefined : normalizeHtsCode(patch.specialHtsCode);
+    const section301HtsCode = patch.section301HtsCode === undefined ? undefined : normalizeHtsCode(patch.section301HtsCode);
+    const section232HtsCode = patch.section232HtsCode === undefined ? undefined : normalizeHtsCode(patch.section232HtsCode);
+    const ieepaHtsCode = patch.ieepaHtsCode === undefined ? undefined : normalizeHtsCode(patch.ieepaHtsCode);
+    const additionalHtsCode = patch.additionalHtsCode === undefined ? undefined : normalizeHtsCode(patch.additionalHtsCode);
     const countryOfOrigin =
       patch.countryOfOrigin === undefined ? undefined : String(patch.countryOfOrigin || '').trim() || null;
     const tradeProgram = patch.tradeProgram === undefined ? undefined : asTradeProgram(patch.tradeProgram);
@@ -833,6 +868,11 @@ export async function updateCompanyItemDuties(
     // freeze it against the Infor and spreadsheet refreshes for good.
     const htsIdentityChanged = Prisma.sql`(
       (${htsCode !== undefined} AND COALESCE(${htsCode ?? null}::text, '') <> COALESCE("htsCode", ''))
+      OR (${specialHtsCode !== undefined} AND COALESCE(${specialHtsCode ?? null}::text, '') <> COALESCE("specialHtsCode", ''))
+      OR (${section301HtsCode !== undefined} AND COALESCE(${section301HtsCode ?? null}::text, '') <> COALESCE("section301HtsCode", ''))
+      OR (${section232HtsCode !== undefined} AND COALESCE(${section232HtsCode ?? null}::text, '') <> COALESCE("section232HtsCode", ''))
+      OR (${ieepaHtsCode !== undefined} AND COALESCE(${ieepaHtsCode ?? null}::text, '') <> COALESCE("ieepaHtsCode", ''))
+      OR (${additionalHtsCode !== undefined} AND COALESCE(${additionalHtsCode ?? null}::text, '') <> COALESCE("additionalHtsCode", ''))
       OR (${countryOfOrigin !== undefined} AND COALESCE(${countryOfOrigin ?? null}::text, '') <> COALESCE("countryOfOrigin", ''))
     )`;
     const programChanged = Prisma.sql`(
@@ -856,6 +896,11 @@ export async function updateCompanyItemDuties(
       SET
         "itemDescription" = CASE WHEN ${itemDescription !== undefined} THEN ${itemDescription} ELSE "itemDescription" END,
         "htsCode" = CASE WHEN ${htsCode !== undefined} THEN ${htsCode} ELSE "htsCode" END,
+        "specialHtsCode" = CASE WHEN ${specialHtsCode !== undefined} THEN ${specialHtsCode} ELSE "specialHtsCode" END,
+        "section301HtsCode" = CASE WHEN ${section301HtsCode !== undefined} THEN ${section301HtsCode} ELSE "section301HtsCode" END,
+        "section232HtsCode" = CASE WHEN ${section232HtsCode !== undefined} THEN ${section232HtsCode} ELSE "section232HtsCode" END,
+        "ieepaHtsCode" = CASE WHEN ${ieepaHtsCode !== undefined} THEN ${ieepaHtsCode} ELSE "ieepaHtsCode" END,
+        "additionalHtsCode" = CASE WHEN ${additionalHtsCode !== undefined} THEN ${additionalHtsCode} ELSE "additionalHtsCode" END,
         "countryOfOrigin" = CASE WHEN ${countryOfOrigin !== undefined} THEN ${countryOfOrigin} ELSE "countryOfOrigin" END,
         "tradeProgram" = CASE WHEN ${tradeProgram !== undefined} THEN ${tradeProgram} ELSE "tradeProgram" END,
         "qtyUnit" = CASE WHEN ${qtyUnit !== undefined} THEN ${qtyUnit} ELSE "qtyUnit" END,
@@ -887,7 +932,7 @@ export async function updateCompanyItemDuties(
   if (!updatedIds.length) return [];
   const rows = await prisma.$queryRaw<DutyDbRow[]>`
     SELECT
-      "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
+      "id", "companyId", "itemSku", "itemDescription", "htsCode", "specialHtsCode", "section301HtsCode", "section232HtsCode", "ieepaHtsCode", "additionalHtsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
       "tariffHtsCode", "dutyCode", "dutyDescription", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
       "dutyPerPiece", "tariffPerPiece", "dutyRatePct", "specialRatePct", "section301RatePct",
       "section232RatePct", "ieepaRatePct", "additionalRatePct", "tariffRatePct", "rateSource", "identitySource",

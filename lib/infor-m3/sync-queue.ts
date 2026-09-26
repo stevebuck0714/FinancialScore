@@ -18,6 +18,10 @@ import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-f
 import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { warmWholesaleProductsReportCache } from '@/lib/operations/wholesale-products-report-warmup';
+import {
+  ATLANTIC_PRECISION_COMPANY_ID,
+  warmAtlanticOperationalTabsCaches,
+} from '@/lib/operations/product-group-report-warmup';
 import { refreshAndWarmDutiesTariffsCache } from '@/lib/hts/duties-tariffs-cache';
 
 const DEFAULT_LEASE_SECONDS = 420;
@@ -2200,7 +2204,12 @@ async function processTask(
       platform: String(task.run.platform || 'INFOR_M3'),
     });
     if (String(task.run.platform || '').toUpperCase() === 'INFOR_M3') {
-      const wholesaleReportWarmup = await warmWholesaleProductsReportCache(task.companyId);
+      const [wholesaleReportWarmup, operationalTabsWarmup] = await Promise.all([
+        warmWholesaleProductsReportCache(task.companyId),
+        task.companyId === ATLANTIC_PRECISION_COMPANY_ID
+          ? warmAtlanticOperationalTabsCaches()
+          : Promise.resolve({ ok: true, skipped: true }),
+      ]);
       if (!wholesaleReportWarmup.ok && !wholesaleReportWarmup.skipped) {
         console.warn('Wholesale products report cache warm-up failed after Infor sync completion:', {
           companyId: task.companyId,
@@ -2208,6 +2217,15 @@ async function processTask(
           error: wholesaleReportWarmup.error,
           window: wholesaleReportWarmup.window,
           modes: wholesaleReportWarmup.modes,
+        });
+      }
+      if (!operationalTabsWarmup.ok && !operationalTabsWarmup.skipped) {
+        console.warn('Atlantic operational tab cache warm-up failed after Infor sync completion:', {
+          companyId: task.companyId,
+          runId: task.runId,
+          customers: operationalTabsWarmup.customers,
+          products: operationalTabsWarmup.products,
+          groups: operationalTabsWarmup.groups,
         });
       }
       await refreshAndWarmDutiesTariffsCache(task.companyId).catch((error) => {

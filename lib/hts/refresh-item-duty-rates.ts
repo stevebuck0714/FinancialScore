@@ -193,24 +193,44 @@ export async function refreshCompanyItemDutyRates(
     Array<{
       id: string;
       htsCode: string | null;
+      specialHtsCode: string | null;
+      section301HtsCode: string | null;
+      section232HtsCode: string | null;
+      ieepaHtsCode: string | null;
+      additionalHtsCode: string | null;
       countryOfOrigin: string | null;
       tradeProgram: string | null;
       enteredValuePerPiece: number | null;
     }>
   >`
-    SELECT "id", "htsCode", "countryOfOrigin", "tradeProgram", "enteredValuePerPiece"
+    SELECT "id", "htsCode", "specialHtsCode", "section301HtsCode", "section232HtsCode", "ieepaHtsCode", "additionalHtsCode", "countryOfOrigin", "tradeProgram", "enteredValuePerPiece"
     FROM "CompanyItemDuty"
     WHERE "companyId" = ${companyId}
-      AND COALESCE(NULLIF("htsCode", ''), '') <> ''
+      AND (
+        COALESCE(NULLIF("htsCode", ''), '') <> ''
+        OR COALESCE(NULLIF("specialHtsCode", ''), '') <> ''
+        OR COALESCE(NULLIF("section301HtsCode", ''), '') <> ''
+        OR COALESCE(NULLIF("section232HtsCode", ''), '') <> ''
+        OR COALESCE(NULLIF("ieepaHtsCode", ''), '') <> ''
+        OR COALESCE(NULLIF("additionalHtsCode", ''), '') <> ''
+      )
   `;
 
   const unique = new Map<string, { htsCode: string; originCountry: string; tradeProgram: TradeProgram }>();
   for (const item of items) {
-    const htsCode = normalizeHtsCode(item.htsCode);
-    if (!htsCode) continue;
     const originCountry = originKey(item.countryOfOrigin);
     const tradeProgram = (item.tradeProgram === 'usmca' || item.tradeProgram === 'other' ? item.tradeProgram : 'none') as TradeProgram;
-    unique.set(quoteKey(htsCode, originCountry, tradeProgram), { htsCode, originCountry, tradeProgram });
+    for (const rawCode of [
+      item.htsCode,
+      item.specialHtsCode,
+      item.section301HtsCode,
+      item.section232HtsCode,
+      item.ieepaHtsCode,
+      item.additionalHtsCode,
+    ]) {
+      const htsCode = normalizeHtsCode(rawCode);
+      if (htsCode) unique.set(quoteKey(htsCode, originCountry, tradeProgram), { htsCode, originCountry, tradeProgram });
+    }
   }
 
   const quotes = new Map<string, HtsRateQuoteRow>();
@@ -262,30 +282,48 @@ export async function refreshCompanyItemDutyRates(
   let updated = 0;
   const asOfTimestamp = utcMidnightForEstDate(asOfDate);
   for (const item of items) {
-    const htsCode = normalizeHtsCode(item.htsCode);
-    if (!htsCode) continue;
     const originCountry = originKey(item.countryOfOrigin);
     const tradeProgram = (item.tradeProgram === 'usmca' || item.tradeProgram === 'other' ? item.tradeProgram : 'none') as TradeProgram;
-    const quote = quotes.get(quoteKey(htsCode, originCountry, tradeProgram));
-    if (!quote) continue;
-    const tariffHtsCode = extract9903Codes(quote.additionalDutiesText).join(', ') || null;
-    const dutyPct = tradeProgram === 'usmca' ? quote.specialRatePct : quote.dutyRatePct;
-    const tariffPct = quote.tariffRatePct;
+    const quoteFor = (rawCode: string | null, fallbackCode: string | null) => {
+      const htsCode = normalizeHtsCode(rawCode || fallbackCode);
+      return htsCode ? quotes.get(quoteKey(htsCode, originCountry, tradeProgram)) || null : null;
+    };
+    const dutyQuote = quoteFor(item.htsCode, null);
+    const specialQuote = quoteFor(item.specialHtsCode, item.htsCode);
+    const section301Quote = quoteFor(item.section301HtsCode, item.htsCode);
+    const section232Quote = quoteFor(item.section232HtsCode, item.htsCode);
+    const ieepaQuote = quoteFor(item.ieepaHtsCode, item.htsCode);
+    const additionalQuote = quoteFor(item.additionalHtsCode, item.htsCode);
+    if (!dutyQuote && !specialQuote && !section301Quote && !section232Quote && !ieepaQuote && !additionalQuote) continue;
+    const tariffHtsCode = Array.from(new Set([
+      ...extract9903Codes(dutyQuote?.additionalDutiesText),
+      item.section301HtsCode,
+      item.section232HtsCode,
+      item.ieepaHtsCode,
+      item.additionalHtsCode,
+    ].map((code) => String(code || '').trim()).filter(Boolean))).join(', ') || null;
+    const dutyPct = tradeProgram === 'usmca' ? dutyQuote?.specialRatePct : dutyQuote?.dutyRatePct;
+    const specialPct = specialQuote?.specialRatePct ?? null;
+    const section301Pct = section301Quote?.section301RatePct ?? null;
+    const section232Pct = section232Quote?.section232RatePct ?? null;
+    const ieepaPct = ieepaQuote?.ieepaRatePct ?? null;
+    const additionalPct = additionalQuote?.additionalRatePct ?? null;
+    const tariffPct = sumPct(section301Pct, section232Pct, ieepaPct, additionalPct);
     const value = item.enteredValuePerPiece == null ? null : Number(item.enteredValuePerPiece);
     const dutyPerPiece = value == null || dutyPct == null ? null : Number((value * dutyPct) / 100);
     const tariffPerPiece = value == null || tariffPct == null ? null : Number((value * tariffPct) / 100);
     await prisma.$executeRaw`
       UPDATE "CompanyItemDuty"
       SET
-        "dutyRatePct" = ${quote.dutyRatePct},
-        "specialRatePct" = ${quote.specialRatePct},
-        "section301RatePct" = ${quote.section301RatePct},
-        "section232RatePct" = ${quote.section232RatePct},
-        "ieepaRatePct" = ${quote.ieepaRatePct},
-        "additionalRatePct" = ${quote.additionalRatePct},
-        "tariffRatePct" = ${quote.tariffRatePct},
+        "dutyRatePct" = ${dutyQuote?.dutyRatePct ?? null},
+        "specialRatePct" = ${specialPct},
+        "section301RatePct" = ${section301Pct},
+        "section232RatePct" = ${section232Pct},
+        "ieepaRatePct" = ${ieepaPct},
+        "additionalRatePct" = ${additionalPct},
+        "tariffRatePct" = ${tariffPct},
         "tariffHtsCode" = ${tariffHtsCode},
-        "dutyDescription" = ${quote.htsDescription},
+        "dutyDescription" = ${dutyQuote?.htsDescription ?? null},
         "dutyPerPiece" = ${dutyPerPiece},
         "tariffPerPiece" = ${tariffPerPiece},
         "rateSource" = 'hts',

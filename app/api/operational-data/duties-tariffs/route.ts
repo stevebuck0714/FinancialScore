@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
       discovered: payload.discovered,
       missingHtsCount: payload.missingHtsCount,
       items,
+      vendorOptions: payload.vendorOptions,
       monthlyCogs: payload.monthlyCogs,
     });
   } catch (error) {

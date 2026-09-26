@@ -22,6 +22,12 @@ type DutiesTariffsReportProps = {
   onOpenInfo?: () => void;
 };
 
+type OffshoreVendorOption = {
+  vendorId: string;
+  vendorName: string;
+  country: string | null;
+};
+
 const inputStyle: React.CSSProperties = {
   width: '100%',
   minWidth: 0,
@@ -88,7 +94,6 @@ type DutySortKey =
 
 const SORT_COLUMNS: Array<{ key: DutySortKey; label: string; align?: 'left' | 'right'; title?: string; width?: number }> = [
   { key: 'itemSku', label: 'Item' },
-  { key: 'htsCode', label: 'HTS-10' },
   { key: 'countryOfOrigin', label: 'Origin' },
   { key: 'tradeProgram', label: 'Program' },
   { key: 'qtyUnit', label: 'Unit' },
@@ -149,6 +154,7 @@ function rowVendorLabel(row: CompanyItemDutyRow): string {
 
 export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: DutiesTariffsReportProps) {
   const [items, setItems] = useState<CompanyItemDutyRow[]>([]);
+  const [offshoreVendors, setOffshoreVendors] = useState<OffshoreVendorOption[]>([]);
   const [filter, setFilter] = useState<'all' | 'needs_hts'>('all');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -181,6 +187,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
         throw new Error(payload?.error || 'Failed to load duties overlay');
       }
       setItems(Array.isArray(payload.items) ? payload.items : []);
+      setOffshoreVendors(Array.isArray(payload.vendorOptions) ? payload.vendorOptions : []);
       setSpreadsheetItems(Number(payload.spreadsheetItems || 0));
       setMissingHtsCount(Number(payload.missingHtsCount || 0));
       setDirty(false);
@@ -220,6 +227,11 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
             id: row.id,
             itemSku: row.itemSku,
             htsCode: row.htsCode,
+            specialHtsCode: row.specialHtsCode,
+            section301HtsCode: row.section301HtsCode,
+            section232HtsCode: row.section232HtsCode,
+            ieepaHtsCode: row.ieepaHtsCode,
+            additionalHtsCode: row.additionalHtsCode,
             countryOfOrigin: row.countryOfOrigin,
             tradeProgram: row.tradeProgram,
             qtyUnit: row.qtyUnit,
@@ -263,12 +275,29 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
         count: 1,
       });
     }
-    return Array.from(byKey.values()).sort((left, right) => {
+    const dutyVendors = Array.from(byKey.values()).sort((left, right) => {
       if (left.key === UNASSIGNED_VENDOR_KEY) return 1;
       if (right.key === UNASSIGNED_VENDOR_KEY) return -1;
       return left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [items]);
+    if (!offshoreVendors.length) return dutyVendors;
+    return offshoreVendors
+      .map((vendor) => {
+        const vendorId = String(vendor.vendorId || '').trim();
+        const vendorName = String(vendor.vendorName || '').trim();
+        const match = dutyVendors.find((option) =>
+          (vendorId && option.vendorId === vendorId) ||
+          (!vendorId && vendorName && option.label.toLowerCase() === vendorName.toLowerCase())
+        );
+        return {
+          key: vendorId ? `id:${vendorId}` : `name:${vendorName}`,
+          label: vendorName || vendorId,
+          vendorId,
+          count: match?.count || 0,
+        };
+      })
+      .filter((vendor) => Boolean(vendor.label));
+  }, [items, offshoreVendors]);
 
   const effectiveVendorFilter =
     vendorFilter === ALL_VENDORS_KEY || vendorOptions.some((vendor) => vendor.key === vendorFilter)
@@ -630,15 +659,6 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                 </td>
                 <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                   <input
-                    value={row.htsCode || ''}
-                    onChange={(event) => updateRow(row.id, { htsCode: event.target.value || null })}
-                    placeholder="HTS-10"
-                    size={15}
-                    style={{ ...inputStyle, width: '15ch', minWidth: '15ch', maxWidth: '15ch', boxSizing: 'content-box' }}
-                  />
-                </td>
-                <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
-                  <input
                     value={row.countryOfOrigin || ''}
                     onChange={(event) => updateRow(row.id, { countryOfOrigin: event.target.value || null })}
                     placeholder="Origin"
@@ -690,24 +710,25 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                     style={{ ...inputStyle, textAlign: 'right' }}
                   />
                 </td>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {pctText(row.dutyRatePct)}
-                </td>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {pctText(row.specialRatePct)}
-                </td>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {pctText(row.section301RatePct)}
-                </td>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {pctText(row.section232RatePct)}
-                </td>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {pctText(row.ieepaRatePct)}
-                </td>
-                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {pctText(row.additionalRatePct)}
-                </td>
+                {([
+                  ['htsCode', row.dutyRatePct],
+                  ['specialHtsCode', row.specialRatePct],
+                  ['section301HtsCode', row.section301RatePct],
+                  ['section232HtsCode', row.section232RatePct],
+                  ['ieepaHtsCode', row.ieepaRatePct],
+                  ['additionalHtsCode', row.additionalRatePct],
+                ] as const).map(([field, rate]) => (
+                  <td key={field} style={{ padding: '4px 6px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap', minWidth: 108 }}>
+                    <input
+                      value={row[field] || ''}
+                      onChange={(event) => updateRow(row.id, { [field]: event.target.value || null })}
+                      placeholder="HTS-10"
+                      aria-label={`${field} HTS code`}
+                      style={{ ...inputStyle, width: '11ch', minWidth: '11ch', fontSize: 11, marginBottom: 3 }}
+                    />
+                    <div>{pctText(rate)}</div>
+                  </td>
+                ))}
                 <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', color: '#64748b', whiteSpace: 'nowrap' }}>
                   {formatEstDateLabel(row.userEditedAt || row.lastSpreadsheetSeedAt || row.updatedAt) || '—'}
                 </td>

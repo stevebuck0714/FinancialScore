@@ -1941,6 +1941,11 @@ model CompanyItemDuty {
   itemSku                   String
   itemDescription           String?
   htsCode                   String?
+  specialHtsCode            String?
+  section301HtsCode         String?
+  section232HtsCode         String?
+  ieepaHtsCode              String?
+  additionalHtsCode         String?
   countryOfOrigin           String?
   tradeProgram              String?   @default("none")
   qtyUnit                   String?   @default("piece")

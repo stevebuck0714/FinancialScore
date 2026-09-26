@@ -18,7 +18,24 @@ export type DutiesTariffsPayload = {
   missingHtsCount: number;
   items: CompanyItemDutyRow[];
   monthlyCogs: unknown[];
+  vendorOptions: Array<{ vendorId: string; vendorName: string; country: string | null }>;
 };
+
+async function loadNonUsVendors(companyId: string): Promise<DutiesTariffsPayload['vendorOptions']> {
+  return prisma.$queryRaw<Array<{ vendorId: string; vendorName: string; country: string | null }>>`
+    WITH latest AS (
+      SELECT MAX("snapshotDate") AS "snapshotDate"
+      FROM "VendorSnapshot"
+      WHERE "companyId" = ${companyId}
+    )
+    SELECT DISTINCT "vendorId", "vendorName", "country"
+    FROM "VendorSnapshot"
+    WHERE "companyId" = ${companyId}
+      AND "snapshotDate" = (SELECT "snapshotDate" FROM latest)
+      AND UPPER(TRIM(COALESCE("country", ''))) NOT IN ('', 'US', 'USA', 'UNITED STATES', 'DOM')
+    ORDER BY "vendorName" ASC, "vendorId" ASC
+  `.catch(() => []);
+}
 
 async function withVendorNames(companyId: string, items: CompanyItemDutyRow[]): Promise<CompanyItemDutyRow[]> {
   const vendorByItem = await loadPrimaryVendorByItem(companyId).catch(() => new Map());
@@ -49,7 +66,11 @@ export function dutiesTariffsCacheKey(companyId: string): string {
 
 export async function buildDutiesTariffsPayload(companyId: string, discovered = 0): Promise<DutiesTariffsPayload> {
   await ensureCompanyItemDutyTable();
-  const items = await withVendorNames(companyId, await listCompanyItemDuties(companyId, 'all'));
+  const [dutyRows, vendorOptions] = await Promise.all([
+    listCompanyItemDuties(companyId, 'all'),
+    loadNonUsVendors(companyId),
+  ]);
+  const items = await withVendorNames(companyId, dutyRows);
   const { loadMonthlyHtsDutyCogs } = await import('@/lib/hts/apply-duty-cogs');
   const monthly = await loadMonthlyHtsDutyCogs(companyId).catch(() => new Map());
   return {
@@ -58,6 +79,7 @@ export async function buildDutiesTariffsPayload(companyId: string, discovered = 
     missingHtsCount: items.filter((item) => item.needsHtsInput).length,
     items,
     monthlyCogs: Array.from(monthly.values()),
+    vendorOptions,
   };
 }
 

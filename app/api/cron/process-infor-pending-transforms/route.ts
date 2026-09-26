@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { addEstCalendarDays, formatEstDate, previousEstCalendarDate } from '@/lib/time/eastern';
+import {
+  ATLANTIC_PRECISION_COMPANY_ID,
+  warmAtlanticProductGroupReportCache,
+} from '@/lib/operations/product-group-report-warmup';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -211,6 +215,9 @@ async function warmReportCachesForCompany(params: {
         skipped: true,
         reason: 'not_wholesale_trade',
       };
+  const groups = params.companyId === ATLANTIC_PRECISION_COMPANY_ID
+    ? await warmAtlanticProductGroupReportCache({ baseUrl: params.origin })
+    : { ok: true, skipped: true, reason: 'not_atlantic_precision' };
   const masterData = await fetchMasterDataCacheWarmup({
     origin: params.origin,
     companyId: params.companyId,
@@ -227,6 +234,7 @@ async function warmReportCachesForCompany(params: {
       customers?.ok &&
       performanceProducts?.ok &&
       inventory?.ok &&
+      groups?.ok &&
       masterData?.ok &&
       executiveBriefing?.ok &&
       (
@@ -239,6 +247,7 @@ async function warmReportCachesForCompany(params: {
     performanceProducts,
     inventory,
     wholesaleReport,
+    groups,
     masterData,
     executiveBriefing,
   };

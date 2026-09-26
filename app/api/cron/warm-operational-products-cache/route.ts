@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { addEstCalendarDays, formatEstDate, previousEstCalendarDate } from '@/lib/time/eastern';
 import prisma from '@/lib/prisma';
+import {
+  ATLANTIC_PRECISION_COMPANY_ID,
+  warmAtlanticProductGroupReportCache,
+} from '@/lib/operations/product-group-report-warmup';
 
 // Atlantic Precision auto-pull is 2:00 AM EST.
 // Vercel cron is UTC only. 09:15 UTC = 4:15 AM EST (5:15 AM EDT).
@@ -9,7 +13,6 @@ import prisma from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
 const PRODUCTS_LOOKBACK_DAYS = 90;
 type WholesaleReportMode = 'margin' | 'raw' | 'vendor';
 
@@ -163,30 +166,35 @@ export async function GET(request: NextRequest) {
     limit: '1000',
     sectorCategory,
   });
-  const wholesaleReport = sectorCategory === '42'
-    ? Object.fromEntries(await Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
-        reportMode,
-        await warmupOperationalRequest({
-          origin: request.nextUrl.origin,
-          cronSecret,
-          companyId,
-          type: 'products',
-          startDate,
-          endDate,
-          limit: 'all',
-          sectorCategory,
-          refreshWholesaleProducts: true,
+  const [wholesaleReport, groups] = await Promise.all([
+    sectorCategory === '42'
+      ? Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
           reportMode,
-        }),
-      ])))
-    : { ok: true, skipped: true, reason: 'not_wholesale_trade' };
+          await warmupOperationalRequest({
+            origin: request.nextUrl.origin,
+            cronSecret,
+            companyId,
+            type: 'products',
+            startDate,
+            endDate,
+            limit: 'all',
+            sectorCategory,
+            refreshWholesaleProducts: true,
+            reportMode,
+          }),
+        ])).then(Object.fromEntries)
+      : Promise.resolve({ ok: true, skipped: true, reason: 'not_wholesale_trade' }),
+    companyId === ATLANTIC_PRECISION_COMPANY_ID
+      ? warmAtlanticProductGroupReportCache({ baseUrl: request.nextUrl.origin })
+      : Promise.resolve({ ok: true, skipped: true, reason: 'not_atlantic_precision' }),
+  ]);
 
   const wholesaleOk = sectorCategory === '42'
     ? Object.values(wholesaleReport as Record<string, any>).every((result: any) => result?.ok)
     : true;
 
   return NextResponse.json({
-    ok: Boolean(customers?.ok && performanceProducts?.ok && inventory?.ok && wholesaleOk),
+    ok: Boolean(customers?.ok && performanceProducts?.ok && inventory?.ok && wholesaleOk && groups?.ok),
     companyId,
     startDate,
     endDate,
@@ -194,5 +202,6 @@ export async function GET(request: NextRequest) {
     performanceProducts,
     inventory,
     wholesaleReport,
+    groups,
   });
 }

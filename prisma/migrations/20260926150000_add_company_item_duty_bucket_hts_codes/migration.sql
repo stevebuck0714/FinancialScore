@@ -1,0 +1,6 @@
+ALTER TABLE "CompanyItemDuty"
+  ADD COLUMN IF NOT EXISTS "specialHtsCode" TEXT,
+  ADD COLUMN IF NOT EXISTS "section301HtsCode" TEXT,
+  ADD COLUMN IF NOT EXISTS "section232HtsCode" TEXT,
+  ADD COLUMN IF NOT EXISTS "ieepaHtsCode" TEXT,
+  ADD COLUMN IF NOT EXISTS "additionalHtsCode" TEXT;

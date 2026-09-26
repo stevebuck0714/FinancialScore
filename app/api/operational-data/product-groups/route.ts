@@ -2,10 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { asForecastYear, assertProductsForecastAccess, ensureProductRevenueTables } from '@/lib/operations/product-revenue-actual-db';
 import { loadProductGroupDataset } from '@/lib/operations/product-group-reports';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
+import { ATLANTIC_PRECISION_COMPANY_ID } from '@/lib/operations/product-group-report-warmup';
 import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
+
+function isAtlanticCronCacheWarmup(request: NextRequest, companyId: string): boolean {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  const isCacheWarmup = ['1', 'true', 'yes'].includes(
+    String(request.nextUrl.searchParams.get('cacheWarmup') || '').trim().toLowerCase()
+  );
+  return Boolean(
+    cronSecret &&
+      request.headers.get('authorization') === `Bearer ${cronSecret}` &&
+      isCacheWarmup &&
+      companyId === ATLANTIC_PRECISION_COMPANY_ID
+  );
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,8 +28,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
     }
 
-    const denied = await assertProductsForecastAccess(companyId);
-    if (denied) return denied;
+    if (!isAtlanticCronCacheWarmup(request, companyId)) {
+      const denied = await assertProductsForecastAccess(companyId);
+      if (denied) return denied;
+    }
 
     const year = asForecastYear(request.nextUrl.searchParams.get('year'));
     const refresh = ['1', 'true', 'yes'].includes(
