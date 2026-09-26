@@ -9,7 +9,7 @@ import {
 import { loadPrimaryVendorByItem } from '@/lib/operations/vendor-monthly-forecast-db';
 
 const NAMESPACE = 'duties-tariffs';
-const SOURCE_VERSION = 'duties-tariffs-warm-v1';
+const SOURCE_VERSION = 'duties-tariffs-warm-v2-freight-vendor-link';
 const TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export type DutiesTariffsPayload = {
@@ -61,10 +61,34 @@ async function loadNonUsVendors(companyId: string): Promise<DutiesTariffsPayload
 }
 
 async function withVendorNames(companyId: string, items: CompanyItemDutyRow[]): Promise<CompanyItemDutyRow[]> {
-  const vendorByItem = await loadPrimaryVendorByItem(companyId).catch(() => new Map());
+  const [vendorByItem, freightVendorRows] = await Promise.all([
+    loadPrimaryVendorByItem(companyId).catch(() => new Map()),
+    prisma.$queryRaw<Array<{ itemSku: string; vendorId: string | null; vendorName: string | null }>>`
+      SELECT
+        "itemSku",
+        "spreadsheetVendorId" AS "vendorId",
+        "spreadsheetVendorName" AS "vendorName"
+      FROM "CompanyItemFreight"
+      WHERE "companyId" = ${companyId}
+        AND COALESCE(NULLIF("spreadsheetVendorId", ''), NULLIF("spreadsheetVendorName", '')) IS NOT NULL
+    `.catch(() => []),
+  ]);
+  const freightVendorByItem = new Map<string, { vendorId: string; vendorName: string }>();
+  for (const row of freightVendorRows) {
+    const itemSku = String(row.itemSku || '').trim();
+    const vendorId = String(row.vendorId || '').trim();
+    const vendorName = String(row.vendorName || '').trim();
+    if (!itemSku || (!vendorId && !vendorName)) continue;
+    freightVendorByItem.set(itemSku.toUpperCase(), { vendorId, vendorName: vendorName || vendorId });
+  }
   return items.map((item) => {
     const sku = String(item.itemSku || '').trim();
-    const vendor = vendorByItem.get(sku.toUpperCase()) || vendorByItem.get(sku);
+    // Freight-sheet assignments are Atlantic's authoritative item/vendor link
+    // and remain available for SKUs that have not received an HTS code yet.
+    const vendor =
+      freightVendorByItem.get(sku.toUpperCase()) ||
+      vendorByItem.get(sku.toUpperCase()) ||
+      vendorByItem.get(sku);
     return { ...item, vendorId: vendor?.vendorId || null, vendorName: vendor?.vendorName || null };
   });
 }
