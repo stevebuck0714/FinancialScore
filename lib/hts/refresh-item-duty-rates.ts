@@ -46,10 +46,14 @@ function extrasWereResolved(quote: HtsRateQuoteRow): boolean {
   return text.includes(ORIGIN_SCAN_MARK);
 }
 
-function quoteLooksPopulated(quote: HtsRateQuoteRow): boolean {
+function quoteLooksPopulated(quote: HtsRateQuoteRow, expectedReleaseName: string | null): boolean {
   const hasColumn1 =
     quote.dutyRatePct != null || quote.specialRatePct != null || Boolean(quote.dutyRateText) || Boolean(quote.specialRateText);
-  return hasColumn1 && Boolean(quote.htsDescription) && extrasWereResolved(quote);
+  // A tariff revision can change after a quote was cached for the same
+  // calendar date. Never reuse an older release when USITC has identified
+  // the release that applies to the selected as-of date.
+  const matchesRelease = !expectedReleaseName || quote.releaseName === expectedReleaseName;
+  return matchesRelease && hasColumn1 && Boolean(quote.htsDescription) && extrasWereResolved(quote);
 }
 
 function originKey(value: string | null | undefined): string {
@@ -255,7 +259,7 @@ export async function refreshCompanyItemDutyRates(
         tradeProgram: identity.tradeProgram,
         asOfDate,
       });
-      if (existing && quoteLooksPopulated(existing)) {
+      if (existing && quoteLooksPopulated(existing, release?.name || null)) {
         quotes.set(key, existing);
         reused += 1;
         continue;
