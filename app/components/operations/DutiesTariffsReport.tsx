@@ -28,6 +28,17 @@ type OffshoreVendorOption = {
   country: string | null;
 };
 
+type TariffImportPreview = {
+  sheetName: string;
+  totalRows: number;
+  matched: number;
+  unchanged: number;
+  unmatched: Array<{ rowNumber: number; itemSku: string }>;
+  ambiguous: Array<{ rowNumber: number; itemSku: string; matches: string[] }>;
+  duplicates: Array<{ itemSku: string; rowNumbers: number[] }>;
+  invalid: Array<{ rowNumber: number; itemSku: string; message: string }>;
+};
+
 const inputStyle: React.CSSProperties = {
   width: '100%',
   minWidth: 0,
@@ -172,6 +183,10 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [tariffImportFile, setTariffImportFile] = useState<File | null>(null);
+  const [tariffImportPreview, setTariffImportPreview] = useState<TariffImportPreview | null>(null);
+  const [tariffImportCanConfirm, setTariffImportCanConfirm] = useState(false);
+  const [tariffImporting, setTariffImporting] = useState(false);
 
   const load = useCallback(async (nextFilter: 'all' | 'needs_hts') => {
     if (!selectedCompanyId) return;
@@ -464,6 +479,63 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     }
   };
 
+  const previewTariffImport = async () => {
+    if (!tariffImportFile) {
+      setError('Choose the tariff spreadsheet first.');
+      return;
+    }
+    if (dirty) {
+      setError('Save item edits before importing the tariff spreadsheet.');
+      return;
+    }
+    setTariffImporting(true);
+    setError(null);
+    setNotice(null);
+    setTariffImportPreview(null);
+    try {
+      const form = new FormData();
+      form.set('action', 'preview-tariff-import');
+      form.set('companyId', selectedCompanyId);
+      form.set('file', tariffImportFile);
+      const response = await fetch('/api/operational-data/duties-tariffs', { method: 'POST', body: form });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) throw new Error(payload?.error || 'Failed to read tariff spreadsheet');
+      setTariffImportPreview(payload.preview as TariffImportPreview);
+      setTariffImportCanConfirm(Boolean(payload.canImport));
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : 'Failed to read tariff spreadsheet');
+    } finally {
+      setTariffImporting(false);
+    }
+  };
+
+  const confirmTariffImport = async () => {
+    if (!tariffImportFile || !tariffImportCanConfirm) return;
+    setTariffImporting(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.set('action', 'confirm-tariff-import');
+      form.set('companyId', selectedCompanyId);
+      form.set('file', tariffImportFile);
+      const response = await fetch('/api/operational-data/duties-tariffs', { method: 'POST', body: form });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) throw new Error(payload?.error || 'Failed to import tariff spreadsheet');
+      const nextItems = Array.isArray(payload.items) ? (payload.items as CompanyItemDutyRow[]) : [];
+      setItems(filter === 'needs_hts' ? nextItems.filter((row) => row.needsHtsInput) : nextItems);
+      setMonthlyCogs(Array.isArray(payload.monthlyCogs) ? (payload.monthlyCogs as MonthlyCogsRow[]) : []);
+      setMissingHtsCount(nextItems.filter((row) => row.needsHtsInput).length);
+      setTariffImportPreview(null);
+      setTariffImportFile(null);
+      setTariffImportCanConfirm(false);
+      setNotice(`Imported tariff fields for ${Number(payload.imported || 0).toLocaleString('en-US')} item${Number(payload.imported || 0) === 1 ? '' : 's'}.`);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : 'Failed to import tariff spreadsheet');
+    } finally {
+      setTariffImporting(false);
+    }
+  };
+
   const toggleSort = (key: DutySortKey) => {
     if (sortKey === key) {
       setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
@@ -540,6 +612,29 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
+          <label style={{ ...inputStyle, width: 'auto', cursor: tariffImporting ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+            {tariffImporting ? 'Reading…' : 'Choose tariff file'}
+            <input
+              type="file"
+              accept=".xlsx"
+              disabled={tariffImporting || loading || saving}
+              onChange={(event) => {
+                setTariffImportFile(event.target.files?.[0] || null);
+                setTariffImportPreview(null);
+                setTariffImportCanConfirm(false);
+                setError(null);
+              }}
+              style={{ display: 'none' }}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void previewTariffImport()}
+            disabled={!tariffImportFile || tariffImporting || loading || saving}
+            style={{ ...inputStyle, width: 'auto', cursor: !tariffImportFile || tariffImporting ? 'not-allowed' : 'pointer', fontWeight: 700 }}
+          >
+            Preview import
+          </button>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', fontWeight: 700 }}>
             As of
             <input
@@ -585,6 +680,31 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       {notice ? (
         <div style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: '#ecfdf5', color: '#166534', fontSize: 13 }}>
           {notice}
+        </div>
+      ) : null}
+      {tariffImportPreview ? (
+        <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e3a8a', fontSize: 13 }}>
+          <div style={{ fontWeight: 800 }}>Tariff import preview: {tariffImportPreview.sheetName}</div>
+          <div style={{ marginTop: 4 }}>
+            {tariffImportPreview.totalRows.toLocaleString('en-US')} spreadsheet rows; {tariffImportPreview.matched.toLocaleString('en-US')} items will update; {tariffImportPreview.unchanged.toLocaleString('en-US')} already match; {tariffImportPreview.unmatched.length.toLocaleString('en-US')} not found.
+          </div>
+          {tariffImportPreview.ambiguous.length || tariffImportPreview.duplicates.length || tariffImportPreview.invalid.length ? (
+            <div style={{ marginTop: 6, color: '#991b1b' }}>
+              Cannot import: {tariffImportPreview.ambiguous.length} ambiguous, {tariffImportPreview.duplicates.length} conflicting duplicate, and {tariffImportPreview.invalid.length} invalid row{tariffImportPreview.invalid.length === 1 ? '' : 's'}.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => void confirmTariffImport()}
+                disabled={!tariffImportCanConfirm || tariffImporting}
+                style={{ ...inputStyle, width: 'auto', cursor: tariffImporting ? 'not-allowed' : 'pointer', fontWeight: 800, color: '#fff', background: '#0f766e', borderColor: '#0f766e' }}
+              >
+                {tariffImporting ? 'Importing…' : 'Confirm one-time import'}
+              </button>
+              <span>This writes only matched spreadsheet values. Future changes are manual.</span>
+            </div>
+          )}
         </div>
       ) : null}
 

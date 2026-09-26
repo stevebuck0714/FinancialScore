@@ -15,6 +15,11 @@ import {
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
+const MAX_TARIFF_IMPORT_BYTES = 20 * 1024 * 1024;
+
+function isUploadBlob(value: FormDataEntryValue | null): value is File {
+  return typeof File !== 'undefined' && value instanceof File && typeof value.arrayBuffer === 'function';
+}
 
 async function rebuildAppliedCogs(companyId: string) {
   const { rebuildCompanyItemDutyApplications } = await import('@/lib/hts/apply-duty-cogs');
@@ -135,6 +140,62 @@ export async function PATCH(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const contentType = request.headers.get('content-type') || '';
+    if (contentType.includes('multipart/form-data')) {
+      const form = await request.formData();
+      const companyId = String(form.get('companyId') || '').trim();
+      const action = String(form.get('action') || '').trim();
+      if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
+      const denied = await assertDutiesAccess(companyId);
+      if (denied) return denied;
+      if (action !== 'preview-tariff-import' && action !== 'confirm-tariff-import') {
+        return NextResponse.json({ error: 'Unsupported tariff import action' }, { status: 400 });
+      }
+      const file = form.get('file');
+      if (!isUploadBlob(file)) {
+        return NextResponse.json({ error: 'Upload an Excel workbook (.xlsx).' }, { status: 400 });
+      }
+      if (file.size > MAX_TARIFF_IMPORT_BYTES) {
+        return NextResponse.json({ error: 'Workbook is larger than 20 MB.' }, { status: 400 });
+      }
+
+      const { listCompanyItemDuties, updateCompanyItemDuties } = await import('@/lib/hts/item-duty-overlay');
+      const { previewTariffItemImport } = await import('@/lib/hts/tariff-item-import');
+      await ensureCompanyItemDutyTable();
+      const preview = previewTariffItemImport(
+        await file.arrayBuffer(),
+        await listCompanyItemDuties(companyId, 'all')
+      );
+      const canImport = !preview.ambiguous.length && !preview.duplicates.length && !preview.invalid.length;
+      const { patches, ...summary } = preview;
+      if (action === 'preview-tariff-import') {
+        return NextResponse.json({ ok: true, companyId, canImport, preview: summary });
+      }
+      if (!canImport) {
+        return NextResponse.json(
+          { error: 'Fix ambiguous, duplicate, or invalid rows in the spreadsheet before importing.', canImport, preview: summary },
+          { status: 400 }
+        );
+      }
+
+      await updateCompanyItemDuties(companyId, patches);
+      const applied = await rebuildAppliedCogs(companyId).catch((error) => {
+        console.warn('HTS duty COGS rebuild after tariff import skipped:', error);
+        return null;
+      });
+      const payload = await buildDutiesTariffsPayload(companyId);
+      await writeDutiesTariffsCache(companyId, payload);
+      return NextResponse.json({
+        ok: true,
+        companyId,
+        imported: patches.length,
+        preview: summary,
+        applied,
+        items: payload.items,
+        monthlyCogs: payload.monthlyCogs,
+      });
+    }
+
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const companyId = String(body.companyId || request.nextUrl.searchParams.get('companyId') || '').trim();
     if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
