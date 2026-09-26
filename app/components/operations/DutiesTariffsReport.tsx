@@ -719,13 +719,23 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                   ['additionalHtsCode', row.additionalRatePct],
                 ] as const).map(([field, rate]) => (
                   <td key={field} style={{ padding: '4px 6px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap', minWidth: 108 }}>
-                    <input
-                      value={row[field] || ''}
-                      onChange={(event) => updateRow(row.id, { [field]: event.target.value || null })}
-                      placeholder="HTS-10"
-                      aria-label={`${field} HTS code`}
-                      style={{ ...inputStyle, width: '11ch', minWidth: '11ch', fontSize: 11, marginBottom: 3 }}
-                    />
+                    <div style={{ position: 'relative', height: 27 }}>
+                      <input
+                        value={row[field] || ''}
+                        onChange={(event) => updateRow(row.id, { [field]: event.target.value || null })}
+                        placeholder="HTS-10"
+                        aria-label={`${field} HTS code`}
+                        style={{
+                          ...inputStyle,
+                          position: 'absolute',
+                          right: 0,
+                          width: '15ch',
+                          minWidth: '15ch',
+                          fontSize: 11,
+                          zIndex: 1,
+                        }}
+                      />
+                    </div>
                     <div>{pctText(rate)}</div>
                   </td>
                 ))}

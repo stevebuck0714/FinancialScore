@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { hashCacheParts, readDerivedApiCache, readLatestDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
+import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import {
   ensureCompanyItemDutyTable,
   listCompanyItemDuties,
@@ -22,7 +22,8 @@ export type DutiesTariffsPayload = {
 };
 
 async function loadNonUsVendors(companyId: string): Promise<DutiesTariffsPayload['vendorOptions']> {
-  return prisma.$queryRaw<Array<{ vendorId: string; vendorName: string; country: string | null }>>`
+  const [vendorMasterRows, freightRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ vendorId: string; vendorName: string; country: string | null }>>`
     WITH latest AS (
       SELECT MAX("snapshotDate") AS "snapshotDate"
       FROM "VendorSnapshot"
@@ -34,7 +35,29 @@ async function loadNonUsVendors(companyId: string): Promise<DutiesTariffsPayload
       AND "snapshotDate" = (SELECT "snapshotDate" FROM latest)
       AND UPPER(TRIM(COALESCE("country", ''))) NOT IN ('', 'US', 'USA', 'UNITED STATES', 'DOM')
     ORDER BY "vendorName" ASC, "vendorId" ASC
-  `.catch(() => []);
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{ vendorId: string | null; vendorName: string | null; country: string | null }>>`
+      SELECT DISTINCT
+        "spreadsheetVendorId" AS "vendorId",
+        "spreadsheetVendorName" AS "vendorName",
+        COALESCE("spreadsheetVendorCoo", "countryOfOrigin") AS "country"
+      FROM "CompanyItemFreight"
+      WHERE "companyId" = ${companyId}
+        AND COALESCE(NULLIF("spreadsheetVendorId", ''), NULLIF("spreadsheetVendorName", '')) IS NOT NULL
+        AND UPPER(TRIM(COALESCE("spreadsheetVendorCoo", "countryOfOrigin", ''))) NOT IN ('', 'US', 'USA', 'UNITED STATES', 'DOM')
+    `.catch(() => []),
+  ]);
+  const vendors = new Map<string, { vendorId: string; vendorName: string; country: string | null }>();
+  for (const row of [...vendorMasterRows, ...freightRows]) {
+    const vendorId = String(row.vendorId || '').trim();
+    const vendorName = String(row.vendorName || '').trim();
+    if (!vendorId && !vendorName) continue;
+    const key = vendorId ? `id:${vendorId}` : `name:${vendorName.toLowerCase()}`;
+    vendors.set(key, { vendorId, vendorName: vendorName || vendorId, country: row.country || null });
+  }
+  return Array.from(vendors.values()).sort((left, right) =>
+    left.vendorName.localeCompare(right.vendorName, undefined, { sensitivity: 'base', numeric: true })
+  );
 }
 
 async function withVendorNames(companyId: string, items: CompanyItemDutyRow[]): Promise<CompanyItemDutyRow[]> {
@@ -47,7 +70,7 @@ async function withVendorNames(companyId: string, items: CompanyItemDutyRow[]): 
 }
 
 export async function dutiesTariffsDataVersion(companyId: string): Promise<string> {
-  const [duty, applications] = await Promise.all([
+  const [duty, applications, vendorMaster, freight] = await Promise.all([
     prisma.$queryRaw<Array<{ count: bigint; updatedAt: Date | null }>>`
       SELECT COUNT(*) AS "count", MAX("updatedAt") AS "updatedAt"
       FROM "CompanyItemDuty" WHERE "companyId" = ${companyId}
@@ -56,8 +79,16 @@ export async function dutiesTariffsDataVersion(companyId: string): Promise<strin
       SELECT COUNT(*) AS "count", MAX("updatedAt") AS "updatedAt"
       FROM "CompanyItemDutyApplication" WHERE "companyId" = ${companyId}
     `.catch(() => []),
+    prisma.$queryRaw<Array<{ count: bigint; createdAt: Date | null; snapshotDate: Date | null }>>`
+      SELECT COUNT(*) AS "count", MAX("createdAt") AS "createdAt", MAX("snapshotDate") AS "snapshotDate"
+      FROM "VendorSnapshot" WHERE "companyId" = ${companyId}
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{ count: bigint; updatedAt: Date | null }>>`
+      SELECT COUNT(*) AS "count", MAX("updatedAt") AS "updatedAt"
+      FROM "CompanyItemFreight" WHERE "companyId" = ${companyId}
+    `.catch(() => []),
   ]);
-  return hashCacheParts([SOURCE_VERSION, companyId, duty[0] || null, applications[0] || null]);
+  return hashCacheParts([SOURCE_VERSION, companyId, duty[0] || null, applications[0] || null, vendorMaster[0] || null, freight[0] || null]);
 }
 
 export function dutiesTariffsCacheKey(companyId: string): string {
@@ -86,9 +117,7 @@ export async function buildDutiesTariffsPayload(companyId: string, discovered = 
 export async function readDutiesTariffsCache(companyId: string): Promise<DutiesTariffsPayload | null> {
   const cacheKey = dutiesTariffsCacheKey(companyId);
   const dataVersion = await dutiesTariffsDataVersion(companyId);
-  return (
-    await readDerivedApiCache<DutiesTariffsPayload>({ namespace: NAMESPACE, cacheKey, dataVersion })
-  ) || readLatestDerivedApiCache<DutiesTariffsPayload>({ namespace: NAMESPACE, cacheKey });
+  return readDerivedApiCache<DutiesTariffsPayload>({ namespace: NAMESPACE, cacheKey, dataVersion });
 }
 
 export async function writeDutiesTariffsCache(companyId: string, payload: DutiesTariffsPayload): Promise<void> {

@@ -90,7 +90,7 @@ const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v4-vendor-snapshot-deltas';
+const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v5-vendor-cache-key';
 // The server cache TTL must not become a browser max-age. A stored HTTP response is
 // keyed only by URL, so it carries no dataVersion and can outlive a corrected payload
 // for the whole TTL without ever revalidating. Serve from DerivedApiCache instead.
@@ -401,6 +401,21 @@ async function buildOperationalDataVersion(
       : Promise.resolve({ label: 'PlatosClosetMonthlyFact', skipped: true }),
   ]);
   return hashCacheParts(parts);
+}
+
+async function buildWholesaleVendorPricingDataVersion(companyId: string): Promise<string> {
+  const vendorFeeds = await safeOperationalVersionPart(
+    'InforRawRecordVendorPricing',
+    `SELECT "miProgram", COUNT(*)::text AS count, MAX("businessDate") AS "maxBusinessDate", MAX("fetchedAt") AS "maxFetchedAt"
+     FROM "InforRawRecord"
+     WHERE "companyId" = $1
+       AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
+       AND "miProgram" IN ('SLItemVends', 'SLItemVendPrices')
+     GROUP BY "miProgram"
+     ORDER BY "miProgram" ASC`,
+    companyId
+  );
+  return hashCacheParts(['wholesale-vendor-pricing-v1', companyId, vendorFeeds]);
 }
 
 const DAILY_FINANCIAL_COGS_DETAIL_FIELDS = [
@@ -3567,6 +3582,8 @@ export async function GET(request: NextRequest) {
       frequency === 'daily' &&
       hasWholesaleProductsReportModeParam &&
       boundedLimit >= 5000;
+    const isWholesaleVendorPricingRequest =
+      isWholesaleProductsReportRequest && wholesaleProductsReportMode === 'vendor';
     const shouldBuildWholesaleOrderLines =
       isWholesaleProductsReportRequest &&
       (wholesaleProductsReportMode === 'all' || wholesaleProductsReportMode === 'margin' || wholesaleProductsReportMode === 'raw');
@@ -3592,8 +3609,8 @@ export async function GET(request: NextRequest) {
               companyId,
               cacheType,
               frequency,
-              startDate.toISOString(),
-              endDate.toISOString(),
+              isWholesaleVendorPricingRequest ? 'vendor-pricing-date-independent-v1' : startDate.toISOString(),
+              isWholesaleVendorPricingRequest ? 'vendor-pricing-date-independent-v1' : endDate.toISOString(),
               sectorCategory,
               statementCurrency,
               statementRollup,
@@ -3611,7 +3628,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'ap-aging' || cacheType === 'ap'
                 ? 'ap-books-anchor-v4-qbd-1to30-kpi'
                 : null,
-              shouldApplyHydratedDateFilter ? hydratedInforDates : null,
+              isWholesaleVendorPricingRequest ? null : shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
@@ -3622,12 +3639,11 @@ export async function GET(request: NextRequest) {
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-apr-cpn-v4' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
             ]),
-            dataVersion: await buildOperationalDataVersion(companyId, cacheType, startDate, endDate, {
-              // Vendor pricing is assembled directly from these CSI raw rows.
-              // Its cache must invalidate whenever either vendor feed changes.
-              skipVolatileInforRawProducts:
-                isWholesaleProductsReportRequest && wholesaleProductsReportMode !== 'vendor',
-            }),
+            dataVersion: isWholesaleVendorPricingRequest
+              ? await buildWholesaleVendorPricingDataVersion(companyId)
+              : await buildOperationalDataVersion(companyId, cacheType, startDate, endDate, {
+                  skipVolatileInforRawProducts: isWholesaleProductsReportRequest,
+                }),
           }
         : null;
 
@@ -3670,7 +3686,10 @@ export async function GET(request: NextRequest) {
           headers: OPERATIONAL_RESPONSE_HEADERS,
         });
       }
-      if (isWholesaleProductsReportRequest && wholesaleProductsReportMode !== 'vendor') {
+      // A vendor-price rebuild scans the raw CSI history and can take minutes.
+      // While a post-import warmup is producing the new version, preserve the
+      // last complete vendor payload rather than blocking the operational UI.
+      if (isWholesaleProductsReportRequest) {
         const stalePayload = await readLatestDerivedApiCache<any>({
           namespace: operationalCache.namespace,
           cacheKey: operationalCache.cacheKey,
