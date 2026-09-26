@@ -64,6 +64,16 @@ function sumPct(...values: Array<number | null | undefined>): number {
   return values.reduce<number>((sum, value) => sum + (value == null || !Number.isFinite(value) ? 0 : Number(value)), 0);
 }
 
+function directChapter99Rate(rawCode: string | null | undefined, quote: HtsRateQuoteRow | null): number | null {
+  // A code entered in an individual tariff column (for example 9903.05.77)
+  // is the Chapter 99 measure itself. USITC publishes its incremental rate
+  // in the schedule line's general/special text, which is stored as the
+  // quote's parsed duty/special rate rather than as an "additional duty".
+  const digits = String(rawCode || '').replace(/\D/g, '');
+  if (!digits.startsWith('99')) return null;
+  return quote?.dutyRatePct ?? quote?.specialRatePct ?? null;
+}
+
 async function resolveQuoteFromUsitc(params: {
   htsCode: string;
   originCountry: string;
@@ -308,10 +318,14 @@ export async function refreshCompanyItemDutyRates(
     ].map((code) => String(code || '').trim()).filter(Boolean))).join(', ') || null;
     const dutyPct = tradeProgram === 'usmca' ? dutyQuote?.specialRatePct : dutyQuote?.dutyRatePct;
     const specialPct = specialQuote?.specialRatePct ?? null;
-    const section301Pct = section301Quote?.section301RatePct ?? null;
-    const section232Pct = section232Quote?.section232RatePct ?? null;
-    const ieepaPct = ieepaQuote?.ieepaRatePct ?? null;
-    const additionalPct = additionalQuote?.additionalRatePct ?? null;
+    const section301Pct =
+      section301Quote?.section301RatePct ?? directChapter99Rate(item.section301HtsCode, section301Quote);
+    const section232Pct =
+      section232Quote?.section232RatePct ?? directChapter99Rate(item.section232HtsCode, section232Quote);
+    const ieepaPct =
+      ieepaQuote?.ieepaRatePct ?? directChapter99Rate(item.ieepaHtsCode, ieepaQuote);
+    const additionalPct =
+      additionalQuote?.additionalRatePct ?? directChapter99Rate(item.additionalHtsCode, additionalQuote);
     const tariffPct = sumPct(section301Pct, section232Pct, ieepaPct, additionalPct);
     const value = item.enteredValuePerPiece == null ? null : Number(item.enteredValuePerPiece);
     const dutyPerPiece = value == null || dutyPct == null ? null : Number((value * dutyPct) / 100);
