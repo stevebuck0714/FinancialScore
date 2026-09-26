@@ -93,8 +93,18 @@ function valuesEqual(left: Partial<Record<TariffField, string>>, right: Partial<
 
 export function previewTariffItemImport(buffer: ArrayBuffer, dutyItems: CompanyItemDutyRow[]): TariffImportPreview {
   const parsed = readRows(buffer);
+  const exactItemsBySku = new Map<string, CompanyItemDutyRow[]>();
+  const compactItemsBySku = new Map<string, CompanyItemDutyRow[]>();
   const itemsByLookup = new Map<string, CompanyItemDutyRow[]>();
   for (const item of dutyItems) {
+    const exactKey = normalizeItemSku(item.itemSku).toUpperCase();
+    const compactKey = exactKey.replace(/[^A-Z0-9]/g, '');
+    for (const [key, target] of [[exactKey, exactItemsBySku], [compactKey, compactItemsBySku]] as const) {
+      if (!key) continue;
+      const matches = target.get(key) || [];
+      if (!matches.some((match) => match.id === item.id)) matches.push(item);
+      target.set(key, matches);
+    }
     for (const key of skuLookupKeys(item.itemSku)) {
       const matches = itemsByLookup.get(key) || [];
       if (!matches.some((match) => match.id === item.id)) matches.push(item);
@@ -126,9 +136,24 @@ export function previewTariffItemImport(buffer: ArrayBuffer, dutyItems: CompanyI
       }
     }
 
+    // This is an item-number import. Prefer an exact source-item match, then an
+    // exact punctuation-insensitive match. Prefix lookup exists only for legacy
+    // item-number formatting and must never turn an exact SKU into an ambiguity.
+    const sourceExactKey = normalizeItemSku(first.itemSku).toUpperCase();
+    const sourceCompactKey = sourceExactKey.replace(/[^A-Z0-9]/g, '');
     const matches = new Map<string, CompanyItemDutyRow>();
-    for (const key of skuLookupKeys(first.itemSku)) {
-      for (const item of itemsByLookup.get(key) || []) matches.set(item.id, item);
+    const exactMatches = exactItemsBySku.get(sourceExactKey);
+    const compactMatches = compactItemsBySku.get(sourceCompactKey);
+    const fallbackMatches =
+      exactMatches?.length
+        ? exactMatches
+        : compactMatches?.length
+          ? compactMatches
+          : skuLookupKeys(first.itemSku)
+              .map((key) => itemsByLookup.get(key) || [])
+              .find((candidates) => candidates.length > 0) || [];
+    for (const item of fallbackMatches) {
+      matches.set(item.id, item);
     }
     if (!matches.size) {
       unmatched.push({ rowNumber: first.rowNumber, itemSku: first.itemSku });
