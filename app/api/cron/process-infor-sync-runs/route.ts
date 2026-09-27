@@ -145,7 +145,7 @@ async function warmProductCachesAfterCompletedSnapshots(params: {
     companyId: params.companyId,
     startDate: productsStartIsoFromEndDate(endDate),
     endDate,
-    limit: '5000',
+    limit: '500',
     sectorCategory,
   });
   const inventory = await fetchProductsCacheWarmup({
