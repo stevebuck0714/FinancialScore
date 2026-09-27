@@ -770,6 +770,7 @@ export function serializeJoinedRevenueLine(
   dataThru?: string | Date | null
 ) {
   const estimated = estimatedMonths(line.forecastQty, line.contractPrice);
+  const sgpForecastEstimated = estimatedMonths(line.sgpForecastQty, line.sgpPrice);
   const estimatedAdjusted = adjustedEstimatedMonths(
     line.forecastQty,
     line.actualQty,
@@ -780,9 +781,11 @@ export function serializeJoinedRevenueLine(
   return {
     ...line,
     estimated,
+    sgpForecastEstimated,
     estimatedAdjusted,
     sgpEstimated: sgpEstimatedDollars(line.annualBaseQty, line.sgpPrice),
     annualEstimated: annualEstimatedDollars(line.forecastQty, line.contractPrice),
+    annualSgpForecastEstimated: annualEstimatedDollars(line.sgpForecastQty, line.sgpPrice),
     annualAdjusted: annualAdjustedEstimatedDollars(
       line.forecastQty,
       line.actualQty,
@@ -828,7 +831,11 @@ export async function loadRevenueDataset(params: {
       ? [companyId, year, scopedCustomerName]
       : [companyId, year];
   const catalogSourceYear = await latestProductCatalogSourceYear(companyId, year);
-  const [settingsRows, forecastSettings, forecastRaw, revenueRows, priceRows, sourcePriceRows, shipped, invoicedRevenue, catalogCustomers] = await Promise.all([
+  // Do not launch all nine queries together. This loader also runs alongside
+  // duty/freight lookups for product reports, and production has a seven-slot
+  // Prisma pool. Two bounded batches keep the report responsive under cache
+  // misses instead of timing out while waiting for a pooled connection.
+  const [settingsRows, forecastSettings, forecastRaw, revenueRows] = await Promise.all([
     prisma.$queryRawUnsafe<RevenueSettingsRow[]>(
       `SELECT "dataThru", "shippingDays" FROM "ProductRevenueSettings" WHERE "companyId" = $1 AND "year" = $2 LIMIT 1`,
       companyId,
@@ -844,6 +851,8 @@ export async function loadRevenueDataset(params: {
       customerName: scopedCustomerName || undefined,
     }),
     prisma.$queryRawUnsafe<RevenueLineRow[]>(revenueLineSql, ...revenueLineParams),
+  ]);
+  const [priceRows, sourcePriceRows, shipped, invoicedRevenue, catalogCustomers] = await Promise.all([
     prisma.$queryRawUnsafe<RevenuePriceRow[]>(
       `SELECT "customerGroup", "itemSku", "contractPrice", "sgpPrice"
        FROM "ProductRevenuePrice"
@@ -920,6 +929,7 @@ export async function loadRevenueDataset(params: {
       sortOrder: revenue?.sortOrder ?? forecast.sortOrder,
       annualBaseQty: forecast.annualBaseQty,
       forecastQty: forecast.forecastQty,
+      sgpForecastQty: forecast.sgpForecastQty,
       actualQty: forecast.actualQty,
       adjustedQty: forecast.adjustedQty,
       contractPrice: matched.contractPrice,
@@ -946,6 +956,7 @@ export async function loadRevenueDataset(params: {
       sortOrder: revenue.sortOrder,
       annualBaseQty: null,
       forecastQty: emptyMonthQtyMap(),
+      sgpForecastQty: emptyMonthQtyMap(),
       actualQty: emptyMonthQtyMap(),
       adjustedQty: emptyMonthQtyMap(),
       contractPrice: matched.contractPrice,

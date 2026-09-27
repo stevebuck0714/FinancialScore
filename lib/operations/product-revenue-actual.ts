@@ -63,6 +63,7 @@ export type JoinedRevenueLine = ProductRevenueLineInput & {
   id: string;
   annualBaseQty: number | null;
   forecastQty: MonthQtyMap;
+  sgpForecastQty: MonthQtyMap;
   actualQty: MonthQtyMap;
   adjustedQty: MonthQtyMap;
   contractPrice: number | null;

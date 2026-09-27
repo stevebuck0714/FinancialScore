@@ -153,7 +153,7 @@ export async function GET(request: NextRequest) {
     type: 'products',
     startDate,
     endDate,
-    limit: 'all',
+    limit: '5000',
     sectorCategory,
   });
   const inventory = await warmupOperationalRequest({

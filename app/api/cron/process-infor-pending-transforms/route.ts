@@ -181,7 +181,7 @@ async function warmReportCachesForCompany(params: {
     type: 'products',
     startDate: productsStartIsoFromEndDate(endDate),
     endDate,
-    limit: 'all',
+    limit: '5000',
     sectorCategory,
   });
   const inventory = await fetchOperationalCacheWarmup({

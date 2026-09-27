@@ -47,6 +47,7 @@ type RevenueLine = {
   productionType: string;
   statusFlag: string;
   actualRevenue: MonthQtyMap;
+  sgpForecastEstimated: MonthQtyMap;
   estimated: MonthQtyMap;
   estimatedAdjusted: MonthQtyMap;
   forecastQty: MonthQtyMap;
@@ -95,7 +96,7 @@ const IDENTITY_CELL_EXTRA_PX = 28;
 const MONTH_COL_HEADER_BG = '#e0e7ff';
 const MONTH_COL_CELL_BG = '#eef2ff';
 const MONTH_METRIC_COL_PX = 68;
-const MONTH_METRIC_COL_COUNT = 10;
+const MONTH_METRIC_COL_COUNT = 12;
 const PLANNED_COL_CH = 6;
 const STATUS_COL_CH = 5;
 
@@ -875,12 +876,14 @@ export default function ProductMonthlyRevenueReport({
                 <th style={{ textAlign: 'right', padding: '8px 2px', color: '#334155', background: '#f8fafc', fontSize: 11, fontWeight: 700, verticalAlign: 'bottom', width: columnWidth(5), minWidth: columnWidth(5), maxWidth: columnWidth(5), boxSizing: 'border-box', whiteSpace: 'normal', lineHeight: 1.2 }}>
                   LOST / OBS<br />NEW
                 </th>
-                <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>Forecasted<br />{previousMonthName}<br />&nbsp;</th>
+                <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>SGP Forecast<br />{previousMonthName}<br />&nbsp;</th>
+                <th style={priorHeaderStyle}>Forecasted<br />{previousMonthName}<br />&nbsp;</th>
                 <th style={priorHeaderStyle}>{previousMonthName}<br />Forecast -<br />ADJ</th>
                 <th style={priorHeaderStyle}>{previousMonthName}<br />Actual<br />&nbsp;</th>
                 <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs<br />Forecasted</th>
                 <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs Forecast -<br />Adj</th>
-                <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>Forecasted<br />{monthName}<br />&nbsp;</th>
+                <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>SGP Forecast<br />{monthName}<br />&nbsp;</th>
+                <th style={monthHeaderStyle}>Forecasted<br />{monthName}<br />&nbsp;</th>
                 <th style={monthHeaderStyle}>{monthName}<br />Forecast -<br />ADJ</th>
                 <th style={monthHeaderStyle}>{monthName}<br />Actual<br />&nbsp;</th>
                 <th style={monthHeaderStyle}>% {monthName} Actual<br />vs<br />Forecasted</th>
@@ -915,6 +918,9 @@ export default function ProductMonthlyRevenueReport({
                       : '—'}
                   </td>
                   <td style={{ ...priorCellStyle, borderLeft: '1px solid #e2e8f0' }}>
+                    {fmtMoney(monthQty(line.sgpForecastEstimated, previousMonth))}
+                  </td>
+                  <td style={priorCellStyle}>
                     {fmtMoney(monthQty(line.estimated, previousMonth))}
                   </td>
                   <td style={priorCellStyle}>
@@ -934,6 +940,9 @@ export default function ProductMonthlyRevenueReport({
                     ))}
                   </td>
                   <td style={{ ...monthCellStyle, borderLeft: '2px solid #c7d2fe' }}>
+                    {fmtMoney(monthQty(line.sgpForecastEstimated, selectedMonth))}
+                  </td>
+                  <td style={monthCellStyle}>
                     {fmtMoney(monthQty(line.estimated, selectedMonth))}
                   </td>
                   <td style={monthCellStyle}>

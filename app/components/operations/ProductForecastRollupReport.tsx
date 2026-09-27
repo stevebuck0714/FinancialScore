@@ -73,6 +73,7 @@ const QUARTER_SHADES: Record<ForecastQuarter, {
 };
 
 const QUARTER_METRIC_HEADERS = [
+  'SGP Forecast',
   'Forecasted',
   'Forecasted - ADJ',
   'YTD',
@@ -501,12 +502,12 @@ export default function ProductForecastRollupReport({
                     </th>
                   ))}
                   {FORECAST_QUARTERS.map((quarter) => (
-                    <th key={quarter} colSpan={4} style={quarterGroupHeaderStyle(quarter)}>
+                    <th key={quarter} colSpan={5} style={quarterGroupHeaderStyle(quarter)}>
                       {quarterLabel(quarter)}
                     </th>
                   ))}
                   <th
-                    colSpan={5}
+                    colSpan={6}
                     style={{
                       textAlign: 'center',
                       padding: '6px 6px',
@@ -536,6 +537,7 @@ export default function ProductForecastRollupReport({
                   <th style={{ ...annualHeaderStyle, borderLeft: `2px solid ${ANNUAL_COL_BORDER}` }}>
                     SGP ESTIMATED
                   </th>
+                  <th style={annualHeaderStyle}>SGP FORECAST</th>
                   <th style={annualHeaderStyle}>FORECASTED</th>
                   <th style={annualHeaderStyle}>FORECAST -<br />ADJUSTED</th>
                   <th style={annualHeaderStyle}>YTD</th>
@@ -564,12 +566,14 @@ export default function ProductForecastRollupReport({
                         </td>
                       ))}
                       {FORECAST_QUARTERS.map((quarter) => {
+                        const sgpForecast = quarterForecastQty(line.sgpForecastQty || line.forecastQty, quarter);
                         const forecasted = quarterForecastQty(line.forecastQty, quarter);
                         const adjusted = quarterAdjustedQty(line.forecastQty, line.actualQty, dataThru || null, quarter, line.adjustedQty);
                         const ytd = quarterActualQty(line.actualQty, quarter);
                         return (
                           <React.Fragment key={quarter}>
-                            <td style={quarterCellStyle(quarter, true)}>{fmtQty(forecasted)}</td>
+                            <td style={quarterCellStyle(quarter, true)}>{fmtQty(sgpForecast)}</td>
+                            <td style={quarterCellStyle(quarter, false)}>{fmtQty(forecasted)}</td>
                             <td style={quarterCellStyle(quarter, false)}>{fmtQty(adjusted)}</td>
                             <td style={quarterCellStyle(quarter, false)}>{fmtQty(ytd)}</td>
                             <td style={quarterCellStyle(quarter, false)}>{fmtPct(pctVsPlan(ytd, forecasted))}</td>
@@ -579,6 +583,7 @@ export default function ProductForecastRollupReport({
                       <td style={{ ...annualCellStyle, borderLeft: `2px solid ${ANNUAL_COL_BORDER}` }}>
                         {line.annualBaseQty == null ? '—' : fmtQty(Number(line.annualBaseQty))}
                       </td>
+                      <td style={annualCellStyle}>{fmtQty(monthQtyTotal(line.sgpForecastQty || line.forecastQty))}</td>
                       <td style={annualCellStyle}>{fmtQty(annualForecast)}</td>
                       <td style={annualCellStyle}>{fmtQty(annualAdjusted)}</td>
                       <td style={annualCellStyle}>{fmtQty(ytdActual)}</td>
@@ -588,7 +593,7 @@ export default function ProductForecastRollupReport({
                 })}
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={24} style={{ padding: 16, color: '#64748b' }}>
+                    <td colSpan={29} style={{ padding: 16, color: '#64748b' }}>
                       No forecast rows for this customer yet. Import the workbook on Monthly Forecast, then return here.
                     </td>
                   </tr>

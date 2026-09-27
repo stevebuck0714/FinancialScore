@@ -14,13 +14,37 @@ type Fingerprint = { label: string; count?: number; updatedAt?: string | null; l
 const isoOrNull = (value: unknown): string | null =>
   value instanceof Date ? value.toISOString() : null;
 
+// The production database allows seven pooled connections. Product-report
+// fingerprints query eleven tables; launching them all at once can starve the
+// report build that follows (and other product tabs sharing this process).
+const MAX_CONCURRENT_FINGERPRINTS = 4;
+let activeFingerprintLoads = 0;
+const fingerprintWaiters: Array<() => void> = [];
+
+async function acquireFingerprintSlot(): Promise<void> {
+  if (activeFingerprintLoads < MAX_CONCURRENT_FINGERPRINTS) {
+    activeFingerprintLoads += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => fingerprintWaiters.push(resolve));
+  activeFingerprintLoads += 1;
+}
+
+function releaseFingerprintSlot(): void {
+  activeFingerprintLoads = Math.max(0, activeFingerprintLoads - 1);
+  fingerprintWaiters.shift()?.();
+}
+
 async function safeFingerprint(label: string, load: () => Promise<Fingerprint>): Promise<Fingerprint> {
+  await acquireFingerprintSlot();
   try {
     return await load();
   } catch {
     // A missing runtime-created table must not break the version, but it also
     // must not silently look identical to a populated one.
     return { label, updatedAt: 'unavailable' };
+  } finally {
+    releaseFingerprintSlot();
   }
 }
 

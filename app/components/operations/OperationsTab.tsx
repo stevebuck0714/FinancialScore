@@ -2025,7 +2025,13 @@ export default function OperationsTab({
 
   async function fetchOperationalType(type: OpsDataType, options?: { refreshConcentration?: boolean }) {
     const apiType = type === 'sales' ? 'customers' : type;
-    const typeLimit = type === 'sales' ? '5000' : apiType === 'products' ? 'all' : apiType === 'customers' ? '500' : '1000';
+    // The Performance view aggregates product rows in the browser. Asking the
+    // API for every historical row lets large Infor tenants produce an
+    // unbounded response, which can hold database connections long enough for
+    // the other product reports to exhaust their small production pool.
+    // The API expands this to a 12k analysis window, which is sufficient for
+    // the dashboard while retaining a deterministic upper bound.
+    const typeLimit = type === 'sales' ? '5000' : apiType === 'products' ? '5000' : apiType === 'customers' ? '500' : '1000';
     const timeoutMs = apiType === 'customers' && options?.refreshConcentration
       ? 120000
       : apiType === 'hiring'

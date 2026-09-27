@@ -41,7 +41,9 @@ type RevenueLine = {
   adjustedQty: MonthQtyMap;
   estimated: MonthQtyMap;
   forecastQty: MonthQtyMap;
+  sgpForecastQty: MonthQtyMap;
   contractPrice: number | null;
+  sgpPrice: number | null;
   sgpEstimated: number;
   annualEstimated: number;
   annualAdjusted: number;
@@ -96,6 +98,7 @@ const QUARTER_SHADES: Record<ForecastQuarter, {
 };
 
 const QUARTER_METRIC_HEADERS = [
+  'SGP Forecast',
   'Forecasted',
   'Forecast - ADJ',
   'YTD',
@@ -646,12 +649,12 @@ export default function ProductRevenueRollupReport({
                   </th>
                 ))}
                 {FORECAST_QUARTERS.map((quarter) => (
-                  <th key={quarter} colSpan={5} style={quarterGroupHeaderStyle(quarter)}>
+                  <th key={quarter} colSpan={6} style={quarterGroupHeaderStyle(quarter)}>
                     {quarterLabel(quarter)}
                   </th>
                 ))}
                 <th
-                  colSpan={5}
+                  colSpan={6}
                   style={{
                     textAlign: 'center',
                     padding: '6px 6px',
@@ -679,6 +682,9 @@ export default function ProductRevenueRollupReport({
                   </React.Fragment>
                 ))}
                 <th style={{ ...annualHeaderStyle, borderLeft: `2px solid ${ANNUAL_COL_BORDER}` }}>
+                  SGP FORECAST
+                </th>
+                <th style={annualHeaderStyle}>
                   FORECASTED
                 </th>
                 <th style={annualHeaderStyle}>FORECAST -<br />ADJ</th>
@@ -705,6 +711,7 @@ export default function ProductRevenueRollupReport({
                     </td>
                   ))}
                   {FORECAST_QUARTERS.map((quarter) => {
+                    const sgpForecast = quarterEstimatedDollars(line.sgpForecastQty || line.forecastQty, line.sgpPrice, quarter);
                     const estimated = quarterEstimatedDollars(line.forecastQty, line.contractPrice, quarter);
                     const adjusted = quarterAdjustedEstimatedDollars(
                       line.forecastQty,
@@ -717,7 +724,8 @@ export default function ProductRevenueRollupReport({
                     const ytd = quarterActualRevenue(line.actualRevenue, quarter);
                     return (
                       <React.Fragment key={quarter}>
-                        <td style={quarterCellStyle(quarter, true)}>{fmtMoney(estimated)}</td>
+                        <td style={quarterCellStyle(quarter, true)}>{fmtMoney(sgpForecast)}</td>
+                        <td style={quarterCellStyle(quarter, false)}>{fmtMoney(estimated)}</td>
                         <td style={quarterCellStyle(quarter, false)}>{fmtMoney(adjusted)}</td>
                         <td style={quarterCellStyle(quarter, false)}>{fmtMoney(ytd)}</td>
                         <td style={quarterCellStyle(quarter, false)}>{fmtPct(pctRevenueShipped(ytd, estimated))}</td>
@@ -726,6 +734,12 @@ export default function ProductRevenueRollupReport({
                     );
                   })}
                   <td style={{ ...annualCellStyle, borderLeft: `2px solid ${ANNUAL_COL_BORDER}` }}>
+                    {fmtMoney(FORECAST_QUARTERS.reduce(
+                      (sum, quarter) => sum + quarterEstimatedDollars(line.sgpForecastQty || line.forecastQty, line.sgpPrice, quarter),
+                      0
+                    ))}
+                  </td>
+                  <td style={annualCellStyle}>
                     {fmtMoney(line.annualEstimated)}
                   </td>
                   <td style={annualCellStyle}>{fmtMoney(line.annualAdjusted)}</td>
@@ -736,7 +750,7 @@ export default function ProductRevenueRollupReport({
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={28} style={{ padding: 16, color: '#64748b' }}>
+                  <td colSpan={33} style={{ padding: 16, color: '#64748b' }}>
                     No revenue rows for this customer yet. Save Monthly Forecast and Monthly Revenue for this customer, then return here.
                   </td>
                 </tr>

@@ -1830,6 +1830,7 @@ model ProductRevenueForecastLine {
   statusFlag         String?
   annualBaseQty      Float?
   forecastQty        Json     @default("{}")
+  sgpForecastQty     Json     @default("{}")
   adjustedQty        Json     @default("{}")
   actualQty          Json     @default("{}")
   sortOrder          Int      @default(0)

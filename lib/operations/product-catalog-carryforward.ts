@@ -50,6 +50,7 @@ export function asCarriedForecastLine(row: ForecastLineRow, targetYear: number):
     ...row,
     id: `tmp-carry-${targetYear}-${row.id}`,
     forecastQty: emptyMonthQtyMap(),
+    sgpForecastQty: emptyMonthQtyMap(),
     adjustedQty: emptyMonthQtyMap(),
     actualQty: emptyMonthQtyMap(),
   };

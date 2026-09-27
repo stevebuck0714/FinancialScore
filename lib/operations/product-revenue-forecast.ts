@@ -51,6 +51,7 @@ export type ProductRevenueForecastLineInput = {
   statusFlag: string;
   annualBaseQty: number | null;
   forecastQty: MonthQtyMap;
+  sgpForecastQty: MonthQtyMap;
   adjustedQty: MonthQtyMap;
   actualQty: MonthQtyMap;
   sortOrder: number;
@@ -539,6 +540,7 @@ export function parseProductRevenueForecastWorkbook(
       statusFlag: normalizeStatusFlag(cell(row, 'I')),
       annualBaseQty: asNumber(cell(row, 'J')),
       forecastQty,
+      sgpForecastQty: { ...forecastQty },
       adjustedQty: { ...forecastQty },
       actualQty,
       sortOrder: rows.length,

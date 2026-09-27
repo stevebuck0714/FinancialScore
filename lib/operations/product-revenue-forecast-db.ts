@@ -50,6 +50,7 @@ export async function ensureProductRevenueForecastTables(): Promise<void> {
           "statusFlag" TEXT,
           "annualBaseQty" DOUBLE PRECISION,
           "forecastQty" JSONB NOT NULL DEFAULT '{}',
+          "sgpForecastQty" JSONB NOT NULL DEFAULT '{}',
           "adjustedQty" JSONB NOT NULL DEFAULT '{}',
           "actualQty" JSONB NOT NULL DEFAULT '{}',
           "sortOrder" INTEGER NOT NULL DEFAULT 0,
@@ -73,6 +74,10 @@ export async function ensureProductRevenueForecastTables(): Promise<void> {
       await prisma.$executeRawUnsafe(`
         ALTER TABLE "ProductRevenueForecastLine"
         ADD COLUMN IF NOT EXISTS "adjustedQty" JSONB NOT NULL DEFAULT '{}'::jsonb
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "ProductRevenueForecastLine"
+        ADD COLUMN IF NOT EXISTS "sgpForecastQty" JSONB NOT NULL DEFAULT '{}'::jsonb
       `);
     })().catch((error) => {
       ensureTablesOnce = null;
@@ -217,6 +222,7 @@ export function serializeForecastLine(row: {
   statusFlag: string | null;
   annualBaseQty: number | null;
   forecastQty: Prisma.JsonValue;
+  sgpForecastQty?: Prisma.JsonValue | null;
   adjustedQty?: Prisma.JsonValue | null;
   actualQty: Prisma.JsonValue;
   sortOrder: number;
@@ -235,6 +241,7 @@ export function serializeForecastLine(row: {
     statusFlag: row.statusFlag || '',
     annualBaseQty: row.annualBaseQty,
     forecastQty,
+    sgpForecastQty: normalizeAdjustedQtyMap(row.sgpForecastQty, forecastQty),
     adjustedQty: normalizeAdjustedQtyMap(row.adjustedQty, forecastQty),
     actualQty: normalizeMonthQtyMap(row.actualQty),
     sortOrder: row.sortOrder,
@@ -263,6 +270,7 @@ export function normalizeForecastLineInput(
     statusFlag: asText(raw.statusFlag) || null,
     annualBaseQty: asNullableNumber(raw.annualBaseQty),
     forecastQty,
+    sgpForecastQty: normalizeAdjustedQtyMap(raw.sgpForecastQty, forecastQty),
     adjustedQty: normalizeAdjustedQtyMap(raw.adjustedQty, forecastQty),
     actualQty: normalizeMonthQtyMap(raw.actualQty),
     sortOrder,
@@ -286,16 +294,21 @@ export async function upsertForecastLines(params: {
     update: dataThru === undefined ? { updatedAt: now } : { dataThru: dataThru ?? null, updatedAt: now },
   });
 
-  const existingByKey = new Map<string, { forecastQty: Prisma.JsonValue; adjustedQty: Prisma.JsonValue | null }>();
+  const existingByKey = new Map<string, {
+    forecastQty: Prisma.JsonValue;
+    sgpForecastQty: Prisma.JsonValue | null;
+    adjustedQty: Prisma.JsonValue | null;
+  }>();
   if (preserveLockedMonthQtys && replaceCustomer) {
     const existingRows = await prisma.$queryRaw<Array<{
       customerId: string;
       itemSku: string;
       customerPartNumber: string;
       forecastQty: Prisma.JsonValue;
+      sgpForecastQty: Prisma.JsonValue | null;
       adjustedQty: Prisma.JsonValue | null;
     }>>`
-      SELECT "customerId", "itemSku", "customerPartNumber", "forecastQty", "adjustedQty"
+      SELECT "customerId", "itemSku", "customerPartNumber", "forecastQty", "sgpForecastQty", "adjustedQty"
       FROM "ProductRevenueForecastLine"
       WHERE "companyId" = ${companyId}
         AND "year" = ${year}
@@ -308,7 +321,11 @@ export async function upsertForecastLines(params: {
     for (const row of existingRows) {
       existingByKey.set(
         `${row.customerId}||${row.itemSku}||${row.customerPartNumber}`,
-        { forecastQty: row.forecastQty, adjustedQty: row.adjustedQty }
+        {
+          forecastQty: row.forecastQty,
+          sgpForecastQty: row.sgpForecastQty,
+          adjustedQty: row.adjustedQty,
+        }
       );
     }
   }
@@ -338,6 +355,7 @@ export async function upsertForecastLines(params: {
         ? {
             ...line,
             forecastQty: mergeLockedMonthQty(line.forecastQty, existing.forecastQty, year),
+            sgpForecastQty: mergeLockedMonthQty(line.sgpForecastQty, existing.sgpForecastQty, year),
             adjustedQty: mergeLockedMonthQty(line.adjustedQty, existing.adjustedQty, year),
           }
         : line
@@ -358,6 +376,7 @@ export async function upsertForecastLines(params: {
     {},
     {},
     {},
+    { jsonb: true },
     { jsonb: true },
     { jsonb: true },
     { jsonb: true },
@@ -385,6 +404,7 @@ export async function upsertForecastLines(params: {
         line.statusFlag,
         line.annualBaseQty,
         JSON.stringify(line.forecastQty),
+        JSON.stringify(line.sgpForecastQty),
         JSON.stringify(line.actualQty),
         JSON.stringify(line.adjustedQty),
         line.sortOrder,
@@ -395,8 +415,8 @@ export async function upsertForecastLines(params: {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ProductRevenueForecastLine" (
          "id", "companyId", "year", "customerId", "customerName", "customerGroup", "customerPartNumber",
-         "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty", "forecastQty", "actualQty",
-         "adjustedQty", "sortOrder", "createdAt", "updatedAt"
+         "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty", "forecastQty", "sgpForecastQty",
+         "actualQty", "adjustedQty", "sortOrder", "createdAt", "updatedAt"
        ) VALUES ${sqlValues(chunk.length, columns)}
        ON CONFLICT ("companyId", "year", "customerId", "itemSku", "customerPartNumber") DO UPDATE SET
          "customerName" = EXCLUDED."customerName",
@@ -407,6 +427,7 @@ export async function upsertForecastLines(params: {
          "statusFlag" = EXCLUDED."statusFlag",
          "annualBaseQty" = EXCLUDED."annualBaseQty",
          "forecastQty" = EXCLUDED."forecastQty",
+         "sgpForecastQty" = EXCLUDED."sgpForecastQty",
          "actualQty" = EXCLUDED."actualQty",
          "adjustedQty" = EXCLUDED."adjustedQty",
          "sortOrder" = EXCLUDED."sortOrder",
@@ -441,13 +462,14 @@ export async function loadProductForecastLines(params: {
     statusFlag: string | null;
     annualBaseQty: number | null;
     forecastQty: Prisma.JsonValue;
+    sgpForecastQty: Prisma.JsonValue | null;
     adjustedQty: Prisma.JsonValue | null;
     actualQty: Prisma.JsonValue;
     sortOrder: number;
   }>>`
     SELECT "id", "customerId", "customerName", "customerGroup", "customerPartNumber",
            "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty",
-           "forecastQty", "adjustedQty", "actualQty", "sortOrder"
+           "forecastQty", "sgpForecastQty", "adjustedQty", "actualQty", "sortOrder"
     FROM "ProductRevenueForecastLine"
     WHERE "companyId" = ${companyId}
       AND "year" = ${year}

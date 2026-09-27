@@ -3359,7 +3359,7 @@ export async function GET(request: NextRequest) {
       hasCronCacheWarmupAuth &&
       type === 'products' &&
       frequency === 'daily' &&
-      (productsLimitIsAll || boundedLimit === 500);
+      boundedLimit >= 5000;
     const isCronCustomersWarmup =
       hasCronCacheWarmupAuth &&
       type === 'customers' &&
