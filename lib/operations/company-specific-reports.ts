@@ -566,6 +566,11 @@ function catalogVisibleForCompany(
   report: CompanyReportTemplate,
   args: { companyId?: string | null; companyName?: string | null }
 ): boolean {
+  // Atlantic's former Performance page has no standalone report definition:
+  // it only renders generic product widgets. Do not offer or restore it.
+  if (report.key === 'productsPerformance' && isAtlanticPrecisionCompany(args.companyId, args.companyName)) {
+    return false;
+  }
   if (ATLANTIC_ONLY_VENDOR_REPORT_KEYS.has(report.key) || ATLANTIC_ONLY_GROUP_REPORT_KEYS.has(report.key)) {
     return isAtlanticPrecisionCompany(args.companyId, args.companyName);
   }
@@ -585,7 +590,7 @@ function grandfatherAssignedReportKeys(args: {
   }
   if (isAtlanticPrecisionCompany(args.companyId, args.companyName)) {
     COMPANY_REPORT_CATALOG.forEach((report) => {
-      if (report.sectorCategories.includes('42')) keys.push(report.key);
+      if (report.sectorCategories.includes('42') && report.key !== 'productsPerformance') keys.push(report.key);
     });
   }
   if (isCogentScientificCompany(args.companyId, args.companyName)) {
@@ -614,6 +619,9 @@ export function resolveAssignedCompanyReportKeys(args: {
   COMPANY_REPORT_CATALOG.forEach((report) => {
     if (sections[report.key] === true) assigned.add(report.key);
   });
+  if (isAtlanticPrecisionCompany(args.companyId, args.companyName)) {
+    assigned.delete('productsPerformance');
+  }
   return assigned;
 }
 
