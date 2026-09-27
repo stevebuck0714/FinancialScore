@@ -918,7 +918,7 @@ export default function ProductMonthlyRevenueReport({
                       : '—'}
                   </td>
                   <td style={{ ...priorCellStyle, borderLeft: '1px solid #e2e8f0' }}>
-                    {fmtMoney(monthQty(line.sgpForecastEstimated, previousMonth))}
+                    {fmtMoney(monthQty(line.sgpForecastEstimated || line.estimated, previousMonth))}
                   </td>
                   <td style={priorCellStyle}>
                     {fmtMoney(monthQty(line.estimated, previousMonth))}
@@ -940,7 +940,7 @@ export default function ProductMonthlyRevenueReport({
                     ))}
                   </td>
                   <td style={{ ...monthCellStyle, borderLeft: '2px solid #c7d2fe' }}>
-                    {fmtMoney(monthQty(line.sgpForecastEstimated, selectedMonth))}
+                    {fmtMoney(monthQty(line.sgpForecastEstimated || line.estimated, selectedMonth))}
                   </td>
                   <td style={monthCellStyle}>
                     {fmtMoney(monthQty(line.estimated, selectedMonth))}

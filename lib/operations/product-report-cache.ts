@@ -7,7 +7,7 @@ import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib
 const PRODUCT_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 // Bump when a report's payload shape or math changes so stored payloads are ignored.
-const PRODUCT_REPORT_CACHE_VERSION = 'product-reports-v1';
+const PRODUCT_REPORT_CACHE_VERSION = 'product-reports-v2';
 
 type Fingerprint = { label: string; count?: number; updatedAt?: string | null; latest?: string | null };
 
