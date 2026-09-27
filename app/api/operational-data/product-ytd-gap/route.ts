@@ -4,7 +4,7 @@ import {
   assertProductsForecastAccess,
   ensureProductRevenueTables,
 } from '@/lib/operations/product-revenue-actual-db';
-import { loadProductYtdGapDataset } from '@/lib/operations/product-ytd-gap';
+import { buildProductYtdGapDataVersion, loadProductYtdGapDataset } from '@/lib/operations/product-ytd-gap';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
       // v6/v3 use posted Infor invoice-line facts for actual revenue.
       keyParts: [includeComparison ? 'ytd-comparison-v3' : 'ytd-gap-v6', year],
       refresh,
+      dataVersion: () => buildProductYtdGapDataVersion(companyId),
       build: async () => {
         await ensureProductRevenueTables();
         return loadProductYtdGapDataset({ companyId, year, includeComparison });

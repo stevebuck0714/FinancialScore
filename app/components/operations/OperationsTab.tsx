@@ -9029,8 +9029,24 @@ export default function OperationsTab({
         </div>
       );
     }
-    if (!usesWholesaleDedicatedProductView && !usesDutiesTariffsDedicatedView && (loading || !productData)) {
+    if (!usesWholesaleDedicatedProductView && !usesDutiesTariffsDedicatedView && loading) {
       return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading product data...</div>;
+    }
+    if (!usesWholesaleDedicatedProductView && !usesDutiesTariffsDedicatedView && !productData) {
+      return (
+        <div data-print-ready={error ? 'error' : 'empty'} style={{ padding: '40px', textAlign: 'center', color: error ? '#b91c1c' : '#64748b' }}>
+          <div>{error || 'No product data is available for the selected period.'}</div>
+          {error ? (
+            <button
+              type="button"
+              onClick={() => void loadTabData(activeTab)}
+              style={{ marginTop: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 12px', background: '#ffffff', color: '#334155', fontWeight: 600, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      );
     }
 
     const { records, summary } = productData || { records: [], summary: {} };

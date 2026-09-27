@@ -182,12 +182,13 @@ export async function withProductReportCache<T>(params: {
   companyId: string;
   keyParts: unknown[];
   refresh?: boolean;
+  dataVersion?: () => Promise<string>;
   build: () => Promise<T>;
 }): Promise<{ payload: T; cacheHit: boolean }> {
   const descriptor = {
     namespace: params.namespace,
     cacheKey: hashCacheParts([params.companyId, ...params.keyParts]),
-    dataVersion: await buildProductReportDataVersion(params.companyId).catch(() => ''),
+    dataVersion: await (params.dataVersion?.() ?? buildProductReportDataVersion(params.companyId)).catch(() => ''),
   };
   const cacheable = Boolean(descriptor.dataVersion);
 

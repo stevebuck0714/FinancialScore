@@ -185,6 +185,7 @@ export async function loadProductGroupDataset(params: {
   companyId: string;
   year: number;
   useInforActualRevenue?: boolean;
+  includeEconomics?: boolean;
 }): Promise<ProductGroupDataset> {
   const [dataset, duties, freight] = await Promise.all([
     loadRevenueDataset({
@@ -193,8 +194,8 @@ export async function loadProductGroupDataset(params: {
       includeAllLines: true,
       useInforActualRevenue: params.useInforActualRevenue,
     }),
-    listCompanyItemDuties(params.companyId).catch(() => []),
-    listCompanyItemFreight(params.companyId).catch(() => []),
+    params.includeEconomics === false ? Promise.resolve([]) : listCompanyItemDuties(params.companyId).catch(() => []),
+    params.includeEconomics === false ? Promise.resolve([]) : listCompanyItemFreight(params.companyId).catch(() => []),
   ]);
   const dutyBySku = indexBySku(duties);
   const freightBySku = indexBySku(freight);

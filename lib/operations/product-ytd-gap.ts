@@ -1,5 +1,7 @@
 import { loadProductGroupDataset } from '@/lib/operations/product-group-reports';
 import { loadProductGoalUpdate } from '@/lib/operations/product-revenue-actual-db';
+import prisma from '@/lib/prisma';
+import { hashCacheParts } from '@/lib/derived-api-cache';
 import { type ProductGroupRow } from '@/lib/operations/product-group-types';
 import {
   FORECAST_MONTHS,
@@ -73,6 +75,40 @@ export type YtdGapDataset = {
   groups: YtdGapGroup[];
   comparison?: YtdComparisonDataset;
 };
+
+export async function buildProductYtdGapDataVersion(companyId: string): Promise<string> {
+  const [forecast, revenue, prices, settings, raw] = await Promise.all([
+    prisma.productRevenueForecastLine.aggregate({
+      where: { companyId },
+      _max: { updatedAt: true },
+    }),
+    prisma.productRevenueLine.aggregate({
+      where: { companyId },
+      _max: { updatedAt: true },
+    }),
+    prisma.productRevenuePrice.aggregate({
+      where: { companyId },
+      _max: { updatedAt: true },
+    }),
+    prisma.productRevenueForecastSettings.aggregate({
+      where: { companyId },
+      _max: { updatedAt: true },
+    }),
+    prisma.inforRawRecord.aggregate({
+      where: { companyId },
+      _max: { businessDate: true },
+    }),
+  ]);
+  return hashCacheParts([
+    'product-ytd-gap-v1',
+    companyId,
+    forecast._max.updatedAt?.toISOString() ?? null,
+    revenue._max.updatedAt?.toISOString() ?? null,
+    prices._max.updatedAt?.toISOString() ?? null,
+    settings._max.updatedAt?.toISOString() ?? null,
+    raw._max.businessDate?.toISOString() ?? null,
+  ]);
+}
 
 /**
  * Actuals are only complete through the workbook's dataThru month, so every YTD
@@ -240,7 +276,11 @@ export async function loadProductYtdGapDataset(params: {
   year: number;
   includeComparison?: boolean;
 }): Promise<YtdGapDataset> {
-  const dataset = await loadProductGroupDataset({ ...params, useInforActualRevenue: true });
+  const dataset = await loadProductGroupDataset({
+    ...params,
+    useInforActualRevenue: true,
+    includeEconomics: false,
+  });
   const throughMonth = resolveThroughMonth({ year: dataset.year, dataThru: dataset.dataThru });
   const months = monthsThrough(throughMonth);
   const remaining = monthsAfter(throughMonth);
