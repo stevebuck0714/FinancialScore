@@ -14,6 +14,50 @@ export function exportDataReviewToExcel(monthly: any[], companyName: string) {
   XLSX.writeFile(wb, `${companyName || 'Company'}_DataReview_${new Date().toISOString().split('T')[0]}.xlsx`);
 }
 
+export function exportRawQboImportRowsToExcel(
+  rows: Array<{
+    statement: string;
+    rowType: string;
+    sectionPath: string;
+    name: string;
+    accountId: string;
+    rawValue: string;
+    numericValue: number | null;
+  }>,
+  monthLabel?: string,
+) {
+  if (!rows || rows.length === 0) {
+    alert('No raw QBO import rows to export');
+    return;
+  }
+
+  const exportRows = rows.map((row) => ({
+    Statement: row.statement,
+    'Row Type': row.rowType,
+    Section: row.sectionPath || 'Root',
+    Name: row.name,
+    'QBO ID': row.accountId || 'N/A',
+    'Imported Value': row.numericValue ?? (row.rawValue || 'N/A'),
+    'Imported Value (Raw)': row.rawValue || 'N/A',
+  }));
+  const worksheet = XLSX.utils.json_to_sheet(exportRows);
+  worksheet['!cols'] = [
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 48 },
+    { wch: 38 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 22 },
+  ];
+  worksheet['!autofilter'] = { ref: XLSX.utils.encode_range(XLSX.utils.decode_range(worksheet['!ref'] || 'A1:G1')) };
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Raw QBO Import');
+  const safeMonth = String(monthLabel || 'Latest').replace(/[^a-zA-Z0-9_-]/g, '_');
+  XLSX.writeFile(workbook, `Raw_QBO_Import_${safeMonth}_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
 export function exportMonthlyRatiosToExcel(trendData: any[], companyName: string) {
   if (!trendData || trendData.length === 0) {
     alert('No ratios to export');

@@ -14,7 +14,7 @@ import { signIn as nextAuthSignIn, signOut as nextAuthSignOut, getSession as nex
 import { parseDateLike, monthKey, sum, pctChange, getAssetSizeCategory } from './utils/financial';
 import { clamp, revenueGrowthScore_24mo, rgsAdjustmentFrom6mo } from './utils/scoring';
 import { getBenchmarkValue, sixMonthGrowthFromMonthly, normalizeRows, ltmVsPrior } from './utils/data-processing';
-import { exportDataReviewToExcel, exportMonthlyRatiosToExcel } from './utils/excel-export';
+import { exportDataReviewToExcel, exportMonthlyRatiosToExcel, exportRawQboImportRowsToExcel } from './utils/excel-export';
 import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, AssessmentResponses, AssessmentNotes, AssessmentRecord, Consultant, User, FinancialDataRecord, LOBData } from './types';
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
@@ -5268,42 +5268,29 @@ function FinancialScorePage() {
         if (section.includes('cost of goods') || section.includes('cogs') || section.includes('cost of sales')) return 'Cost of Goods Sold';
         return 'Expense';
       }
-      if (section.includes('asset') || section.includes('cash') || section.includes('receivable') || section.includes('inventory')) return 'Asset';
-      if (section.includes('liabil') || section.includes('payable') || section.includes('debt')) return 'Liability';
-      if (section.includes('equity') || section.includes('retained') || section.includes('capital')) return 'Equity';
+      // Use the closest matching QBO report section so accounts nested below
+      // "LIABILITIES AND EQUITY" are not all incorrectly classified as liabilities.
+      const sourceSections = section.split('>').map((value) => value.trim()).filter(Boolean).reverse();
+      for (const sourceSection of sourceSections) {
+        if (sourceSection.includes('asset') || sourceSection.includes('cash') || sourceSection.includes('receivable') || sourceSection.includes('inventory')) return 'Asset';
+        if (sourceSection.includes('equity') || sourceSection.includes('retained') || sourceSection.includes('capital')) return 'Equity';
+        if (sourceSection.includes('liabil') || sourceSection.includes('payable') || sourceSection.includes('debt') || sourceSection.includes('credit card')) return 'Liability';
+      }
       return 'Other';
     };
-
-    const chartRows = Array.isArray(qbRawData?.chartOfAccounts?.QueryResponse?.Account)
-      ? qbRawData.chartOfAccounts.QueryResponse.Account
-      : [];
-    const chartByName = new Map<string, { id: string; code: string; name: string }>();
-    const chartById = new Map<string, { id: string; code: string; name: string }>();
-    const stripLeadingAccountCode = (value: unknown): string =>
-      String(value || '').trim().replace(/^\s*\d+(?:\.\d+)?\s+/, '').trim();
-    for (const row of chartRows) {
-      if (!row || typeof row !== 'object') continue;
-      const cleanAccountName = String((row as any).FullyQualifiedName || (row as any).Name || '').trim();
-      const accountName = cleanAccountName.toLowerCase();
-      if (!accountName || chartByName.has(accountName)) continue;
-      const accountId = String((row as any).Id || '').trim();
-      const accountCode = String((row as any).AcctNum || '').trim();
-      const snapshot = { id: accountId, code: accountCode && accountCode !== accountId ? accountCode : '', name: cleanAccountName };
-      chartByName.set(accountName, snapshot);
-      if (accountId) chartById.set(accountId, snapshot);
-    }
 
     const collectAccounts = (statementData: any, statementType: 'profitAndLoss' | 'balanceSheet') => {
       const collected: Array<{ accountName: string; accountId: string; accountCode: string; accountClassification: string; targetField: string; confidence: string }> = [];
       const seen = new Set<string>();
 
-      const visitRows = (rows: any[], sectionName: string = '') => {
+      const visitRows = (rows: any[], sectionPath: string[] = []) => {
         for (const row of rows) {
           if (row?.type === 'Section') {
-            const nextSection = row?.Header?.ColData?.[0]?.value || sectionName;
+            const sectionName = String(row?.Header?.ColData?.[0]?.value || '').trim();
+            const nextPath = sectionName ? [...sectionPath, sectionName] : sectionPath;
             const nestedRows = row?.Rows?.Row;
             if (nestedRows) {
-              visitRows(Array.isArray(nestedRows) ? nestedRows : [nestedRows], nextSection);
+              visitRows(Array.isArray(nestedRows) ? nestedRows : [nestedRows], nextPath);
             }
             continue;
           }
@@ -5312,16 +5299,15 @@ function FinancialScorePage() {
             const reportAccountName = (row.ColData[0]?.value || '').trim();
             if (!reportAccountName || reportAccountName.toLowerCase().includes('total')) continue;
 
-            // QBO report rows carry account id on the first (name) column.
+            // Only QBO leaf data rows with an account ID are mapping candidates.
+            // Section summaries such as Current Assets and Net Income stay in the
+            // raw-import table as proof totals, not accounts that can be mapped.
             const reportAccountId = (row.ColData[0]?.id || row.ColData[1]?.id || '').toString().trim();
-            const chartMatch =
-              (reportAccountId ? chartById.get(reportAccountId) : undefined) ||
-              chartByName.get(reportAccountName.toLowerCase()) ||
-              chartByName.get(stripLeadingAccountCode(reportAccountName).toLowerCase());
-            const accountName = chartMatch?.name || stripLeadingAccountCode(reportAccountName) || reportAccountName;
-            const accountId = (reportAccountId || chartMatch?.id || '').toString().trim();
-            const accountCode = (chartMatch?.code || '').toString().trim();
-            const classification = classifyAccount(statementType, sectionName);
+            if (!reportAccountId) continue;
+            const accountName = reportAccountName;
+            const accountId = reportAccountId;
+            const accountCode = '';
+            const classification = classifyAccount(statementType, sectionPath.join(' > '));
             const dedupeKey = accountId
               ? `${statementType}:id:${accountId}`
               : `${statementType}:name:${classification}:${accountName.toLowerCase()}`;
@@ -5345,32 +5331,7 @@ function FinancialScorePage() {
       return collected;
     };
 
-    const collectAccountsFromChartOfAccounts = (chartData: any) => {
-      const collected: Array<{ accountName: string; accountId: string; accountCode: string; accountClassification: string; targetField: string; confidence: string }> = [];
-      const rows = Array.isArray(chartData?.QueryResponse?.Account)
-        ? chartData.QueryResponse.Account
-        : [];
-      for (const row of rows) {
-        if (!row || typeof row !== 'object') continue;
-        const accountName = String((row as any).Name || '').trim();
-        if (!accountName) continue;
-        const accountId = String((row as any).Id || '').trim();
-        const accountCode = String((row as any).AcctNum || '').trim();
-        const classification = String((row as any).AccountType || (row as any).Classification || 'Other').trim() || 'Other';
-        collected.push({
-          accountName: accountName,
-          accountId: accountId,
-          accountCode: accountCode,
-          accountClassification: classification,
-          targetField: 'unmapped',
-          confidence: 'low',
-        });
-      }
-      return collected;
-    };
-
     const generatedMappings = [
-      ...collectAccountsFromChartOfAccounts(qbRawData.chartOfAccounts),
       ...collectAccounts(qbRawData.profitAndLoss, 'profitAndLoss'),
       ...collectAccounts(qbRawData.balanceSheet, 'balanceSheet'),
     ];
@@ -18765,6 +18726,11 @@ function FinancialScorePage() {
                         maxLOBs={5}
                         compact
                       />
+                    {selectedAccountingSystem === 'QUICKBOOKS' && (
+                      <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#475569' }}>
+                        QBO leaf accounts with an account ID are shown here so each can be mapped or ignored. Report summaries remain in Raw QBO Import Rows for verification and are never mapped.
+                      </p>
+                    )}
                     </div>
 
                     <AccountMappingTable
@@ -19559,7 +19525,7 @@ function FinancialScorePage() {
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                       {hasCsvData && csvTrialBalanceData
                         ? `Account Review - All ${csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)`
-                        : `Account Review - All ${aiMappings.length} mapped accounts`}
+                        : `Account Review - All ${aiMappings.length} QBO mapping accounts`}
                     </h2>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <button
@@ -20416,9 +20382,28 @@ function FinancialScorePage() {
                                   Direct rows and section summaries from the latest imported QBO report. These are raw imported values, not mapped or inferred.
                                 </p>
                               </div>
-                              <span style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>
-                                {rawImportRows.length} rows
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>
+                                  {rawImportRows.length} rows
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => exportRawQboImportRowsToExcel(rawImportRows, latestAccountReviewMonthLabel)}
+                                  disabled={rawImportRows.length === 0}
+                                  style={{
+                                    padding: '6px 10px',
+                                    border: '1px solid #2563eb',
+                                    borderRadius: '6px',
+                                    background: rawImportRows.length === 0 ? '#e2e8f0' : '#2563eb',
+                                    color: rawImportRows.length === 0 ? '#94a3b8' : '#ffffff',
+                                    cursor: rawImportRows.length === 0 ? 'not-allowed' : 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  Export to Excel
+                                </button>
+                              </div>
                             </div>
                             <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                               <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
