@@ -312,6 +312,15 @@ export function createMonthlyRecords(
     );
     for (const row of rows) {
       if (!row || typeof row !== 'object') continue;
+      if (row.type === 'Data') {
+        const dataCols = asQBCols(row.ColData);
+        const dataName = String(dataCols[0]?.value || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '');
+        if (dataName && normalizedNames.has(dataName)) {
+          return parseQbNumber(dataCols[colIndex]?.value);
+        }
+      }
       if (row.type === 'Section') {
         const summaryCols = asQBCols(row.Summary?.ColData);
         const summaryName = String(summaryCols[0]?.value || '')
