@@ -38,6 +38,7 @@ import {
 } from '@/lib/operations/operational-hub-overlay';
 import { collectSectorHubCatalog } from '@/lib/operations/sector-hub-catalog';
 import OperationalHubCustomizationCard from '@/app/components/siteadmin/OperationalHubCustomizationCard';
+import CompanyBrandingCard from '@/app/components/siteadmin/CompanyBrandingCard';
 import HubSpotIntegrationCard from '@/app/components/siteadmin/HubSpotIntegrationCard';
 import { DEFAULT_ALLOWED_SECTIONS } from '@/app/components/admin/CompanyDetailsTab';
 import { getSectorMasterTabLabel, getSectorMasterTabKeys } from '@/lib/operations/sector-master-tabs';
@@ -9608,6 +9609,18 @@ export default function SiteAdminDashboard(props: any) {
                                             }}
                                           >
                                             <div style={{ display: 'grid', gridTemplateColumns: '340px minmax(620px, 1fr)', gap: '10px', alignItems: 'start' }}>
+                                            <div style={{ gridColumn: '1 / -1' }}>
+                                              <CompanyBrandingCard
+                                                company={company}
+                                                onUpdated={(companyId, userDefinedAllocations) => {
+                                                  setCompanies((currentCompanies) => currentCompanies.map((currentCompany) =>
+                                                    currentCompany.id === companyId
+                                                      ? { ...currentCompany, userDefinedAllocations }
+                                                      : currentCompany
+                                                  ));
+                                                }}
+                                              />
+                                            </div>
                                             {/* Subscription Pricing */}
                                             <div style={{ gridRow: 'span 8', padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
@@ -13285,6 +13298,23 @@ export default function SiteAdminDashboard(props: any) {
                                   }}
                                 >
                                 <div style={{ display: 'grid', gridTemplateColumns: '340px minmax(620px, 1fr)', gap: '10px', alignItems: 'start' }}>
+                                  <div style={{ gridColumn: '1 / -1' }}>
+                                    <CompanyBrandingCard
+                                      company={businessCompany}
+                                      onUpdated={(companyId, userDefinedAllocations) => {
+                                        setCompanies((currentCompanies) => currentCompanies.map((currentCompany) =>
+                                          currentCompany.id === companyId
+                                            ? { ...currentCompany, userDefinedAllocations }
+                                            : currentCompany
+                                        ));
+                                        setStandaloneBusinesses((currentBusinesses) => currentBusinesses.map((currentBusiness) =>
+                                          currentBusiness.id === companyId
+                                            ? { ...currentBusiness, userDefinedAllocations }
+                                            : currentBusiness
+                                        ));
+                                      }}
+                                    />
+                                  </div>
                                   {/* Subscription Pricing */}
                                   <div style={{ gridRow: 'span 8', padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>

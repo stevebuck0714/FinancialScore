@@ -14361,7 +14361,13 @@ function FinancialScorePage() {
   }
 
   const showDemoBanner = currentUser?.userType === 'company' && demoAccessState.isDemoCompany;
-  const headerHeight = 78;
+  const headerCompany = Array.isArray(companies)
+    ? companies.find((company) => company.id === (selectedCompanyId || currentUser?.companyId))
+    : null;
+  const headerCompanyLogoUrl = String(
+    headerCompany?.userDefinedAllocations?.branding?.logoUrl || ''
+  ).trim() || null;
+  const headerHeight = headerCompanyLogoUrl ? 88 : 78;
   const demoBannerHeight = showDemoBanner ? 44 : 0;
   const contentTopOffset = showDemoBanner ? 0 : headerHeight;
   const contentHeightOffset = headerHeight + demoBannerHeight;
@@ -14426,6 +14432,7 @@ function FinancialScorePage() {
         <Header
           currentUser={currentUser}
           companyName={companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || '' : '')}
+          companyLogoUrl={headerCompanyLogoUrl}
           previewAdminName={siteAdminViewingAs?.name || null}
           selectedCompanyId={selectedCompanyId}
           currentView={currentView}

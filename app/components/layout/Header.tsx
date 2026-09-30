@@ -15,6 +15,7 @@ interface HeaderProps {
   currentUser: User | null;
   currentView: string;
   companyName?: string;
+  companyLogoUrl?: string | null;
   previewAdminName?: string | null;
   /** When set, site admins in company admin workspace get full nav chrome (sidebar/header parity). */
   selectedCompanyId?: string;
@@ -30,6 +31,7 @@ export default function Header({
   currentUser,
   currentView,
   companyName,
+  companyLogoUrl,
   previewAdminName,
   selectedCompanyId = '',
   dataRoomEnabledByAdmin = false,
@@ -175,13 +177,22 @@ export default function Header({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
         <div 
-          style={{ cursor: 'pointer', flexShrink: 0, width: '300px', minWidth: '300px', maxWidth: '300px' }} 
+          style={{ cursor: 'pointer', flexShrink: 0, width: '300px', minWidth: '300px', maxWidth: '300px', display: 'flex', alignItems: 'center', gap: companyLogoUrl ? '10px' : '0' }}
           onClick={() => {
             // Company identity in header routes to Company Dashboard workspace.
             handleNavigation('admin');
           }}
           title={headerCompanyName}
         >
+          {companyLogoUrl && (
+            <div style={{ width: '92px', height: '58px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img
+                src={companyLogoUrl}
+                alt=""
+                style={{ maxWidth: '92px', maxHeight: '58px', objectFit: 'contain', display: 'block' }}
+              />
+            </div>
+          )}
           <div
             style={{
               fontSize: '24px',
@@ -192,6 +203,7 @@ export default function Header({
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               lineHeight: 1.1,
+              minWidth: 0,
             }}
           >
             {headerCompanyName}
