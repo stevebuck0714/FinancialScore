@@ -177,7 +177,7 @@ export default function Header({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
         <div 
-          style={{ cursor: 'pointer', flexShrink: 0, width: '300px', minWidth: '300px', maxWidth: '300px', display: 'flex', alignItems: 'center', gap: companyLogoUrl ? '10px' : '0' }}
+          style={{ cursor: 'pointer', flexShrink: 0, width: '600px', minWidth: '600px', maxWidth: '600px', display: 'flex', alignItems: 'center', gap: companyLogoUrl ? '10px' : '0' }}
           onClick={() => {
             // Company identity in header routes to Company Dashboard workspace.
             handleNavigation('admin');
