@@ -4,6 +4,7 @@ import React from 'react';
 import TeamManagementTab from '../dashboard/TeamManagementTab';
 import CompanyListTab from './CompanyListTab';
 import DocumentationTab from './DocumentationTab';
+import TeamAssignmentsTab from './TeamAssignmentsTab';
 // import CovenantsTab from '../../covenants/components/CovenantsTab'; // Removed - covenants only in Company Management
 
 interface ConsultantDashboardProps {
@@ -107,6 +108,24 @@ export default function ConsultantDashboard({
           Team Management
           </button>
         )}
+        {currentUser?.isPrimaryContact && (
+          <button
+            onClick={() => setConsultantDashboardTab('team-assignments')}
+            style={{
+              padding: '12px 24px',
+              background: 'none',
+              color: consultantDashboardTab === 'team-assignments' ? '#2751d0' : '#64748b',
+              border: 'none',
+              borderBottom: consultantDashboardTab === 'team-assignments' ? '3px solid #2751d0' : '3px solid transparent',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            Team Assignments
+          </button>
+        )}
         <button
           onClick={() => setConsultantDashboardTab('documentation')}
           style={{
@@ -154,6 +173,13 @@ export default function ConsultantDashboard({
           companies={companies}
           updateTeamMemberAssignments={updateTeamMemberAssignments}
           isLoading={isLoading}
+        />
+      )}
+
+      {consultantDashboardTab === 'team-assignments' && currentUser?.isPrimaryContact && (
+        <TeamAssignmentsTab
+          teamMembers={consultantTeamMembers}
+          companies={companies}
         />
       )}
 

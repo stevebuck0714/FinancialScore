@@ -47,13 +47,13 @@ export default function TeamManagementTab({
 }: TeamManagementTabProps) {
   const assignableMembers = consultantTeamMembers.filter((member) => !member.isPrimaryContact);
   const [assignmentDrafts, setAssignmentDrafts] = React.useState<Record<string, string[]>>({});
-  const initialsFor = (name: string) =>
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join('') || '?';
+  const assignmentColumnLabel = (member: TeamMember) => {
+    const nameParts = String(member.name || '').trim().split(/\s+/).filter(Boolean);
+    if (nameParts.length >= 2) {
+      return `${nameParts[0][0]?.toUpperCase() || ''}. ${nameParts[nameParts.length - 1]}`;
+    }
+    return member.email || member.name || 'Unknown';
+  };
   const hasPendingAssignmentChanges = Object.keys(assignmentDrafts).length > 0;
   const saveAssignments = async () => {
     const remainingDrafts: Record<string, string[]> = {};
@@ -262,9 +262,9 @@ export default function TeamManagementTab({
                     Company
                   </th>
                   {assignableMembers.map((member) => (
-                    <th key={member.id} title={member.name} style={{ padding: '7px 3px', textAlign: 'center', fontSize: '11px', fontWeight: '600', color: '#64748b', width: `${55 / Math.max(assignableMembers.length, 1)}%` }}>
-                      <span aria-label={member.name} style={{ display: 'inline-flex', width: '24px', height: '24px', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: '#e0e7ff', color: '#3730a3' }}>
-                        {initialsFor(member.name)}
+                    <th key={member.id} title={`${member.name} (${member.email})`} style={{ padding: '7px 5px', textAlign: 'center', fontSize: '11px', fontWeight: '600', color: '#64748b', width: `${55 / Math.max(assignableMembers.length, 1)}%` }}>
+                      <span aria-label={member.name} style={{ display: 'inline-block', maxWidth: '108px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#3730a3' }}>
+                        {assignmentColumnLabel(member)}
                       </span>
                     </th>
                   ))}

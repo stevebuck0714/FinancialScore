@@ -6422,16 +6422,24 @@ function FinancialScorePage() {
   useEffect(() => {
     const loadConsultantCompanies = async () => {
       if (!currentUser || currentUser.role !== 'consultant' || !currentUser.consultantId) return;
+      const consultantCompanyScope = `${currentUser.consultantId}:${currentUser.isPrimaryContact ? 'portfolio' : 'assigned'}`;
       
       // Only reload if consultant changed (handles site admin viewing as different consultants)
-      if (loadedConsultantId === currentUser.consultantId) return;
+      if (loadedConsultantId === consultantCompanyScope) return;
       
       // Keep any consultant-scoped preview data visible while we refresh from API.
       
       try {
-        const { companies: consultantCompanies } = await companiesApi.getAll(currentUser.consultantId);
+        const consultantCompanies = currentUser.isPrimaryContact
+          ? (await companiesApi.getAll(currentUser.consultantId)).companies || []
+          : await fetch('/api/companies', { cache: 'no-store' })
+              .then(async (response) => {
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload?.error || 'Failed to load assigned companies');
+                return Array.isArray(payload?.companies) ? payload.companies : [];
+              });
         safeSetCompanies(consultantCompanies || []);
-        setLoadedConsultantId(currentUser.consultantId);
+        setLoadedConsultantId(consultantCompanyScope);
         
         // Load all users and assessment records for all companies
         const allUsers: User[] = [];
@@ -6471,7 +6479,7 @@ function FinancialScorePage() {
     };
     
     loadConsultantCompanies();
-  }, [currentUser?.consultantId, currentUser?.role, loadedConsultantId]);
+  }, [currentUser?.consultantId, currentUser?.role, currentUser?.isPrimaryContact, loadedConsultantId, siteAdminSessionUser?.id]);
 
   // Load consultants + all companies for site admin
   useEffect(() => {
@@ -7712,7 +7720,7 @@ function FinancialScorePage() {
 
   // Team Management Functions
   const fetchTeamMembers = async () => {
-    if (!currentUser?.consultantId) return;
+    if (!currentUser?.consultantId || !currentUser?.isPrimaryContact) return;
     try {
       const response = await fetch(`/api/consultants/team?consultantId=${currentUser.consultantId}`);
       const data = await response.json();
