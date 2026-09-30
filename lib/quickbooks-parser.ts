@@ -165,6 +165,55 @@ function extractAccountValuesForMonth(
 }
 
 /**
+ * Sum a balance-sheet target from the accounts explicitly mapped to it.
+ *
+ * Report section summaries are useful presentation values, but they are not a
+ * reliable cash total: QBO can place bank accounts beside a "Cash on Hand"
+ * section rather than beneath it. Resolve actual account rows by ListID first
+ * (then by name for legacy mappings) so every mapped bank account contributes
+ * exactly once. This also prevents duplicate saved mappings from making the
+ * same report row count twice.
+ */
+function getMappedBalanceSheetTotal(
+  accountValues: AccountValue[],
+  accountMappings: AccountMapping[] | undefined,
+  targetField: string,
+): number | null {
+  if (!accountMappings?.length) return null;
+
+  const normalizedTarget = targetField.trim().toLowerCase();
+  const mappingsById = new Map<string, AccountMapping>();
+  const mappingsByName = new Map<string, AccountMapping>();
+  for (const mapping of accountMappings) {
+    if (String(mapping.targetField || '').trim().toLowerCase() !== normalizedTarget) continue;
+    const accountId = String(mapping.accountId || '').trim();
+    const accountName = String(mapping.accountName || '').trim().toLowerCase();
+    if (accountId) mappingsById.set(accountId, mapping);
+    if (accountName) mappingsByName.set(accountName, mapping);
+  }
+
+  let total = 0;
+  let matchedAccounts = 0;
+  const seenSourceAccounts = new Set<string>();
+  for (const account of accountValues) {
+    const accountId = String(account.accountId || '').trim();
+    const accountName = String(account.accountName || '').trim().toLowerCase();
+    const mapping =
+      (accountId ? mappingsById.get(accountId) : undefined) ||
+      (accountName ? mappingsByName.get(accountName) : undefined);
+    if (!mapping) continue;
+
+    const sourceKey = accountId || `name:${accountName}`;
+    if (!sourceKey || seenSourceAccounts.has(sourceKey)) continue;
+    seenSourceAccounts.add(sourceKey);
+    total += Number(account.value || 0);
+    matchedAccounts += 1;
+  }
+
+  return matchedAccounts > 0 ? total : null;
+}
+
+/**
  * Combine P&L and Balance Sheet data into monthly financial records
  * Extracts actual monthly column data from QuickBooks reports
  */
@@ -297,7 +346,11 @@ export function createMonthlyRecords(
                   getRowValue(plRows, 'Operating Expenses', colIndex);
     
     // Extract Balance Sheet data for this month
-    const cash = getRowValue(bsRows, 'Cash', colIndex) || getRowValue(bsRows, 'Checking', colIndex);
+    const mappedCash = getMappedBalanceSheetTotal(bsAccountValues, accountMappings, 'cash');
+    const cash =
+      mappedCash ??
+      (getRowValue(bsRows, 'Cash', colIndex) ||
+        getRowValue(bsRows, 'Checking', colIndex));
     const ar = getRowValue(bsRows, 'Accounts Receivable', colIndex) || getRowValue(bsRows, 'A/R', colIndex);
     const inventory = getRowValue(bsRows, 'Inventory', colIndex);
     const currentAssets = getRowValue(bsRows, 'Total Current Assets', colIndex) || getRowValue(bsRows, 'Current Assets', colIndex);
