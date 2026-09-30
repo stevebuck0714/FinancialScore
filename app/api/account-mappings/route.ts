@@ -751,7 +751,15 @@ export async function POST(request: NextRequest) {
 
     const seenIdentity = new Set<string>();
     const sourceScopedMappings = sourceSnapshot.length > 0
-      ? mappings.filter((mapping: any) => findAccountingSourceMatch(mapping))
+      ? mappings.filter((mapping: any) => {
+          // QuickBooks reports emit calculated rows such as "Net Income"
+          // without a Chart-of-Accounts ListID. They can legitimately have a
+          // user mapping but will never match the COA snapshot; retain those
+          // ID-less report summaries instead of silently preserving their
+          // prior target field.
+          if (!String(mapping?.accountId || "").trim()) return true;
+          return Boolean(findAccountingSourceMatch(mapping));
+        })
       : mappings;
     const uniqueMappings = sourceScopedMappings.filter((mapping: any) => {
       const key = buildMappingIdentityKey(mapping);
