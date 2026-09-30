@@ -5223,7 +5223,16 @@ function FinancialScorePage() {
               lobAllocations: m.lobAllocations,
               sourceStatus: m.sourceStatus || 'mapped',
             }));
-            setAiMappings((prev) => mergeGeneratedMappingsWithExisting(loadedMappings, prev));
+            setAiMappings((prev) => {
+              // When QBO raw data has already generated the complete leaf-account
+              // candidate list, preserve it and layer saved targets over it.
+              // Loading saved mappings after the raw-data effect previously
+              // replaced that list with only the older saved rows.
+              if (prev.length > 0) {
+                return mergeGeneratedMappingsWithExisting(prev, loadedMappings);
+              }
+              return loadedMappings;
+            });
             setShowMappingSection(true);
             setMappingSourceSummary(data.sourceSummary || null);
           } else {
