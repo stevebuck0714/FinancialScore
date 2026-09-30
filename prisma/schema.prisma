@@ -490,6 +490,7 @@ model MonthlyFinancial {
   commonStock              Float           @default(0)
   preferredStock           Float           @default(0)
   retainedEarnings         Float           @default(0)
+  currentYearNetIncome     Float           @default(0)
   additionalPaidInCapital  Float           @default(0)
   treasuryStock            Float           @default(0)
   totalEquity              Float           @default(0)

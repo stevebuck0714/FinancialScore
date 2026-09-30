@@ -1,0 +1,2 @@
+ALTER TABLE "MonthlyFinancial"
+ADD COLUMN "currentYearNetIncome" DOUBLE PRECISION NOT NULL DEFAULT 0;

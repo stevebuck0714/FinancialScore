@@ -406,7 +406,7 @@ export async function GET(request: NextRequest) {
       const totalLiab = toNumber(month.totalLiab);
       const currentYearNetIncome = shouldCalculateCurrentYearNetIncome
         ? qbdCurrentYearNetIncomeFromBalanceSheet(month)
-        : 0;
+        : toNumber(month.currentYearNetIncome);
       const totalEquity = shouldCalculateCurrentYearNetIncome
         ? equityWithoutNetIncome + currentYearNetIncome
         : toNumber(month.totalEquity);

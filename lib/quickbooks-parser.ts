@@ -305,6 +305,27 @@ export function createMonthlyRecords(
     }
     return bestValue;
   }
+
+  function getSystemSummaryValue(rows: QBRow[], summaryNames: string[], colIndex: number): number {
+    const normalizedNames = new Set(
+      summaryNames.map((name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '')),
+    );
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue;
+      if (row.type === 'Section') {
+        const summaryCols = asQBCols(row.Summary?.ColData);
+        const summaryName = String(summaryCols[0]?.value || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '');
+        if (summaryName && normalizedNames.has(summaryName)) {
+          return parseQbNumber(summaryCols[colIndex]?.value);
+        }
+        const nestedValue = getSystemSummaryValue(nestedQBRows(row), summaryNames, colIndex);
+        if (nestedValue !== 0) return nestedValue;
+      }
+    }
+    return 0;
+  }
   
   const plReport = (plData || {}) as QBReport;
   const bsReport = (bsData || {}) as QBReport;
@@ -364,6 +385,13 @@ export function createMonthlyRecords(
     const longTermDebt = getRowValue(bsRows, 'Long-Term Liabilities', colIndex) || getRowValue(bsRows, 'Long Term Debt', colIndex);
     const totalLiabilities = getRowValue(bsRows, 'Total Liabilities', colIndex) || getRowValue(bsRows, 'TOTAL LIABILITIES', colIndex);
     const equity = getRowValue(bsRows, 'Equity', colIndex) || getRowValue(bsRows, 'Total Equity', colIndex);
+    // QBO calculates current-year earnings as a report summary, separate from
+    // its Retained Earnings account, which usually updates only at year-end.
+    const currentYearNetIncome = getSystemSummaryValue(
+      bsRows,
+      ['Net Income', 'Current Year Earnings'],
+      colIndex,
+    );
     
     // Apply LOB allocations if account mappings are provided
     let lobData: MonthlyLOBData | null = null;
@@ -432,6 +460,7 @@ export function createMonthlyRecords(
       totalLiab: totalLiabilities,
       totalEquity: equity,
       totalLAndE: totalAssets, // Should equal totalLiabilities + equity
+      currentYearNetIncome,
       // Add LOB breakdowns if available
       revenueBreakdown: lobData?.revenueBreakdown || null,
       expenseBreakdown: lobData?.expenseBreakdown || null,
