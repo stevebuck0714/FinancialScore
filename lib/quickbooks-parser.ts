@@ -345,6 +345,8 @@ export function createMonthlyRecords(
                   getRowValue(plRows, 'Expenses', colIndex) ||
                   getRowValue(plRows, 'Operating Expenses', colIndex);
     
+    const bsAccountValues = extractAccountValuesForMonth(bsAccountRows, colIndex);
+
     // Extract Balance Sheet data for this month
     const mappedCash = getMappedBalanceSheetTotal(bsAccountValues, accountMappings, 'cash');
     const cash =
@@ -368,7 +370,6 @@ export function createMonthlyRecords(
     if (accountMappings && accountMappings.length > 0) {
       // Extract account values for this month from both P&L and Balance Sheet
       const plAccountValues = extractAccountValuesForMonth(plAccountRows, colIndex);
-      const bsAccountValues = extractAccountValuesForMonth(bsAccountRows, colIndex);
       const allAccountValues = [...plAccountValues, ...bsAccountValues];
       
       // Apply LOB allocations
