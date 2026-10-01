@@ -5268,7 +5268,15 @@ function FinancialScorePage() {
   // Restore first-pass mapping for API-imported financial data when no mappings exist yet.
   useEffect(() => {
     if (!selectedCompanyId || adminDashboardTab !== 'data-mapping') return;
-    if (!qbRawData || (!qbRawData.profitAndLoss && !qbRawData.balanceSheet)) return;
+    // The account-review/raw-import panels can be hydrated from the latest
+    // financial record before qbRawData is available. Use that same source so
+    // raw QBO leaf accounts are always eligible for mapping.
+    const qboRawDataForMappings =
+      qbRawData ||
+      (accountReviewRawData?.profitAndLoss || accountReviewRawData?.balanceSheet
+        ? accountReviewRawData
+        : null);
+    if (!qboRawDataForMappings || (!qboRawDataForMappings.profitAndLoss && !qboRawDataForMappings.balanceSheet)) return;
 
     const classifyAccount = (statementType: 'profitAndLoss' | 'balanceSheet', sectionName: string): string => {
       const section = (sectionName || '').toLowerCase();
@@ -5341,8 +5349,8 @@ function FinancialScorePage() {
     };
 
     const generatedMappings = [
-      ...collectAccounts(qbRawData.profitAndLoss, 'profitAndLoss'),
-      ...collectAccounts(qbRawData.balanceSheet, 'balanceSheet'),
+      ...collectAccounts(qboRawDataForMappings.profitAndLoss, 'profitAndLoss'),
+      ...collectAccounts(qboRawDataForMappings.balanceSheet, 'balanceSheet'),
     ];
 
     if (generatedMappings.length > 0) {
@@ -5350,7 +5358,7 @@ function FinancialScorePage() {
       setAiMappings((prev) => mergeGeneratedMappingsWithExisting(generatedMappings, prev));
       setShowMappingSection(true);
     }
-  }, [selectedCompanyId, adminDashboardTab, qbRawData]);
+  }, [selectedCompanyId, adminDashboardTab, qbRawData, accountReviewRawData]);
 
   // Save dashboard widgets to database
   const saveDashboardPreferences = async () => {
