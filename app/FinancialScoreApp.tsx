@@ -5300,14 +5300,65 @@ function FinancialScorePage() {
       const collected: Array<{ accountName: string; accountId: string; accountCode: string; accountClassification: string; targetField: string; confidence: string }> = [];
       const seen = new Set<string>();
 
+      const parseQboAmount = (value: unknown): number => {
+        if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+        const parsed = Number.parseFloat(
+          String(value || '')
+            .replace(/\$/g, '')
+            .replace(/,/g, '')
+            .replace(/\(([^)]+)\)/, '-$1'),
+        );
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+
+      const addCandidate = (accountName: string, accountId: string, sectionPath: string[]) => {
+        if (!accountName || !accountId) return;
+        const classification = classifyAccount(statementType, sectionPath.join(' > '));
+        const dedupeKey = `${statementType}:id:${accountId}`;
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+        collected.push({
+          accountName,
+          accountId,
+          accountCode: '',
+          accountClassification: classification,
+          targetField: 'unmapped',
+          confidence: 'low',
+        });
+      };
+
       const visitRows = (rows: any[], sectionPath: string[] = []) => {
         for (const row of rows) {
           if (row?.type === 'Section') {
             const sectionName = String(row?.Header?.ColData?.[0]?.value || '').trim();
+            const sectionId = String(row?.Header?.ColData?.[0]?.id || '').trim();
             const nextPath = sectionName ? [...sectionPath, sectionName] : sectionPath;
-            const nestedRows = row?.Rows?.Row;
+            const nestedRows = Array.isArray(row?.Rows?.Row)
+              ? row.Rows.Row
+              : row?.Rows?.Row
+                ? [row.Rows.Row]
+                : [];
+            const summaryColumns = Array.isArray(row?.Summary?.ColData) ? row.Summary.ColData : [];
+            const hasParentRemainder =
+              !!sectionId &&
+              summaryColumns.some((summaryCell: any, columnIndex: number) => {
+                if (columnIndex === 0) return false;
+                const childTotal = nestedRows.reduce((total: number, child: any) => {
+                  if (child?.type === 'Data') {
+                    return total + parseQboAmount(child?.ColData?.[columnIndex]?.value);
+                  }
+                  if (child?.type === 'Section') {
+                    return total + parseQboAmount(child?.Summary?.ColData?.[columnIndex]?.value);
+                  }
+                  return total;
+                }, 0);
+                return Math.abs(parseQboAmount(summaryCell?.value) - childTotal) > 0.000001;
+              });
+            if (hasParentRemainder) {
+              addCandidate(`${sectionName} (parent balance)`, sectionId, sectionPath);
+            }
             if (nestedRows) {
-              visitRows(Array.isArray(nestedRows) ? nestedRows : [nestedRows], nextPath);
+              visitRows(nestedRows, nextPath);
             }
             continue;
           }
@@ -5321,24 +5372,7 @@ function FinancialScorePage() {
             // raw-import table as proof totals, not accounts that can be mapped.
             const reportAccountId = (row.ColData[0]?.id || row.ColData[1]?.id || '').toString().trim();
             if (!reportAccountId) continue;
-            const accountName = reportAccountName;
-            const accountId = reportAccountId;
-            const accountCode = '';
-            const classification = classifyAccount(statementType, sectionPath.join(' > '));
-            const dedupeKey = accountId
-              ? `${statementType}:id:${accountId}`
-              : `${statementType}:name:${classification}:${accountName.toLowerCase()}`;
-            if (seen.has(dedupeKey)) continue;
-            seen.add(dedupeKey);
-
-            collected.push({
-              accountName: accountName,
-              accountId: accountId,
-              accountCode: accountCode,
-              accountClassification: classification,
-              targetField: 'unmapped',
-              confidence: 'low',
-            });
+            addCandidate(reportAccountName, reportAccountId, sectionPath);
           }
         }
       };

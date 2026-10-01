@@ -64,13 +64,26 @@ export interface ParsedFinancialData {
   [key: string]: unknown;
 }
 
+function parseQbNumber(raw: unknown): number {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+  if (typeof raw !== 'string') return 0;
+  const trimmed = raw.trim();
+  if (!trimmed) return 0;
+  const normalized = trimmed
+    .replace(/\$/g, '')
+    .replace(/,/g, '')
+    .replace(/\(([^)]+)\)/, '-$1');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 /**
  * Extract all account-bearing rows from a QB report recursively.
  *
  * QBO sometimes represents an account with children as a Section whose Header
- * contains the account id/name and whose Summary contains the account balance.
- * Treat that section summary as the parent account value so mapped parent
- * accounts (for example 3100 Capital Investment) are not dropped.
+ * contains the account id/name and whose Summary contains its rolled-up
+ * balance. A parent mapping must receive only the parent's own residual
+ * balance; adding its full summary alongside mapped children double-counts.
  */
 function extractAccountRows(rows: QBRow[]): QBRow[] {
   const accountRows: QBRow[] = [];
@@ -89,17 +102,29 @@ function extractAccountRows(rows: QBRow[]): QBRow[] {
       const headerName = String(headerCols[0]?.value || '').trim();
       const headerId = String(headerCols[0]?.id || '').trim();
       const summaryName = String(summaryCols[0]?.value || '').trim();
+      const nestedRows = nestedQBRows(row);
       if (headerName && summaryCols.length > 0 && (headerId || !/^total\b/i.test(headerName))) {
-        accountRows.push({
-          type: 'Data',
-          ColData: [
-            {
-              value: headerName,
-              id: headerId || undefined,
-            },
-            ...summaryCols.slice(1),
-          ],
-        });
+        const residualColumns: QBColData[] = [
+          { value: headerName, id: headerId || undefined },
+        ];
+        let hasResidual = false;
+        for (let columnIndex = 1; columnIndex < summaryCols.length; columnIndex += 1) {
+          const childrenTotal = nestedRows.reduce((total, child) => {
+            if (child?.type === 'Data') {
+              return total + parseQbNumber(asQBCols(child.ColData)[columnIndex]?.value);
+            }
+            if (child?.type === 'Section') {
+              return total + parseQbNumber(asQBCols(child.Summary?.ColData)[columnIndex]?.value);
+            }
+            return total;
+          }, 0);
+          const residual = parseQbNumber(summaryCols[columnIndex]?.value) - childrenTotal;
+          if (Math.abs(residual) > 0.000001) hasResidual = true;
+          residualColumns.push({ value: String(residual) });
+        }
+        if (hasResidual) {
+          accountRows.push({ type: 'Data', ColData: residualColumns });
+        }
       } else if (!headerName && summaryCols.length > 0 && isMappableQboSystemSummaryName(summaryName)) {
         // QBO system-calculated summaries (for example Net Income) do not have
         // chart-of-account IDs, but users can explicitly map them by label/path.
@@ -115,8 +140,7 @@ function extractAccountRows(rows: QBRow[]): QBRow[] {
         });
       }
       if (row.Rows) {
-      // Recursively extract from nested rows
-        const nestedRows = nestedQBRows(row);
+        // Recursively extract from nested rows.
         const nestedAccounts = extractAccountRows(nestedRows);
         accountRows.push(...nestedAccounts);
       }
@@ -131,7 +155,8 @@ function extractAccountRows(rows: QBRow[]): QBRow[] {
  */
 function extractAccountValuesForMonth(
   accountRows: QBRow[],
-  columnIndex: number
+  columnIndex: number,
+  preserveSign = false,
 ): AccountValue[] {
   const accountValues: AccountValue[] = [];
   
@@ -142,20 +167,13 @@ function extractAccountValuesForMonth(
       const accountId = String(colData[0]?.id || '');
       const valueStr = String(colData[columnIndex]?.value || '');
       
-      // Parse the value (could be empty string, number, or formatted string)
-      let value = 0;
-      if (valueStr && valueStr !== '') {
-        value = parseFloat(valueStr.replace(/,/g, ''));
-        if (isNaN(value)) {
-          value = 0;
-        }
-      }
+      const value = parseQbNumber(valueStr);
       
       if (accountName && value !== 0) {
         accountValues.push({
           accountName,
           accountId,
-          value: Math.abs(value) // Use absolute value
+          value: preserveSign ? value : Math.abs(value),
         });
       }
     }
@@ -224,19 +242,6 @@ export function createMonthlyRecords(
   companyLOBs?: CompanyLOB[]
 ): ParsedFinancialData[] {
   const records: ParsedFinancialData[] = [];
-  
-  const parseQbNumber = (raw: unknown): number => {
-    if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
-    if (typeof raw !== 'string') return 0;
-    const trimmed = raw.trim();
-    if (!trimmed) return 0;
-    const normalized = trimmed
-      .replace(/\$/g, '')
-      .replace(/,/g, '')
-      .replace(/\(([^)]+)\)/, '-$1');
-    const parsed = Number.parseFloat(normalized);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
   
   // Extract column headers (dates) from P&L report
   const plColumns = (((plData || {}) as QBReport).Columns?.Column || []);
@@ -375,7 +380,7 @@ export function createMonthlyRecords(
                   getRowValue(plRows, 'Expenses', colIndex) ||
                   getRowValue(plRows, 'Operating Expenses', colIndex);
     
-    const bsAccountValues = extractAccountValuesForMonth(bsAccountRows, colIndex);
+    const bsAccountValues = extractAccountValuesForMonth(bsAccountRows, colIndex, true);
 
     // Extract Balance Sheet data for this month
     const mappedCash = getMappedBalanceSheetTotal(bsAccountValues, accountMappings, 'cash');
@@ -444,7 +449,9 @@ export function createMonthlyRecords(
               acc[field] = 0;
               return acc;
             }
-            acc[field] = field === 'ownersDraw' ? -Math.abs(numeric) : Math.abs(numeric);
+            // QBO Balance Sheet credits are negative. Preserve that sign for
+            // every mapped field instead of turning equity credits into assets.
+            acc[field] = numeric;
             return acc;
           }, {} as Record<string, number>)
         : {};
