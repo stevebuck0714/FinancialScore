@@ -405,14 +405,16 @@ function parseQuickBooksSnapshotFromRawData(rawData: unknown): AccountSnapshotRo
   if (!rawData || typeof rawData !== "object" || Array.isArray(rawData)) return [];
   const record = rawData as Record<string, unknown>;
   const chart = record.chartOfAccounts;
-  if (!chart || typeof chart !== "object" || Array.isArray(chart)) return [];
-  const chartRecord = chart as Record<string, unknown>;
+  const chartRecord =
+    chart && typeof chart === "object" && !Array.isArray(chart)
+      ? (chart as Record<string, unknown>)
+      : null;
   const queryResponse =
-    chartRecord.QueryResponse && typeof chartRecord.QueryResponse === "object" && !Array.isArray(chartRecord.QueryResponse)
+    chartRecord?.QueryResponse && typeof chartRecord.QueryResponse === "object" && !Array.isArray(chartRecord.QueryResponse)
       ? (chartRecord.QueryResponse as Record<string, unknown>)
       : null;
   const accounts = Array.isArray(queryResponse?.Account) ? (queryResponse?.Account as unknown[]) : [];
-  return accounts
+  const chartAccounts = accounts
     .map((row) => {
       if (!row || typeof row !== "object" || Array.isArray(row)) return null;
       const account = row as Record<string, unknown>;
@@ -430,6 +432,47 @@ function parseQuickBooksSnapshotFromRawData(rawData: unknown): AccountSnapshotRo
       } as AccountSnapshotRow;
     })
     .filter((row): row is AccountSnapshotRow => !!row);
+
+  // QBO reports can contain inactive or parent accounts that the current
+  // Chart of Accounts response omits. Those accounts remain valid mapping
+  // identities and must not be discarded when a user saves a mapping.
+  const reportAccounts: AccountSnapshotRow[] = [];
+  const seenReportIds = new Set<string>();
+  const collectReportAccounts = (report: unknown) => {
+    if (!report || typeof report !== "object" || Array.isArray(report)) return;
+    const reportRecord = report as Record<string, unknown>;
+    const rootRows = (reportRecord.Rows as Record<string, unknown> | undefined)?.Row;
+    const visitRows = (rows: unknown) => {
+      const items = Array.isArray(rows) ? rows : rows ? [rows] : [];
+      for (const item of items) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+        const row = item as Record<string, unknown>;
+        const headerData = (row.Header as Record<string, unknown> | undefined)?.ColData;
+        const data = row.type === "Section" ? headerData : row.ColData;
+        const firstCell = Array.isArray(data) && data[0] && typeof data[0] === "object"
+          ? (data[0] as Record<string, unknown>)
+          : null;
+        const accountId = String(firstCell?.id || "").trim();
+        const accountName = String(firstCell?.value || "").trim();
+        if (accountId && accountName && !seenReportIds.has(accountId)) {
+          seenReportIds.add(accountId);
+          reportAccounts.push({ accountId, accountName });
+        }
+        const nestedRows = (row.Rows as Record<string, unknown> | undefined)?.Row;
+        if (nestedRows) visitRows(nestedRows);
+      }
+    };
+    visitRows(rootRows);
+  };
+  collectReportAccounts(record.profitAndLoss);
+  collectReportAccounts(record.balanceSheet);
+
+  const accountsById = new Map<string, AccountSnapshotRow>();
+  for (const account of [...reportAccounts, ...chartAccounts]) {
+    // Chart metadata wins when both sources contain the account.
+    accountsById.set(account.accountId, account);
+  }
+  return Array.from(accountsById.values());
 }
 
 async function loadQuickBooksSnapshotFromLatestFinancialRecord(companyId: string): Promise<AccountSnapshotRow[]> {
