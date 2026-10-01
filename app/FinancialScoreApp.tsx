@@ -6056,7 +6056,13 @@ function FinancialScorePage() {
             }
             if (mappings && mappings.length > 0) {
               console.log('Loaded saved account mappings:', mappings);
-              setAiMappings((prev) => mergeGeneratedMappingsWithExisting(mappings, prev));
+              // Keep the QBO leaf accounts generated from the imported report;
+              // saved rows only supply the user's prior targets and allocations.
+              setAiMappings((prev) =>
+                prev.length > 0
+                  ? mergeGeneratedMappingsWithExisting(prev, mappings)
+                  : normalizeMappingsForUi(mappings)
+              );
               if (savedLobs && Array.isArray(savedLobs) && savedLobs.length > 0) {
                 console.log('Loaded saved Lines of Business:', savedLobs);
               // Convert from stored format to LOBData format
