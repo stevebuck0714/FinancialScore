@@ -275,7 +275,7 @@ export async function syncPulseAlertsForCompany(params: {
            "explainability" = $12::jsonb,
            "status" = $13,
            "resolvedAt" = $14::timestamp,
-           "isActive" = TRUE,
+           "isActive" = CASE WHEN $13 = 'acknowledged' THEN FALSE ELSE TRUE END,
            "lastSeenAt" = $15::timestamp,
            "modifiedAt" = $16::timestamp
        WHERE "id" = $17`,

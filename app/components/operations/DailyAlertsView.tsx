@@ -2196,7 +2196,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const mergeUpdatedAlert = (updated: any) => {
     if (!updated?.id) return;
     setAlerts((prev) => {
-      const next = prev.map((alert) =>
+      const merged = prev.map((alert) =>
         alert.id === updated.id
           ? {
               ...alert,
@@ -2210,6 +2210,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             }
           : alert
       );
+      const next = merged.filter((alert) => alert.isActive !== false);
       writeDailyCache<DailyAlertsCache>(dailyCacheKey('alerts', companyId), {
         alerts: next,
         readinessItems,

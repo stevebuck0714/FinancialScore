@@ -66,6 +66,7 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
 
     if (action === 'acknowledge') {
       nextStatus = 'acknowledged';
+      isActive = false;
       nextSnoozedIso = null;
       eventType = 'status_changed';
     } else if (action === 'snooze') {

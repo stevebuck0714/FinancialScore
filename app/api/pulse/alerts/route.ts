@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       params.push(normalizeStatus(status));
       whereParts.push(`"status" = $${params.length}`);
     } else if (!includeResolved) {
-      whereParts.push(`("isActive" = TRUE OR "status" = 'resolved')`);
+      whereParts.push(`"isActive" = TRUE`);
     }
 
     const rows = await prisma.$queryRawUnsafe<PulseAlertRow[]>(
