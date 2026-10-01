@@ -601,7 +601,14 @@ const QBD_MONTHLY_BS_PRESERVE_FIELDS = [
   'totalLAndE',
 ] as const;
 
-const QBD_DAILY_PNL_UPDATE_FIELDS = MONTHLY_FINANCIAL_NUMERIC_FIELDS.filter(
+// Current-year earnings are stored on MonthlyFinancial, not
+// DailyFinancialSnapshot. Do not include that monthly-only field in daily
+// QBD upserts.
+const DAILY_FINANCIAL_NUMERIC_FIELDS = MONTHLY_FINANCIAL_NUMERIC_FIELDS.filter(
+  (field) => field !== 'currentYearNetIncome',
+);
+
+const QBD_DAILY_PNL_UPDATE_FIELDS = DAILY_FINANCIAL_NUMERIC_FIELDS.filter(
   (field) => !(QBD_MONTHLY_BS_PRESERVE_FIELDS as readonly string[]).includes(field),
 );
 
@@ -1931,7 +1938,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
       const snapshotDate = new Date(`${dateKey}T00:00:00.000Z`);
       if (Number.isNaN(snapshotDate.getTime())) return null;
       const numericFields = Object.fromEntries(
-        MONTHLY_FINANCIAL_NUMERIC_FIELDS.map((field) => [field, qbdNumber(row[field])])
+        DAILY_FINANCIAL_NUMERIC_FIELDS.map((field) => [field, qbdNumber(row[field])])
       );
       const hasBalanceSheetSignal = QBD_MONTHLY_BS_PRESERVE_FIELDS.some((field) => qbdNumber(row[field]) !== 0);
       return {
