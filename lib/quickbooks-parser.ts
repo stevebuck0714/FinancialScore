@@ -396,7 +396,15 @@ export function createMonthlyRecords(
     const totalAssets = getRowValue(bsRows, 'Total Assets', colIndex) || getRowValue(bsRows, 'TOTAL ASSETS', colIndex);
     const ap = getRowValue(bsRows, 'Accounts Payable', colIndex) || getRowValue(bsRows, 'A/P', colIndex);
     const currentLiabilities = getRowValue(bsRows, 'Total Current Liabilities', colIndex) || getRowValue(bsRows, 'Current Liabilities', colIndex);
-    const longTermDebt = getRowValue(bsRows, 'Long-Term Liabilities', colIndex) || getRowValue(bsRows, 'Long Term Debt', colIndex);
+    const mappedLongTermDebt = getMappedBalanceSheetTotal(bsAccountValues, accountMappings, 'ltd');
+    // When a QBO mapping set exists, it is authoritative for debt accounts.
+    // In particular, an explicitly ignored account must not be reintroduced
+    // from its report-section summary (for example, "SBA Loan" beneath
+    // "Long-Term Liabilities").
+    const longTermDebt =
+      accountMappings?.length
+        ? (mappedLongTermDebt ?? 0)
+        : (getRowValue(bsRows, 'Long-Term Liabilities', colIndex) || getRowValue(bsRows, 'Long Term Debt', colIndex));
     const totalLiabilities = getRowValue(bsRows, 'Total Liabilities', colIndex) || getRowValue(bsRows, 'TOTAL LIABILITIES', colIndex);
     const equity = getRowValue(bsRows, 'Equity', colIndex) || getRowValue(bsRows, 'Total Equity', colIndex);
     // QBO calculates current-year earnings as a report summary, separate from
