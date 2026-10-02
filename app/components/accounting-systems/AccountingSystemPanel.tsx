@@ -559,28 +559,31 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
                   onClick={() => setShowBackfill(true)}
                   disabled={loading || saving || actionBusy !== null}
                   style={actionButtonStyle('secondary', loading || saving || actionBusy !== null)}
-                  title="Pull historical records for a date range"
+                  title="Run a sync for a selected date range"
                 >
-                  {actionBusy === 'backfill' ? 'Backfilling…' : 'Backfill…'}
+                  {actionBusy === 'backfill' ? 'Syncing range…' : 'Sync Range…'}
                 </button>
                 <HelpBadge
                   open={helpOpen === 'backfill'}
                   onToggle={() => setHelpOpen((cur) => (cur === 'backfill' ? null : 'backfill'))}
-                  title="Backfill"
+                  title="Sync Range"
                   body={
                     <>
                       <p style={{ margin: '0 0 6px 0' }}>
-                        Pulls every saved program for a <strong>specific historical date
-                        range</strong> you choose. Ignores the per-program last-sync
-                        timestamp and re-fetches everything inside the window.
+                        Runs every saved program for a <strong>specific date range</strong> you
+                        choose. This is useful for testing a bounded period or re-running a daily
+                        sync window after a correction.
                       </p>
                       <p style={{ margin: '0 0 6px 0' }}>
-                        <strong>Use it for</strong> initial loads, recovering from a missed
-                        sync window, or re-pulling a month after a correction in Intacct.
+                        <strong>Use it for</strong> recovering from a missed sync window or
+                        re-pulling a period after a correction.
                       </p>
                       <p style={{ margin: 0, color: '#94a3b8', fontSize: '11px' }}>
-                        Internally: Intacct <code>readByQuery</code> with
-                        <code> WHENMODIFIED BETWEEN start AND end</code>.
+                        {plugin.key === 'EPICOR_P21' ? (
+                          <>P21 domains require a configured <strong>Date Filter Field</strong> for the selected range to be applied.</>
+                        ) : (
+                          <>The connector applies its supported historical date filter to the selected range.</>
+                        )}
                       </p>
                     </>
                   }
@@ -763,12 +766,12 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
             }}
           >
             <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
-              Backfill {plugin.label}
+              Sync Range: {plugin.label}
             </div>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px' }}>
-              Pull records for every saved program where <code>WHENMODIFIED</code> falls inside the
-              window below. Use this for one-off historical loads — incremental syncs handle
-              day-to-day data.
+              {plugin.key === 'EPICOR_P21'
+                ? 'Pull records for every saved program inside the window below. Corelytics applies the range only to P21 domains with a configured Date Filter Field.'
+                : 'Pull records for every saved program inside the window below.'}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
@@ -823,7 +826,7 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
                   opacity: !backfillStart || !backfillEnd ? 0.6 : 1,
                 }}
               >
-                Run backfill
+                Run sync range
               </button>
             </div>
           </div>

@@ -1300,6 +1300,7 @@ enum BusinessStatus {
 
 enum AccountingPlatform {
   ACUMATICA
+  EPICOR_P21
   ODOO
   QUICKBOOKS
   XERO

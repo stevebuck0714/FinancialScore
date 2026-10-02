@@ -16,6 +16,10 @@ function normalizeFrequency(value: unknown): SyncFrequency {
   return 'daily';
 }
 
+function validCalendarDate(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 export async function POST(request: NextRequest, context: RouteContext) {
   const startedAt = Date.now();
   try {
@@ -53,7 +57,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const frequency = normalizeFrequency(body.frequency || connection.syncFrequency);
-    const result = await runOperationalSyncForCompany(companyId, plugin.platform, frequency);
+    const mode = body.mode === 'backfill' ? 'backfill' : 'incremental';
+    const startDate = body.startDate;
+    const endDate = body.endDate;
+    if (mode === 'backfill') {
+      if (!validCalendarDate(startDate) || !validCalendarDate(endDate) || startDate > endDate) {
+        return NextResponse.json(
+          { ok: false, error: 'A valid date range is required: start date must be on or before end date.' },
+          { status: 400 }
+        );
+      }
+    }
+    const result = await runOperationalSyncForCompany(companyId, plugin.platform, frequency, {
+      mode,
+      startDate: validCalendarDate(startDate) ? startDate : undefined,
+      endDate: validCalendarDate(endDate) ? endDate : undefined,
+    });
 
     return NextResponse.json({
       ok: result.success,
@@ -61,12 +80,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       companyName: company.name,
       platform: plugin.platform,
       frequency,
+      mode,
+      startDate: validCalendarDate(startDate) ? startDate : undefined,
+      endDate: validCalendarDate(endDate) ? endDate : undefined,
       recordsCreated: result.recordsCreated,
       moduleCounts: result.moduleCounts,
       errors: result.errors,
       durationMs: Date.now() - startedAt,
       message: result.success
-        ? `${plugin.label} sync complete: ${result.recordsCreated} record(s) pulled.`
+        ? `${plugin.label} ${mode === 'backfill' ? 'date-range sync' : 'sync'} complete: ${result.recordsCreated} record(s) pulled.`
         : `${plugin.label} sync finished with errors.`,
     });
   } catch (error) {

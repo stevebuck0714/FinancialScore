@@ -2,7 +2,7 @@
  * Database Security Utilities
  *
  * CRITICAL: These functions prevent cross-database contamination between:
- * - Production: configured via PRODUCTION_DB_PROJECTS (default: aged-snow,orange-poetry)
+ * - Production: configured via PRODUCTION_DB_PROJECTS (default: aged-snow)
  * - Staging: configured via STAGING_DB_PROJECTS (default: cold-frost)
  * - Dev: configured via DEV_DB_PROJECTS (default: cool-dream)
  *
@@ -80,7 +80,7 @@ function isAllowedProductionRuntime(): boolean {
 export function validateDatabaseConnection(): DatabaseInfo {
   const databaseUrl = readEnv('DATABASE_URL');
 
-  const productionProjects = getProjectList(readEnv('PRODUCTION_DB_PROJECTS') || undefined, ['orange-poetry', 'aged-snow']);
+  const productionProjects = getProjectList(readEnv('PRODUCTION_DB_PROJECTS') || undefined, ['aged-snow']);
   const stagingProjects = getProjectList(readEnv('STAGING_DB_PROJECTS') || undefined, ['cold-frost']);
   const developmentProjects = getProjectList(readEnv('DEV_DB_PROJECTS') || undefined, ['cool-dream']);
 
@@ -175,7 +175,7 @@ export function enforceDatabaseSecurity(): void {
     // During build, only block production database connections
     // Staging database is allowed during build
     const databaseUrl = readEnv('DATABASE_URL');
-    const productionProjects = getProjectList(readEnv('PRODUCTION_DB_PROJECTS') || undefined, ['orange-poetry', 'aged-snow']);
+    const productionProjects = getProjectList(readEnv('PRODUCTION_DB_PROJECTS') || undefined, ['aged-snow']);
     if (findProject(databaseUrl, productionProjects) && !isAllowedProductionRuntime()) {
       const error = new Error(
         `🚨 SECURITY VIOLATION: Production database detected during build in non-production environment!\n` +

@@ -1,0 +1,1 @@
+ALTER TYPE "AccountingPlatform" ADD VALUE IF NOT EXISTS 'EPICOR_P21';

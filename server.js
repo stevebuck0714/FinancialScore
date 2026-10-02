@@ -46,7 +46,7 @@ console.log('🔐 ENV loaded:', {
 // CRITICAL: Even if NODE_ENV is "production" locally, this must be blocked.
 // Production databases are only allowed on Vercel production runtime: VERCEL=1 and VERCEL_ENV=production.
 
-const productionProjects = (process.env.PRODUCTION_DB_PROJECTS || 'orange-poetry,aged-snow')
+const productionProjects = (process.env.PRODUCTION_DB_PROJECTS || 'aged-snow')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);

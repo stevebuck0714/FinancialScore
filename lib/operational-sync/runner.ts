@@ -12,6 +12,12 @@ import { syncPluginErpConnection } from '@/lib/operational-sync/plugin-erp-adapt
 
 export type SyncFrequency = 'daily' | 'weekly' | 'monthly';
 
+export type PluginSyncOptions = {
+  mode?: 'incremental' | 'backfill';
+  startDate?: string;
+  endDate?: string;
+};
+
 export type OperationalSyncResult = {
   success: boolean;
   recordsCreated: number;
@@ -146,7 +152,8 @@ function notImplementedResult(platform: AccountingPlatform): OperationalSyncResu
 
 export async function runOperationalSyncForConnection(
   connection: Pick<AccountingConnection, 'id' | 'companyId' | 'platform' | 'accessToken' | 'connectionMetadata'>,
-  frequencyInput: unknown
+  frequencyInput: unknown,
+  options?: PluginSyncOptions
 ): Promise<OperationalSyncResult> {
   const frequency = normalizeFrequency(frequencyInput);
 
@@ -296,7 +303,7 @@ export async function runOperationalSyncForConnection(
     };
   }
 
-  const pluginResult = await syncPluginErpConnection(connection, frequency);
+  const pluginResult = await syncPluginErpConnection(connection, frequency, options);
   if (pluginResult) {
     return pluginResult;
   }
@@ -307,7 +314,8 @@ export async function runOperationalSyncForConnection(
 export async function runOperationalSyncForCompany(
   companyId: string,
   platform: AccountingPlatform,
-  frequencyInput: unknown
+  frequencyInput: unknown,
+  options?: PluginSyncOptions
 ): Promise<OperationalSyncResult> {
   const connection = await prisma.accountingConnection.findUnique({
     where: {
@@ -333,5 +341,5 @@ export async function runOperationalSyncForCompany(
     };
   }
 
-  return runOperationalSyncForConnection(connection, frequencyInput);
+  return runOperationalSyncForConnection(connection, frequencyInput, options);
 }

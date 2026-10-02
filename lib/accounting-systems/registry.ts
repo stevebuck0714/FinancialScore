@@ -13,6 +13,7 @@ import type { AccountingSystemModule } from './types';
 import vistaCloud from './vista-cloud';
 import sageIntacct from './sage-intacct';
 import acumatica from './acumatica';
+import epicorP21 from './epicor-p21';
 import odoo from './odoo';
 import dynamics365 from './dynamics-365';
 import sapS4Hana from './sap-s4hana';
@@ -21,6 +22,7 @@ const modules: AccountingSystemModule<any, any>[] = [
   vistaCloud,
   sageIntacct,
   acumatica,
+  epicorP21,
   odoo,
   dynamics365,
   sapS4Hana,

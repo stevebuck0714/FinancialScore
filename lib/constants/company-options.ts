@@ -6,6 +6,7 @@ export const ACCOUNTING_SYSTEMS = [
   { value: 'CSV_FILE', label: 'CSV file' },
   { value: 'DYNAMICS', label: 'Dynamics' },
   { value: 'EPICOR', label: 'Epicor' },
+  { value: 'EPICOR_P21', label: 'Epicor Prophet 21 (P21)' },
   { value: 'IFS', label: 'IFS' },
   { value: 'INFOR_M3', label: 'Infor M3' },
   { value: 'INFOR_CSI', label: 'Infor SyteLine CSI' },

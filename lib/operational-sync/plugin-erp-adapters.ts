@@ -16,7 +16,8 @@ import {
 import acumatica, { type AcumaticaProgram, type AcumaticaSettings } from '@/lib/accounting-systems/acumatica';
 import odoo, { type OdooProgram, type OdooSettings } from '@/lib/accounting-systems/odoo';
 import dynamics365, { type Dynamics365Program, type Dynamics365Settings } from '@/lib/accounting-systems/dynamics-365';
-import type { OperationalSyncResult, SyncFrequency } from './runner';
+import epicorP21, { type EpicorP21Program, type EpicorP21Settings } from '@/lib/accounting-systems/epicor-p21';
+import type { OperationalSyncResult, PluginSyncOptions, SyncFrequency } from './runner';
 
 type PluginConnection = Pick<
   AccountingConnection,
@@ -553,9 +554,118 @@ export async function syncDynamics365Connection(
   return summarizeResult(outcomes);
 }
 
+function p21TokenRequest(settings: EpicorP21Settings): Record<string, string> {
+  const method = settings.authenticationMethod;
+  if (method === 'USERNAME_PASSWORD') {
+    if (!settings.username || !settings.password) {
+      throw new Error('P21 middleware username and password are required for the selected authentication method.');
+    }
+    return { username: settings.username, password: settings.password };
+  }
+  if (method === 'CONSUMER_KEY') {
+    if (!settings.consumerKey) {
+      throw new Error('A P21 consumer key is required for the selected authentication method.');
+    }
+    return { ClientSecret: settings.consumerKey, GrantType: 'client_credentials' };
+  }
+  if (method === 'USERNAME_PASSWORD_AND_CONSUMER_KEY' || method === 'CUSTOM') {
+    if (!settings.username || !settings.password || !settings.consumerKey) {
+      throw new Error('P21 middleware username, password, and consumer key are required for the selected authentication method.');
+    }
+    return {
+      username: settings.username,
+      password: settings.password,
+      ClientSecret: settings.consumerKey,
+      GrantType: 'client_credentials',
+    };
+  }
+  throw new Error('Select the P21 middleware authentication method before connecting or syncing.');
+}
+
+function p21ResourceUrl(baseUrl: string, apiPath: string, resource: string): string {
+  const normalizedPath = apiPath.replace(/^\/+|\/+$/g, '');
+  const normalizedResource = resource.replace(/^\/+/, '');
+  return `${baseUrl}/${normalizedPath}/${normalizedResource}`;
+}
+
+async function p21AccessToken(settings: EpicorP21Settings): Promise<string> {
+  const baseUrl = normalizeBaseUrl(settings.middlewareUrl);
+  if (!baseUrl) throw new Error('P21 Middleware / API URL is required.');
+
+  const body = await fetchJsonWithTimeout(`${baseUrl}/api/security/token/v2`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(p21TokenRequest(settings)),
+  });
+  const response = asRecord(body);
+  const token = asString(response.AccessToken) || asString(response.access_token) || asString(response.token);
+  if (!token) throw new Error('P21 middleware did not return an access token.');
+  return token;
+}
+
+async function syncEpicorP21Connection(
+  connection: PluginConnection,
+  _frequency: SyncFrequency,
+  options?: PluginSyncOptions
+): Promise<OperationalSyncResult> {
+  const startedAt = Date.now();
+  const metadata = asRecord(connection.connectionMetadata);
+  const settings = epicorP21.sanitizeSettings(metadata.settings ?? epicorP21.defaultSettings) as EpicorP21Settings;
+  const programs = epicorP21.sanitizePrograms(metadata.programs ?? epicorP21.defaultPrograms) as EpicorP21Program[];
+  const baseUrl = normalizeBaseUrl(settings.middlewareUrl);
+  if (!baseUrl) throw new Error('P21 Middleware / API URL is required.');
+
+  const token = await p21AccessToken(settings);
+  const outcomes: ProgramOutcome[] = [];
+  for (const program of programs.filter((row) => row.enabled !== false && row.endpointOrEntity)) {
+    const syncedAt = new Date().toISOString();
+    try {
+      const url = new URL(p21ResourceUrl(baseUrl, settings.apiPath, program.endpointOrEntity));
+      url.searchParams.set('$top', '200');
+      if (options?.mode === 'backfill') {
+        if (!options.startDate || !options.endDate || !program.dateField) {
+          throw new Error(
+            `A Date Filter Field and valid start/end dates are required to run ${program.dataDomain || program.endpointOrEntity} as a date-range sync.`
+          );
+        }
+        url.searchParams.set(
+          '$filter',
+          `${program.dateField} ge ${options.startDate} and ${program.dateField} le ${options.endDate}`
+        );
+      }
+      const body = await fetchJsonWithTimeout(url.toString(), {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      });
+      outcomes.push({
+        key: program.endpointOrEntity,
+        module: program.dataDomain,
+        resource: program.endpointOrEntity,
+        ok: true,
+        recordCount: extractArrayRows(body).length,
+        syncedAt,
+      });
+    } catch (error) {
+      outcomes.push({
+        key: program.endpointOrEntity,
+        module: program.dataDomain,
+        resource: program.endpointOrEntity,
+        ok: false,
+        recordCount: 0,
+        syncedAt,
+        error: error instanceof Error ? error.message : 'Unknown Epicor P21 API error',
+      });
+    }
+  }
+
+  await persistPluginSyncSummary(connection, metadata, outcomes, startedAt);
+  return summarizeResult(outcomes);
+}
+
 export async function syncPluginErpConnection(
   connection: PluginConnection,
-  frequency: SyncFrequency
+  frequency: SyncFrequency,
+  options?: PluginSyncOptions
 ): Promise<OperationalSyncResult | null> {
   const platform = String(connection.platform) as AccountingPlatform;
   if (platform === 'VISTA_CLOUD') return syncVistaCloudConnection(connection, frequency);
@@ -563,5 +673,6 @@ export async function syncPluginErpConnection(
   if (platform === 'ACUMATICA') return syncAcumaticaConnection(connection, frequency);
   if (platform === 'ODOO') return syncOdooConnection(connection, frequency);
   if (platform === 'DYNAMICS365') return syncDynamics365Connection(connection, frequency);
+  if (platform === 'EPICOR_P21') return syncEpicorP21Connection(connection, frequency, options);
   return null;
 }

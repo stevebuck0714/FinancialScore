@@ -36,7 +36,7 @@ async function main() {
   const requestedPassword = getArgValue('--password');
   const password = requestedPassword || generateStrongPassword();
 
-  const unsafeProdMarkers = ['orange-poetry', 'aged-snow'];
+  const unsafeProdMarkers = ['aged-snow'];
   const isLikelyProd = unsafeProdMarkers.some((m) => databaseUrl.includes(m));
   if (isLikelyProd && process.env.ALLOW_PROD_ADMIN_RESET !== '1') {
     throw new Error(

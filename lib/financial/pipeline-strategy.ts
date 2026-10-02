@@ -11,6 +11,7 @@ const ERP_LEDGER_SYSTEMS = new Set([
   'ACUMATICA',
   'ODOO',
   'EPICOR',
+  'EPICOR_P21',
   'IFS',
 ]);
 
