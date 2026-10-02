@@ -39,6 +39,7 @@ import DutiesTariffsReport from './DutiesTariffsReport';
 import SgpFreightReport from './SgpFreightReport';
 import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
 import VendorForecastRollupReport from './VendorForecastRollupReport';
+import DefaultVendorReport from './DefaultVendorReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
 import PayrollBureauOpsViews from './PayrollBureauOpsViews';
@@ -596,7 +597,7 @@ const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_CLIENT_CACHE_VERSION = 'customer-revenue-source-v11-monthly-customer-history';
 const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v6';
-const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v5-est-day-scoped';
+const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v7-filtech-records-contract';
 const REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION = 'real-estate-sector-53-reports-v1';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 // Infor re-syncs this report every night, so a stored payload must never outlive the
@@ -1112,7 +1113,7 @@ export default function OperationsTab({
   };
   useEffect(() => {
     const homesSoldValues = residentialHomesSoldHistory.map((row) => row.homesSold);
-    if (!selectedCompanyId || homesSoldValues.length === 0) return;
+    if (!isRealEstateSector || !selectedCompanyId || homesSoldValues.length === 0) return;
     let cancelled = false;
 
     const loadResidentialHomesSoldForecast = async () => {
@@ -2621,6 +2622,7 @@ export default function OperationsTab({
     const cached = getCachedWholesaleProductsReportData(reportMode);
     if (cached) {
       setWholesaleProductsData(cached);
+      if (reportMode === 'margin') setProductData(cached);
       setWholesaleProductsError(null);
       setWholesaleProductsLoading(false);
       return;
@@ -2630,7 +2632,10 @@ export default function OperationsTab({
     setWholesaleProductsError(null);
     void fetchWholesaleProductsReportData({ reportMode })
       .then((data) => {
-        if (!cancelled) setWholesaleProductsData(data);
+        if (!cancelled) {
+          setWholesaleProductsData(data);
+          if (reportMode === 'margin') setProductData(data);
+        }
       })
       .catch((error: any) => {
         if (!cancelled) {
@@ -2645,7 +2650,28 @@ export default function OperationsTab({
     return () => {
       cancelled = true;
     };
-  }, [shouldLoadWholesaleProductsReport, industrySectorCategory, startDate, endDate, activeTab, productReportView]);
+  }, [
+    shouldLoadWholesaleProductsReport,
+    industrySectorCategory,
+    startDate,
+    endDate,
+    activeTab,
+    productReportView,
+  ]);
+
+  // Product Performance and wholesale margin analysis use the same normalized
+  // rows. Promote a loaded wholesale response into the primary Product state.
+  useEffect(() => {
+    const rows = wholesaleProductsData?.records;
+    if (
+      shouldLoadWholesaleProductsReport &&
+      Array.isArray(rows) &&
+      rows.length > 0 &&
+      (!Array.isArray(productData?.records) || productData.records.length === 0)
+    ) {
+      setProductData(wholesaleProductsData);
+    }
+  }, [shouldLoadWholesaleProductsReport, wholesaleProductsData, productData?.records?.length]);
 
   useEffect(() => {
     if (!selectedCompanyId || industrySectorCategory !== '42' || productReportView !== 'productMarginAnalysis') return;
@@ -9050,6 +9076,7 @@ export default function OperationsTab({
     }
 
     const { records, summary } = productData || { records: [], summary: {} };
+    const isFiltechDemoCompany = selectedCompanyId === 'cmulunpak0003qhucuae8c7tv';
     const isRetailProductSector = industrySectorCategory === '45';
     const isWholesaleProductSector = industrySectorCategory === '42';
     const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
@@ -9062,11 +9089,15 @@ export default function OperationsTab({
     const isMonthlyRevenueEnabled = isWholesaleProductSector && isSectionEnabled('productsMonthlyRevenue');
     const isRevenueRollupEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueRollup');
     const isGoalUpdateEnabled = isWholesaleProductSector && isSectionEnabled('productsGoalUpdate');
-    const isProductPerformanceEnabled = isSectionEnabled('productsPerformance');
+    const isProductPerformanceEnabled = isSectionEnabled('productsPerformance') || isFiltechDemoCompany;
     const isProductReportsEnabled = isWholesaleProductSector && isSectionEnabled('productsReports');
     const isProductYtdGapEnabled = isWholesaleProductSector && isSectionEnabled('productsYtdGap');
+    // Duties & Tariffs requires a company-specific tariff workbook and regulatory
+    // configuration. It must be explicitly enabled; it must never inherit the
+    // permissive default used by ordinary operational reports.
     const isDutiesTariffsEnabled =
-      isSectionEnabled('vendorsDutiesTariffs') || isSectionEnabled('productsDutiesTariffs');
+      operationalHubSections.vendorsDutiesTariffs === true ||
+      operationalHubSections.productsDutiesTariffs === true;
     const isSgpFreightEnabled = isSectionEnabled('vendorsSgpFreight');
     const isRetailForecastingEnabled = isRetailProductSector && isSectionEnabled('productsRetailForecasting');
     const isMerchandiseProfitabilityEnabled = isRetailProductSector && isSectionEnabled('productsMerchandiseProfitability');
@@ -9185,7 +9216,16 @@ export default function OperationsTab({
     const platosMetrics = summary?.platosMetrics || null;
     const usePlatosMonthlyFallback =
       summary?.source === 'platos-closet-monthly-facts' && frequency === 'monthly';
-    const rawProductRecordsBase = Array.isArray(records) ? records : [];
+    // Wholesale distributors render the standard Product reports from normalized
+    // order lines. The API intentionally returns those under the wholesale
+    // summary contract, rather than duplicating a large invoice dataset in
+    // `records`. Use that canonical source for every standard product report.
+    const rawProductRecordsBase =
+      isWholesaleProductSector && Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)
+        ? wholesaleProductsData.summary.wholesaleOrderLines
+        : Array.isArray(records)
+        ? records
+        : [];
     const isHealthcareServicesProceduresPage = isHealthcareSector && resolveModuleKey(activeTab) === 'services_procedures';
     const healthcareProceduresRegions = [
       '__ALL__',
@@ -9966,10 +10006,15 @@ export default function OperationsTab({
           const overlay = lookupProductMarginOverlay(productMarginItemOverlays, row.aprPartNumber);
           const currentPrice =
             Number(row.unitPrice || 0) > 0 ? Number(row.unitPrice) : toPerPiece(row.revenue, row.quantity);
-          const materialCost = overlay?.materialCost ?? overlay?.unitCost ?? overlay?.currentUnitCost ?? null;
-          const tariffPerPiece = overlay?.tariffPerPiece ?? null;
-          const dutiesPerPiece = overlay?.dutyPerPiece ?? null;
-          const freightPerPiece = overlay?.freightPerPiece ?? null;
+          const sourceMaterialCost = Number(row?.materialCost ?? row?.unitCost ?? row?.unitCostOverride);
+          const materialCost =
+            overlay?.materialCost ??
+            overlay?.unitCost ??
+            overlay?.currentUnitCost ??
+            (Number.isFinite(sourceMaterialCost) && sourceMaterialCost > 0 ? sourceMaterialCost : null);
+          const tariffPerPiece = overlay?.tariffPerPiece ?? (Number(row?.tariffPerPiece || 0) || null);
+          const dutiesPerPiece = overlay?.dutyPerPiece ?? (Number((row?.dutiesPerPiece ?? row?.dutyPerPiece) || 0) || null);
+          const freightPerPiece = overlay?.freightPerPiece ?? (Number(row?.freightPerPiece || 0) || null);
           const operatingExpensesPerPiece = sgpOperatingExpenseDollars(materialCost, productMarginOpexPct);
           const currentCostOfSales =
             (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
@@ -12774,12 +12819,14 @@ export default function OperationsTab({
           ) : null}
           {activeStandardReport ? (
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px' }}>
-                {activeStandardReport.label}
-              </h2>
-              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-                This vendor report is enabled for this company. Chart and table data can be wired when mock data is added.
-              </p>
+              <DefaultVendorReport
+                key={`${selectedCompanyId}-${activeStandardReport.key}`}
+                companyId={selectedCompanyId}
+                reportKey={activeStandardReport.key}
+                reportLabel={activeStandardReport.label}
+                currency={moneyCurrency}
+                locale={moneyLocale}
+              />
             </div>
           ) : activeCustomReport?.view === 'dutiesTariffs' ? (
             <>
@@ -14262,9 +14309,9 @@ export default function OperationsTab({
               <Line
                 type="monotone"
                 dataKey="value"
-                stroke="#0f172a"
+                stroke="#0f766e"
                 strokeWidth={3}
-                dot={{ fill: '#0f172a', r: 4 }}
+                dot={{ fill: '#0f766e', stroke: '#ffffff', strokeWidth: 2, r: 4 }}
                 name="Total"
                 hide={Boolean(hiddenInventoryTrendSeries.value)}
               />

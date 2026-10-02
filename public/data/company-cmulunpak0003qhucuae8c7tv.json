@@ -1,0 +1,7490 @@
+[
+  {
+    "monthDate": "2023-09-30T07:00:00.000Z",
+    "date": "2023-09-30T07:00:00.000Z",
+    "month": "2023-09",
+    "revenue": 1771392,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 799008,
+    "payroll": 282240,
+    "ownerBasePay": 80640,
+    "benefits": 52416,
+    "insurance": 24192,
+    "professionalFees": 34944,
+    "subcontractors": 43008,
+    "rent": 53760,
+    "taxLicense": 8064,
+    "stateIncomeTaxes": 12096,
+    "federalIncomeTaxes": 37632,
+    "phoneComm": 6384,
+    "infrastructure": 27552,
+    "autoTravel": 18816,
+    "salesExpense": 60480,
+    "marketing": 0,
+    "trainingCert": 5376,
+    "mealsEntertainment": 4368,
+    "interestExpense": 16128,
+    "depreciationAmortization": 30240,
+    "otherExpense": 26208,
+    "expense": 0,
+    "nonOperatingIncome": 2016,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1344000,
+    "ar": 1515000,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2038900,
+    "otherCA": 241500,
+    "tca": 5139400,
+    "fixedAssets": 1211000,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6350400,
+    "ap": 1217000,
+    "loc": 525000,
+    "contractLiabilities": 0,
+    "otherCL": 309400,
+    "tcl": 2051400,
+    "ltd": 800000,
+    "totalLiab": 2851400,
+    "ownersCapital": 1875000,
+    "ownersDraw": 84000,
+    "commonStock": 70000,
+    "preferredStock": 0,
+    "retainedEarnings": 1470000,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3331000,
+    "totalLAndE": 6182400,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 840000
+      },
+      "rev_value_added_services": {
+        "Unallocated": 571200
+      },
+      "rev_other_revenue": {
+        "Unallocated": 383040
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -22848
+      },
+      "cogs_product_cost": {
+        "Unallocated": 557760
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 120960
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 63840
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 56448
+      },
+      "payroll": {
+        "Unallocated": 282240
+      },
+      "ownerBasePay": {
+        "Unallocated": 80640
+      },
+      "benefits": {
+        "Unallocated": 52416
+      },
+      "insurance": {
+        "Unallocated": 24192
+      },
+      "professionalFees": {
+        "Unallocated": 34944
+      },
+      "subcontractors": {
+        "Unallocated": 43008
+      },
+      "rent": {
+        "Unallocated": 53760
+      },
+      "taxLicense": {
+        "Unallocated": 8064
+      },
+      "phoneComm": {
+        "Unallocated": 6384
+      },
+      "infrastructure": {
+        "Unallocated": 27552
+      },
+      "autoTravel": {
+        "Unallocated": 18816
+      },
+      "salesExpense": {
+        "Unallocated": 60480
+      },
+      "trainingCert": {
+        "Unallocated": 5376
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4368
+      },
+      "interestExpense": {
+        "Unallocated": 16128
+      },
+      "depreciationAmortization": {
+        "Unallocated": 30240
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12096
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 37632
+      },
+      "otherExpense": {
+        "Unallocated": 26208
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2016
+      },
+      "cash": {
+        "Unallocated": 1344000
+      },
+      "ar": {
+        "Unallocated": 1515000
+      },
+      "inventory": {
+        "Unallocated": 2038900
+      },
+      "otherCA": {
+        "Unallocated": 241500
+      },
+      "fixedAssets": {
+        "Unallocated": 1211000
+      },
+      "ap": {
+        "Unallocated": 1217000
+      },
+      "otherCL": {
+        "Unallocated": 309400
+      },
+      "loc": {
+        "Unallocated": 525000
+      },
+      "ltd": {
+        "Unallocated": 800000
+      },
+      "ownersCapital": {
+        "Unallocated": 1875000
+      },
+      "ownersDraw": {
+        "Unallocated": 84000
+      },
+      "commonStock": {
+        "Unallocated": 70000
+      },
+      "retainedEarnings": {
+        "Unallocated": 1470000
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 840000,
+      "rev_value_added_services": 571200,
+      "rev_other_revenue": 383040,
+      "rev_vendor_rebates_and_incentives": -22848
+    },
+    "expenseBreakdown": {
+      "Unallocated": 774816
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 557760,
+      "cogs_handling_and_preparation": 120960,
+      "cogs_outbound_fulfillment": 63840,
+      "cogs_other_cogs": 56448
+    }
+  },
+  {
+    "monthDate": "2023-10-31T07:00:00.000Z",
+    "date": "2023-10-31T07:00:00.000Z",
+    "month": "2023-10",
+    "revenue": 1780249,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 803004,
+    "payroll": 283651,
+    "ownerBasePay": 81043,
+    "benefits": 52678,
+    "insurance": 24313,
+    "professionalFees": 35119,
+    "subcontractors": 43223,
+    "rent": 54029,
+    "taxLicense": 8104,
+    "stateIncomeTaxes": 12156,
+    "federalIncomeTaxes": 37820,
+    "phoneComm": 6416,
+    "infrastructure": 27690,
+    "autoTravel": 18910,
+    "salesExpense": 60782,
+    "marketing": 0,
+    "trainingCert": 5403,
+    "mealsEntertainment": 4390,
+    "interestExpense": 16209,
+    "depreciationAmortization": 30391,
+    "otherExpense": 26339,
+    "expense": 0,
+    "nonOperatingIncome": 2026,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1357440,
+    "ar": 1530150,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2059289,
+    "otherCA": 243915,
+    "tca": 5190794,
+    "fixedAssets": 1223110,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6413904,
+    "ap": 1229170,
+    "loc": 530250,
+    "contractLiabilities": 0,
+    "otherCL": 312494,
+    "tcl": 2071914,
+    "ltd": 808000,
+    "totalLiab": 2879914,
+    "ownersCapital": 1893750,
+    "ownersDraw": 84840,
+    "commonStock": 70700,
+    "preferredStock": 0,
+    "retainedEarnings": 1484700,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3364310,
+    "totalLAndE": 6244224,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 844200
+      },
+      "rev_value_added_services": {
+        "Unallocated": 574056
+      },
+      "rev_other_revenue": {
+        "Unallocated": 384955
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -22962
+      },
+      "cogs_product_cost": {
+        "Unallocated": 560549
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 121565
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 64159
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 56731
+      },
+      "payroll": {
+        "Unallocated": 283651
+      },
+      "ownerBasePay": {
+        "Unallocated": 81043
+      },
+      "benefits": {
+        "Unallocated": 52678
+      },
+      "insurance": {
+        "Unallocated": 24313
+      },
+      "professionalFees": {
+        "Unallocated": 35119
+      },
+      "subcontractors": {
+        "Unallocated": 43223
+      },
+      "rent": {
+        "Unallocated": 54029
+      },
+      "taxLicense": {
+        "Unallocated": 8104
+      },
+      "phoneComm": {
+        "Unallocated": 6416
+      },
+      "infrastructure": {
+        "Unallocated": 27690
+      },
+      "autoTravel": {
+        "Unallocated": 18910
+      },
+      "salesExpense": {
+        "Unallocated": 60782
+      },
+      "trainingCert": {
+        "Unallocated": 5403
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4390
+      },
+      "interestExpense": {
+        "Unallocated": 16209
+      },
+      "depreciationAmortization": {
+        "Unallocated": 30391
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12156
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 37820
+      },
+      "otherExpense": {
+        "Unallocated": 26339
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2026
+      },
+      "cash": {
+        "Unallocated": 1357440
+      },
+      "ar": {
+        "Unallocated": 1530150
+      },
+      "inventory": {
+        "Unallocated": 2059289
+      },
+      "otherCA": {
+        "Unallocated": 243915
+      },
+      "fixedAssets": {
+        "Unallocated": 1223110
+      },
+      "ap": {
+        "Unallocated": 1229170
+      },
+      "otherCL": {
+        "Unallocated": 312494
+      },
+      "loc": {
+        "Unallocated": 530250
+      },
+      "ltd": {
+        "Unallocated": 808000
+      },
+      "ownersCapital": {
+        "Unallocated": 1893750
+      },
+      "ownersDraw": {
+        "Unallocated": 84840
+      },
+      "commonStock": {
+        "Unallocated": 70700
+      },
+      "retainedEarnings": {
+        "Unallocated": 1484700
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 844200,
+      "rev_value_added_services": 574056,
+      "rev_other_revenue": 384955,
+      "rev_vendor_rebates_and_incentives": -22962
+    },
+    "expenseBreakdown": {
+      "Unallocated": 778690
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 560549,
+      "cogs_handling_and_preparation": 121565,
+      "cogs_outbound_fulfillment": 64159,
+      "cogs_other_cogs": 56731
+    }
+  },
+  {
+    "monthDate": "2023-11-30T07:00:00.000Z",
+    "date": "2023-11-30T07:00:00.000Z",
+    "month": "2023-11",
+    "revenue": 1789150,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 807019,
+    "payroll": 285069,
+    "ownerBasePay": 81448,
+    "benefits": 52941,
+    "insurance": 24435,
+    "professionalFees": 35294,
+    "subcontractors": 43439,
+    "rent": 54299,
+    "taxLicense": 8145,
+    "stateIncomeTaxes": 12217,
+    "federalIncomeTaxes": 38009,
+    "phoneComm": 6448,
+    "infrastructure": 27828,
+    "autoTravel": 19005,
+    "salesExpense": 61087,
+    "marketing": 0,
+    "trainingCert": 5430,
+    "mealsEntertainment": 4412,
+    "interestExpense": 16290,
+    "depreciationAmortization": 30543,
+    "otherExpense": 26471,
+    "expense": 0,
+    "nonOperatingIncome": 2036,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1371015,
+    "ar": 1545452,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2079882,
+    "otherCA": 246354,
+    "tca": 5242703,
+    "fixedAssets": 1235343,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6478046,
+    "ap": 1241462,
+    "loc": 535553,
+    "contractLiabilities": 0,
+    "otherCL": 315620,
+    "tcl": 2092635,
+    "ltd": 816080,
+    "totalLiab": 2908715,
+    "ownersCapital": 1912688,
+    "ownersDraw": 85688,
+    "commonStock": 71407,
+    "preferredStock": 0,
+    "retainedEarnings": 1499547,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3397954,
+    "totalLAndE": 6306669,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 848421
+      },
+      "rev_value_added_services": {
+        "Unallocated": 576926
+      },
+      "rev_other_revenue": {
+        "Unallocated": 386880
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -23077
+      },
+      "cogs_product_cost": {
+        "Unallocated": 563352
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 122173
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 64480
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 57014
+      },
+      "payroll": {
+        "Unallocated": 285069
+      },
+      "ownerBasePay": {
+        "Unallocated": 81448
+      },
+      "benefits": {
+        "Unallocated": 52941
+      },
+      "insurance": {
+        "Unallocated": 24435
+      },
+      "professionalFees": {
+        "Unallocated": 35294
+      },
+      "subcontractors": {
+        "Unallocated": 43439
+      },
+      "rent": {
+        "Unallocated": 54299
+      },
+      "taxLicense": {
+        "Unallocated": 8145
+      },
+      "phoneComm": {
+        "Unallocated": 6448
+      },
+      "infrastructure": {
+        "Unallocated": 27828
+      },
+      "autoTravel": {
+        "Unallocated": 19005
+      },
+      "salesExpense": {
+        "Unallocated": 61087
+      },
+      "trainingCert": {
+        "Unallocated": 5430
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4412
+      },
+      "interestExpense": {
+        "Unallocated": 16290
+      },
+      "depreciationAmortization": {
+        "Unallocated": 30543
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12217
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 38009
+      },
+      "otherExpense": {
+        "Unallocated": 26471
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2036
+      },
+      "cash": {
+        "Unallocated": 1371015
+      },
+      "ar": {
+        "Unallocated": 1545452
+      },
+      "inventory": {
+        "Unallocated": 2079882
+      },
+      "otherCA": {
+        "Unallocated": 246354
+      },
+      "fixedAssets": {
+        "Unallocated": 1235343
+      },
+      "ap": {
+        "Unallocated": 1241462
+      },
+      "otherCL": {
+        "Unallocated": 315620
+      },
+      "loc": {
+        "Unallocated": 535553
+      },
+      "ltd": {
+        "Unallocated": 816080
+      },
+      "ownersCapital": {
+        "Unallocated": 1912688
+      },
+      "ownersDraw": {
+        "Unallocated": 85688
+      },
+      "commonStock": {
+        "Unallocated": 71407
+      },
+      "retainedEarnings": {
+        "Unallocated": 1499547
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 848421,
+      "rev_value_added_services": 576926,
+      "rev_other_revenue": 386880,
+      "rev_vendor_rebates_and_incentives": -23077
+    },
+    "expenseBreakdown": {
+      "Unallocated": 782584
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 563352,
+      "cogs_handling_and_preparation": 122173,
+      "cogs_outbound_fulfillment": 64480,
+      "cogs_other_cogs": 57014
+    }
+  },
+  {
+    "monthDate": "2023-12-31T07:00:00.000Z",
+    "date": "2023-12-31T07:00:00.000Z",
+    "month": "2023-12",
+    "revenue": 1798097,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 811052,
+    "payroll": 286495,
+    "ownerBasePay": 81856,
+    "benefits": 53206,
+    "insurance": 24557,
+    "professionalFees": 35471,
+    "subcontractors": 43656,
+    "rent": 54570,
+    "taxLicense": 8186,
+    "stateIncomeTaxes": 12278,
+    "federalIncomeTaxes": 38199,
+    "phoneComm": 6480,
+    "infrastructure": 27967,
+    "autoTravel": 19100,
+    "salesExpense": 61392,
+    "marketing": 0,
+    "trainingCert": 5457,
+    "mealsEntertainment": 4434,
+    "interestExpense": 16371,
+    "depreciationAmortization": 30696,
+    "otherExpense": 26603,
+    "expense": 0,
+    "nonOperatingIncome": 2046,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1384724,
+    "ar": 1560906,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2100681,
+    "otherCA": 248818,
+    "tca": 5295129,
+    "fixedAssets": 1247695,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6542824,
+    "ap": 1253876,
+    "loc": 540908,
+    "contractLiabilities": 0,
+    "otherCL": 318775,
+    "tcl": 2113559,
+    "ltd": 824241,
+    "totalLiab": 2937800,
+    "ownersCapital": 1931814,
+    "ownersDraw": 86545,
+    "commonStock": 72121,
+    "preferredStock": 0,
+    "retainedEarnings": 1514542,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3431932,
+    "totalLAndE": 6369732,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 852663
+      },
+      "rev_value_added_services": {
+        "Unallocated": 579811
+      },
+      "rev_other_revenue": {
+        "Unallocated": 388815
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -23192
+      },
+      "cogs_product_cost": {
+        "Unallocated": 566168
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 122783
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 64802
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 57299
+      },
+      "payroll": {
+        "Unallocated": 286495
+      },
+      "ownerBasePay": {
+        "Unallocated": 81856
+      },
+      "benefits": {
+        "Unallocated": 53206
+      },
+      "insurance": {
+        "Unallocated": 24557
+      },
+      "professionalFees": {
+        "Unallocated": 35471
+      },
+      "subcontractors": {
+        "Unallocated": 43656
+      },
+      "rent": {
+        "Unallocated": 54570
+      },
+      "taxLicense": {
+        "Unallocated": 8186
+      },
+      "phoneComm": {
+        "Unallocated": 6480
+      },
+      "infrastructure": {
+        "Unallocated": 27967
+      },
+      "autoTravel": {
+        "Unallocated": 19100
+      },
+      "salesExpense": {
+        "Unallocated": 61392
+      },
+      "trainingCert": {
+        "Unallocated": 5457
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4434
+      },
+      "interestExpense": {
+        "Unallocated": 16371
+      },
+      "depreciationAmortization": {
+        "Unallocated": 30696
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12278
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 38199
+      },
+      "otherExpense": {
+        "Unallocated": 26603
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2046
+      },
+      "cash": {
+        "Unallocated": 1384724
+      },
+      "ar": {
+        "Unallocated": 1560906
+      },
+      "inventory": {
+        "Unallocated": 2100681
+      },
+      "otherCA": {
+        "Unallocated": 248818
+      },
+      "fixedAssets": {
+        "Unallocated": 1247695
+      },
+      "ap": {
+        "Unallocated": 1253876
+      },
+      "otherCL": {
+        "Unallocated": 318775
+      },
+      "loc": {
+        "Unallocated": 540908
+      },
+      "ltd": {
+        "Unallocated": 824241
+      },
+      "ownersCapital": {
+        "Unallocated": 1931814
+      },
+      "ownersDraw": {
+        "Unallocated": 86545
+      },
+      "commonStock": {
+        "Unallocated": 72121
+      },
+      "retainedEarnings": {
+        "Unallocated": 1514542
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 852663,
+      "rev_value_added_services": 579811,
+      "rev_other_revenue": 388815,
+      "rev_vendor_rebates_and_incentives": -23192
+    },
+    "expenseBreakdown": {
+      "Unallocated": 786497
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 566168,
+      "cogs_handling_and_preparation": 122783,
+      "cogs_outbound_fulfillment": 64802,
+      "cogs_other_cogs": 57299
+    }
+  },
+  {
+    "monthDate": "2024-01-31T07:00:00.000Z",
+    "date": "2024-01-31T07:00:00.000Z",
+    "month": "2024-01",
+    "revenue": 1807086,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 815108,
+    "payroll": 287927,
+    "ownerBasePay": 82265,
+    "benefits": 53472,
+    "insurance": 24679,
+    "professionalFees": 35648,
+    "subcontractors": 43875,
+    "rent": 54843,
+    "taxLicense": 8226,
+    "stateIncomeTaxes": 12340,
+    "federalIncomeTaxes": 38390,
+    "phoneComm": 6513,
+    "infrastructure": 28107,
+    "autoTravel": 19195,
+    "salesExpense": 61698,
+    "marketing": 0,
+    "trainingCert": 5484,
+    "mealsEntertainment": 4456,
+    "interestExpense": 16453,
+    "depreciationAmortization": 30849,
+    "otherExpense": 26736,
+    "expense": 0,
+    "nonOperatingIncome": 2057,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1398572,
+    "ar": 1576515,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2121688,
+    "otherCA": 251306,
+    "tca": 5348081,
+    "fixedAssets": 1260171,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6608252,
+    "ap": 1266415,
+    "loc": 546317,
+    "contractLiabilities": 0,
+    "otherCL": 321963,
+    "tcl": 2134695,
+    "ltd": 832483,
+    "totalLiab": 2967178,
+    "ownersCapital": 1951133,
+    "ownersDraw": 87411,
+    "commonStock": 72842,
+    "preferredStock": 0,
+    "retainedEarnings": 1529688,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3466252,
+    "totalLAndE": 6433430,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 856926
+      },
+      "rev_value_added_services": {
+        "Unallocated": 582710
+      },
+      "rev_other_revenue": {
+        "Unallocated": 390759
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -23309
+      },
+      "cogs_product_cost": {
+        "Unallocated": 569000
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 123397
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 65126
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 57585
+      },
+      "payroll": {
+        "Unallocated": 287927
+      },
+      "ownerBasePay": {
+        "Unallocated": 82265
+      },
+      "benefits": {
+        "Unallocated": 53472
+      },
+      "insurance": {
+        "Unallocated": 24679
+      },
+      "professionalFees": {
+        "Unallocated": 35648
+      },
+      "subcontractors": {
+        "Unallocated": 43875
+      },
+      "rent": {
+        "Unallocated": 54843
+      },
+      "taxLicense": {
+        "Unallocated": 8226
+      },
+      "phoneComm": {
+        "Unallocated": 6513
+      },
+      "infrastructure": {
+        "Unallocated": 28107
+      },
+      "autoTravel": {
+        "Unallocated": 19195
+      },
+      "salesExpense": {
+        "Unallocated": 61698
+      },
+      "trainingCert": {
+        "Unallocated": 5484
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4456
+      },
+      "interestExpense": {
+        "Unallocated": 16453
+      },
+      "depreciationAmortization": {
+        "Unallocated": 30849
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12340
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 38390
+      },
+      "otherExpense": {
+        "Unallocated": 26736
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2057
+      },
+      "cash": {
+        "Unallocated": 1398572
+      },
+      "ar": {
+        "Unallocated": 1576515
+      },
+      "inventory": {
+        "Unallocated": 2121688
+      },
+      "otherCA": {
+        "Unallocated": 251306
+      },
+      "fixedAssets": {
+        "Unallocated": 1260171
+      },
+      "ap": {
+        "Unallocated": 1266415
+      },
+      "otherCL": {
+        "Unallocated": 321963
+      },
+      "loc": {
+        "Unallocated": 546317
+      },
+      "ltd": {
+        "Unallocated": 832483
+      },
+      "ownersCapital": {
+        "Unallocated": 1951133
+      },
+      "ownersDraw": {
+        "Unallocated": 87411
+      },
+      "commonStock": {
+        "Unallocated": 72842
+      },
+      "retainedEarnings": {
+        "Unallocated": 1529688
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 856926,
+      "rev_value_added_services": 582710,
+      "rev_other_revenue": 390759,
+      "rev_vendor_rebates_and_incentives": -23309
+    },
+    "expenseBreakdown": {
+      "Unallocated": 790426
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 569000,
+      "cogs_handling_and_preparation": 123397,
+      "cogs_outbound_fulfillment": 65126,
+      "cogs_other_cogs": 57585
+    }
+  },
+  {
+    "monthDate": "2024-02-29T07:00:00.000Z",
+    "date": "2024-02-29T07:00:00.000Z",
+    "month": "2024-02",
+    "revenue": 1816122,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 819183,
+    "payroll": 289367,
+    "ownerBasePay": 82676,
+    "benefits": 53740,
+    "insurance": 24803,
+    "professionalFees": 35826,
+    "subcontractors": 44094,
+    "rent": 55118,
+    "taxLicense": 8268,
+    "stateIncomeTaxes": 12401,
+    "federalIncomeTaxes": 38582,
+    "phoneComm": 6545,
+    "infrastructure": 28248,
+    "autoTravel": 19291,
+    "salesExpense": 62007,
+    "marketing": 0,
+    "trainingCert": 5512,
+    "mealsEntertainment": 4478,
+    "interestExpense": 16535,
+    "depreciationAmortization": 31004,
+    "otherExpense": 26870,
+    "expense": 0,
+    "nonOperatingIncome": 2067,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1412558,
+    "ar": 1592280,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2142904,
+    "otherCA": 253819,
+    "tca": 5401561,
+    "fixedAssets": 1272773,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6674334,
+    "ap": 1279079,
+    "loc": 551780,
+    "contractLiabilities": 0,
+    "otherCL": 325182,
+    "tcl": 2156041,
+    "ltd": 840808,
+    "totalLiab": 2996849,
+    "ownersCapital": 1970644,
+    "ownersDraw": 88285,
+    "commonStock": 73571,
+    "preferredStock": 0,
+    "retainedEarnings": 1544985,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3500915,
+    "totalLAndE": 6497764,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 861211
+      },
+      "rev_value_added_services": {
+        "Unallocated": 585624
+      },
+      "rev_other_revenue": {
+        "Unallocated": 392712
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -23425
+      },
+      "cogs_product_cost": {
+        "Unallocated": 571844
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 124014
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 65452
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 57873
+      },
+      "payroll": {
+        "Unallocated": 289367
+      },
+      "ownerBasePay": {
+        "Unallocated": 82676
+      },
+      "benefits": {
+        "Unallocated": 53740
+      },
+      "insurance": {
+        "Unallocated": 24803
+      },
+      "professionalFees": {
+        "Unallocated": 35826
+      },
+      "subcontractors": {
+        "Unallocated": 44094
+      },
+      "rent": {
+        "Unallocated": 55118
+      },
+      "taxLicense": {
+        "Unallocated": 8268
+      },
+      "phoneComm": {
+        "Unallocated": 6545
+      },
+      "infrastructure": {
+        "Unallocated": 28248
+      },
+      "autoTravel": {
+        "Unallocated": 19291
+      },
+      "salesExpense": {
+        "Unallocated": 62007
+      },
+      "trainingCert": {
+        "Unallocated": 5512
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4478
+      },
+      "interestExpense": {
+        "Unallocated": 16535
+      },
+      "depreciationAmortization": {
+        "Unallocated": 31004
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12401
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 38582
+      },
+      "otherExpense": {
+        "Unallocated": 26870
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2067
+      },
+      "cash": {
+        "Unallocated": 1412558
+      },
+      "ar": {
+        "Unallocated": 1592280
+      },
+      "inventory": {
+        "Unallocated": 2142904
+      },
+      "otherCA": {
+        "Unallocated": 253819
+      },
+      "fixedAssets": {
+        "Unallocated": 1272773
+      },
+      "ap": {
+        "Unallocated": 1279079
+      },
+      "otherCL": {
+        "Unallocated": 325182
+      },
+      "loc": {
+        "Unallocated": 551780
+      },
+      "ltd": {
+        "Unallocated": 840808
+      },
+      "ownersCapital": {
+        "Unallocated": 1970644
+      },
+      "ownersDraw": {
+        "Unallocated": 88285
+      },
+      "commonStock": {
+        "Unallocated": 73571
+      },
+      "retainedEarnings": {
+        "Unallocated": 1544985
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 861211,
+      "rev_value_added_services": 585624,
+      "rev_other_revenue": 392712,
+      "rev_vendor_rebates_and_incentives": -23425
+    },
+    "expenseBreakdown": {
+      "Unallocated": 794382
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 571844,
+      "cogs_handling_and_preparation": 124014,
+      "cogs_outbound_fulfillment": 65452,
+      "cogs_other_cogs": 57873
+    }
+  },
+  {
+    "monthDate": "2024-03-31T07:00:00.000Z",
+    "date": "2024-03-31T07:00:00.000Z",
+    "month": "2024-03",
+    "revenue": 1825203,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 823279,
+    "payroll": 290814,
+    "ownerBasePay": 83090,
+    "benefits": 54008,
+    "insurance": 24927,
+    "professionalFees": 36006,
+    "subcontractors": 44314,
+    "rent": 55393,
+    "taxLicense": 8309,
+    "stateIncomeTaxes": 12463,
+    "federalIncomeTaxes": 38775,
+    "phoneComm": 6578,
+    "infrastructure": 28389,
+    "autoTravel": 19388,
+    "salesExpense": 62317,
+    "marketing": 0,
+    "trainingCert": 5539,
+    "mealsEntertainment": 4501,
+    "interestExpense": 16618,
+    "depreciationAmortization": 31159,
+    "otherExpense": 27004,
+    "expense": 0,
+    "nonOperatingIncome": 2077,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1426683,
+    "ar": 1608203,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2164333,
+    "otherCA": 256358,
+    "tca": 5455577,
+    "fixedAssets": 1285501,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6741078,
+    "ap": 1291870,
+    "loc": 557298,
+    "contractLiabilities": 0,
+    "otherCL": 328435,
+    "tcl": 2177603,
+    "ltd": 849216,
+    "totalLiab": 3026819,
+    "ownersCapital": 1990350,
+    "ownersDraw": 89168,
+    "commonStock": 74306,
+    "preferredStock": 0,
+    "retainedEarnings": 1560435,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3535923,
+    "totalLAndE": 6562742,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 865517
+      },
+      "rev_value_added_services": {
+        "Unallocated": 588552
+      },
+      "rev_other_revenue": {
+        "Unallocated": 394676
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -23542
+      },
+      "cogs_product_cost": {
+        "Unallocated": 574703
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 124634
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 65779
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 58163
+      },
+      "payroll": {
+        "Unallocated": 290814
+      },
+      "ownerBasePay": {
+        "Unallocated": 83090
+      },
+      "benefits": {
+        "Unallocated": 54008
+      },
+      "insurance": {
+        "Unallocated": 24927
+      },
+      "professionalFees": {
+        "Unallocated": 36006
+      },
+      "subcontractors": {
+        "Unallocated": 44314
+      },
+      "rent": {
+        "Unallocated": 55393
+      },
+      "taxLicense": {
+        "Unallocated": 8309
+      },
+      "phoneComm": {
+        "Unallocated": 6578
+      },
+      "infrastructure": {
+        "Unallocated": 28389
+      },
+      "autoTravel": {
+        "Unallocated": 19388
+      },
+      "salesExpense": {
+        "Unallocated": 62317
+      },
+      "trainingCert": {
+        "Unallocated": 5539
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4501
+      },
+      "interestExpense": {
+        "Unallocated": 16618
+      },
+      "depreciationAmortization": {
+        "Unallocated": 31159
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12463
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 38775
+      },
+      "otherExpense": {
+        "Unallocated": 27004
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2077
+      },
+      "cash": {
+        "Unallocated": 1426683
+      },
+      "ar": {
+        "Unallocated": 1608203
+      },
+      "inventory": {
+        "Unallocated": 2164333
+      },
+      "otherCA": {
+        "Unallocated": 256358
+      },
+      "fixedAssets": {
+        "Unallocated": 1285501
+      },
+      "ap": {
+        "Unallocated": 1291870
+      },
+      "otherCL": {
+        "Unallocated": 328435
+      },
+      "loc": {
+        "Unallocated": 557298
+      },
+      "ltd": {
+        "Unallocated": 849216
+      },
+      "ownersCapital": {
+        "Unallocated": 1990350
+      },
+      "ownersDraw": {
+        "Unallocated": 89168
+      },
+      "commonStock": {
+        "Unallocated": 74306
+      },
+      "retainedEarnings": {
+        "Unallocated": 1560435
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 865517,
+      "rev_value_added_services": 588552,
+      "rev_other_revenue": 394676,
+      "rev_vendor_rebates_and_incentives": -23542
+    },
+    "expenseBreakdown": {
+      "Unallocated": 798354
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 574703,
+      "cogs_handling_and_preparation": 124634,
+      "cogs_outbound_fulfillment": 65779,
+      "cogs_other_cogs": 58163
+    }
+  },
+  {
+    "monthDate": "2024-04-30T07:00:00.000Z",
+    "date": "2024-04-30T07:00:00.000Z",
+    "month": "2024-04",
+    "revenue": 1834328,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 827397,
+    "payroll": 292268,
+    "ownerBasePay": 83505,
+    "benefits": 54278,
+    "insurance": 25052,
+    "professionalFees": 36186,
+    "subcontractors": 44536,
+    "rent": 55670,
+    "taxLicense": 8351,
+    "stateIncomeTaxes": 12526,
+    "federalIncomeTaxes": 38969,
+    "phoneComm": 6611,
+    "infrastructure": 28531,
+    "autoTravel": 19485,
+    "salesExpense": 62629,
+    "marketing": 0,
+    "trainingCert": 5567,
+    "mealsEntertainment": 4523,
+    "interestExpense": 16701,
+    "depreciationAmortization": 31314,
+    "otherExpense": 27139,
+    "expense": 0,
+    "nonOperatingIncome": 2088,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1440950,
+    "ar": 1624285,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2185977,
+    "otherCA": 258921,
+    "tca": 5510133,
+    "fixedAssets": 1298355,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6808488,
+    "ap": 1304789,
+    "loc": 562871,
+    "contractLiabilities": 0,
+    "otherCL": 331719,
+    "tcl": 2199379,
+    "ltd": 857708,
+    "totalLiab": 3057087,
+    "ownersCapital": 2010254,
+    "ownersDraw": 90059,
+    "commonStock": 75049,
+    "preferredStock": 0,
+    "retainedEarnings": 1576039,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3571283,
+    "totalLAndE": 6628370,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 869845
+      },
+      "rev_value_added_services": {
+        "Unallocated": 591494
+      },
+      "rev_other_revenue": {
+        "Unallocated": 396649
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -23660
+      },
+      "cogs_product_cost": {
+        "Unallocated": 577577
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 125258
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 66108
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 58454
+      },
+      "payroll": {
+        "Unallocated": 292268
+      },
+      "ownerBasePay": {
+        "Unallocated": 83505
+      },
+      "benefits": {
+        "Unallocated": 54278
+      },
+      "insurance": {
+        "Unallocated": 25052
+      },
+      "professionalFees": {
+        "Unallocated": 36186
+      },
+      "subcontractors": {
+        "Unallocated": 44536
+      },
+      "rent": {
+        "Unallocated": 55670
+      },
+      "taxLicense": {
+        "Unallocated": 8351
+      },
+      "phoneComm": {
+        "Unallocated": 6611
+      },
+      "infrastructure": {
+        "Unallocated": 28531
+      },
+      "autoTravel": {
+        "Unallocated": 19485
+      },
+      "salesExpense": {
+        "Unallocated": 62629
+      },
+      "trainingCert": {
+        "Unallocated": 5567
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4523
+      },
+      "interestExpense": {
+        "Unallocated": 16701
+      },
+      "depreciationAmortization": {
+        "Unallocated": 31314
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12526
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 38969
+      },
+      "otherExpense": {
+        "Unallocated": 27139
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2088
+      },
+      "cash": {
+        "Unallocated": 1440950
+      },
+      "ar": {
+        "Unallocated": 1624285
+      },
+      "inventory": {
+        "Unallocated": 2185977
+      },
+      "otherCA": {
+        "Unallocated": 258921
+      },
+      "fixedAssets": {
+        "Unallocated": 1298355
+      },
+      "ap": {
+        "Unallocated": 1304789
+      },
+      "otherCL": {
+        "Unallocated": 331719
+      },
+      "loc": {
+        "Unallocated": 562871
+      },
+      "ltd": {
+        "Unallocated": 857708
+      },
+      "ownersCapital": {
+        "Unallocated": 2010254
+      },
+      "ownersDraw": {
+        "Unallocated": 90059
+      },
+      "commonStock": {
+        "Unallocated": 75049
+      },
+      "retainedEarnings": {
+        "Unallocated": 1576039
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 869845,
+      "rev_value_added_services": 591494,
+      "rev_other_revenue": 396649,
+      "rev_vendor_rebates_and_incentives": -23660
+    },
+    "expenseBreakdown": {
+      "Unallocated": 802346
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 577577,
+      "cogs_handling_and_preparation": 125258,
+      "cogs_outbound_fulfillment": 66108,
+      "cogs_other_cogs": 58454
+    }
+  },
+  {
+    "monthDate": "2024-05-31T07:00:00.000Z",
+    "date": "2024-05-31T07:00:00.000Z",
+    "month": "2024-05",
+    "revenue": 1843501,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 831533,
+    "payroll": 293729,
+    "ownerBasePay": 83923,
+    "benefits": 54550,
+    "insurance": 25177,
+    "professionalFees": 36366,
+    "subcontractors": 44759,
+    "rent": 55948,
+    "taxLicense": 8392,
+    "stateIncomeTaxes": 12588,
+    "federalIncomeTaxes": 39164,
+    "phoneComm": 6644,
+    "infrastructure": 28674,
+    "autoTravel": 19582,
+    "salesExpense": 62942,
+    "marketing": 0,
+    "trainingCert": 5595,
+    "mealsEntertainment": 4546,
+    "interestExpense": 16785,
+    "depreciationAmortization": 31471,
+    "otherExpense": 27275,
+    "expense": 0,
+    "nonOperatingIncome": 2098,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1455360,
+    "ar": 1640528,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2207837,
+    "otherCA": 261510,
+    "tca": 5565235,
+    "fixedAssets": 1311340,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6876575,
+    "ap": 1317837,
+    "loc": 568500,
+    "contractLiabilities": 0,
+    "otherCL": 335036,
+    "tcl": 2221373,
+    "ltd": 866285,
+    "totalLiab": 3087658,
+    "ownersCapital": 2030356,
+    "ownersDraw": 90960,
+    "commonStock": 75800,
+    "preferredStock": 0,
+    "retainedEarnings": 1591799,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3606995,
+    "totalLAndE": 6694653,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 874194
+      },
+      "rev_value_added_services": {
+        "Unallocated": 594452
+      },
+      "rev_other_revenue": {
+        "Unallocated": 398633
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -23778
+      },
+      "cogs_product_cost": {
+        "Unallocated": 580465
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 125884
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 66439
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 58745
+      },
+      "payroll": {
+        "Unallocated": 293729
+      },
+      "ownerBasePay": {
+        "Unallocated": 83923
+      },
+      "benefits": {
+        "Unallocated": 54550
+      },
+      "insurance": {
+        "Unallocated": 25177
+      },
+      "professionalFees": {
+        "Unallocated": 36366
+      },
+      "subcontractors": {
+        "Unallocated": 44759
+      },
+      "rent": {
+        "Unallocated": 55948
+      },
+      "taxLicense": {
+        "Unallocated": 8392
+      },
+      "phoneComm": {
+        "Unallocated": 6644
+      },
+      "infrastructure": {
+        "Unallocated": 28674
+      },
+      "autoTravel": {
+        "Unallocated": 19582
+      },
+      "salesExpense": {
+        "Unallocated": 62942
+      },
+      "trainingCert": {
+        "Unallocated": 5595
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4546
+      },
+      "interestExpense": {
+        "Unallocated": 16785
+      },
+      "depreciationAmortization": {
+        "Unallocated": 31471
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12588
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 39164
+      },
+      "otherExpense": {
+        "Unallocated": 27275
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2098
+      },
+      "cash": {
+        "Unallocated": 1455360
+      },
+      "ar": {
+        "Unallocated": 1640528
+      },
+      "inventory": {
+        "Unallocated": 2207837
+      },
+      "otherCA": {
+        "Unallocated": 261510
+      },
+      "fixedAssets": {
+        "Unallocated": 1311340
+      },
+      "ap": {
+        "Unallocated": 1317837
+      },
+      "otherCL": {
+        "Unallocated": 335036
+      },
+      "loc": {
+        "Unallocated": 568500
+      },
+      "ltd": {
+        "Unallocated": 866285
+      },
+      "ownersCapital": {
+        "Unallocated": 2030356
+      },
+      "ownersDraw": {
+        "Unallocated": 90960
+      },
+      "commonStock": {
+        "Unallocated": 75800
+      },
+      "retainedEarnings": {
+        "Unallocated": 1591799
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 874194,
+      "rev_value_added_services": 594452,
+      "rev_other_revenue": 398633,
+      "rev_vendor_rebates_and_incentives": -23778
+    },
+    "expenseBreakdown": {
+      "Unallocated": 806358
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 580465,
+      "cogs_handling_and_preparation": 125884,
+      "cogs_outbound_fulfillment": 66439,
+      "cogs_other_cogs": 58745
+    }
+  },
+  {
+    "monthDate": "2024-06-30T07:00:00.000Z",
+    "date": "2024-06-30T07:00:00.000Z",
+    "month": "2024-06",
+    "revenue": 1852717,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 835690,
+    "payroll": 295198,
+    "ownerBasePay": 84342,
+    "benefits": 54822,
+    "insurance": 25303,
+    "professionalFees": 36548,
+    "subcontractors": 44983,
+    "rent": 56228,
+    "taxLicense": 8434,
+    "stateIncomeTaxes": 12651,
+    "federalIncomeTaxes": 39360,
+    "phoneComm": 6677,
+    "infrastructure": 28817,
+    "autoTravel": 19680,
+    "salesExpense": 63257,
+    "marketing": 0,
+    "trainingCert": 5623,
+    "mealsEntertainment": 4569,
+    "interestExpense": 16868,
+    "depreciationAmortization": 31628,
+    "otherExpense": 27411,
+    "expense": 0,
+    "nonOperatingIncome": 2109,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1469914,
+    "ar": 1656933,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2229915,
+    "otherCA": 264124,
+    "tca": 5620886,
+    "fixedAssets": 1324452,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 6945338,
+    "ap": 1331015,
+    "loc": 574185,
+    "contractLiabilities": 0,
+    "otherCL": 338385,
+    "tcl": 2243585,
+    "ltd": 874948,
+    "totalLiab": 3118533,
+    "ownersCapital": 2050660,
+    "ownersDraw": 91870,
+    "commonStock": 76558,
+    "preferredStock": 0,
+    "retainedEarnings": 1607717,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3643065,
+    "totalLAndE": 6761598,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 878565
+      },
+      "rev_value_added_services": {
+        "Unallocated": 597424
+      },
+      "rev_other_revenue": {
+        "Unallocated": 400625
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -23897
+      },
+      "cogs_product_cost": {
+        "Unallocated": 583367
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 126513
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 66771
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 59039
+      },
+      "payroll": {
+        "Unallocated": 295198
+      },
+      "ownerBasePay": {
+        "Unallocated": 84342
+      },
+      "benefits": {
+        "Unallocated": 54822
+      },
+      "insurance": {
+        "Unallocated": 25303
+      },
+      "professionalFees": {
+        "Unallocated": 36548
+      },
+      "subcontractors": {
+        "Unallocated": 44983
+      },
+      "rent": {
+        "Unallocated": 56228
+      },
+      "taxLicense": {
+        "Unallocated": 8434
+      },
+      "phoneComm": {
+        "Unallocated": 6677
+      },
+      "infrastructure": {
+        "Unallocated": 28817
+      },
+      "autoTravel": {
+        "Unallocated": 19680
+      },
+      "salesExpense": {
+        "Unallocated": 63257
+      },
+      "trainingCert": {
+        "Unallocated": 5623
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4569
+      },
+      "interestExpense": {
+        "Unallocated": 16868
+      },
+      "depreciationAmortization": {
+        "Unallocated": 31628
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12651
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 39360
+      },
+      "otherExpense": {
+        "Unallocated": 27411
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2109
+      },
+      "cash": {
+        "Unallocated": 1469914
+      },
+      "ar": {
+        "Unallocated": 1656933
+      },
+      "inventory": {
+        "Unallocated": 2229915
+      },
+      "otherCA": {
+        "Unallocated": 264124
+      },
+      "fixedAssets": {
+        "Unallocated": 1324452
+      },
+      "ap": {
+        "Unallocated": 1331015
+      },
+      "otherCL": {
+        "Unallocated": 338385
+      },
+      "loc": {
+        "Unallocated": 574185
+      },
+      "ltd": {
+        "Unallocated": 874948
+      },
+      "ownersCapital": {
+        "Unallocated": 2050660
+      },
+      "ownersDraw": {
+        "Unallocated": 91870
+      },
+      "commonStock": {
+        "Unallocated": 76558
+      },
+      "retainedEarnings": {
+        "Unallocated": 1607717
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 878565,
+      "rev_value_added_services": 597424,
+      "rev_other_revenue": 400625,
+      "rev_vendor_rebates_and_incentives": -23897
+    },
+    "expenseBreakdown": {
+      "Unallocated": 810388
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 583367,
+      "cogs_handling_and_preparation": 126513,
+      "cogs_outbound_fulfillment": 66771,
+      "cogs_other_cogs": 59039
+    }
+  },
+  {
+    "monthDate": "2024-07-31T07:00:00.000Z",
+    "date": "2024-07-31T07:00:00.000Z",
+    "month": "2024-07",
+    "revenue": 1861982,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 839870,
+    "payroll": 296674,
+    "ownerBasePay": 84764,
+    "benefits": 55097,
+    "insurance": 25429,
+    "professionalFees": 36731,
+    "subcontractors": 45207,
+    "rent": 56509,
+    "taxLicense": 8476,
+    "stateIncomeTaxes": 12715,
+    "federalIncomeTaxes": 39557,
+    "phoneComm": 6710,
+    "infrastructure": 28961,
+    "autoTravel": 19778,
+    "salesExpense": 63573,
+    "marketing": 0,
+    "trainingCert": 5651,
+    "mealsEntertainment": 4591,
+    "interestExpense": 16953,
+    "depreciationAmortization": 31786,
+    "otherExpense": 27548,
+    "expense": 0,
+    "nonOperatingIncome": 2119,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1484612,
+    "ar": 1673503,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2252214,
+    "otherCA": 266766,
+    "tca": 5677095,
+    "fixedAssets": 1337697,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7014792,
+    "ap": 1344325,
+    "loc": 579927,
+    "contractLiabilities": 0,
+    "otherCL": 341769,
+    "tcl": 2266021,
+    "ltd": 883698,
+    "totalLiab": 3149719,
+    "ownersCapital": 2071166,
+    "ownersDraw": 92788,
+    "commonStock": 77324,
+    "preferredStock": 0,
+    "retainedEarnings": 1623795,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3679497,
+    "totalLAndE": 6829216,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 882958
+      },
+      "rev_value_added_services": {
+        "Unallocated": 600411
+      },
+      "rev_other_revenue": {
+        "Unallocated": 402629
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24016
+      },
+      "cogs_product_cost": {
+        "Unallocated": 586284
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 127146
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 67105
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 59335
+      },
+      "payroll": {
+        "Unallocated": 296674
+      },
+      "ownerBasePay": {
+        "Unallocated": 84764
+      },
+      "benefits": {
+        "Unallocated": 55097
+      },
+      "insurance": {
+        "Unallocated": 25429
+      },
+      "professionalFees": {
+        "Unallocated": 36731
+      },
+      "subcontractors": {
+        "Unallocated": 45207
+      },
+      "rent": {
+        "Unallocated": 56509
+      },
+      "taxLicense": {
+        "Unallocated": 8476
+      },
+      "phoneComm": {
+        "Unallocated": 6710
+      },
+      "infrastructure": {
+        "Unallocated": 28961
+      },
+      "autoTravel": {
+        "Unallocated": 19778
+      },
+      "salesExpense": {
+        "Unallocated": 63573
+      },
+      "trainingCert": {
+        "Unallocated": 5651
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4591
+      },
+      "interestExpense": {
+        "Unallocated": 16953
+      },
+      "depreciationAmortization": {
+        "Unallocated": 31786
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12715
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 39557
+      },
+      "otherExpense": {
+        "Unallocated": 27548
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2119
+      },
+      "cash": {
+        "Unallocated": 1484612
+      },
+      "ar": {
+        "Unallocated": 1673503
+      },
+      "inventory": {
+        "Unallocated": 2252214
+      },
+      "otherCA": {
+        "Unallocated": 266766
+      },
+      "fixedAssets": {
+        "Unallocated": 1337697
+      },
+      "ap": {
+        "Unallocated": 1344325
+      },
+      "otherCL": {
+        "Unallocated": 341769
+      },
+      "loc": {
+        "Unallocated": 579927
+      },
+      "ltd": {
+        "Unallocated": 883698
+      },
+      "ownersCapital": {
+        "Unallocated": 2071166
+      },
+      "ownersDraw": {
+        "Unallocated": 92788
+      },
+      "commonStock": {
+        "Unallocated": 77324
+      },
+      "retainedEarnings": {
+        "Unallocated": 1623795
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 882958,
+      "rev_value_added_services": 600411,
+      "rev_other_revenue": 402629,
+      "rev_vendor_rebates_and_incentives": -24016
+    },
+    "expenseBreakdown": {
+      "Unallocated": 814438
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 586284,
+      "cogs_handling_and_preparation": 127146,
+      "cogs_outbound_fulfillment": 67105,
+      "cogs_other_cogs": 59335
+    }
+  },
+  {
+    "monthDate": "2024-08-31T07:00:00.000Z",
+    "date": "2024-08-31T07:00:00.000Z",
+    "month": "2024-08",
+    "revenue": 1871291,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 844070,
+    "payroll": 298157,
+    "ownerBasePay": 85188,
+    "benefits": 55372,
+    "insurance": 25556,
+    "professionalFees": 36915,
+    "subcontractors": 45433,
+    "rent": 56792,
+    "taxLicense": 8519,
+    "stateIncomeTaxes": 12778,
+    "federalIncomeTaxes": 39754,
+    "phoneComm": 6744,
+    "infrastructure": 29106,
+    "autoTravel": 19877,
+    "salesExpense": 63890,
+    "marketing": 0,
+    "trainingCert": 5679,
+    "mealsEntertainment": 4614,
+    "interestExpense": 17038,
+    "depreciationAmortization": 31945,
+    "otherExpense": 27686,
+    "expense": 0,
+    "nonOperatingIncome": 2130,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1499458,
+    "ar": 1690238,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2274736,
+    "otherCA": 269434,
+    "tca": 5733866,
+    "fixedAssets": 1351074,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7084940,
+    "ap": 1357768,
+    "loc": 585726,
+    "contractLiabilities": 0,
+    "otherCL": 345188,
+    "tcl": 2288682,
+    "ltd": 892535,
+    "totalLiab": 3181217,
+    "ownersCapital": 2091878,
+    "ownersDraw": 93716,
+    "commonStock": 78097,
+    "preferredStock": 0,
+    "retainedEarnings": 1640032,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3716291,
+    "totalLAndE": 6897508,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 887372
+      },
+      "rev_value_added_services": {
+        "Unallocated": 603413
+      },
+      "rev_other_revenue": {
+        "Unallocated": 404642
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24136
+      },
+      "cogs_product_cost": {
+        "Unallocated": 589216
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 127782
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 67440
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 59632
+      },
+      "payroll": {
+        "Unallocated": 298157
+      },
+      "ownerBasePay": {
+        "Unallocated": 85188
+      },
+      "benefits": {
+        "Unallocated": 55372
+      },
+      "insurance": {
+        "Unallocated": 25556
+      },
+      "professionalFees": {
+        "Unallocated": 36915
+      },
+      "subcontractors": {
+        "Unallocated": 45433
+      },
+      "rent": {
+        "Unallocated": 56792
+      },
+      "taxLicense": {
+        "Unallocated": 8519
+      },
+      "phoneComm": {
+        "Unallocated": 6744
+      },
+      "infrastructure": {
+        "Unallocated": 29106
+      },
+      "autoTravel": {
+        "Unallocated": 19877
+      },
+      "salesExpense": {
+        "Unallocated": 63890
+      },
+      "trainingCert": {
+        "Unallocated": 5679
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4614
+      },
+      "interestExpense": {
+        "Unallocated": 17038
+      },
+      "depreciationAmortization": {
+        "Unallocated": 31945
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12778
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 39754
+      },
+      "otherExpense": {
+        "Unallocated": 27686
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2130
+      },
+      "cash": {
+        "Unallocated": 1499458
+      },
+      "ar": {
+        "Unallocated": 1690238
+      },
+      "inventory": {
+        "Unallocated": 2274736
+      },
+      "otherCA": {
+        "Unallocated": 269434
+      },
+      "fixedAssets": {
+        "Unallocated": 1351074
+      },
+      "ap": {
+        "Unallocated": 1357768
+      },
+      "otherCL": {
+        "Unallocated": 345188
+      },
+      "loc": {
+        "Unallocated": 585726
+      },
+      "ltd": {
+        "Unallocated": 892535
+      },
+      "ownersCapital": {
+        "Unallocated": 2091878
+      },
+      "ownersDraw": {
+        "Unallocated": 93716
+      },
+      "commonStock": {
+        "Unallocated": 78097
+      },
+      "retainedEarnings": {
+        "Unallocated": 1640032
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 887372,
+      "rev_value_added_services": 603413,
+      "rev_other_revenue": 404642,
+      "rev_vendor_rebates_and_incentives": -24136
+    },
+    "expenseBreakdown": {
+      "Unallocated": 818511
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 589216,
+      "cogs_handling_and_preparation": 127782,
+      "cogs_outbound_fulfillment": 67440,
+      "cogs_other_cogs": 59632
+    }
+  },
+  {
+    "monthDate": "2024-09-30T07:00:00.000Z",
+    "date": "2024-09-30T07:00:00.000Z",
+    "month": "2024-09",
+    "revenue": 1880647,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 848289,
+    "payroll": 299648,
+    "ownerBasePay": 85614,
+    "benefits": 55649,
+    "insurance": 25684,
+    "professionalFees": 37099,
+    "subcontractors": 45661,
+    "rent": 57076,
+    "taxLicense": 8561,
+    "stateIncomeTaxes": 12842,
+    "federalIncomeTaxes": 39953,
+    "phoneComm": 6778,
+    "infrastructure": 29251,
+    "autoTravel": 19977,
+    "salesExpense": 64210,
+    "marketing": 0,
+    "trainingCert": 5708,
+    "mealsEntertainment": 4637,
+    "interestExpense": 17123,
+    "depreciationAmortization": 32105,
+    "otherExpense": 27824,
+    "expense": 0,
+    "nonOperatingIncome": 2140,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1514453,
+    "ar": 1707140,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2297484,
+    "otherCA": 272128,
+    "tca": 5791205,
+    "fixedAssets": 1364586,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7155791,
+    "ap": 1371346,
+    "loc": 591583,
+    "contractLiabilities": 0,
+    "otherCL": 348640,
+    "tcl": 2311569,
+    "ltd": 901460,
+    "totalLiab": 3213029,
+    "ownersCapital": 2112797,
+    "ownersDraw": 94653,
+    "commonStock": 78878,
+    "preferredStock": 0,
+    "retainedEarnings": 1656433,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3753455,
+    "totalLAndE": 6966484,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 891809
+      },
+      "rev_value_added_services": {
+        "Unallocated": 606430
+      },
+      "rev_other_revenue": {
+        "Unallocated": 406665
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24257
+      },
+      "cogs_product_cost": {
+        "Unallocated": 592161
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 128421
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 67778
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 59929
+      },
+      "payroll": {
+        "Unallocated": 299648
+      },
+      "ownerBasePay": {
+        "Unallocated": 85614
+      },
+      "benefits": {
+        "Unallocated": 55649
+      },
+      "insurance": {
+        "Unallocated": 25684
+      },
+      "professionalFees": {
+        "Unallocated": 37099
+      },
+      "subcontractors": {
+        "Unallocated": 45661
+      },
+      "rent": {
+        "Unallocated": 57076
+      },
+      "taxLicense": {
+        "Unallocated": 8561
+      },
+      "phoneComm": {
+        "Unallocated": 6778
+      },
+      "infrastructure": {
+        "Unallocated": 29251
+      },
+      "autoTravel": {
+        "Unallocated": 19977
+      },
+      "salesExpense": {
+        "Unallocated": 64210
+      },
+      "trainingCert": {
+        "Unallocated": 5708
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4637
+      },
+      "interestExpense": {
+        "Unallocated": 17123
+      },
+      "depreciationAmortization": {
+        "Unallocated": 32105
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12842
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 39953
+      },
+      "otherExpense": {
+        "Unallocated": 27824
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2140
+      },
+      "cash": {
+        "Unallocated": 1514453
+      },
+      "ar": {
+        "Unallocated": 1707140
+      },
+      "inventory": {
+        "Unallocated": 2297484
+      },
+      "otherCA": {
+        "Unallocated": 272128
+      },
+      "fixedAssets": {
+        "Unallocated": 1364586
+      },
+      "ap": {
+        "Unallocated": 1371346
+      },
+      "otherCL": {
+        "Unallocated": 348640
+      },
+      "loc": {
+        "Unallocated": 591583
+      },
+      "ltd": {
+        "Unallocated": 901460
+      },
+      "ownersCapital": {
+        "Unallocated": 2112797
+      },
+      "ownersDraw": {
+        "Unallocated": 94653
+      },
+      "commonStock": {
+        "Unallocated": 78878
+      },
+      "retainedEarnings": {
+        "Unallocated": 1656433
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 891809,
+      "rev_value_added_services": 606430,
+      "rev_other_revenue": 406665,
+      "rev_vendor_rebates_and_incentives": -24257
+    },
+    "expenseBreakdown": {
+      "Unallocated": 822605
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 592161,
+      "cogs_handling_and_preparation": 128421,
+      "cogs_outbound_fulfillment": 67778,
+      "cogs_other_cogs": 59929
+    }
+  },
+  {
+    "monthDate": "2024-10-31T07:00:00.000Z",
+    "date": "2024-10-31T07:00:00.000Z",
+    "month": "2024-10",
+    "revenue": 1890052,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 852530,
+    "payroll": 301146,
+    "ownerBasePay": 86042,
+    "benefits": 55927,
+    "insurance": 25813,
+    "professionalFees": 37285,
+    "subcontractors": 45889,
+    "rent": 57361,
+    "taxLicense": 8604,
+    "stateIncomeTaxes": 12906,
+    "federalIncomeTaxes": 40153,
+    "phoneComm": 6812,
+    "infrastructure": 29398,
+    "autoTravel": 20076,
+    "salesExpense": 64532,
+    "marketing": 0,
+    "trainingCert": 5736,
+    "mealsEntertainment": 4661,
+    "interestExpense": 17208,
+    "depreciationAmortization": 32266,
+    "otherExpense": 27964,
+    "expense": 0,
+    "nonOperatingIncome": 2151,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1529598,
+    "ar": 1724211,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2320458,
+    "otherCA": 274850,
+    "tca": 5849117,
+    "fixedAssets": 1378232,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7227349,
+    "ap": 1385060,
+    "loc": 597499,
+    "contractLiabilities": 0,
+    "otherCL": 352126,
+    "tcl": 2334685,
+    "ltd": 910475,
+    "totalLiab": 3245160,
+    "ownersCapital": 2133925,
+    "ownersDraw": 95600,
+    "commonStock": 79667,
+    "preferredStock": 0,
+    "retainedEarnings": 1672997,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3790989,
+    "totalLAndE": 7036149,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 896268
+      },
+      "rev_value_added_services": {
+        "Unallocated": 609463
+      },
+      "rev_other_revenue": {
+        "Unallocated": 408699
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24378
+      },
+      "cogs_product_cost": {
+        "Unallocated": 595122
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 129063
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 68116
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 60229
+      },
+      "payroll": {
+        "Unallocated": 301146
+      },
+      "ownerBasePay": {
+        "Unallocated": 86042
+      },
+      "benefits": {
+        "Unallocated": 55927
+      },
+      "insurance": {
+        "Unallocated": 25813
+      },
+      "professionalFees": {
+        "Unallocated": 37285
+      },
+      "subcontractors": {
+        "Unallocated": 45889
+      },
+      "rent": {
+        "Unallocated": 57361
+      },
+      "taxLicense": {
+        "Unallocated": 8604
+      },
+      "phoneComm": {
+        "Unallocated": 6812
+      },
+      "infrastructure": {
+        "Unallocated": 29398
+      },
+      "autoTravel": {
+        "Unallocated": 20076
+      },
+      "salesExpense": {
+        "Unallocated": 64532
+      },
+      "trainingCert": {
+        "Unallocated": 5736
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4661
+      },
+      "interestExpense": {
+        "Unallocated": 17208
+      },
+      "depreciationAmortization": {
+        "Unallocated": 32266
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12906
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 40153
+      },
+      "otherExpense": {
+        "Unallocated": 27964
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2151
+      },
+      "cash": {
+        "Unallocated": 1529598
+      },
+      "ar": {
+        "Unallocated": 1724211
+      },
+      "inventory": {
+        "Unallocated": 2320458
+      },
+      "otherCA": {
+        "Unallocated": 274850
+      },
+      "fixedAssets": {
+        "Unallocated": 1378232
+      },
+      "ap": {
+        "Unallocated": 1385060
+      },
+      "otherCL": {
+        "Unallocated": 352126
+      },
+      "loc": {
+        "Unallocated": 597499
+      },
+      "ltd": {
+        "Unallocated": 910475
+      },
+      "ownersCapital": {
+        "Unallocated": 2133925
+      },
+      "ownersDraw": {
+        "Unallocated": 95600
+      },
+      "commonStock": {
+        "Unallocated": 79667
+      },
+      "retainedEarnings": {
+        "Unallocated": 1672997
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 896268,
+      "rev_value_added_services": 609463,
+      "rev_other_revenue": 408699,
+      "rev_vendor_rebates_and_incentives": -24378
+    },
+    "expenseBreakdown": {
+      "Unallocated": 826720
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 595122,
+      "cogs_handling_and_preparation": 129063,
+      "cogs_outbound_fulfillment": 68116,
+      "cogs_other_cogs": 60229
+    }
+  },
+  {
+    "monthDate": "2024-11-30T07:00:00.000Z",
+    "date": "2024-11-30T07:00:00.000Z",
+    "month": "2024-11",
+    "revenue": 1899502,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 856793,
+    "payroll": 302652,
+    "ownerBasePay": 86472,
+    "benefits": 56207,
+    "insurance": 25942,
+    "professionalFees": 37471,
+    "subcontractors": 46118,
+    "rent": 57648,
+    "taxLicense": 8647,
+    "stateIncomeTaxes": 12971,
+    "federalIncomeTaxes": 40354,
+    "phoneComm": 6846,
+    "infrastructure": 29545,
+    "autoTravel": 20177,
+    "salesExpense": 64854,
+    "marketing": 0,
+    "trainingCert": 5765,
+    "mealsEntertainment": 4684,
+    "interestExpense": 17294,
+    "depreciationAmortization": 32427,
+    "otherExpense": 28103,
+    "expense": 0,
+    "nonOperatingIncome": 2162,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1544893,
+    "ar": 1741453,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2343663,
+    "otherCA": 277598,
+    "tca": 5907607,
+    "fixedAssets": 1392014,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7299621,
+    "ap": 1398910,
+    "loc": 603474,
+    "contractLiabilities": 0,
+    "otherCL": 355648,
+    "tcl": 2358032,
+    "ltd": 919579,
+    "totalLiab": 3277611,
+    "ownersCapital": 2155264,
+    "ownersDraw": 96556,
+    "commonStock": 80463,
+    "preferredStock": 0,
+    "retainedEarnings": 1689727,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3828898,
+    "totalLAndE": 7106509,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 900750
+      },
+      "rev_value_added_services": {
+        "Unallocated": 612510
+      },
+      "rev_other_revenue": {
+        "Unallocated": 410742
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24500
+      },
+      "cogs_product_cost": {
+        "Unallocated": 598098
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 129708
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 68457
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 60530
+      },
+      "payroll": {
+        "Unallocated": 302652
+      },
+      "ownerBasePay": {
+        "Unallocated": 86472
+      },
+      "benefits": {
+        "Unallocated": 56207
+      },
+      "insurance": {
+        "Unallocated": 25942
+      },
+      "professionalFees": {
+        "Unallocated": 37471
+      },
+      "subcontractors": {
+        "Unallocated": 46118
+      },
+      "rent": {
+        "Unallocated": 57648
+      },
+      "taxLicense": {
+        "Unallocated": 8647
+      },
+      "phoneComm": {
+        "Unallocated": 6846
+      },
+      "infrastructure": {
+        "Unallocated": 29545
+      },
+      "autoTravel": {
+        "Unallocated": 20177
+      },
+      "salesExpense": {
+        "Unallocated": 64854
+      },
+      "trainingCert": {
+        "Unallocated": 5765
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4684
+      },
+      "interestExpense": {
+        "Unallocated": 17294
+      },
+      "depreciationAmortization": {
+        "Unallocated": 32427
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 12971
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 40354
+      },
+      "otherExpense": {
+        "Unallocated": 28103
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2162
+      },
+      "cash": {
+        "Unallocated": 1544893
+      },
+      "ar": {
+        "Unallocated": 1741453
+      },
+      "inventory": {
+        "Unallocated": 2343663
+      },
+      "otherCA": {
+        "Unallocated": 277598
+      },
+      "fixedAssets": {
+        "Unallocated": 1392014
+      },
+      "ap": {
+        "Unallocated": 1398910
+      },
+      "otherCL": {
+        "Unallocated": 355648
+      },
+      "loc": {
+        "Unallocated": 603474
+      },
+      "ltd": {
+        "Unallocated": 919579
+      },
+      "ownersCapital": {
+        "Unallocated": 2155264
+      },
+      "ownersDraw": {
+        "Unallocated": 96556
+      },
+      "commonStock": {
+        "Unallocated": 80463
+      },
+      "retainedEarnings": {
+        "Unallocated": 1689727
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 900750,
+      "rev_value_added_services": 612510,
+      "rev_other_revenue": 410742,
+      "rev_vendor_rebates_and_incentives": -24500
+    },
+    "expenseBreakdown": {
+      "Unallocated": 830852
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 598098,
+      "cogs_handling_and_preparation": 129708,
+      "cogs_outbound_fulfillment": 68457,
+      "cogs_other_cogs": 60530
+    }
+  },
+  {
+    "monthDate": "2024-12-31T07:00:00.000Z",
+    "date": "2024-12-31T07:00:00.000Z",
+    "month": "2024-12",
+    "revenue": 1908997,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 861078,
+    "payroll": 304165,
+    "ownerBasePay": 86904,
+    "benefits": 56488,
+    "insurance": 26071,
+    "professionalFees": 37659,
+    "subcontractors": 46349,
+    "rent": 57936,
+    "taxLicense": 8690,
+    "stateIncomeTaxes": 13036,
+    "federalIncomeTaxes": 40555,
+    "phoneComm": 6880,
+    "infrastructure": 29692,
+    "autoTravel": 20278,
+    "salesExpense": 65178,
+    "marketing": 0,
+    "trainingCert": 5794,
+    "mealsEntertainment": 4707,
+    "interestExpense": 17381,
+    "depreciationAmortization": 32589,
+    "otherExpense": 28244,
+    "expense": 0,
+    "nonOperatingIncome": 2173,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1560342,
+    "ar": 1758868,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2367100,
+    "otherCA": 280374,
+    "tca": 5966684,
+    "fixedAssets": 1405933,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7372617,
+    "ap": 1412899,
+    "loc": 609509,
+    "contractLiabilities": 0,
+    "otherCL": 359203,
+    "tcl": 2381611,
+    "ltd": 928775,
+    "totalLiab": 3310386,
+    "ownersCapital": 2176817,
+    "ownersDraw": 97521,
+    "commonStock": 81268,
+    "preferredStock": 0,
+    "retainedEarnings": 1706624,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3867188,
+    "totalLAndE": 7177574,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 905253
+      },
+      "rev_value_added_services": {
+        "Unallocated": 615572
+      },
+      "rev_other_revenue": {
+        "Unallocated": 412795
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24623
+      },
+      "cogs_product_cost": {
+        "Unallocated": 601089
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 130357
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 68799
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 60833
+      },
+      "payroll": {
+        "Unallocated": 304165
+      },
+      "ownerBasePay": {
+        "Unallocated": 86904
+      },
+      "benefits": {
+        "Unallocated": 56488
+      },
+      "insurance": {
+        "Unallocated": 26071
+      },
+      "professionalFees": {
+        "Unallocated": 37659
+      },
+      "subcontractors": {
+        "Unallocated": 46349
+      },
+      "rent": {
+        "Unallocated": 57936
+      },
+      "taxLicense": {
+        "Unallocated": 8690
+      },
+      "phoneComm": {
+        "Unallocated": 6880
+      },
+      "infrastructure": {
+        "Unallocated": 29692
+      },
+      "autoTravel": {
+        "Unallocated": 20278
+      },
+      "salesExpense": {
+        "Unallocated": 65178
+      },
+      "trainingCert": {
+        "Unallocated": 5794
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4707
+      },
+      "interestExpense": {
+        "Unallocated": 17381
+      },
+      "depreciationAmortization": {
+        "Unallocated": 32589
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13036
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 40555
+      },
+      "otherExpense": {
+        "Unallocated": 28244
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2173
+      },
+      "cash": {
+        "Unallocated": 1560342
+      },
+      "ar": {
+        "Unallocated": 1758868
+      },
+      "inventory": {
+        "Unallocated": 2367100
+      },
+      "otherCA": {
+        "Unallocated": 280374
+      },
+      "fixedAssets": {
+        "Unallocated": 1405933
+      },
+      "ap": {
+        "Unallocated": 1412899
+      },
+      "otherCL": {
+        "Unallocated": 359203
+      },
+      "loc": {
+        "Unallocated": 609509
+      },
+      "ltd": {
+        "Unallocated": 928775
+      },
+      "ownersCapital": {
+        "Unallocated": 2176817
+      },
+      "ownersDraw": {
+        "Unallocated": 97521
+      },
+      "commonStock": {
+        "Unallocated": 81268
+      },
+      "retainedEarnings": {
+        "Unallocated": 1706624
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 905253,
+      "rev_value_added_services": 615572,
+      "rev_other_revenue": 412795,
+      "rev_vendor_rebates_and_incentives": -24623
+    },
+    "expenseBreakdown": {
+      "Unallocated": 835005
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 601089,
+      "cogs_handling_and_preparation": 130357,
+      "cogs_outbound_fulfillment": 68799,
+      "cogs_other_cogs": 60833
+    }
+  },
+  {
+    "monthDate": "2025-01-31T07:00:00.000Z",
+    "date": "2025-01-31T07:00:00.000Z",
+    "month": "2025-01",
+    "revenue": 1918544,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 865382,
+    "payroll": 305686,
+    "ownerBasePay": 87339,
+    "benefits": 56770,
+    "insurance": 26202,
+    "professionalFees": 37847,
+    "subcontractors": 46581,
+    "rent": 58226,
+    "taxLicense": 8734,
+    "stateIncomeTaxes": 13101,
+    "federalIncomeTaxes": 40758,
+    "phoneComm": 6914,
+    "infrastructure": 29841,
+    "autoTravel": 20379,
+    "salesExpense": 65504,
+    "marketing": 0,
+    "trainingCert": 5823,
+    "mealsEntertainment": 4731,
+    "interestExpense": 17468,
+    "depreciationAmortization": 32752,
+    "otherExpense": 28385,
+    "expense": 0,
+    "nonOperatingIncome": 2183,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1575946,
+    "ar": 1776457,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2390771,
+    "otherCA": 283177,
+    "tca": 6026351,
+    "fixedAssets": 1419993,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7446344,
+    "ap": 1427028,
+    "loc": 615604,
+    "contractLiabilities": 0,
+    "otherCL": 362796,
+    "tcl": 2405428,
+    "ltd": 938063,
+    "totalLiab": 3343491,
+    "ownersCapital": 2198585,
+    "ownersDraw": 98497,
+    "commonStock": 82081,
+    "preferredStock": 0,
+    "retainedEarnings": 1723691,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3905860,
+    "totalLAndE": 7249351,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 909780
+      },
+      "rev_value_added_services": {
+        "Unallocated": 618650
+      },
+      "rev_other_revenue": {
+        "Unallocated": 414860
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24746
+      },
+      "cogs_product_cost": {
+        "Unallocated": 604094
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 131008
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 69143
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 61137
+      },
+      "payroll": {
+        "Unallocated": 305686
+      },
+      "ownerBasePay": {
+        "Unallocated": 87339
+      },
+      "benefits": {
+        "Unallocated": 56770
+      },
+      "insurance": {
+        "Unallocated": 26202
+      },
+      "professionalFees": {
+        "Unallocated": 37847
+      },
+      "subcontractors": {
+        "Unallocated": 46581
+      },
+      "rent": {
+        "Unallocated": 58226
+      },
+      "taxLicense": {
+        "Unallocated": 8734
+      },
+      "phoneComm": {
+        "Unallocated": 6914
+      },
+      "infrastructure": {
+        "Unallocated": 29841
+      },
+      "autoTravel": {
+        "Unallocated": 20379
+      },
+      "salesExpense": {
+        "Unallocated": 65504
+      },
+      "trainingCert": {
+        "Unallocated": 5823
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4731
+      },
+      "interestExpense": {
+        "Unallocated": 17468
+      },
+      "depreciationAmortization": {
+        "Unallocated": 32752
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13101
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 40758
+      },
+      "otherExpense": {
+        "Unallocated": 28385
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2183
+      },
+      "cash": {
+        "Unallocated": 1575946
+      },
+      "ar": {
+        "Unallocated": 1776457
+      },
+      "inventory": {
+        "Unallocated": 2390771
+      },
+      "otherCA": {
+        "Unallocated": 283177
+      },
+      "fixedAssets": {
+        "Unallocated": 1419993
+      },
+      "ap": {
+        "Unallocated": 1427028
+      },
+      "otherCL": {
+        "Unallocated": 362796
+      },
+      "loc": {
+        "Unallocated": 615604
+      },
+      "ltd": {
+        "Unallocated": 938063
+      },
+      "ownersCapital": {
+        "Unallocated": 2198585
+      },
+      "ownersDraw": {
+        "Unallocated": 98497
+      },
+      "commonStock": {
+        "Unallocated": 82081
+      },
+      "retainedEarnings": {
+        "Unallocated": 1723691
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 909780,
+      "rev_value_added_services": 618650,
+      "rev_other_revenue": 414860,
+      "rev_vendor_rebates_and_incentives": -24746
+    },
+    "expenseBreakdown": {
+      "Unallocated": 839182
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 604094,
+      "cogs_handling_and_preparation": 131008,
+      "cogs_outbound_fulfillment": 69143,
+      "cogs_other_cogs": 61137
+    }
+  },
+  {
+    "monthDate": "2025-02-28T07:00:00.000Z",
+    "date": "2025-02-28T07:00:00.000Z",
+    "month": "2025-02",
+    "revenue": 1928136,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 869709,
+    "payroll": 307214,
+    "ownerBasePay": 87776,
+    "benefits": 57054,
+    "insurance": 26333,
+    "professionalFees": 38036,
+    "subcontractors": 46814,
+    "rent": 58517,
+    "taxLicense": 8778,
+    "stateIncomeTaxes": 13166,
+    "federalIncomeTaxes": 40962,
+    "phoneComm": 6949,
+    "infrastructure": 29990,
+    "autoTravel": 20481,
+    "salesExpense": 65832,
+    "marketing": 0,
+    "trainingCert": 5852,
+    "mealsEntertainment": 4755,
+    "interestExpense": 17555,
+    "depreciationAmortization": 32916,
+    "otherExpense": 28527,
+    "expense": 0,
+    "nonOperatingIncome": 2194,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1591705,
+    "ar": 1794221,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2414678,
+    "otherCA": 286009,
+    "tca": 6086613,
+    "fixedAssets": 1434193,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7520806,
+    "ap": 1441298,
+    "loc": 621760,
+    "contractLiabilities": 0,
+    "otherCL": 366424,
+    "tcl": 2429482,
+    "ltd": 947444,
+    "totalLiab": 3376926,
+    "ownersCapital": 2220571,
+    "ownersDraw": 99482,
+    "commonStock": 82901,
+    "preferredStock": 0,
+    "retainedEarnings": 1740928,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3944918,
+    "totalLAndE": 7321844,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 914329
+      },
+      "rev_value_added_services": {
+        "Unallocated": 621743
+      },
+      "rev_other_revenue": {
+        "Unallocated": 416934
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24870
+      },
+      "cogs_product_cost": {
+        "Unallocated": 607114
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 131663
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 69489
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 61443
+      },
+      "payroll": {
+        "Unallocated": 307214
+      },
+      "ownerBasePay": {
+        "Unallocated": 87776
+      },
+      "benefits": {
+        "Unallocated": 57054
+      },
+      "insurance": {
+        "Unallocated": 26333
+      },
+      "professionalFees": {
+        "Unallocated": 38036
+      },
+      "subcontractors": {
+        "Unallocated": 46814
+      },
+      "rent": {
+        "Unallocated": 58517
+      },
+      "taxLicense": {
+        "Unallocated": 8778
+      },
+      "phoneComm": {
+        "Unallocated": 6949
+      },
+      "infrastructure": {
+        "Unallocated": 29990
+      },
+      "autoTravel": {
+        "Unallocated": 20481
+      },
+      "salesExpense": {
+        "Unallocated": 65832
+      },
+      "trainingCert": {
+        "Unallocated": 5852
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4755
+      },
+      "interestExpense": {
+        "Unallocated": 17555
+      },
+      "depreciationAmortization": {
+        "Unallocated": 32916
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13166
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 40962
+      },
+      "otherExpense": {
+        "Unallocated": 28527
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2194
+      },
+      "cash": {
+        "Unallocated": 1591705
+      },
+      "ar": {
+        "Unallocated": 1794221
+      },
+      "inventory": {
+        "Unallocated": 2414678
+      },
+      "otherCA": {
+        "Unallocated": 286009
+      },
+      "fixedAssets": {
+        "Unallocated": 1434193
+      },
+      "ap": {
+        "Unallocated": 1441298
+      },
+      "otherCL": {
+        "Unallocated": 366424
+      },
+      "loc": {
+        "Unallocated": 621760
+      },
+      "ltd": {
+        "Unallocated": 947444
+      },
+      "ownersCapital": {
+        "Unallocated": 2220571
+      },
+      "ownersDraw": {
+        "Unallocated": 99482
+      },
+      "commonStock": {
+        "Unallocated": 82901
+      },
+      "retainedEarnings": {
+        "Unallocated": 1740928
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 914329,
+      "rev_value_added_services": 621743,
+      "rev_other_revenue": 416934,
+      "rev_vendor_rebates_and_incentives": -24870
+    },
+    "expenseBreakdown": {
+      "Unallocated": 843379
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 607114,
+      "cogs_handling_and_preparation": 131663,
+      "cogs_outbound_fulfillment": 69489,
+      "cogs_other_cogs": 61443
+    }
+  },
+  {
+    "monthDate": "2025-03-31T07:00:00.000Z",
+    "date": "2025-03-31T07:00:00.000Z",
+    "month": "2025-03",
+    "revenue": 1937776,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 874058,
+    "payroll": 308751,
+    "ownerBasePay": 88214,
+    "benefits": 57339,
+    "insurance": 26464,
+    "professionalFees": 38226,
+    "subcontractors": 47048,
+    "rent": 58810,
+    "taxLicense": 8821,
+    "stateIncomeTaxes": 13232,
+    "federalIncomeTaxes": 41167,
+    "phoneComm": 6984,
+    "infrastructure": 30140,
+    "autoTravel": 20583,
+    "salesExpense": 66160,
+    "marketing": 0,
+    "trainingCert": 5881,
+    "mealsEntertainment": 4778,
+    "interestExpense": 17643,
+    "depreciationAmortization": 33080,
+    "otherExpense": 28670,
+    "expense": 0,
+    "nonOperatingIncome": 2205,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1607622,
+    "ar": 1812163,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2438825,
+    "otherCA": 288870,
+    "tca": 6147480,
+    "fixedAssets": 1448535,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7596015,
+    "ap": 1455711,
+    "loc": 627977,
+    "contractLiabilities": 0,
+    "otherCL": 370089,
+    "tcl": 2453777,
+    "ltd": 956918,
+    "totalLiab": 3410695,
+    "ownersCapital": 2242777,
+    "ownersDraw": 100476,
+    "commonStock": 83730,
+    "preferredStock": 0,
+    "retainedEarnings": 1758337,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 3984368,
+    "totalLAndE": 7395063,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 918900
+      },
+      "rev_value_added_services": {
+        "Unallocated": 624852
+      },
+      "rev_other_revenue": {
+        "Unallocated": 419018
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -24994
+      },
+      "cogs_product_cost": {
+        "Unallocated": 610150
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 132322
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 69836
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 61750
+      },
+      "payroll": {
+        "Unallocated": 308751
+      },
+      "ownerBasePay": {
+        "Unallocated": 88214
+      },
+      "benefits": {
+        "Unallocated": 57339
+      },
+      "insurance": {
+        "Unallocated": 26464
+      },
+      "professionalFees": {
+        "Unallocated": 38226
+      },
+      "subcontractors": {
+        "Unallocated": 47048
+      },
+      "rent": {
+        "Unallocated": 58810
+      },
+      "taxLicense": {
+        "Unallocated": 8821
+      },
+      "phoneComm": {
+        "Unallocated": 6984
+      },
+      "infrastructure": {
+        "Unallocated": 30140
+      },
+      "autoTravel": {
+        "Unallocated": 20583
+      },
+      "salesExpense": {
+        "Unallocated": 66160
+      },
+      "trainingCert": {
+        "Unallocated": 5881
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4778
+      },
+      "interestExpense": {
+        "Unallocated": 17643
+      },
+      "depreciationAmortization": {
+        "Unallocated": 33080
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13232
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 41167
+      },
+      "otherExpense": {
+        "Unallocated": 28670
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2205
+      },
+      "cash": {
+        "Unallocated": 1607622
+      },
+      "ar": {
+        "Unallocated": 1812163
+      },
+      "inventory": {
+        "Unallocated": 2438825
+      },
+      "otherCA": {
+        "Unallocated": 288870
+      },
+      "fixedAssets": {
+        "Unallocated": 1448535
+      },
+      "ap": {
+        "Unallocated": 1455711
+      },
+      "otherCL": {
+        "Unallocated": 370089
+      },
+      "loc": {
+        "Unallocated": 627977
+      },
+      "ltd": {
+        "Unallocated": 956918
+      },
+      "ownersCapital": {
+        "Unallocated": 2242777
+      },
+      "ownersDraw": {
+        "Unallocated": 100476
+      },
+      "commonStock": {
+        "Unallocated": 83730
+      },
+      "retainedEarnings": {
+        "Unallocated": 1758337
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 918900,
+      "rev_value_added_services": 624852,
+      "rev_other_revenue": 419018,
+      "rev_vendor_rebates_and_incentives": -24994
+    },
+    "expenseBreakdown": {
+      "Unallocated": 847592
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 610150,
+      "cogs_handling_and_preparation": 132322,
+      "cogs_outbound_fulfillment": 69836,
+      "cogs_other_cogs": 61750
+    }
+  },
+  {
+    "monthDate": "2025-04-30T07:00:00.000Z",
+    "date": "2025-04-30T07:00:00.000Z",
+    "month": "2025-04",
+    "revenue": 1947466,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 878427,
+    "payroll": 310294,
+    "ownerBasePay": 88656,
+    "benefits": 57626,
+    "insurance": 26597,
+    "professionalFees": 38417,
+    "subcontractors": 47283,
+    "rent": 59104,
+    "taxLicense": 8866,
+    "stateIncomeTaxes": 13298,
+    "federalIncomeTaxes": 41373,
+    "phoneComm": 7019,
+    "infrastructure": 30291,
+    "autoTravel": 20686,
+    "salesExpense": 66492,
+    "marketing": 0,
+    "trainingCert": 5910,
+    "mealsEntertainment": 4802,
+    "interestExpense": 17731,
+    "depreciationAmortization": 33246,
+    "otherExpense": 28813,
+    "expense": 0,
+    "nonOperatingIncome": 2216,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1623698,
+    "ar": 1830285,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2463213,
+    "otherCA": 291759,
+    "tca": 6208955,
+    "fixedAssets": 1463020,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7671975,
+    "ap": 1470269,
+    "loc": 634257,
+    "contractLiabilities": 0,
+    "otherCL": 373789,
+    "tcl": 2478315,
+    "ltd": 966487,
+    "totalLiab": 3444802,
+    "ownersCapital": 2265204,
+    "ownersDraw": 101481,
+    "commonStock": 84568,
+    "preferredStock": 0,
+    "retainedEarnings": 1775920,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4024211,
+    "totalLAndE": 7469013,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 923495
+      },
+      "rev_value_added_services": {
+        "Unallocated": 627976
+      },
+      "rev_other_revenue": {
+        "Unallocated": 421114
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -25119
+      },
+      "cogs_product_cost": {
+        "Unallocated": 613200
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 132983
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 70186
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 62058
+      },
+      "payroll": {
+        "Unallocated": 310294
+      },
+      "ownerBasePay": {
+        "Unallocated": 88656
+      },
+      "benefits": {
+        "Unallocated": 57626
+      },
+      "insurance": {
+        "Unallocated": 26597
+      },
+      "professionalFees": {
+        "Unallocated": 38417
+      },
+      "subcontractors": {
+        "Unallocated": 47283
+      },
+      "rent": {
+        "Unallocated": 59104
+      },
+      "taxLicense": {
+        "Unallocated": 8866
+      },
+      "phoneComm": {
+        "Unallocated": 7019
+      },
+      "infrastructure": {
+        "Unallocated": 30291
+      },
+      "autoTravel": {
+        "Unallocated": 20686
+      },
+      "salesExpense": {
+        "Unallocated": 66492
+      },
+      "trainingCert": {
+        "Unallocated": 5910
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4802
+      },
+      "interestExpense": {
+        "Unallocated": 17731
+      },
+      "depreciationAmortization": {
+        "Unallocated": 33246
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13298
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 41373
+      },
+      "otherExpense": {
+        "Unallocated": 28813
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2216
+      },
+      "cash": {
+        "Unallocated": 1623698
+      },
+      "ar": {
+        "Unallocated": 1830285
+      },
+      "inventory": {
+        "Unallocated": 2463213
+      },
+      "otherCA": {
+        "Unallocated": 291759
+      },
+      "fixedAssets": {
+        "Unallocated": 1463020
+      },
+      "ap": {
+        "Unallocated": 1470269
+      },
+      "otherCL": {
+        "Unallocated": 373789
+      },
+      "loc": {
+        "Unallocated": 634257
+      },
+      "ltd": {
+        "Unallocated": 966487
+      },
+      "ownersCapital": {
+        "Unallocated": 2265204
+      },
+      "ownersDraw": {
+        "Unallocated": 101481
+      },
+      "commonStock": {
+        "Unallocated": 84568
+      },
+      "retainedEarnings": {
+        "Unallocated": 1775920
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 923495,
+      "rev_value_added_services": 627976,
+      "rev_other_revenue": 421114,
+      "rev_vendor_rebates_and_incentives": -25119
+    },
+    "expenseBreakdown": {
+      "Unallocated": 851833
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 613200,
+      "cogs_handling_and_preparation": 132983,
+      "cogs_outbound_fulfillment": 70186,
+      "cogs_other_cogs": 62058
+    }
+  },
+  {
+    "monthDate": "2025-05-31T07:00:00.000Z",
+    "date": "2025-05-31T07:00:00.000Z",
+    "month": "2025-05",
+    "revenue": 1957203,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 882821,
+    "payroll": 311846,
+    "ownerBasePay": 89099,
+    "benefits": 57914,
+    "insurance": 26730,
+    "professionalFees": 38609,
+    "subcontractors": 47519,
+    "rent": 59399,
+    "taxLicense": 8910,
+    "stateIncomeTaxes": 13365,
+    "federalIncomeTaxes": 41579,
+    "phoneComm": 7054,
+    "infrastructure": 30442,
+    "autoTravel": 20790,
+    "salesExpense": 66824,
+    "marketing": 0,
+    "trainingCert": 5940,
+    "mealsEntertainment": 4826,
+    "interestExpense": 17820,
+    "depreciationAmortization": 33412,
+    "otherExpense": 28957,
+    "expense": 0,
+    "nonOperatingIncome": 2227,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1639935,
+    "ar": 1848588,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2487845,
+    "otherCA": 294676,
+    "tca": 6271044,
+    "fixedAssets": 1477651,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7748695,
+    "ap": 1484971,
+    "loc": 640600,
+    "contractLiabilities": 0,
+    "otherCL": 377528,
+    "tcl": 2503099,
+    "ltd": 976152,
+    "totalLiab": 3479251,
+    "ownersCapital": 2287856,
+    "ownersDraw": 102496,
+    "commonStock": 85413,
+    "preferredStock": 0,
+    "retainedEarnings": 1793679,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4064452,
+    "totalLAndE": 7543703,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 928112
+      },
+      "rev_value_added_services": {
+        "Unallocated": 631116
+      },
+      "rev_other_revenue": {
+        "Unallocated": 423219
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -25244
+      },
+      "cogs_product_cost": {
+        "Unallocated": 616267
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 133648
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 70537
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 62369
+      },
+      "payroll": {
+        "Unallocated": 311846
+      },
+      "ownerBasePay": {
+        "Unallocated": 89099
+      },
+      "benefits": {
+        "Unallocated": 57914
+      },
+      "insurance": {
+        "Unallocated": 26730
+      },
+      "professionalFees": {
+        "Unallocated": 38609
+      },
+      "subcontractors": {
+        "Unallocated": 47519
+      },
+      "rent": {
+        "Unallocated": 59399
+      },
+      "taxLicense": {
+        "Unallocated": 8910
+      },
+      "phoneComm": {
+        "Unallocated": 7054
+      },
+      "infrastructure": {
+        "Unallocated": 30442
+      },
+      "autoTravel": {
+        "Unallocated": 20790
+      },
+      "salesExpense": {
+        "Unallocated": 66824
+      },
+      "trainingCert": {
+        "Unallocated": 5940
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4826
+      },
+      "interestExpense": {
+        "Unallocated": 17820
+      },
+      "depreciationAmortization": {
+        "Unallocated": 33412
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13365
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 41579
+      },
+      "otherExpense": {
+        "Unallocated": 28957
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2227
+      },
+      "cash": {
+        "Unallocated": 1639935
+      },
+      "ar": {
+        "Unallocated": 1848588
+      },
+      "inventory": {
+        "Unallocated": 2487845
+      },
+      "otherCA": {
+        "Unallocated": 294676
+      },
+      "fixedAssets": {
+        "Unallocated": 1477651
+      },
+      "ap": {
+        "Unallocated": 1484971
+      },
+      "otherCL": {
+        "Unallocated": 377528
+      },
+      "loc": {
+        "Unallocated": 640600
+      },
+      "ltd": {
+        "Unallocated": 976152
+      },
+      "ownersCapital": {
+        "Unallocated": 2287856
+      },
+      "ownersDraw": {
+        "Unallocated": 102496
+      },
+      "commonStock": {
+        "Unallocated": 85413
+      },
+      "retainedEarnings": {
+        "Unallocated": 1793679
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 928112,
+      "rev_value_added_services": 631116,
+      "rev_other_revenue": 423219,
+      "rev_vendor_rebates_and_incentives": -25244
+    },
+    "expenseBreakdown": {
+      "Unallocated": 856091
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 616267,
+      "cogs_handling_and_preparation": 133648,
+      "cogs_outbound_fulfillment": 70537,
+      "cogs_other_cogs": 62369
+    }
+  },
+  {
+    "monthDate": "2025-06-30T07:00:00.000Z",
+    "date": "2025-06-30T07:00:00.000Z",
+    "month": "2025-06",
+    "revenue": 1966989,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 887233,
+    "payroll": 313405,
+    "ownerBasePay": 89544,
+    "benefits": 58204,
+    "insurance": 26863,
+    "professionalFees": 38803,
+    "subcontractors": 47757,
+    "rent": 59696,
+    "taxLicense": 8954,
+    "stateIncomeTaxes": 13432,
+    "federalIncomeTaxes": 41787,
+    "phoneComm": 7089,
+    "infrastructure": 30594,
+    "autoTravel": 20894,
+    "salesExpense": 67158,
+    "marketing": 0,
+    "trainingCert": 5970,
+    "mealsEntertainment": 4850,
+    "interestExpense": 17909,
+    "depreciationAmortization": 33579,
+    "otherExpense": 29102,
+    "expense": 0,
+    "nonOperatingIncome": 2239,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1656335,
+    "ar": 1867074,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2512724,
+    "otherCA": 297623,
+    "tca": 6333756,
+    "fixedAssets": 1492427,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7826183,
+    "ap": 1499821,
+    "loc": 647006,
+    "contractLiabilities": 0,
+    "otherCL": 381301,
+    "tcl": 2528128,
+    "ltd": 985914,
+    "totalLiab": 3514042,
+    "ownersCapital": 2310735,
+    "ownersDraw": 103521,
+    "commonStock": 86267,
+    "preferredStock": 0,
+    "retainedEarnings": 1811616,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4105097,
+    "totalLAndE": 7619139,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 932753
+      },
+      "rev_value_added_services": {
+        "Unallocated": 634272
+      },
+      "rev_other_revenue": {
+        "Unallocated": 425335
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -25371
+      },
+      "cogs_product_cost": {
+        "Unallocated": 619347
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 134316
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 70889
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 62681
+      },
+      "payroll": {
+        "Unallocated": 313405
+      },
+      "ownerBasePay": {
+        "Unallocated": 89544
+      },
+      "benefits": {
+        "Unallocated": 58204
+      },
+      "insurance": {
+        "Unallocated": 26863
+      },
+      "professionalFees": {
+        "Unallocated": 38803
+      },
+      "subcontractors": {
+        "Unallocated": 47757
+      },
+      "rent": {
+        "Unallocated": 59696
+      },
+      "taxLicense": {
+        "Unallocated": 8954
+      },
+      "phoneComm": {
+        "Unallocated": 7089
+      },
+      "infrastructure": {
+        "Unallocated": 30594
+      },
+      "autoTravel": {
+        "Unallocated": 20894
+      },
+      "salesExpense": {
+        "Unallocated": 67158
+      },
+      "trainingCert": {
+        "Unallocated": 5970
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4850
+      },
+      "interestExpense": {
+        "Unallocated": 17909
+      },
+      "depreciationAmortization": {
+        "Unallocated": 33579
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13432
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 41787
+      },
+      "otherExpense": {
+        "Unallocated": 29102
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2239
+      },
+      "cash": {
+        "Unallocated": 1656335
+      },
+      "ar": {
+        "Unallocated": 1867074
+      },
+      "inventory": {
+        "Unallocated": 2512724
+      },
+      "otherCA": {
+        "Unallocated": 297623
+      },
+      "fixedAssets": {
+        "Unallocated": 1492427
+      },
+      "ap": {
+        "Unallocated": 1499821
+      },
+      "otherCL": {
+        "Unallocated": 381301
+      },
+      "loc": {
+        "Unallocated": 647006
+      },
+      "ltd": {
+        "Unallocated": 985914
+      },
+      "ownersCapital": {
+        "Unallocated": 2310735
+      },
+      "ownersDraw": {
+        "Unallocated": 103521
+      },
+      "commonStock": {
+        "Unallocated": 86267
+      },
+      "retainedEarnings": {
+        "Unallocated": 1811616
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 932753,
+      "rev_value_added_services": 634272,
+      "rev_other_revenue": 425335,
+      "rev_vendor_rebates_and_incentives": -25371
+    },
+    "expenseBreakdown": {
+      "Unallocated": 860371
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 619347,
+      "cogs_handling_and_preparation": 134316,
+      "cogs_outbound_fulfillment": 70889,
+      "cogs_other_cogs": 62681
+    }
+  },
+  {
+    "monthDate": "2025-07-31T07:00:00.000Z",
+    "date": "2025-07-31T07:00:00.000Z",
+    "month": "2025-07",
+    "revenue": 1976825,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 891672,
+    "payroll": 314972,
+    "ownerBasePay": 89992,
+    "benefits": 58495,
+    "insurance": 26998,
+    "professionalFees": 38997,
+    "subcontractors": 47996,
+    "rent": 59995,
+    "taxLicense": 8999,
+    "stateIncomeTaxes": 13499,
+    "federalIncomeTaxes": 41996,
+    "phoneComm": 7124,
+    "infrastructure": 30747,
+    "autoTravel": 20998,
+    "salesExpense": 67494,
+    "marketing": 0,
+    "trainingCert": 5999,
+    "mealsEntertainment": 4875,
+    "interestExpense": 17998,
+    "depreciationAmortization": 33747,
+    "otherExpense": 29247,
+    "expense": 0,
+    "nonOperatingIncome": 2250,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1672898,
+    "ar": 1885745,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2537851,
+    "otherCA": 300599,
+    "tca": 6397093,
+    "fixedAssets": 1507351,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7904444,
+    "ap": 1514819,
+    "loc": 653476,
+    "contractLiabilities": 0,
+    "otherCL": 385116,
+    "tcl": 2553411,
+    "ltd": 995773,
+    "totalLiab": 3549184,
+    "ownersCapital": 2333842,
+    "ownersDraw": 104556,
+    "commonStock": 87130,
+    "preferredStock": 0,
+    "retainedEarnings": 1829732,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4146148,
+    "totalLAndE": 7695332,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 937417
+      },
+      "rev_value_added_services": {
+        "Unallocated": 637443
+      },
+      "rev_other_revenue": {
+        "Unallocated": 427462
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -25497
+      },
+      "cogs_product_cost": {
+        "Unallocated": 622445
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 134988
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 71244
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 62995
+      },
+      "payroll": {
+        "Unallocated": 314972
+      },
+      "ownerBasePay": {
+        "Unallocated": 89992
+      },
+      "benefits": {
+        "Unallocated": 58495
+      },
+      "insurance": {
+        "Unallocated": 26998
+      },
+      "professionalFees": {
+        "Unallocated": 38997
+      },
+      "subcontractors": {
+        "Unallocated": 47996
+      },
+      "rent": {
+        "Unallocated": 59995
+      },
+      "taxLicense": {
+        "Unallocated": 8999
+      },
+      "phoneComm": {
+        "Unallocated": 7124
+      },
+      "infrastructure": {
+        "Unallocated": 30747
+      },
+      "autoTravel": {
+        "Unallocated": 20998
+      },
+      "salesExpense": {
+        "Unallocated": 67494
+      },
+      "trainingCert": {
+        "Unallocated": 5999
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4875
+      },
+      "interestExpense": {
+        "Unallocated": 17998
+      },
+      "depreciationAmortization": {
+        "Unallocated": 33747
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13499
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 41996
+      },
+      "otherExpense": {
+        "Unallocated": 29247
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2250
+      },
+      "cash": {
+        "Unallocated": 1672898
+      },
+      "ar": {
+        "Unallocated": 1885745
+      },
+      "inventory": {
+        "Unallocated": 2537851
+      },
+      "otherCA": {
+        "Unallocated": 300599
+      },
+      "fixedAssets": {
+        "Unallocated": 1507351
+      },
+      "ap": {
+        "Unallocated": 1514819
+      },
+      "otherCL": {
+        "Unallocated": 385116
+      },
+      "loc": {
+        "Unallocated": 653476
+      },
+      "ltd": {
+        "Unallocated": 995773
+      },
+      "ownersCapital": {
+        "Unallocated": 2333842
+      },
+      "ownersDraw": {
+        "Unallocated": 104556
+      },
+      "commonStock": {
+        "Unallocated": 87130
+      },
+      "retainedEarnings": {
+        "Unallocated": 1829732
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 937417,
+      "rev_value_added_services": 637443,
+      "rev_other_revenue": 427462,
+      "rev_vendor_rebates_and_incentives": -25497
+    },
+    "expenseBreakdown": {
+      "Unallocated": 864673
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 622445,
+      "cogs_handling_and_preparation": 134988,
+      "cogs_outbound_fulfillment": 71244,
+      "cogs_other_cogs": 62995
+    }
+  },
+  {
+    "monthDate": "2025-08-31T07:00:00.000Z",
+    "date": "2025-08-31T07:00:00.000Z",
+    "month": "2025-08",
+    "revenue": 1986709,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 896129,
+    "payroll": 316547,
+    "ownerBasePay": 90442,
+    "benefits": 58787,
+    "insurance": 27133,
+    "professionalFees": 39192,
+    "subcontractors": 48236,
+    "rent": 60295,
+    "taxLicense": 9044,
+    "stateIncomeTaxes": 13566,
+    "federalIncomeTaxes": 42206,
+    "phoneComm": 7160,
+    "infrastructure": 30901,
+    "autoTravel": 21103,
+    "salesExpense": 67832,
+    "marketing": 0,
+    "trainingCert": 6029,
+    "mealsEntertainment": 4899,
+    "interestExpense": 18088,
+    "depreciationAmortization": 33916,
+    "otherExpense": 29394,
+    "expense": 0,
+    "nonOperatingIncome": 2261,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1689627,
+    "ar": 1904602,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2563230,
+    "otherCA": 303605,
+    "tca": 6461064,
+    "fixedAssets": 1522425,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 7983489,
+    "ap": 1529967,
+    "loc": 660011,
+    "contractLiabilities": 0,
+    "otherCL": 388967,
+    "tcl": 2578945,
+    "ltd": 1005730,
+    "totalLiab": 3584675,
+    "ownersCapital": 2357181,
+    "ownersDraw": 105602,
+    "commonStock": 88001,
+    "preferredStock": 0,
+    "retainedEarnings": 1848030,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4187610,
+    "totalLAndE": 7772285,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 942104
+      },
+      "rev_value_added_services": {
+        "Unallocated": 640631
+      },
+      "rev_other_revenue": {
+        "Unallocated": 429599
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -25625
+      },
+      "cogs_product_cost": {
+        "Unallocated": 625556
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 135663
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 71600
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 63310
+      },
+      "payroll": {
+        "Unallocated": 316547
+      },
+      "ownerBasePay": {
+        "Unallocated": 90442
+      },
+      "benefits": {
+        "Unallocated": 58787
+      },
+      "insurance": {
+        "Unallocated": 27133
+      },
+      "professionalFees": {
+        "Unallocated": 39192
+      },
+      "subcontractors": {
+        "Unallocated": 48236
+      },
+      "rent": {
+        "Unallocated": 60295
+      },
+      "taxLicense": {
+        "Unallocated": 9044
+      },
+      "phoneComm": {
+        "Unallocated": 7160
+      },
+      "infrastructure": {
+        "Unallocated": 30901
+      },
+      "autoTravel": {
+        "Unallocated": 21103
+      },
+      "salesExpense": {
+        "Unallocated": 67832
+      },
+      "trainingCert": {
+        "Unallocated": 6029
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4899
+      },
+      "interestExpense": {
+        "Unallocated": 18088
+      },
+      "depreciationAmortization": {
+        "Unallocated": 33916
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13566
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 42206
+      },
+      "otherExpense": {
+        "Unallocated": 29394
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2261
+      },
+      "cash": {
+        "Unallocated": 1689627
+      },
+      "ar": {
+        "Unallocated": 1904602
+      },
+      "inventory": {
+        "Unallocated": 2563230
+      },
+      "otherCA": {
+        "Unallocated": 303605
+      },
+      "fixedAssets": {
+        "Unallocated": 1522425
+      },
+      "ap": {
+        "Unallocated": 1529967
+      },
+      "otherCL": {
+        "Unallocated": 388967
+      },
+      "loc": {
+        "Unallocated": 660011
+      },
+      "ltd": {
+        "Unallocated": 1005730
+      },
+      "ownersCapital": {
+        "Unallocated": 2357181
+      },
+      "ownersDraw": {
+        "Unallocated": 105602
+      },
+      "commonStock": {
+        "Unallocated": 88001
+      },
+      "retainedEarnings": {
+        "Unallocated": 1848030
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 942104,
+      "rev_value_added_services": 640631,
+      "rev_other_revenue": 429599,
+      "rev_vendor_rebates_and_incentives": -25625
+    },
+    "expenseBreakdown": {
+      "Unallocated": 868998
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 625556,
+      "cogs_handling_and_preparation": 135663,
+      "cogs_outbound_fulfillment": 71600,
+      "cogs_other_cogs": 63310
+    }
+  },
+  {
+    "monthDate": "2025-09-30T07:00:00.000Z",
+    "date": "2025-09-30T07:00:00.000Z",
+    "month": "2025-09",
+    "revenue": 1996642,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 900609,
+    "payroll": 318130,
+    "ownerBasePay": 90894,
+    "benefits": 59081,
+    "insurance": 27268,
+    "professionalFees": 39387,
+    "subcontractors": 48477,
+    "rent": 60596,
+    "taxLicense": 9089,
+    "stateIncomeTaxes": 13634,
+    "federalIncomeTaxes": 42417,
+    "phoneComm": 7196,
+    "infrastructure": 31056,
+    "autoTravel": 21209,
+    "salesExpense": 68170,
+    "marketing": 0,
+    "trainingCert": 6060,
+    "mealsEntertainment": 4923,
+    "interestExpense": 18179,
+    "depreciationAmortization": 34085,
+    "otherExpense": 29541,
+    "expense": 0,
+    "nonOperatingIncome": 2272,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1706524,
+    "ar": 1923648,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2588862,
+    "otherCA": 306641,
+    "tca": 6525675,
+    "fixedAssets": 1537649,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8063324,
+    "ap": 1545267,
+    "loc": 666611,
+    "contractLiabilities": 0,
+    "otherCL": 392856,
+    "tcl": 2604734,
+    "ltd": 1015788,
+    "totalLiab": 3620522,
+    "ownersCapital": 2380752,
+    "ownersDraw": 106658,
+    "commonStock": 88881,
+    "preferredStock": 0,
+    "retainedEarnings": 1866510,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4229485,
+    "totalLAndE": 7850007,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 946814
+      },
+      "rev_value_added_services": {
+        "Unallocated": 643834
+      },
+      "rev_other_revenue": {
+        "Unallocated": 431747
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -25753
+      },
+      "cogs_product_cost": {
+        "Unallocated": 628685
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 136341
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 71958
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 63625
+      },
+      "payroll": {
+        "Unallocated": 318130
+      },
+      "ownerBasePay": {
+        "Unallocated": 90894
+      },
+      "benefits": {
+        "Unallocated": 59081
+      },
+      "insurance": {
+        "Unallocated": 27268
+      },
+      "professionalFees": {
+        "Unallocated": 39387
+      },
+      "subcontractors": {
+        "Unallocated": 48477
+      },
+      "rent": {
+        "Unallocated": 60596
+      },
+      "taxLicense": {
+        "Unallocated": 9089
+      },
+      "phoneComm": {
+        "Unallocated": 7196
+      },
+      "infrastructure": {
+        "Unallocated": 31056
+      },
+      "autoTravel": {
+        "Unallocated": 21209
+      },
+      "salesExpense": {
+        "Unallocated": 68170
+      },
+      "trainingCert": {
+        "Unallocated": 6060
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4923
+      },
+      "interestExpense": {
+        "Unallocated": 18179
+      },
+      "depreciationAmortization": {
+        "Unallocated": 34085
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13634
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 42417
+      },
+      "otherExpense": {
+        "Unallocated": 29541
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2272
+      },
+      "cash": {
+        "Unallocated": 1706524
+      },
+      "ar": {
+        "Unallocated": 1923648
+      },
+      "inventory": {
+        "Unallocated": 2588862
+      },
+      "otherCA": {
+        "Unallocated": 306641
+      },
+      "fixedAssets": {
+        "Unallocated": 1537649
+      },
+      "ap": {
+        "Unallocated": 1545267
+      },
+      "otherCL": {
+        "Unallocated": 392856
+      },
+      "loc": {
+        "Unallocated": 666611
+      },
+      "ltd": {
+        "Unallocated": 1015788
+      },
+      "ownersCapital": {
+        "Unallocated": 2380752
+      },
+      "ownersDraw": {
+        "Unallocated": 106658
+      },
+      "commonStock": {
+        "Unallocated": 88881
+      },
+      "retainedEarnings": {
+        "Unallocated": 1866510
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 946814,
+      "rev_value_added_services": 643834,
+      "rev_other_revenue": 431747,
+      "rev_vendor_rebates_and_incentives": -25753
+    },
+    "expenseBreakdown": {
+      "Unallocated": 873341
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 628685,
+      "cogs_handling_and_preparation": 136341,
+      "cogs_outbound_fulfillment": 71958,
+      "cogs_other_cogs": 63625
+    }
+  },
+  {
+    "monthDate": "2025-10-31T07:00:00.000Z",
+    "date": "2025-10-31T07:00:00.000Z",
+    "month": "2025-10",
+    "revenue": 2006625,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 905113,
+    "payroll": 319720,
+    "ownerBasePay": 91349,
+    "benefits": 59377,
+    "insurance": 27405,
+    "professionalFees": 39584,
+    "subcontractors": 48719,
+    "rent": 60899,
+    "taxLicense": 9135,
+    "stateIncomeTaxes": 13702,
+    "federalIncomeTaxes": 42629,
+    "phoneComm": 7232,
+    "infrastructure": 31211,
+    "autoTravel": 21315,
+    "salesExpense": 68512,
+    "marketing": 0,
+    "trainingCert": 6090,
+    "mealsEntertainment": 4948,
+    "interestExpense": 18270,
+    "depreciationAmortization": 34256,
+    "otherExpense": 29688,
+    "expense": 0,
+    "nonOperatingIncome": 2284,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1723588,
+    "ar": 1942884,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2614751,
+    "otherCA": 309707,
+    "tca": 6590930,
+    "fixedAssets": 1553025,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8143955,
+    "ap": 1560720,
+    "loc": 673277,
+    "contractLiabilities": 0,
+    "otherCL": 396785,
+    "tcl": 2630782,
+    "ltd": 1025946,
+    "totalLiab": 3656728,
+    "ownersCapital": 2404560,
+    "ownersDraw": 107724,
+    "commonStock": 89770,
+    "preferredStock": 0,
+    "retainedEarnings": 1885175,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4271781,
+    "totalLAndE": 7928509,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 951548
+      },
+      "rev_value_added_services": {
+        "Unallocated": 647053
+      },
+      "rev_other_revenue": {
+        "Unallocated": 433906
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -25882
+      },
+      "cogs_product_cost": {
+        "Unallocated": 631828
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 137023
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 72318
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 63944
+      },
+      "payroll": {
+        "Unallocated": 319720
+      },
+      "ownerBasePay": {
+        "Unallocated": 91349
+      },
+      "benefits": {
+        "Unallocated": 59377
+      },
+      "insurance": {
+        "Unallocated": 27405
+      },
+      "professionalFees": {
+        "Unallocated": 39584
+      },
+      "subcontractors": {
+        "Unallocated": 48719
+      },
+      "rent": {
+        "Unallocated": 60899
+      },
+      "taxLicense": {
+        "Unallocated": 9135
+      },
+      "phoneComm": {
+        "Unallocated": 7232
+      },
+      "infrastructure": {
+        "Unallocated": 31211
+      },
+      "autoTravel": {
+        "Unallocated": 21315
+      },
+      "salesExpense": {
+        "Unallocated": 68512
+      },
+      "trainingCert": {
+        "Unallocated": 6090
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4948
+      },
+      "interestExpense": {
+        "Unallocated": 18270
+      },
+      "depreciationAmortization": {
+        "Unallocated": 34256
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13702
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 42629
+      },
+      "otherExpense": {
+        "Unallocated": 29688
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2284
+      },
+      "cash": {
+        "Unallocated": 1723588
+      },
+      "ar": {
+        "Unallocated": 1942884
+      },
+      "inventory": {
+        "Unallocated": 2614751
+      },
+      "otherCA": {
+        "Unallocated": 309707
+      },
+      "fixedAssets": {
+        "Unallocated": 1553025
+      },
+      "ap": {
+        "Unallocated": 1560720
+      },
+      "otherCL": {
+        "Unallocated": 396785
+      },
+      "loc": {
+        "Unallocated": 673277
+      },
+      "ltd": {
+        "Unallocated": 1025946
+      },
+      "ownersCapital": {
+        "Unallocated": 2404560
+      },
+      "ownersDraw": {
+        "Unallocated": 107724
+      },
+      "commonStock": {
+        "Unallocated": 89770
+      },
+      "retainedEarnings": {
+        "Unallocated": 1885175
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 951548,
+      "rev_value_added_services": 647053,
+      "rev_other_revenue": 433906,
+      "rev_vendor_rebates_and_incentives": -25882
+    },
+    "expenseBreakdown": {
+      "Unallocated": 877710
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 631828,
+      "cogs_handling_and_preparation": 137023,
+      "cogs_outbound_fulfillment": 72318,
+      "cogs_other_cogs": 63944
+    }
+  },
+  {
+    "monthDate": "2025-11-30T07:00:00.000Z",
+    "date": "2025-11-30T07:00:00.000Z",
+    "month": "2025-11",
+    "revenue": 2016658,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 909637,
+    "payroll": 321319,
+    "ownerBasePay": 91805,
+    "benefits": 59673,
+    "insurance": 27542,
+    "professionalFees": 39782,
+    "subcontractors": 48963,
+    "rent": 61204,
+    "taxLicense": 9181,
+    "stateIncomeTaxes": 13771,
+    "federalIncomeTaxes": 42843,
+    "phoneComm": 7268,
+    "infrastructure": 31367,
+    "autoTravel": 21421,
+    "salesExpense": 68854,
+    "marketing": 0,
+    "trainingCert": 6120,
+    "mealsEntertainment": 4973,
+    "interestExpense": 18361,
+    "depreciationAmortization": 34427,
+    "otherExpense": 29837,
+    "expense": 0,
+    "nonOperatingIncome": 2295,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1740825,
+    "ar": 1962313,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2640898,
+    "otherCA": 312804,
+    "tca": 6656840,
+    "fixedAssets": 1568556,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8225396,
+    "ap": 1576327,
+    "loc": 680010,
+    "contractLiabilities": 0,
+    "otherCL": 400753,
+    "tcl": 2657090,
+    "ltd": 1036205,
+    "totalLiab": 3693295,
+    "ownersCapital": 2428606,
+    "ownersDraw": 108802,
+    "commonStock": 90668,
+    "preferredStock": 0,
+    "retainedEarnings": 1904027,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4314499,
+    "totalLAndE": 8007794,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 956306
+      },
+      "rev_value_added_services": {
+        "Unallocated": 650288
+      },
+      "rev_other_revenue": {
+        "Unallocated": 436075
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -26011
+      },
+      "cogs_product_cost": {
+        "Unallocated": 634987
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 137708
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 72679
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 64263
+      },
+      "payroll": {
+        "Unallocated": 321319
+      },
+      "ownerBasePay": {
+        "Unallocated": 91805
+      },
+      "benefits": {
+        "Unallocated": 59673
+      },
+      "insurance": {
+        "Unallocated": 27542
+      },
+      "professionalFees": {
+        "Unallocated": 39782
+      },
+      "subcontractors": {
+        "Unallocated": 48963
+      },
+      "rent": {
+        "Unallocated": 61204
+      },
+      "taxLicense": {
+        "Unallocated": 9181
+      },
+      "phoneComm": {
+        "Unallocated": 7268
+      },
+      "infrastructure": {
+        "Unallocated": 31367
+      },
+      "autoTravel": {
+        "Unallocated": 21421
+      },
+      "salesExpense": {
+        "Unallocated": 68854
+      },
+      "trainingCert": {
+        "Unallocated": 6120
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4973
+      },
+      "interestExpense": {
+        "Unallocated": 18361
+      },
+      "depreciationAmortization": {
+        "Unallocated": 34427
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13771
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 42843
+      },
+      "otherExpense": {
+        "Unallocated": 29837
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2295
+      },
+      "cash": {
+        "Unallocated": 1740825
+      },
+      "ar": {
+        "Unallocated": 1962313
+      },
+      "inventory": {
+        "Unallocated": 2640898
+      },
+      "otherCA": {
+        "Unallocated": 312804
+      },
+      "fixedAssets": {
+        "Unallocated": 1568556
+      },
+      "ap": {
+        "Unallocated": 1576327
+      },
+      "otherCL": {
+        "Unallocated": 400753
+      },
+      "loc": {
+        "Unallocated": 680010
+      },
+      "ltd": {
+        "Unallocated": 1036205
+      },
+      "ownersCapital": {
+        "Unallocated": 2428606
+      },
+      "ownersDraw": {
+        "Unallocated": 108802
+      },
+      "commonStock": {
+        "Unallocated": 90668
+      },
+      "retainedEarnings": {
+        "Unallocated": 1904027
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 956306,
+      "rev_value_added_services": 650288,
+      "rev_other_revenue": 436075,
+      "rev_vendor_rebates_and_incentives": -26011
+    },
+    "expenseBreakdown": {
+      "Unallocated": 882097
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 634987,
+      "cogs_handling_and_preparation": 137708,
+      "cogs_outbound_fulfillment": 72679,
+      "cogs_other_cogs": 64263
+    }
+  },
+  {
+    "monthDate": "2025-12-31T07:00:00.000Z",
+    "date": "2025-12-31T07:00:00.000Z",
+    "month": "2025-12",
+    "revenue": 2026742,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 914187,
+    "payroll": 322925,
+    "ownerBasePay": 92264,
+    "benefits": 59972,
+    "insurance": 27679,
+    "professionalFees": 39981,
+    "subcontractors": 49208,
+    "rent": 61510,
+    "taxLicense": 9226,
+    "stateIncomeTaxes": 13840,
+    "federalIncomeTaxes": 43057,
+    "phoneComm": 7304,
+    "infrastructure": 31524,
+    "autoTravel": 21528,
+    "salesExpense": 69198,
+    "marketing": 0,
+    "trainingCert": 6151,
+    "mealsEntertainment": 4998,
+    "interestExpense": 18453,
+    "depreciationAmortization": 34599,
+    "otherExpense": 29986,
+    "expense": 0,
+    "nonOperatingIncome": 2307,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1758233,
+    "ar": 1981936,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2667307,
+    "otherCA": 315932,
+    "tca": 6723408,
+    "fixedAssets": 1584240,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8307648,
+    "ap": 1592090,
+    "loc": 686810,
+    "contractLiabilities": 0,
+    "otherCL": 404759,
+    "tcl": 2683659,
+    "ltd": 1046567,
+    "totalLiab": 3730226,
+    "ownersCapital": 2452892,
+    "ownersDraw": 109890,
+    "commonStock": 91575,
+    "preferredStock": 0,
+    "retainedEarnings": 1923067,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4357644,
+    "totalLAndE": 8087870,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 961088
+      },
+      "rev_value_added_services": {
+        "Unallocated": 653540
+      },
+      "rev_other_revenue": {
+        "Unallocated": 438256
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -26142
+      },
+      "cogs_product_cost": {
+        "Unallocated": 638162
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 138397
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 73043
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 64585
+      },
+      "payroll": {
+        "Unallocated": 322925
+      },
+      "ownerBasePay": {
+        "Unallocated": 92264
+      },
+      "benefits": {
+        "Unallocated": 59972
+      },
+      "insurance": {
+        "Unallocated": 27679
+      },
+      "professionalFees": {
+        "Unallocated": 39981
+      },
+      "subcontractors": {
+        "Unallocated": 49208
+      },
+      "rent": {
+        "Unallocated": 61510
+      },
+      "taxLicense": {
+        "Unallocated": 9226
+      },
+      "phoneComm": {
+        "Unallocated": 7304
+      },
+      "infrastructure": {
+        "Unallocated": 31524
+      },
+      "autoTravel": {
+        "Unallocated": 21528
+      },
+      "salesExpense": {
+        "Unallocated": 69198
+      },
+      "trainingCert": {
+        "Unallocated": 6151
+      },
+      "mealsEntertainment": {
+        "Unallocated": 4998
+      },
+      "interestExpense": {
+        "Unallocated": 18453
+      },
+      "depreciationAmortization": {
+        "Unallocated": 34599
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13840
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 43057
+      },
+      "otherExpense": {
+        "Unallocated": 29986
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2307
+      },
+      "cash": {
+        "Unallocated": 1758233
+      },
+      "ar": {
+        "Unallocated": 1981936
+      },
+      "inventory": {
+        "Unallocated": 2667307
+      },
+      "otherCA": {
+        "Unallocated": 315932
+      },
+      "fixedAssets": {
+        "Unallocated": 1584240
+      },
+      "ap": {
+        "Unallocated": 1592090
+      },
+      "otherCL": {
+        "Unallocated": 404759
+      },
+      "loc": {
+        "Unallocated": 686810
+      },
+      "ltd": {
+        "Unallocated": 1046567
+      },
+      "ownersCapital": {
+        "Unallocated": 2452892
+      },
+      "ownersDraw": {
+        "Unallocated": 109890
+      },
+      "commonStock": {
+        "Unallocated": 91575
+      },
+      "retainedEarnings": {
+        "Unallocated": 1923067
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 961088,
+      "rev_value_added_services": 653540,
+      "rev_other_revenue": 438256,
+      "rev_vendor_rebates_and_incentives": -26142
+    },
+    "expenseBreakdown": {
+      "Unallocated": 886506
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 638162,
+      "cogs_handling_and_preparation": 138397,
+      "cogs_outbound_fulfillment": 73043,
+      "cogs_other_cogs": 64585
+    }
+  },
+  {
+    "monthDate": "2026-01-31T07:00:00.000Z",
+    "date": "2026-01-31T07:00:00.000Z",
+    "month": "2026-01",
+    "revenue": 2036875,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 918758,
+    "payroll": 324540,
+    "ownerBasePay": 92726,
+    "benefits": 60272,
+    "insurance": 27818,
+    "professionalFees": 40181,
+    "subcontractors": 49454,
+    "rent": 61817,
+    "taxLicense": 9273,
+    "stateIncomeTaxes": 13909,
+    "federalIncomeTaxes": 43272,
+    "phoneComm": 7341,
+    "infrastructure": 31681,
+    "autoTravel": 21636,
+    "salesExpense": 69545,
+    "marketing": 0,
+    "trainingCert": 6182,
+    "mealsEntertainment": 5023,
+    "interestExpense": 18545,
+    "depreciationAmortization": 34772,
+    "otherExpense": 30136,
+    "expense": 0,
+    "nonOperatingIncome": 2318,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1775814,
+    "ar": 2001756,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2693980,
+    "otherCA": 319092,
+    "tca": 6790642,
+    "fixedAssets": 1600084,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8390726,
+    "ap": 1608011,
+    "loc": 693678,
+    "contractLiabilities": 0,
+    "otherCL": 408808,
+    "tcl": 2710497,
+    "ltd": 1057033,
+    "totalLiab": 3767530,
+    "ownersCapital": 2477421,
+    "ownersDraw": 110988,
+    "commonStock": 92490,
+    "preferredStock": 0,
+    "retainedEarnings": 1942298,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4401221,
+    "totalLAndE": 8168751,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 965893
+      },
+      "rev_value_added_services": {
+        "Unallocated": 656807
+      },
+      "rev_other_revenue": {
+        "Unallocated": 440447
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -26272
+      },
+      "cogs_product_cost": {
+        "Unallocated": 641353
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 139089
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 73408
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 64908
+      },
+      "payroll": {
+        "Unallocated": 324540
+      },
+      "ownerBasePay": {
+        "Unallocated": 92726
+      },
+      "benefits": {
+        "Unallocated": 60272
+      },
+      "insurance": {
+        "Unallocated": 27818
+      },
+      "professionalFees": {
+        "Unallocated": 40181
+      },
+      "subcontractors": {
+        "Unallocated": 49454
+      },
+      "rent": {
+        "Unallocated": 61817
+      },
+      "taxLicense": {
+        "Unallocated": 9273
+      },
+      "phoneComm": {
+        "Unallocated": 7341
+      },
+      "infrastructure": {
+        "Unallocated": 31681
+      },
+      "autoTravel": {
+        "Unallocated": 21636
+      },
+      "salesExpense": {
+        "Unallocated": 69545
+      },
+      "trainingCert": {
+        "Unallocated": 6182
+      },
+      "mealsEntertainment": {
+        "Unallocated": 5023
+      },
+      "interestExpense": {
+        "Unallocated": 18545
+      },
+      "depreciationAmortization": {
+        "Unallocated": 34772
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13909
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 43272
+      },
+      "otherExpense": {
+        "Unallocated": 30136
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2318
+      },
+      "cash": {
+        "Unallocated": 1775814
+      },
+      "ar": {
+        "Unallocated": 2001756
+      },
+      "inventory": {
+        "Unallocated": 2693980
+      },
+      "otherCA": {
+        "Unallocated": 319092
+      },
+      "fixedAssets": {
+        "Unallocated": 1600084
+      },
+      "ap": {
+        "Unallocated": 1608011
+      },
+      "otherCL": {
+        "Unallocated": 408808
+      },
+      "loc": {
+        "Unallocated": 693678
+      },
+      "ltd": {
+        "Unallocated": 1057033
+      },
+      "ownersCapital": {
+        "Unallocated": 2477421
+      },
+      "ownersDraw": {
+        "Unallocated": 110988
+      },
+      "commonStock": {
+        "Unallocated": 92490
+      },
+      "retainedEarnings": {
+        "Unallocated": 1942298
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 965893,
+      "rev_value_added_services": 656807,
+      "rev_other_revenue": 440447,
+      "rev_vendor_rebates_and_incentives": -26272
+    },
+    "expenseBreakdown": {
+      "Unallocated": 890942
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 641353,
+      "cogs_handling_and_preparation": 139089,
+      "cogs_outbound_fulfillment": 73408,
+      "cogs_other_cogs": 64908
+    }
+  },
+  {
+    "monthDate": "2026-02-28T07:00:00.000Z",
+    "date": "2026-02-28T07:00:00.000Z",
+    "month": "2026-02",
+    "revenue": 2047059,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 923350,
+    "payroll": 326163,
+    "ownerBasePay": 93189,
+    "benefits": 60573,
+    "insurance": 27957,
+    "professionalFees": 40382,
+    "subcontractors": 49701,
+    "rent": 62126,
+    "taxLicense": 9319,
+    "stateIncomeTaxes": 13978,
+    "federalIncomeTaxes": 43488,
+    "phoneComm": 7377,
+    "infrastructure": 31840,
+    "autoTravel": 21744,
+    "salesExpense": 69892,
+    "marketing": 0,
+    "trainingCert": 6213,
+    "mealsEntertainment": 5048,
+    "interestExpense": 18638,
+    "depreciationAmortization": 34946,
+    "otherExpense": 30287,
+    "expense": 0,
+    "nonOperatingIncome": 2330,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1793573,
+    "ar": 2021773,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2720920,
+    "otherCA": 322282,
+    "tca": 6858548,
+    "fixedAssets": 1616083,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8474631,
+    "ap": 1624091,
+    "loc": 700615,
+    "contractLiabilities": 0,
+    "otherCL": 412895,
+    "tcl": 2737601,
+    "ltd": 1067603,
+    "totalLiab": 3805204,
+    "ownersCapital": 2502195,
+    "ownersDraw": 112098,
+    "commonStock": 93415,
+    "preferredStock": 0,
+    "retainedEarnings": 1961721,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4445233,
+    "totalLAndE": 8250437,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 970722
+      },
+      "rev_value_added_services": {
+        "Unallocated": 660091
+      },
+      "rev_other_revenue": {
+        "Unallocated": 442649
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -26403
+      },
+      "cogs_product_cost": {
+        "Unallocated": 644559
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 139784
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 73775
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 65232
+      },
+      "payroll": {
+        "Unallocated": 326163
+      },
+      "ownerBasePay": {
+        "Unallocated": 93189
+      },
+      "benefits": {
+        "Unallocated": 60573
+      },
+      "insurance": {
+        "Unallocated": 27957
+      },
+      "professionalFees": {
+        "Unallocated": 40382
+      },
+      "subcontractors": {
+        "Unallocated": 49701
+      },
+      "rent": {
+        "Unallocated": 62126
+      },
+      "taxLicense": {
+        "Unallocated": 9319
+      },
+      "phoneComm": {
+        "Unallocated": 7377
+      },
+      "infrastructure": {
+        "Unallocated": 31840
+      },
+      "autoTravel": {
+        "Unallocated": 21744
+      },
+      "salesExpense": {
+        "Unallocated": 69892
+      },
+      "trainingCert": {
+        "Unallocated": 6213
+      },
+      "mealsEntertainment": {
+        "Unallocated": 5048
+      },
+      "interestExpense": {
+        "Unallocated": 18638
+      },
+      "depreciationAmortization": {
+        "Unallocated": 34946
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 13978
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 43488
+      },
+      "otherExpense": {
+        "Unallocated": 30287
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2330
+      },
+      "cash": {
+        "Unallocated": 1793573
+      },
+      "ar": {
+        "Unallocated": 2021773
+      },
+      "inventory": {
+        "Unallocated": 2720920
+      },
+      "otherCA": {
+        "Unallocated": 322282
+      },
+      "fixedAssets": {
+        "Unallocated": 1616083
+      },
+      "ap": {
+        "Unallocated": 1624091
+      },
+      "otherCL": {
+        "Unallocated": 412895
+      },
+      "loc": {
+        "Unallocated": 700615
+      },
+      "ltd": {
+        "Unallocated": 1067603
+      },
+      "ownersCapital": {
+        "Unallocated": 2502195
+      },
+      "ownersDraw": {
+        "Unallocated": 112098
+      },
+      "commonStock": {
+        "Unallocated": 93415
+      },
+      "retainedEarnings": {
+        "Unallocated": 1961721
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 970722,
+      "rev_value_added_services": 660091,
+      "rev_other_revenue": 442649,
+      "rev_vendor_rebates_and_incentives": -26403
+    },
+    "expenseBreakdown": {
+      "Unallocated": 895395
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 644559,
+      "cogs_handling_and_preparation": 139784,
+      "cogs_outbound_fulfillment": 73775,
+      "cogs_other_cogs": 65232
+    }
+  },
+  {
+    "monthDate": "2026-03-31T07:00:00.000Z",
+    "date": "2026-03-31T07:00:00.000Z",
+    "month": "2026-03",
+    "revenue": 2057294,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 927969,
+    "payroll": 327794,
+    "ownerBasePay": 93655,
+    "benefits": 60876,
+    "insurance": 28097,
+    "professionalFees": 40584,
+    "subcontractors": 49949,
+    "rent": 62437,
+    "taxLicense": 9366,
+    "stateIncomeTaxes": 14048,
+    "federalIncomeTaxes": 43706,
+    "phoneComm": 7414,
+    "infrastructure": 31999,
+    "autoTravel": 21853,
+    "salesExpense": 70242,
+    "marketing": 0,
+    "trainingCert": 6244,
+    "mealsEntertainment": 5073,
+    "interestExpense": 18731,
+    "depreciationAmortization": 35121,
+    "otherExpense": 30438,
+    "expense": 0,
+    "nonOperatingIncome": 2341,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1811509,
+    "ar": 2041991,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2748129,
+    "otherCA": 325505,
+    "tca": 6927134,
+    "fixedAssets": 1632245,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8559379,
+    "ap": 1640332,
+    "loc": 707621,
+    "contractLiabilities": 0,
+    "otherCL": 417025,
+    "tcl": 2764978,
+    "ltd": 1078279,
+    "totalLiab": 3843257,
+    "ownersCapital": 2527217,
+    "ownersDraw": 113219,
+    "commonStock": 94349,
+    "preferredStock": 0,
+    "retainedEarnings": 1981338,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4489685,
+    "totalLAndE": 8332942,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 975576
+      },
+      "rev_value_added_services": {
+        "Unallocated": 663392
+      },
+      "rev_other_revenue": {
+        "Unallocated": 444862
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -26536
+      },
+      "cogs_product_cost": {
+        "Unallocated": 647783
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 140483
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 74144
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 65559
+      },
+      "payroll": {
+        "Unallocated": 327794
+      },
+      "ownerBasePay": {
+        "Unallocated": 93655
+      },
+      "benefits": {
+        "Unallocated": 60876
+      },
+      "insurance": {
+        "Unallocated": 28097
+      },
+      "professionalFees": {
+        "Unallocated": 40584
+      },
+      "subcontractors": {
+        "Unallocated": 49949
+      },
+      "rent": {
+        "Unallocated": 62437
+      },
+      "taxLicense": {
+        "Unallocated": 9366
+      },
+      "phoneComm": {
+        "Unallocated": 7414
+      },
+      "infrastructure": {
+        "Unallocated": 31999
+      },
+      "autoTravel": {
+        "Unallocated": 21853
+      },
+      "salesExpense": {
+        "Unallocated": 70242
+      },
+      "trainingCert": {
+        "Unallocated": 6244
+      },
+      "mealsEntertainment": {
+        "Unallocated": 5073
+      },
+      "interestExpense": {
+        "Unallocated": 18731
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35121
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 14048
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 43706
+      },
+      "otherExpense": {
+        "Unallocated": 30438
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2341
+      },
+      "cash": {
+        "Unallocated": 1811509
+      },
+      "ar": {
+        "Unallocated": 2041991
+      },
+      "inventory": {
+        "Unallocated": 2748129
+      },
+      "otherCA": {
+        "Unallocated": 325505
+      },
+      "fixedAssets": {
+        "Unallocated": 1632245
+      },
+      "ap": {
+        "Unallocated": 1640332
+      },
+      "otherCL": {
+        "Unallocated": 417025
+      },
+      "loc": {
+        "Unallocated": 707621
+      },
+      "ltd": {
+        "Unallocated": 1078279
+      },
+      "ownersCapital": {
+        "Unallocated": 2527217
+      },
+      "ownersDraw": {
+        "Unallocated": 113219
+      },
+      "commonStock": {
+        "Unallocated": 94349
+      },
+      "retainedEarnings": {
+        "Unallocated": 1981338
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 975576,
+      "rev_value_added_services": 663392,
+      "rev_other_revenue": 444862,
+      "rev_vendor_rebates_and_incentives": -26536
+    },
+    "expenseBreakdown": {
+      "Unallocated": 899873
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 647783,
+      "cogs_handling_and_preparation": 140483,
+      "cogs_outbound_fulfillment": 74144,
+      "cogs_other_cogs": 65559
+    }
+  },
+  {
+    "monthDate": "2026-04-30T07:00:00.000Z",
+    "date": "2026-04-30T07:00:00.000Z",
+    "month": "2026-04",
+    "revenue": 2067582,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 932608,
+    "payroll": 329433,
+    "ownerBasePay": 94124,
+    "benefits": 61180,
+    "insurance": 28237,
+    "professionalFees": 40787,
+    "subcontractors": 50199,
+    "rent": 62749,
+    "taxLicense": 9412,
+    "stateIncomeTaxes": 14119,
+    "federalIncomeTaxes": 43924,
+    "phoneComm": 7451,
+    "infrastructure": 32159,
+    "autoTravel": 21962,
+    "salesExpense": 70593,
+    "marketing": 0,
+    "trainingCert": 6275,
+    "mealsEntertainment": 5098,
+    "interestExpense": 18825,
+    "depreciationAmortization": 35296,
+    "otherExpense": 30590,
+    "expense": 0,
+    "nonOperatingIncome": 2353,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1829625,
+    "ar": 2062411,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2775610,
+    "otherCA": 328761,
+    "tca": 6996407,
+    "fixedAssets": 1648568,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8644975,
+    "ap": 1656735,
+    "loc": 714697,
+    "contractLiabilities": 0,
+    "otherCL": 421194,
+    "tcl": 2792626,
+    "ltd": 1089062,
+    "totalLiab": 3881688,
+    "ownersCapital": 2552489,
+    "ownersDraw": 114352,
+    "commonStock": 95293,
+    "preferredStock": 0,
+    "retainedEarnings": 2001151,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4534581,
+    "totalLAndE": 8416269,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 980454
+      },
+      "rev_value_added_services": {
+        "Unallocated": 666709
+      },
+      "rev_other_revenue": {
+        "Unallocated": 447087
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -26668
+      },
+      "cogs_product_cost": {
+        "Unallocated": 651021
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 141185
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 74515
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 65887
+      },
+      "payroll": {
+        "Unallocated": 329433
+      },
+      "ownerBasePay": {
+        "Unallocated": 94124
+      },
+      "benefits": {
+        "Unallocated": 61180
+      },
+      "insurance": {
+        "Unallocated": 28237
+      },
+      "professionalFees": {
+        "Unallocated": 40787
+      },
+      "subcontractors": {
+        "Unallocated": 50199
+      },
+      "rent": {
+        "Unallocated": 62749
+      },
+      "taxLicense": {
+        "Unallocated": 9412
+      },
+      "phoneComm": {
+        "Unallocated": 7451
+      },
+      "infrastructure": {
+        "Unallocated": 32159
+      },
+      "autoTravel": {
+        "Unallocated": 21962
+      },
+      "salesExpense": {
+        "Unallocated": 70593
+      },
+      "trainingCert": {
+        "Unallocated": 6275
+      },
+      "mealsEntertainment": {
+        "Unallocated": 5098
+      },
+      "interestExpense": {
+        "Unallocated": 18825
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35296
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 14119
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 43924
+      },
+      "otherExpense": {
+        "Unallocated": 30590
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2353
+      },
+      "cash": {
+        "Unallocated": 1829625
+      },
+      "ar": {
+        "Unallocated": 2062411
+      },
+      "inventory": {
+        "Unallocated": 2775610
+      },
+      "otherCA": {
+        "Unallocated": 328761
+      },
+      "fixedAssets": {
+        "Unallocated": 1648568
+      },
+      "ap": {
+        "Unallocated": 1656735
+      },
+      "otherCL": {
+        "Unallocated": 421194
+      },
+      "loc": {
+        "Unallocated": 714697
+      },
+      "ltd": {
+        "Unallocated": 1089062
+      },
+      "ownersCapital": {
+        "Unallocated": 2552489
+      },
+      "ownersDraw": {
+        "Unallocated": 114352
+      },
+      "commonStock": {
+        "Unallocated": 95293
+      },
+      "retainedEarnings": {
+        "Unallocated": 2001151
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 980454,
+      "rev_value_added_services": 666709,
+      "rev_other_revenue": 447087,
+      "rev_vendor_rebates_and_incentives": -26668
+    },
+    "expenseBreakdown": {
+      "Unallocated": 904370
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 651021,
+      "cogs_handling_and_preparation": 141185,
+      "cogs_outbound_fulfillment": 74515,
+      "cogs_other_cogs": 65887
+    }
+  },
+  {
+    "monthDate": "2026-05-31T07:00:00.000Z",
+    "date": "2026-05-31T07:00:00.000Z",
+    "month": "2026-05",
+    "revenue": 2077918,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 937271,
+    "payroll": 331080,
+    "ownerBasePay": 94594,
+    "benefits": 61486,
+    "insurance": 28378,
+    "professionalFees": 40991,
+    "subcontractors": 50450,
+    "rent": 63063,
+    "taxLicense": 9459,
+    "stateIncomeTaxes": 14189,
+    "federalIncomeTaxes": 44144,
+    "phoneComm": 7489,
+    "infrastructure": 32320,
+    "autoTravel": 22072,
+    "salesExpense": 70945,
+    "marketing": 0,
+    "trainingCert": 6306,
+    "mealsEntertainment": 5124,
+    "interestExpense": 18919,
+    "depreciationAmortization": 35473,
+    "otherExpense": 30743,
+    "expense": 0,
+    "nonOperatingIncome": 2365,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1847921,
+    "ar": 2083035,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2803367,
+    "otherCA": 332048,
+    "tca": 7066371,
+    "fixedAssets": 1665053,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8731424,
+    "ap": 1673303,
+    "loc": 721844,
+    "contractLiabilities": 0,
+    "otherCL": 425407,
+    "tcl": 2820554,
+    "ltd": 1099953,
+    "totalLiab": 3920507,
+    "ownersCapital": 2578014,
+    "ownersDraw": 115495,
+    "commonStock": 96246,
+    "preferredStock": 0,
+    "retainedEarnings": 2021163,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4579928,
+    "totalLAndE": 8500435,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 985356
+      },
+      "rev_value_added_services": {
+        "Unallocated": 670042
+      },
+      "rev_other_revenue": {
+        "Unallocated": 449322
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -26802
+      },
+      "cogs_product_cost": {
+        "Unallocated": 654277
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 141891
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 74887
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 66216
+      },
+      "payroll": {
+        "Unallocated": 331080
+      },
+      "ownerBasePay": {
+        "Unallocated": 94594
+      },
+      "benefits": {
+        "Unallocated": 61486
+      },
+      "insurance": {
+        "Unallocated": 28378
+      },
+      "professionalFees": {
+        "Unallocated": 40991
+      },
+      "subcontractors": {
+        "Unallocated": 50450
+      },
+      "rent": {
+        "Unallocated": 63063
+      },
+      "taxLicense": {
+        "Unallocated": 9459
+      },
+      "phoneComm": {
+        "Unallocated": 7489
+      },
+      "infrastructure": {
+        "Unallocated": 32320
+      },
+      "autoTravel": {
+        "Unallocated": 22072
+      },
+      "salesExpense": {
+        "Unallocated": 70945
+      },
+      "trainingCert": {
+        "Unallocated": 6306
+      },
+      "mealsEntertainment": {
+        "Unallocated": 5124
+      },
+      "interestExpense": {
+        "Unallocated": 18919
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35473
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 14189
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 44144
+      },
+      "otherExpense": {
+        "Unallocated": 30743
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2365
+      },
+      "cash": {
+        "Unallocated": 1847921
+      },
+      "ar": {
+        "Unallocated": 2083035
+      },
+      "inventory": {
+        "Unallocated": 2803367
+      },
+      "otherCA": {
+        "Unallocated": 332048
+      },
+      "fixedAssets": {
+        "Unallocated": 1665053
+      },
+      "ap": {
+        "Unallocated": 1673303
+      },
+      "otherCL": {
+        "Unallocated": 425407
+      },
+      "loc": {
+        "Unallocated": 721844
+      },
+      "ltd": {
+        "Unallocated": 1099953
+      },
+      "ownersCapital": {
+        "Unallocated": 2578014
+      },
+      "ownersDraw": {
+        "Unallocated": 115495
+      },
+      "commonStock": {
+        "Unallocated": 96246
+      },
+      "retainedEarnings": {
+        "Unallocated": 2021163
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 985356,
+      "rev_value_added_services": 670042,
+      "rev_other_revenue": 449322,
+      "rev_vendor_rebates_and_incentives": -26802
+    },
+    "expenseBreakdown": {
+      "Unallocated": 908892
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 654277,
+      "cogs_handling_and_preparation": 141891,
+      "cogs_outbound_fulfillment": 74887,
+      "cogs_other_cogs": 66216
+    }
+  },
+  {
+    "monthDate": "2026-06-30T07:00:00.000Z",
+    "date": "2026-06-30T07:00:00.000Z",
+    "month": "2026-06",
+    "revenue": 2088308,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 941958,
+    "payroll": 332735,
+    "ownerBasePay": 95067,
+    "benefits": 61794,
+    "insurance": 28520,
+    "professionalFees": 41196,
+    "subcontractors": 50702,
+    "rent": 63378,
+    "taxLicense": 9507,
+    "stateIncomeTaxes": 14260,
+    "federalIncomeTaxes": 44365,
+    "phoneComm": 7526,
+    "infrastructure": 32481,
+    "autoTravel": 22182,
+    "salesExpense": 71300,
+    "marketing": 0,
+    "trainingCert": 6338,
+    "mealsEntertainment": 5149,
+    "interestExpense": 19013,
+    "depreciationAmortization": 35650,
+    "otherExpense": 30897,
+    "expense": 0,
+    "nonOperatingIncome": 2377,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1866400,
+    "ar": 2103865,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2831400,
+    "otherCA": 335368,
+    "tca": 7137033,
+    "fixedAssets": 1681704,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8818737,
+    "ap": 1690036,
+    "loc": 729062,
+    "contractLiabilities": 0,
+    "otherCL": 429660,
+    "tcl": 2848758,
+    "ltd": 1110952,
+    "totalLiab": 3959710,
+    "ownersCapital": 2603794,
+    "ownersDraw": 116650,
+    "commonStock": 97208,
+    "preferredStock": 0,
+    "retainedEarnings": 2041374,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4625726,
+    "totalLAndE": 8585436,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 990283
+      },
+      "rev_value_added_services": {
+        "Unallocated": 673392
+      },
+      "rev_other_revenue": {
+        "Unallocated": 451569
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -26936
+      },
+      "cogs_product_cost": {
+        "Unallocated": 657548
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 142601
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 75262
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 66547
+      },
+      "payroll": {
+        "Unallocated": 332735
+      },
+      "ownerBasePay": {
+        "Unallocated": 95067
+      },
+      "benefits": {
+        "Unallocated": 61794
+      },
+      "insurance": {
+        "Unallocated": 28520
+      },
+      "professionalFees": {
+        "Unallocated": 41196
+      },
+      "subcontractors": {
+        "Unallocated": 50702
+      },
+      "rent": {
+        "Unallocated": 63378
+      },
+      "taxLicense": {
+        "Unallocated": 9507
+      },
+      "phoneComm": {
+        "Unallocated": 7526
+      },
+      "infrastructure": {
+        "Unallocated": 32481
+      },
+      "autoTravel": {
+        "Unallocated": 22182
+      },
+      "salesExpense": {
+        "Unallocated": 71300
+      },
+      "trainingCert": {
+        "Unallocated": 6338
+      },
+      "mealsEntertainment": {
+        "Unallocated": 5149
+      },
+      "interestExpense": {
+        "Unallocated": 19013
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35650
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 14260
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 44365
+      },
+      "otherExpense": {
+        "Unallocated": 30897
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2377
+      },
+      "cash": {
+        "Unallocated": 1866400
+      },
+      "ar": {
+        "Unallocated": 2103865
+      },
+      "inventory": {
+        "Unallocated": 2831400
+      },
+      "otherCA": {
+        "Unallocated": 335368
+      },
+      "fixedAssets": {
+        "Unallocated": 1681704
+      },
+      "ap": {
+        "Unallocated": 1690036
+      },
+      "otherCL": {
+        "Unallocated": 429660
+      },
+      "loc": {
+        "Unallocated": 729062
+      },
+      "ltd": {
+        "Unallocated": 1110952
+      },
+      "ownersCapital": {
+        "Unallocated": 2603794
+      },
+      "ownersDraw": {
+        "Unallocated": 116650
+      },
+      "commonStock": {
+        "Unallocated": 97208
+      },
+      "retainedEarnings": {
+        "Unallocated": 2041374
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 990283,
+      "rev_value_added_services": 673392,
+      "rev_other_revenue": 451569,
+      "rev_vendor_rebates_and_incentives": -26936
+    },
+    "expenseBreakdown": {
+      "Unallocated": 913435
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 657548,
+      "cogs_handling_and_preparation": 142601,
+      "cogs_outbound_fulfillment": 75262,
+      "cogs_other_cogs": 66547
+    }
+  },
+  {
+    "monthDate": "2026-07-31T07:00:00.000Z",
+    "date": "2026-07-31T07:00:00.000Z",
+    "month": "2026-07",
+    "revenue": 2098749,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 946667,
+    "payroll": 334399,
+    "ownerBasePay": 95543,
+    "benefits": 62103,
+    "insurance": 28663,
+    "professionalFees": 41402,
+    "subcontractors": 50956,
+    "rent": 63695,
+    "taxLicense": 9554,
+    "stateIncomeTaxes": 14331,
+    "federalIncomeTaxes": 44587,
+    "phoneComm": 7564,
+    "infrastructure": 32644,
+    "autoTravel": 22293,
+    "salesExpense": 71657,
+    "marketing": 0,
+    "trainingCert": 6370,
+    "mealsEntertainment": 5175,
+    "interestExpense": 19109,
+    "depreciationAmortization": 35828,
+    "otherExpense": 31051,
+    "expense": 0,
+    "nonOperatingIncome": 2389,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1885063,
+    "ar": 2124904,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2859714,
+    "otherCA": 338722,
+    "tca": 7208403,
+    "fixedAssets": 1698521,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8906924,
+    "ap": 1706936,
+    "loc": 736353,
+    "contractLiabilities": 0,
+    "otherCL": 433957,
+    "tcl": 2877246,
+    "ltd": 1122062,
+    "totalLiab": 3999308,
+    "ownersCapital": 2629832,
+    "ownersDraw": 117816,
+    "commonStock": 98180,
+    "preferredStock": 0,
+    "retainedEarnings": 2061788,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4671984,
+    "totalLAndE": 8671292,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 995234
+      },
+      "rev_value_added_services": {
+        "Unallocated": 676759
+      },
+      "rev_other_revenue": {
+        "Unallocated": 453827
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -27071
+      },
+      "cogs_product_cost": {
+        "Unallocated": 660835
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 143314
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 75638
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 66880
+      },
+      "payroll": {
+        "Unallocated": 334399
+      },
+      "ownerBasePay": {
+        "Unallocated": 95543
+      },
+      "benefits": {
+        "Unallocated": 62103
+      },
+      "insurance": {
+        "Unallocated": 28663
+      },
+      "professionalFees": {
+        "Unallocated": 41402
+      },
+      "subcontractors": {
+        "Unallocated": 50956
+      },
+      "rent": {
+        "Unallocated": 63695
+      },
+      "taxLicense": {
+        "Unallocated": 9554
+      },
+      "phoneComm": {
+        "Unallocated": 7564
+      },
+      "infrastructure": {
+        "Unallocated": 32644
+      },
+      "autoTravel": {
+        "Unallocated": 22293
+      },
+      "salesExpense": {
+        "Unallocated": 71657
+      },
+      "trainingCert": {
+        "Unallocated": 6370
+      },
+      "mealsEntertainment": {
+        "Unallocated": 5175
+      },
+      "interestExpense": {
+        "Unallocated": 19109
+      },
+      "depreciationAmortization": {
+        "Unallocated": 35828
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 14331
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 44587
+      },
+      "otherExpense": {
+        "Unallocated": 31051
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2389
+      },
+      "cash": {
+        "Unallocated": 1885063
+      },
+      "ar": {
+        "Unallocated": 2124904
+      },
+      "inventory": {
+        "Unallocated": 2859714
+      },
+      "otherCA": {
+        "Unallocated": 338722
+      },
+      "fixedAssets": {
+        "Unallocated": 1698521
+      },
+      "ap": {
+        "Unallocated": 1706936
+      },
+      "otherCL": {
+        "Unallocated": 433957
+      },
+      "loc": {
+        "Unallocated": 736353
+      },
+      "ltd": {
+        "Unallocated": 1122062
+      },
+      "ownersCapital": {
+        "Unallocated": 2629832
+      },
+      "ownersDraw": {
+        "Unallocated": 117816
+      },
+      "commonStock": {
+        "Unallocated": 98180
+      },
+      "retainedEarnings": {
+        "Unallocated": 2061788
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 995234,
+      "rev_value_added_services": 676759,
+      "rev_other_revenue": 453827,
+      "rev_vendor_rebates_and_incentives": -27071
+    },
+    "expenseBreakdown": {
+      "Unallocated": 918006
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 660835,
+      "cogs_handling_and_preparation": 143314,
+      "cogs_outbound_fulfillment": 75638,
+      "cogs_other_cogs": 66880
+    }
+  },
+  {
+    "monthDate": "2026-08-31T07:00:00.000Z",
+    "date": "2026-08-31T07:00:00.000Z",
+    "month": "2026-08",
+    "revenue": 2109244,
+    "cogsPayroll": 0,
+    "cogsOwnerPay": 0,
+    "cogsContractors": 0,
+    "cogsMaterials": 0,
+    "cogsCommissions": 0,
+    "cogsOther": 0,
+    "cogsTotal": 951399,
+    "payroll": 336071,
+    "ownerBasePay": 96020,
+    "benefits": 62413,
+    "insurance": 28806,
+    "professionalFees": 41609,
+    "subcontractors": 51211,
+    "rent": 64013,
+    "taxLicense": 9602,
+    "stateIncomeTaxes": 14403,
+    "federalIncomeTaxes": 44809,
+    "phoneComm": 7602,
+    "infrastructure": 32807,
+    "autoTravel": 22405,
+    "salesExpense": 72015,
+    "marketing": 0,
+    "trainingCert": 6401,
+    "mealsEntertainment": 5201,
+    "interestExpense": 19204,
+    "depreciationAmortization": 36008,
+    "otherExpense": 31207,
+    "expense": 0,
+    "nonOperatingIncome": 2401,
+    "nonOperatingExpense": 0,
+    "extraordinaryItems": 0,
+    "cash": 1903915,
+    "ar": 2146153,
+    "retainageReceivables": 0,
+    "contractAssets": 0,
+    "inventory": 2888311,
+    "otherCA": 342110,
+    "tca": 7280489,
+    "fixedAssets": 1715506,
+    "constructionEquipment": 0,
+    "officeEquipment": 0,
+    "shopEquipment": 0,
+    "investments": 0,
+    "rightOfUseLeases": 0,
+    "otherAssets": 0,
+    "totalAssets": 8995995,
+    "ap": 1724006,
+    "loc": 743716,
+    "contractLiabilities": 0,
+    "otherCL": 438297,
+    "tcl": 2906019,
+    "ltd": 1133282,
+    "totalLiab": 4039301,
+    "ownersCapital": 2656130,
+    "ownersDraw": 118995,
+    "commonStock": 99162,
+    "preferredStock": 0,
+    "retainedEarnings": 2082406,
+    "additionalPaidInCapital": 0,
+    "treasuryStock": 0,
+    "totalEquity": 4718703,
+    "totalLAndE": 8758004,
+    "lobBreakdowns": {
+      "rev_product_resale_revenue": {
+        "Unallocated": 1000211
+      },
+      "rev_value_added_services": {
+        "Unallocated": 680143
+      },
+      "rev_other_revenue": {
+        "Unallocated": 456096
+      },
+      "rev_vendor_rebates_and_incentives": {
+        "Unallocated": -27206
+      },
+      "cogs_product_cost": {
+        "Unallocated": 664139
+      },
+      "cogs_handling_and_preparation": {
+        "Unallocated": 144030
+      },
+      "cogs_outbound_fulfillment": {
+        "Unallocated": 76016
+      },
+      "cogs_other_cogs": {
+        "Unallocated": 67214
+      },
+      "payroll": {
+        "Unallocated": 336071
+      },
+      "ownerBasePay": {
+        "Unallocated": 96020
+      },
+      "benefits": {
+        "Unallocated": 62413
+      },
+      "insurance": {
+        "Unallocated": 28806
+      },
+      "professionalFees": {
+        "Unallocated": 41609
+      },
+      "subcontractors": {
+        "Unallocated": 51211
+      },
+      "rent": {
+        "Unallocated": 64013
+      },
+      "taxLicense": {
+        "Unallocated": 9602
+      },
+      "phoneComm": {
+        "Unallocated": 7602
+      },
+      "infrastructure": {
+        "Unallocated": 32807
+      },
+      "autoTravel": {
+        "Unallocated": 22405
+      },
+      "salesExpense": {
+        "Unallocated": 72015
+      },
+      "trainingCert": {
+        "Unallocated": 6401
+      },
+      "mealsEntertainment": {
+        "Unallocated": 5201
+      },
+      "interestExpense": {
+        "Unallocated": 19204
+      },
+      "depreciationAmortization": {
+        "Unallocated": 36008
+      },
+      "stateIncomeTaxes": {
+        "Unallocated": 14403
+      },
+      "federalIncomeTaxes": {
+        "Unallocated": 44809
+      },
+      "otherExpense": {
+        "Unallocated": 31207
+      },
+      "nonOperatingIncome": {
+        "Unallocated": 2401
+      },
+      "cash": {
+        "Unallocated": 1903915
+      },
+      "ar": {
+        "Unallocated": 2146153
+      },
+      "inventory": {
+        "Unallocated": 2888311
+      },
+      "otherCA": {
+        "Unallocated": 342110
+      },
+      "fixedAssets": {
+        "Unallocated": 1715506
+      },
+      "ap": {
+        "Unallocated": 1724006
+      },
+      "otherCL": {
+        "Unallocated": 438297
+      },
+      "loc": {
+        "Unallocated": 743716
+      },
+      "ltd": {
+        "Unallocated": 1133282
+      },
+      "ownersCapital": {
+        "Unallocated": 2656130
+      },
+      "ownersDraw": {
+        "Unallocated": 118995
+      },
+      "commonStock": {
+        "Unallocated": 99162
+      },
+      "retainedEarnings": {
+        "Unallocated": 2082406
+      }
+    },
+    "revenueBreakdown": {
+      "rev_product_resale_revenue": 1000211,
+      "rev_value_added_services": 680143,
+      "rev_other_revenue": 456096,
+      "rev_vendor_rebates_and_incentives": -27206
+    },
+    "expenseBreakdown": {
+      "Unallocated": 922595
+    },
+    "cogsBreakdown": {
+      "cogs_product_cost": 664139,
+      "cogs_handling_and_preparation": 144030,
+      "cogs_outbound_fulfillment": 76016,
+      "cogs_other_cogs": 67214
+    }
+  }
+]

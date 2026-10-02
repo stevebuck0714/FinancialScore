@@ -67,6 +67,7 @@ import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-reso
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 import { isActiveCustomerRow, loadActiveCustomerKeys } from '@/lib/accounting/active-customer-filter';
 import { isEstBusinessDay } from '@/lib/time/eastern';
+import { buildFiltechNormalizedProductRows, isFiltechDemoCompany } from '@/lib/demo-provisioning/filtech';
 
 export const dynamic = 'force-dynamic';
 // A cold wholesale products report build exceeds 60s. Being killed at the old
@@ -81,12 +82,12 @@ const CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const INVENTORY_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v12-historical-customer-growth';
+const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v13-financial-gross-margin-fallback';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v5-vendor-cache-key';
+const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v8-filtech-records-contract';
 // The server cache TTL must not become a browser max-age. A stored HTTP response is
 // keyed only by URL, so it carries no dataVersion and can outlive a corrected payload
 // for the whole TTL without ever revalidating. Serve from DerivedApiCache instead.
@@ -3575,7 +3576,8 @@ export async function GET(request: NextRequest) {
       OPERATIONAL_CACHEABLE_TYPES.has(cacheType) &&
       !skuParam &&
       !includeCostHistory &&
-      !refreshConcentration;
+      !refreshConcentration &&
+      !(isFiltechDemoCompany(companyId) && cacheType === 'products');
     const operationalCache =
       cacheableRequest
         ? {
@@ -3611,6 +3613,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? `wholesale-report-mode:${wholesaleProductsReportMode}` : null,
+              cacheType === 'products' && isFiltechDemoCompany(companyId) ? 'filtech-product-fixtures-v2-authoritative' : null,
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-apr-cpn-v4' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
             ]),
@@ -3719,6 +3722,29 @@ export async function GET(request: NextRequest) {
       });
 
     const genericMockTypes = new Set(['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'ap']);
+    if (
+      isFiltechDemoCompany(companyId) &&
+      String(type || '') === 'products' &&
+      !isWholesaleProductsReportRequest
+    ) {
+      const records = buildFiltechNormalizedProductRows({ startDate, endDate });
+      return cacheOperationalPayload({
+        records,
+        summary: {
+          topProducts: Array.from([...records]
+            .reduce((bySku, row) => {
+              const key = row.sku;
+              const current = bySku.get(key) || { name: row.itemName, sku: row.sku, totalRevenue: 0, totalCogs: 0, totalQuantity: 0 };
+              current.totalRevenue += Number(row.revenue || 0);
+              current.totalCogs += Number(row.cogs || 0);
+              current.totalQuantity += Number(row.quantitySold || 0);
+              bySku.set(key, current);
+              return bySku;
+            }, new Map<string, { name: string; sku: string; totalRevenue: number; totalCogs: number; totalQuantity: number }>())
+            .values()),
+        },
+      });
+    }
     if (shouldUseMockData && genericMockTypes.has(String(type || ''))) {
       return cacheOperationalPayload(
         buildOperationalMockResponse({
@@ -4695,11 +4721,11 @@ export async function GET(request: NextRequest) {
         };
 
         const applyFinancialSalesMetricSummary = (salesPage: any, financialSummary: any) => {
-          if (!salesPage || !financialSummary) return salesPage;
+          if (!financialSummary) return salesPage;
           return {
-            ...salesPage,
+            ...(salesPage || {}),
             sales: {
-              ...(salesPage.sales || {}),
+              ...(salesPage?.sales || {}),
               ...(financialSummary.sales || {}),
               metricSource: financialSummary.source,
             },
@@ -9116,6 +9142,13 @@ export async function GET(request: NextRequest) {
         };
         if (productRowCap != null) productFindArgs.take = productRowCap;
         data = await prisma.productSalesSnapshot.findMany(productFindArgs);
+        // Filtech's development demo is defined by the canonical revenue
+        // fixtures. They are authoritative over ad-hoc snapshot seed rows so
+        // every default Product report receives category, site, price, cost,
+        // and margin fields from the same coherent data set.
+        if (isFiltechDemoCompany(companyId)) {
+          data = buildFiltechNormalizedProductRows({ startDate, endDate }) as any;
+        }
         if (isQuickBooksCompany && data.length === 0 && productFrequencyForQuery !== 'monthly') {
           const monthlyProductFindArgs: any = {
             where: {
@@ -9819,7 +9852,7 @@ export async function GET(request: NextRequest) {
               .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
               .slice(0, 10);
 
-        const wholesaleOrderLines =
+        let wholesaleOrderLines =
           shouldBuildWholesaleOrderLines && productOrderLineDelegate?.findMany
             ? await (async () => {
                 const normalizeOrderLineToken = (value: unknown): string => {
@@ -10042,6 +10075,14 @@ export async function GET(request: NextRequest) {
                 }));
               })()
             : [];
+        // Product Margin Analysis reads wholesaleOrderLines. Filtech has no
+        // ERP order snapshots in development, so expose its canonical fixture
+        // rows in that same normalized contract. Non-Filtech tenants continue
+        // to use only persisted order-line snapshots.
+        if (shouldBuildWholesaleOrderLines && isFiltechDemoCompany(companyId)) {
+          wholesaleOrderLines = buildFiltechNormalizedProductRows({ startDate, endDate });
+          console.log('[Filtech demo] wholesale product fixture rows:', wholesaleOrderLines.length, startDate.toISOString(), endDate.toISOString());
+        }
 
         const aprSgpWorkbook = shouldBuildWholesaleOrderLines
           ? await readAprSgpGmpaWorkbook(companyId).catch(() => null)
@@ -10149,8 +10190,18 @@ export async function GET(request: NextRequest) {
           );
         }
 
+        // Standard Product reports consume `records`. Filtech's generated
+        // wholesale order lines are the canonical development data source.
+        const responseProductRecords =
+          isFiltechDemoCompany(companyId) && shouldBuildWholesaleOrderLines
+            ? canonicalWholesaleOrderLines
+            : data;
+        if (isFiltechDemoCompany(companyId) && shouldBuildWholesaleOrderLines) {
+          console.log('[Filtech demo] Product response records:', responseProductRecords.length);
+        }
+
         return cacheOperationalPayload({
-          records: data,
+          records: responseProductRecords,
           summary: {
             topProducts: topProductsSummary,
             wholesaleReportMode: wholesaleProductsReportMode,

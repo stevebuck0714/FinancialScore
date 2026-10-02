@@ -1403,6 +1403,10 @@ function FinancialScorePage() {
           console.log('? NextAuth session valid');
           setCurrentUser(user);
           setIsLoggedIn(true);
+          if (user.role === 'consultant' && !user.isPrimaryContact) {
+            setSelectedCompanyId('');
+            localStorage.removeItem('fs_selectedCompanyId');
+          }
           
           // Load company data for company users
           if (user.userType === 'company' && user.companyId) {
@@ -7049,6 +7053,10 @@ function FinancialScorePage() {
       if (String(normalizedUser.role || '').toLowerCase() === 'siteadmin') {
         setCurrentView('siteadmin');
       } else if (normalizedUser.role === 'consultant') {
+        if (!normalizedUser.isPrimaryContact) {
+          setSelectedCompanyId('');
+          localStorage.removeItem('fs_selectedCompanyId');
+        }
         setCurrentView('consultant-dashboard');
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
@@ -17101,7 +17109,7 @@ function FinancialScorePage() {
       {/* Operations View - With Company Selected */}
       {currentView === 'operations' && selectedCompanyId && (
         <OperationsTab
-          key={operationsPrintConfig ? 'ops-print' : 'ops-live'}
+          key={operationsPrintConfig ? 'ops-print-product-data-v2' : 'ops-live-product-data-v2'}
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
           industrySectorCategory={effectiveCompanySectorCategory}
@@ -18772,6 +18780,11 @@ function FinancialScorePage() {
                         <span><strong>Last Seed:</strong> {formatEstDateTime(mappingSourceSummary.lastSeedAt)}</span>
                       )}
                     </div>
+                    {selectedAccountingSystem === 'QUICKBOOKS' && (
+                      <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#475569' }}>
+                        QBO leaf accounts with an account ID are shown here so each can be mapped or ignored. Report summaries remain in Raw QBO Import Rows for verification and are never mapped.
+                      </p>
+                    )}
 
                     <div style={{ marginBottom: '12px' }}>
                       <LOBManager
@@ -18780,11 +18793,6 @@ function FinancialScorePage() {
                         maxLOBs={5}
                         compact
                       />
-                    {selectedAccountingSystem === 'QUICKBOOKS' && (
-                      <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#475569' }}>
-                        QBO leaf accounts with an account ID are shown here so each can be mapped or ignored. Report summaries remain in Raw QBO Import Rows for verification and are never mapped.
-                      </p>
-                    )}
                     </div>
 
                     <AccountMappingTable
@@ -19205,8 +19213,12 @@ function FinancialScorePage() {
                                       }),
                                     });
                                     if (!dailyResponse.ok) {
-                                      const dailyErrorBody = await dailyResponse.json().catch(() => ({}));
-                                      console.error('Failed to persist daily mapped financial data:', dailyErrorBody);
+                                      const dailyErrorBody = await dailyResponse.json().catch(() => null);
+                                      console.error('Failed to persist daily mapped financial data:', {
+                                        status: dailyResponse.status,
+                                        statusText: dailyResponse.statusText,
+                                        error: dailyErrorBody?.error || 'No error details returned',
+                                      });
                                     } else {
                                       const dailyResult = await dailyResponse.json();
                                       console.log(`✅ Saved ${dailyResult.recordsIngested || 0} daily snapshots (${dailyMapped.mappedLines.length} mapped lines submitted)`);

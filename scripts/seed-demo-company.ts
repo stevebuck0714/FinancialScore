@@ -15,6 +15,8 @@ const prisma = new PrismaClient();
 
 // Get company ID from command line argument
 const companyId = process.argv[2];
+const monthsBack = Math.max(1, Number.parseInt(process.argv[3] || '12', 10) || 12);
+const annualRevenue = Math.max(1, Number.parseFloat(process.argv[4] || '5400000') || 5400000);
 
 if (!companyId) {
   console.error('❌ Error: Company ID is required');
@@ -24,6 +26,8 @@ if (!companyId) {
 
 console.log('🌱 Seeding operational data for Demonstration Company...');
 console.log('📊 Company ID:', companyId);
+console.log('📅 Months:', monthsBack);
+console.log('💵 Annual revenue target:', annualRevenue);
 console.log('🗄️  Database:', process.env.DATABASE_URL?.split('@')[1]?.split('/')[0] || 'unknown');
 
 // Confirm this is intentional
@@ -72,22 +76,23 @@ async function seedOperationalData() {
     console.log(`   - Cash: ${deleted[5].count}`);
     console.log('');
 
-    // Generate data for the past 12 months
+    // Generate data for the requested historical period.
     const endDate = new Date();
     endDate.setHours(0, 0, 0, 0);
     
     const startDate = new Date(endDate);
-    startDate.setMonth(startDate.getMonth() - 12);
+    startDate.setMonth(startDate.getMonth() - monthsBack);
 
     console.log('📅 Generating data from', startDate.toISOString().split('T')[0], 'to', endDate.toISOString().split('T')[0]);
     console.log('');
 
     // Base values for scaling
-    const baseMonthlyRevenue = 450000;
-    const baseARTotal = 180000;
-    const baseAPTotal = 120000;
-    const baseInventoryValue = 250000;
-    const baseCashBalance = 150000;
+    const baseMonthlyRevenue = annualRevenue / 12;
+    const revenueScale = annualRevenue / 5_400_000;
+    const baseARTotal = 180000 * revenueScale;
+    const baseAPTotal = 120000 * revenueScale;
+    const baseInventoryValue = 250000 * revenueScale;
+    const baseCashBalance = 150000 * revenueScale;
 
     let totalRecords = 0;
 
