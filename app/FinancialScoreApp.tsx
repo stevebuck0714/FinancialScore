@@ -5911,7 +5911,6 @@ function FinancialScorePage() {
               commonStock: m.commonStock || 0,
               preferredStock: m.preferredStock || 0,
               retainedEarnings: m.retainedEarnings || 0,
-              currentYearNetIncome: m.currentYearNetIncome || 0,
               additionalPaidInCapital: m.additionalPaidInCapital || 0,
               treasuryStock: m.treasuryStock || 0,
               totalEquity: m.totalEquity || 0,
@@ -6029,7 +6028,6 @@ function FinancialScorePage() {
                 commonStock: m.commonStock || 0,
                 preferredStock: m.preferredStock || 0,
                 retainedEarnings: m.retainedEarnings || 0,
-                currentYearNetIncome: m.currentYearNetIncome || 0,
                 additionalPaidInCapital: m.additionalPaidInCapital || 0,
                 treasuryStock: m.treasuryStock || 0,
                 totalEquity: m.totalEquity || 0,
@@ -6642,7 +6640,6 @@ function FinancialScorePage() {
             commonStock: m.commonStock || 0,
             preferredStock: m.preferredStock || 0,
             retainedEarnings: m.retainedEarnings || 0,
-            currentYearNetIncome: m.currentYearNetIncome || 0,
             additionalPaidInCapital: m.additionalPaidInCapital || 0,
             treasuryStock: m.treasuryStock || 0,
             totalEquity: m.totalEquity || 0,
@@ -27697,11 +27694,13 @@ function FinancialScorePage() {
             const currentLiabilityReportRows = liabilityReportRows.filter((row) => row.group === 'current');
             const longTermLiabilityReportRows = liabilityReportRows.filter((row) => row.group !== 'current');
             const equityReportRows = [
-              ...(financialReportTargetOptions.equity || []).map((option: any) => ({
-                key: option.value,
-                label: option.label,
-                indent: 20,
-              })),
+              ...(financialReportTargetOptions.equity || [])
+                .filter((option: any) => option.value !== 'currentYearNetIncome')
+                .map((option: any) => ({
+                  key: option.value,
+                  label: option.label,
+                  indent: 20,
+                })),
               ...(rowsHaveValue(monthly, 'paidInCapital') ? [{ key: 'paidInCapital', label: 'Paid-in Capital', indent: 20 }] : []),
             ];
 
@@ -28420,12 +28419,11 @@ function FinancialScorePage() {
               const commonStock = currentMonth.commonStock || 0;
               const preferredStock = currentMonth.preferredStock || 0;
               const retainedEarnings = currentMonth.retainedEarnings || 0;
-              const currentYearNetIncome = currentMonth.currentYearNetIncome || 0;
               const additionalPaidInCapital = currentMonth.additionalPaidInCapital || 0;
               const treasuryStock = currentMonth.treasuryStock || 0;
               
               // Calculate total equity from components to match Data Review page (do NOT use imported totalEquity)
-              const totalEquity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + currentYearNetIncome + additionalPaidInCapital + treasuryStock;
+              const totalEquity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
               
               // Calculate Total Liabilities & Equity to match Data Review page (do NOT use imported totalLAndE)
               const totalLAndE = totalLiabilities + totalEquity;
@@ -28572,12 +28570,6 @@ function FinancialScorePage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569' }}>Retained Earnings</span>
                         <span style={{ color: '#475569' }}>${retainedEarnings.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    )}
-                    {currentYearNetIncome !== 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>Current Year Net Income</span>
-                        <span style={{ color: '#475569' }}>${currentYearNetIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                     {additionalPaidInCapital !== 0 && (
@@ -29798,17 +29790,16 @@ function FinancialScorePage() {
                     const commonStock = latest.commonStock || 0;
                     const preferredStock = latest.preferredStock || 0;
                     const retainedEarnings = latest.retainedEarnings || 0;
-                    const currentYearNetIncome = latest.currentYearNetIncome || 0;
                     const additionalPaidInCapital = latest.additionalPaidInCapital || 0;
                     const treasuryStock = latest.treasuryStock || 0;
                     const paidInCapital = latest.paidInCapital || 0;
                     // Calculate Total Equity from detail fields to match Data Review page
-                    const totalEquity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + currentYearNetIncome + additionalPaidInCapital + treasuryStock;
+                    const totalEquity = ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
                     
                     // Calculate Total Liabilities & Equity to match Data Review page (do NOT use imported totalLAndE)
                     const totalLAndE = totalLiabilities + totalEquity;
                     
-                    return { label: p.label, cash, ar, retainageReceivables, contractAssets, inventory, otherCA, tca, fixedAssets, constructionEquipment, officeEquipment, shopEquipment, investments, rightOfUseLeases, otherAssets, totalAssets, ap, loc, contractLiabilities, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, currentYearNetIncome, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
+                    return { label: p.label, cash, ar, retainageReceivables, contractAssets, inventory, otherCA, tca, fixedAssets, constructionEquipment, officeEquipment, shopEquipment, investments, rightOfUseLeases, otherAssets, totalAssets, ap, loc, contractLiabilities, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
                   });
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -29861,7 +29852,7 @@ function FinancialScorePage() {
                         </div>
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>EQUITY</div>
                         {equityReportRows
-                          .filter((row) => row.key !== 'retainedEarnings' && row.key !== 'currentYearNetIncome')
+                          .filter((row) => row.key !== 'retainedEarnings')
                           .map((row) => {
                             const values = balanceData.map((p) => Number(p[row.key]) || 0);
                             return hasAnyBalanceValue(values) ? <Row key={row.key} label={row.label} values={values} indent={row.indent} /> : null;
@@ -29872,16 +29863,6 @@ function FinancialScorePage() {
                             {balanceData.map((p, i) => (
                               <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
                                 {formatSignedDollar(p.retainedEarnings)}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {balanceData.some(p => p.currentYearNetIncome !== 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFinancialReportFieldLabel('currentYearNetIncome')}</div>
-                            {balanceData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
-                                {formatSignedDollar(p.currentYearNetIncome)}
                               </div>
                             ))}
                           </div>
@@ -29941,7 +29922,6 @@ function FinancialScorePage() {
                 const commonStock = latestMonth.commonStock || 0;
                 const preferredStock = latestMonth.preferredStock || 0;
                 const retainedEarnings = latestMonth.retainedEarnings || 0;
-                const currentYearNetIncome = latestMonth.currentYearNetIncome || 0;
                 const additionalPaidInCapital = latestMonth.additionalPaidInCapital || 0;
                 const treasuryStock = latestMonth.treasuryStock || 0;
                 const paidInCapital = latestMonth.paidInCapital || 0;

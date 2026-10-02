@@ -2076,37 +2076,6 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                       </td>
                     ))}
                   </tr>
-                  {monthly.slice(-36).some((m: any) => Number(m.currentYearNetIncome || 0) !== 0) && (
-                    <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td
-                        style={{
-                          padding: "8px 10px",
-                          paddingLeft: "20px",
-                          position: "sticky",
-                          left: 0,
-                          background: "white",
-                          zIndex: 1,
-                        }}
-                      >
-                        {getFieldDisplayName('currentYearNetIncome')}
-                      </td>
-                      {monthly.slice(-36).map((m: any, idx: number) => {
-                        const value = Number(m.currentYearNetIncome || 0);
-                        return (
-                          <td
-                            key={idx}
-                            style={{
-                              padding: "8px 10px",
-                              textAlign: "right",
-                              fontFamily: "monospace",
-                            }}
-                          >
-                            {fmtSigned(value)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  )}
                   <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td
                       style={{
@@ -2185,7 +2154,6 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                         (m.commonStock || 0) +
                         (m.preferredStock || 0) +
                         (m.retainedEarnings || 0) +
-                        (m.currentYearNetIncome || 0) +
                         (m.additionalPaidInCapital || 0) +
                         (m.treasuryStock || 0);
                       return (
@@ -2232,7 +2200,6 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                         (m.commonStock || 0) +
                         (m.preferredStock || 0) +
                         (m.retainedEarnings || 0) +
-                        (m.currentYearNetIncome || 0) +
                         (m.additionalPaidInCapital || 0) +
                         (m.treasuryStock || 0);
                       const totalLE =

@@ -15,10 +15,6 @@ import {
   readRequestedCurrency,
   withCurrencyPresentation,
 } from "@/lib/currency/api-response";
-import {
-  qbdCurrentYearNetIncomeFromBalanceSheet,
-  qbdEquityWithoutNetIncome,
-} from "@/lib/financial/qbd-current-year-net-income";
 
 const MASTER_DATA_CACHE_TTL_SECONDS = 120;
 const MASTER_DATA_REPORT_MIN_DATE = "2024-01-01";
@@ -31,13 +27,14 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 
-const isQuickBooksDesktopFamily = (value: unknown): boolean => {
+const isQuickBooksOnline = (value: unknown): boolean => {
   const normalized = String(value || "")
     .trim()
     .toUpperCase();
   return (
-    normalized === "QUICKBOOKS_DESKTOP" ||
-    normalized === "QUICKBOOKS_ENTERPRISE"
+    normalized === "QUICKBOOKS" ||
+    normalized === "QUICKBOOKS_ONLINE" ||
+    normalized === "QBO"
   );
 };
 
@@ -174,8 +171,8 @@ export async function GET(request: NextRequest) {
         scope,
         MASTER_DATA_REPORT_MIN_DATE,
         scope === "all"
-          ? "imported-month-end-data-review-v1"
-          : "closed-reporting-month-v1",
+          ? "imported-month-end-data-review-v2"
+          : "closed-reporting-month-v2",
         "hts-duty-cogs-v1",
         scope === "published" ? currentMonthKeyUtc() : "all",
       ]),
@@ -213,7 +210,7 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: "desc" },
       }),
     ]);
-    const shouldCalculateCurrentYearNetIncome = isQuickBooksDesktopFamily(
+    const foldQboCurrentYearEarningsIntoRetainedEarnings = isQuickBooksOnline(
       company?.accountingSystem,
     );
 
@@ -402,14 +399,15 @@ export async function GET(request: NextRequest) {
         ? sectorCogsTotal
         : toNumber(month.cogsTotal);
       const expense = toNumber(month.expense);
-      const equityWithoutNetIncome = qbdEquityWithoutNetIncome(month);
-      const totalLiab = toNumber(month.totalLiab);
-      const currentYearNetIncome = shouldCalculateCurrentYearNetIncome
-        ? qbdCurrentYearNetIncomeFromBalanceSheet(month)
-        : toNumber(month.currentYearNetIncome);
-      const totalEquity = shouldCalculateCurrentYearNetIncome
-        ? equityWithoutNetIncome + currentYearNetIncome
-        : toNumber(month.totalEquity);
+      const totalEquity = toNumber(month.totalEquity);
+      // QBO reports current-year earnings separately from Retained Earnings.
+      // The Balance Sheet intentionally has no synthetic earnings line, so
+      // present the combined earned-equity balance under Retained Earnings.
+      const retainedEarnings =
+        toNumber(month.retainedEarnings) +
+        (foldQboCurrentYearEarningsIntoRetainedEarnings
+          ? toNumber(month.currentYearNetIncome)
+          : 0);
 
       return {
         date: month.monthDate,
@@ -473,14 +471,11 @@ export async function GET(request: NextRequest) {
         ownersDraw: month.ownersDraw || 0,
         commonStock: month.commonStock || 0,
         preferredStock: month.preferredStock || 0,
-        retainedEarnings: month.retainedEarnings || 0,
-        currentYearNetIncome,
+        retainedEarnings,
         additionalPaidInCapital: month.additionalPaidInCapital || 0,
         treasuryStock: month.treasuryStock || 0,
         totalEquity,
-        totalLAndE: shouldCalculateCurrentYearNetIncome
-          ? totalLiab + totalEquity
-          : toNumber(month.totalLAndE),
+        totalLAndE: toNumber(month.totalLAndE),
         revenueBreakdown,
         expenseBreakdown,
         cogsBreakdown,

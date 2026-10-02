@@ -11,49 +11,8 @@ import {
 } from "@/lib/derived-api-cache";
 import { privateCacheHeaders } from "@/lib/http-cache";
 import { presentCompanyJson } from "@/lib/currency/api-response";
-import {
-  qbdCurrentYearNetIncomeFromBalanceSheet,
-  qbdEquityWithoutNetIncome,
-} from "@/lib/financial/qbd-current-year-net-income";
 
 const FINANCIALS_CACHE_TTL_SECONDS = 120;
-
-const isQuickBooksDesktopFamily = (value: unknown): boolean => {
-  const normalized = String(value || "")
-    .trim()
-    .toUpperCase();
-  return (
-    normalized === "QUICKBOOKS_DESKTOP" ||
-    normalized === "QUICKBOOKS_ENTERPRISE"
-  );
-};
-
-const toNumber = (value: unknown): number => {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : 0;
-};
-
-function withQbdCurrentYearNetIncome(records: any[], enabled: boolean): any[] {
-  if (!enabled) return records;
-  return records.map((record) => {
-    const monthlyData = Array.isArray(record?.monthlyData)
-      ? record.monthlyData.map((row: any) => {
-          const currentYearNetIncome =
-            qbdCurrentYearNetIncomeFromBalanceSheet(row);
-          const totalEquity =
-            qbdEquityWithoutNetIncome(row) + currentYearNetIncome;
-          const totalLiab = toNumber(row.totalLiab);
-          return {
-            ...row,
-            currentYearNetIncome,
-            totalEquity,
-            totalLAndE: totalLiab + totalEquity,
-          };
-        })
-      : record?.monthlyData;
-    return { ...record, monthlyData };
-  });
-}
 
 async function buildFinancialsDataVersion(companyId: string): Promise<string> {
   const [financialRows, monthlyRows, publishRows] = await Promise.all([
@@ -141,7 +100,7 @@ export async function GET(request: NextRequest) {
           cacheKey: hashCacheParts([
             companyId,
             includeAllRecords,
-            "qbd-current-year-net-income-v1",
+            "financial-records-v2",
           ]),
           dataVersion: await buildFinancialsDataVersion(companyId),
         }
@@ -171,50 +130,40 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch records (user has validated access)
-    const [company, records] = await Promise.all([
-      prisma.company.findUnique({
-        where: { id: companyId },
-        select: { accountingSystem: true },
-      }),
-      withPrismaReconnectRetry(
-        () =>
-          prisma.financialRecord.findMany({
-            where: { companyId },
-            select: {
-              id: true,
-              companyId: true,
-              uploadedByUserId: true,
-              fileName: true,
-              fileUrl: true,
-              rawData: includeRawData,
-              columnMapping: true,
-              createdAt: true,
-              updatedAt: true,
-              monthlyData: {
-                orderBy: { monthDate: "asc" },
-              },
+    const records = await withPrismaReconnectRetry(
+      () =>
+        prisma.financialRecord.findMany({
+          where: { companyId },
+          select: {
+            id: true,
+            companyId: true,
+            uploadedByUserId: true,
+            fileName: true,
+            fileUrl: true,
+            rawData: includeRawData,
+            columnMapping: true,
+            createdAt: true,
+            updatedAt: true,
+            monthlyData: {
+              orderBy: { monthDate: "asc" },
             },
-            orderBy: { createdAt: "desc" },
-            ...(includeAllRecords ? {} : { take: 1 }),
-          }),
-        "financials.get.findMany",
-      ),
-    ]);
-    const responseRecords = withQbdCurrentYearNetIncome(
-      records,
-      isQuickBooksDesktopFamily(company?.accountingSystem),
+          },
+          orderBy: { createdAt: "desc" },
+          ...(includeAllRecords ? {} : { take: 1 }),
+        }),
+      "financials.get.findMany",
     );
 
     // AUDIT: Log financial data access
-    if (responseRecords.length > 0) {
+    if (records.length > 0) {
       await auditFinancialAccess(
         "FINANCIAL_RECORD_VIEWED",
-        responseRecords[0].id,
+        records[0].id,
         companyId,
       );
     }
 
-    const payload = { records: responseRecords };
+    const payload = { records };
     if (cacheContext) {
       await writeDerivedApiCache({
         ...cacheContext,

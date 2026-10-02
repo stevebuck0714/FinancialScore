@@ -48,10 +48,6 @@ import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 import { getCashAccountAllowlistSet, isAllowedCashAccount } from '@/lib/financial/cash-balance-sheet-anchor';
-import {
-  qbdCurrentYearNetIncomeFromBalanceSheet,
-  qbdEquityWithoutNetIncome,
-} from '@/lib/financial/qbd-current-year-net-income';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
 import {
   ensurePlatosClosetMonthlyFacts,
@@ -701,7 +697,6 @@ function buildDailyFinancialMockPayload(params: {
       commonStock: 0,
       preferredStock: 0,
       retainedEarnings,
-      currentYearNetIncome: netIncome,
       additionalPaidInCapital: 0,
       treasuryStock: 0,
       totalAssets,
@@ -817,7 +812,6 @@ const DAILY_STATEMENT_BALANCE_FIELDS = [
   'commonStock',
   'preferredStock',
   'retainedEarnings',
-  'currentYearNetIncome',
   'additionalPaidInCapital',
   'treasuryStock',
   'totalAssets',
@@ -898,7 +892,6 @@ function aggregateDailyStatementRows(
   commonStock: number;
   preferredStock: number;
   retainedEarnings: number;
-  currentYearNetIncome: number;
   additionalPaidInCapital: number;
   treasuryStock: number;
   totalAssets: number;
@@ -940,7 +933,6 @@ function aggregateDailyStatementRows(
       commonStock: number;
       preferredStock: number;
       retainedEarnings: number;
-      currentYearNetIncome: number;
       additionalPaidInCapital: number;
       treasuryStock: number;
       totalAssets: number;
@@ -1008,7 +1000,6 @@ function aggregateDailyStatementRows(
         commonStock: 0,
         preferredStock: 0,
         retainedEarnings: 0,
-        currentYearNetIncome: 0,
         additionalPaidInCapital: 0,
         treasuryStock: 0,
         totalAssets: 0,
@@ -1054,7 +1045,6 @@ function aggregateDailyStatementRows(
             bucket.commonStock +
             bucket.preferredStock +
             bucket.retainedEarnings +
-            bucket.currentYearNetIncome +
             bucket.additionalPaidInCapital +
             bucket.treasuryStock;
       const totalLAndE = bucket.totalLAndE !== 0 ? bucket.totalLAndE : totalLiab + totalEquity;
@@ -1092,7 +1082,6 @@ function aggregateDailyStatementRows(
         commonStock: bucket.commonStock,
         preferredStock: bucket.preferredStock,
         retainedEarnings: bucket.retainedEarnings,
-        currentYearNetIncome: bucket.currentYearNetIncome,
         additionalPaidInCapital: bucket.additionalPaidInCapital,
         treasuryStock: bucket.treasuryStock,
         totalAssets,
@@ -1101,20 +1090,6 @@ function aggregateDailyStatementRows(
         totalLAndE,
       };
     });
-}
-
-function annotateCurrentYearNetIncomeForQbdRows(rows: any[]): any[] {
-  return rows.map((row) => {
-    const currentYearNetIncome = qbdCurrentYearNetIncomeFromBalanceSheet(row);
-    const totalEquity = qbdEquityWithoutNetIncome(row) + currentYearNetIncome;
-    const totalLiab = Number(row?.totalLiab || 0);
-    return {
-      ...row,
-      currentYearNetIncome,
-      totalEquity,
-      totalLAndE: totalLiab + totalEquity,
-    };
-  });
 }
 
 async function getHydratedInforBusinessDates(
@@ -11325,13 +11300,7 @@ export async function GET(request: NextRequest) {
           const expense = Number(row?.expense || 0);
           return revenue === 0 && cogsTotal === 0 && expense === 0;
         };
-        let dailyDataForAggregator: any[] = Array.isArray(data) ? data.slice() : [];
-        if (isQuickBooksDesktopCompany) {
-          dailyDataForAggregator = annotateCurrentYearNetIncomeForQbdRows(dailyDataForAggregator);
-          data = financialFrequencyForQuery === 'daily'
-            ? dailyDataForAggregator.slice()
-            : annotateCurrentYearNetIncomeForQbdRows(data);
-        }
+        const dailyDataForAggregator: any[] = Array.isArray(data) ? data.slice() : [];
         if (financialFrequencyForQuery === 'daily' && Array.isArray(data) && data.length) {
           data = data.filter((row: any) => !isWeekendNoActivity(row));
         }

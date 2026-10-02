@@ -15479,7 +15479,6 @@ export default function OperationsTab({
         commonStock: Number(row.commonStock || 0),
         preferredStock: Number(row.preferredStock || 0),
         retainedEarnings: Number(row.retainedEarnings || 0),
-        currentYearNetIncome: Number(row.currentYearNetIncome || 0),
         additionalPaidInCapital: Number(row.additionalPaidInCapital || 0),
         treasuryStock: Number(row.treasuryStock || 0),
         totalAssets: Number(row.totalAssets || 0),
@@ -15538,7 +15537,6 @@ export default function OperationsTab({
         { label: `  ${getFieldDisplayName('commonStock')}`, styleType: 'normal', valuesByDate: rollupSeries('commonStock') },
         { label: `  ${getFieldDisplayName('preferredStock')}`, styleType: 'normal', valuesByDate: rollupSeries('preferredStock') },
         { label: `  ${getFieldDisplayName('retainedEarnings')}`, styleType: 'normal', valuesByDate: rollupSeries('retainedEarnings') },
-        { label: `  ${getFieldDisplayName('currentYearNetIncome')}`, styleType: 'normal', valuesByDate: rollupSeries('currentYearNetIncome') },
         { label: `  ${getFieldDisplayName('additionalPaidInCapital')}`, styleType: 'normal', valuesByDate: rollupSeries('additionalPaidInCapital') },
         { label: `  ${getFieldDisplayName('treasuryStock')}`, styleType: 'normal', valuesByDate: rollupSeries('treasuryStock') },
         { label: getFieldDisplayName('totalEquity'), styleType: 'subtotal', valuesByDate: rollupSeries('totalEquity') },
@@ -15748,7 +15746,7 @@ export default function OperationsTab({
           cogs,
           grossMargin,
           marginPct: revenue !== 0 ? (grossMargin / revenue) * 100 : null,
-          net: Number(row.currentYearNetIncome ?? row.netIncome ?? (revenue - cogs - expense)),
+          net: Number(row.netIncome ?? (revenue - cogs - expense)),
           cash: Number(row.cash || 0),
         };
       });
@@ -15955,13 +15953,12 @@ export default function OperationsTab({
       const commonStock = getSnapshotOnlyValue(row, 'commonStock');
       const preferredStock = getSnapshotOnlyValue(row, 'preferredStock');
       const retainedEarnings = getSnapshotOnlyValue(row, 'retainedEarnings');
-      const currentYearNetIncome = getSnapshotOnlyValue(row, 'currentYearNetIncome');
       const additionalPaidInCapital = getSnapshotOnlyValue(row, 'additionalPaidInCapital');
       const treasuryStock = getSnapshotOnlyValue(row, 'treasuryStock');
       const totalEquityRaw = getSnapshotOnlyValue(row, 'totalEquity');
       const totalEquity = totalEquityRaw !== 0
         ? totalEquityRaw
-        : ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + currentYearNetIncome + additionalPaidInCapital + treasuryStock;
+        : ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
       const totalLAndERaw = getSnapshotOnlyValue(row, 'totalLAndE');
       const totalLAndE = totalLAndERaw !== 0 ? totalLAndERaw : totalLiab + totalEquity;
       const weekday = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
@@ -16033,7 +16030,6 @@ export default function OperationsTab({
         commonStock,
         preferredStock,
         retainedEarnings,
-        currentYearNetIncome,
         additionalPaidInCapital,
         treasuryStock,
         totalEquity,
@@ -16282,7 +16278,6 @@ export default function OperationsTab({
       { key: 'commonStock', label: `  ${getFieldDisplayName('commonStock')}`, styleType: 'normal' },
       { key: 'preferredStock', label: `  ${getFieldDisplayName('preferredStock')}`, styleType: 'normal' },
       { key: 'retainedEarnings', label: `  ${getFieldDisplayName('retainedEarnings')}`, styleType: 'normal' },
-      { key: 'currentYearNetIncome', label: `  ${getFieldDisplayName('currentYearNetIncome')}`, styleType: 'normal' },
       { key: 'additionalPaidInCapital', label: `  ${getFieldDisplayName('additionalPaidInCapital')}`, styleType: 'normal' },
       { key: 'treasuryStock', label: `  ${getFieldDisplayName('treasuryStock')}`, styleType: 'normal' },
       { key: 'totalEquity', label: getFieldDisplayName('totalEquity'), styleType: 'subtotal' },
@@ -16343,10 +16338,10 @@ export default function OperationsTab({
       const changeOwnersDraw = delta('ownersDraw');
       const changeCommonStock = delta('commonStock');
       const changePreferredStock = delta('preferredStock');
-      // Earnings already sit in operating NI. Only leftover RE / current-year NI
-      // (distributions, closings, P&L vs BS residual) belongs in financing.
+      // Earnings already sit in operating NI. Only leftover retained-earnings
+      // movement (distributions or closings) belongs in financing.
       const changeRetainedEarnings = roundCash(
-        delta('retainedEarnings') + delta('currentYearNetIncome') - netIncome
+        delta('retainedEarnings') - netIncome
       );
       const changeAdditionalPaidInCapital = delta('additionalPaidInCapital');
       const changeTreasuryStock = delta('treasuryStock');
