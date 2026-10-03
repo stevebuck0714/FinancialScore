@@ -63,12 +63,30 @@ const REPORTS_BY_DATA_GROUP: Record<string, OperationalHubReportDefinition[]> = 
     { key: 'productsBottomLossMakers', label: 'Bottom Products (Loss Makers)', group: 'Products' },
     { key: 'productsFreightOtherTracker', label: 'Freight/Other Tracker', group: 'Products' },
   ],
+  Inventory: [
+    { key: 'inventoryValueTrend', label: 'Value Trend', group: 'Inventory' },
+    { key: 'inventoryMovement', label: 'Inventory Movement', group: 'Inventory' },
+    { key: 'inventoryRetailTurns', label: 'Retail Turns / Sell-Through', group: 'Inventory' },
+    { key: 'inventoryRetailProductAging', label: 'Retail Product Aging', group: 'Inventory' },
+    { key: 'inventoryCurrentTable', label: 'Current Inventory Table', group: 'Inventory' },
+    { key: 'inventoryDistribution', label: 'Value Distribution', group: 'Inventory' },
+    { key: 'inventoryAgingObsolescenceV1', label: 'Inventory Aging & Obsolescence', group: 'Inventory' },
+  ],
 };
+
+const STANDARD_CASH_REPORTS: OperationalHubReportDefinition[] = [
+  { key: 'cashBalanceTrend', label: 'Cash Balance Trend', group: 'Cash' },
+  { key: 'cash13WeekTrend', label: '13-Week Cash Trend', group: 'Cash' },
+  { key: 'cashBridge', label: 'Cash Bridge', group: 'Cash' },
+  { key: 'cashBankAccounts', label: 'Bank Accounts', group: 'Cash' },
+  { key: 'cashDistributionByAccount', label: 'Cash Distribution by Account', group: 'Cash' },
+];
 
 const DATA_TYPE_GROUP: Record<string, string> = {
   customers: 'Customers',
   sales: 'Customers',
   products: 'Products',
+  inventory: 'Inventory',
 };
 
 export const RETAIL_ONLY_PRODUCT_REPORT_KEYS = new Set([
@@ -90,6 +108,14 @@ const SECTOR_23_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'hiltiAssetRegister', label: 'Equipment Asset Register', group: 'Inventory' },
   ],
   job_cost_control: [
+    { key: 'jccJobPicker', label: 'Job Picker', group: 'Job Cost Control' },
+    { key: 'jccProfitabilitySnapshot', label: 'Profitability Snapshot', group: 'Job Cost Control' },
+    { key: 'jccDailyCost', label: 'Daily Cost vs Budget', group: 'Job Cost Control' },
+    { key: 'jccCostCodeVariance', label: 'Cost Code Variance', group: 'Job Cost Control' },
+    { key: 'jccCostByType', label: 'Cost by Type', group: 'Job Cost Control' },
+    { key: 'jccLaborDetail', label: 'Labor + Equipment Detail', group: 'Job Cost Control' },
+    { key: 'jccJobSpecificAr', label: 'Job-Specific AR', group: 'Job Cost Control' },
+    { key: 'jccJobSpecificAp', label: 'Job-Specific AP', group: 'Job Cost Control' },
     { key: 'crewtracksKpis', label: 'Crewtracks KPI Cards', group: 'Job Cost Control' },
     { key: 'crewtracksCrewProductivity', label: 'Crew Productivity', group: 'Job Cost Control' },
     { key: 'crewtracksJobProductivity', label: 'Job Productivity', group: 'Job Cost Control' },
@@ -97,7 +123,38 @@ const SECTOR_23_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'crewtracksRecentTime', label: 'Recent Crew Time', group: 'Job Cost Control' },
   ],
   project_portfolio: [
+    { key: 'ppPortfolioSummary', label: 'Portfolio Summary', group: 'Project Portfolio' },
+    { key: 'ppMonthlyMetrics', label: 'MTD + Job Counts', group: 'Project Portfolio' },
+    { key: 'ppRevenueVsCostChart', label: 'Revenue vs Cost (12 mo)', group: 'Project Portfolio' },
+    { key: 'ppOverheadTrendChart', label: 'Overhead Trend (12 mo)', group: 'Project Portfolio' },
+    { key: 'ppScheduleSlippage', label: 'Schedule Slippage Impact', group: 'Project Portfolio' },
     { key: 'projectPortfolioScheduleVsBudget', label: 'Schedule vs Budget', group: 'Project Portfolio' },
+    { key: 'ppJobProfitability', label: 'Job Profitability Table', group: 'Project Portfolio' },
+    { key: 'ppRiskFlags', label: 'Risk Flags', group: 'Project Portfolio' },
+    { key: 'ppTopBottomJobs', label: 'Top / Bottom Jobs', group: 'Project Portfolio' },
+  ],
+  commitments_forecast: [
+    { key: 'cfWipReport', label: 'WIP Report', group: 'Commitments & Forecast' },
+    { key: 'cfEacSummary', label: 'EAC Summary', group: 'Commitments & Forecast' },
+    { key: 'cfCommitmentExposure', label: 'Commitment Exposure', group: 'Commitments & Forecast' },
+    { key: 'cfChangeOrderImpact', label: 'Change Order Impact', group: 'Commitments & Forecast' },
+    { key: 'cfOpenCommitments', label: 'Open Commitments', group: 'Commitments & Forecast' },
+  ],
+  billing_cash: [
+    { key: 'bcSummary', label: 'Summary', group: 'Billing & Cash' },
+    { key: 'bcArByJob', label: 'AR by Job', group: 'Billing & Cash' },
+    { key: 'bcApByJob', label: 'AP by Job', group: 'Billing & Cash' },
+    { key: 'bcPriorityList', label: 'Priority List', group: 'Billing & Cash' },
+  ],
+  construction_ar: [
+    { key: 'caArSummary', label: 'Aging Summary', group: 'Construction AR' },
+    { key: 'caArMainTable', label: 'Main Table', group: 'Construction AR' },
+    { key: 'caArCollectionsPriority', label: 'Collections Priority', group: 'Construction AR' },
+  ],
+  construction_ap: [
+    { key: 'caApSummary', label: 'Aging Summary', group: 'Construction AP' },
+    { key: 'caApMainTable', label: 'Main Table', group: 'Construction AP' },
+    { key: 'caApPaymentPriority', label: 'Payment Priority', group: 'Construction AP' },
   ],
 };
 
@@ -115,6 +172,8 @@ const SECTOR_32_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'customersWipByCustomer', label: 'WIP / Open Production', group: 'Inventory' },
     { key: 'inventoryValueTrend', label: 'Value Trend', group: 'Inventory' },
     { key: 'inventoryMovement', label: 'Inventory Movement', group: 'Inventory' },
+    { key: 'inventoryRetailTurns', label: 'Retail Turns / Sell-Through', group: 'Inventory' },
+    { key: 'inventoryRetailProductAging', label: 'Retail Product Aging', group: 'Inventory' },
     { key: 'inventoryCurrentTable', label: 'Current Inventory Table', group: 'Inventory' },
     { key: 'inventoryDistribution', label: 'Value Distribution', group: 'Inventory' },
     { key: 'inventoryAgingObsolescenceV1', label: 'Inventory Aging & Obsolescence', group: 'Inventory' },
@@ -393,6 +452,7 @@ export function getOperationalHubDefaultReportsForModule(
   sectorCategory?: string | null
 ): OperationalHubReportDefinition[] {
   const sector = normalizeSector(sectorCategory);
+  if (moduleKey === 'cash') return STANDARD_CASH_REPORTS;
   if (sector === '23' && SECTOR_23_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_23_REPORTS_BY_MODULE[moduleKey];
   }

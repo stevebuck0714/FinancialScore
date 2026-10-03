@@ -21,6 +21,8 @@ import {
   type ResidentialRevenueForecastAssumptions,
 } from '@/lib/operations/real-estate-forecast';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import OperationalReportPageLayout from '../OperationalReportPageLayout';
+import OperationalReportPanel from '../OperationalReportPanel';
 
 const QUARTERS: ForecastQuarter[] = ['Q1', 'Q2', 'Q3', 'Q4'];
 
@@ -33,6 +35,16 @@ const REVENUE_LINES = [
 ] as const;
 
 type RevenueLineKey = typeof REVENUE_LINES[number]['key'];
+
+type ResidentialRevenueForecastProps = {
+  companyId?: string;
+  reportLayout?: {
+    persistedOrder?: readonly string[] | null;
+    canReorder: boolean;
+    isSaving?: boolean;
+    onReorder: (orderedIds: string[]) => void;
+  };
+};
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -74,7 +86,7 @@ const tdStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-export default function ResidentialRevenueForecast({ companyId }: { companyId?: string }) {
+export default function ResidentialRevenueForecast({ companyId, reportLayout }: ResidentialRevenueForecastProps) {
   const money = useCompanyMoneyFormatter(companyId);
   const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const [assumptions, setAssumptions] = useState<ResidentialRevenueForecastAssumptions>(DEFAULT_RESIDENTIAL_REVENUE_FORECAST_ASSUMPTIONS);
@@ -162,6 +174,12 @@ export default function ResidentialRevenueForecast({ companyId }: { companyId?: 
   const visibleLineItems = REVENUE_LINES.filter((line) => visibleLines[line.key]);
 
   return (
+    <OperationalReportPageLayout
+      persistedOrder={reportLayout?.persistedOrder}
+      canReorder={Boolean(reportLayout?.canReorder)}
+      isSaving={Boolean(reportLayout?.isSaving)}
+      onReorder={reportLayout?.onReorder || (() => {})}
+    >
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div style={{ ...cardStyle, background: 'linear-gradient(135deg, #eff6ff 0%, #ffffff 65%)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -214,7 +232,12 @@ export default function ResidentialRevenueForecast({ companyId }: { companyId?: 
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(320px, 0.8fr)', gap: '16px', alignItems: 'start' }}>
-        <div style={cardStyle}>
+        <OperationalReportPanel
+          reportKey="residentialForecastRevenueProjection"
+          canReorder={false}
+          onMove={() => {}}
+          style={{ ...cardStyle, gridColumn: '1 / -1' }}
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '10px' }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Revenue History & Projection</h3>
@@ -273,7 +296,7 @@ export default function ResidentialRevenueForecast({ companyId }: { companyId?: 
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </OperationalReportPanel>
 
         <div style={cardStyle}>
           <h3 style={{ margin: '0 0 10px', fontSize: '16px', color: '#0f172a' }}>Forecast Assumptions</h3>
@@ -336,7 +359,12 @@ export default function ResidentialRevenueForecast({ companyId }: { companyId?: 
         </div>
       </div>
 
-      <div style={cardStyle}>
+      <OperationalReportPanel
+        reportKey="residentialForecastMonthlyRevenue"
+        canReorder={false}
+        onMove={() => {}}
+        style={{ ...cardStyle, gridColumn: '1 / -1' }}
+      >
         <h3 style={{ margin: '0 0 10px', fontSize: '16px', color: '#0f172a' }}>Monthly Revenue Output</h3>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -366,9 +394,14 @@ export default function ResidentialRevenueForecast({ companyId }: { companyId?: 
             </tbody>
           </table>
         </div>
-      </div>
+      </OperationalReportPanel>
 
-      <div style={cardStyle}>
+      <OperationalReportPanel
+        reportKey="residentialForecastQuarterlySummary"
+        canReorder={false}
+        onMove={() => {}}
+        style={{ ...cardStyle, gridColumn: '1 / -1' }}
+      >
         <h3 style={{ margin: '0 0 10px', fontSize: '16px', color: '#0f172a' }}>Quarterly Summary</h3>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -397,7 +430,8 @@ export default function ResidentialRevenueForecast({ companyId }: { companyId?: 
             </tbody>
           </table>
         </div>
-      </div>
+      </OperationalReportPanel>
     </div>
+    </OperationalReportPageLayout>
   );
 }

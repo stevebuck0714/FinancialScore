@@ -22,6 +22,8 @@ import { formatMoney, formatMoneyCompact } from '@/lib/format/currency';
 import { resolveDisplayCurrency, localeForCurrency } from '@/lib/constants/currencies';
 import { isEstBusinessDay } from '@/lib/time/eastern';
 import { calculateEbitda } from '@/lib/financial/ebitda';
+import OperationalReportPageLayout from './OperationalReportPageLayout';
+import OperationalReportPanel from './OperationalReportPanel';
 
 interface OpsDashboardProps {
   selectedCompanyId: string;
@@ -36,6 +38,13 @@ interface OpsDashboardProps {
   baseCurrency?: string | null;
   reportingCurrency?: string | null;
   locale?: string | null;
+  renderFirmReportPanel?: (reportKey: string, children: React.ReactNode, style?: React.CSSProperties) => React.ReactNode;
+  reportLayout?: {
+    persistedOrder?: readonly string[] | null;
+    canReorder: boolean;
+    isSaving?: boolean;
+    onReorder: (orderedIds: string[]) => void;
+  };
 }
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
@@ -55,6 +64,8 @@ export default function OpsDashboard({
   baseCurrency,
   reportingCurrency,
   locale,
+  renderFirmReportPanel,
+  reportLayout,
 }: OpsDashboardProps) {
   const displayCurrency = resolveDisplayCurrency({ baseCurrency, reportingCurrency });
   const displayLocale = locale || localeForCurrency(displayCurrency);
@@ -129,8 +140,6 @@ export default function OpsDashboard({
   const [loadingEbitda, setLoadingEbitda] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [widgetOrder, setWidgetOrder] = useState<string[]>([]);
-  const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
 
   // Default window for the daily charts: show the most recent 90
   // *weekday* observations. We over-fetch calendar days so that
@@ -200,14 +209,6 @@ export default function OpsDashboard({
     } else {
       return formatDateSafeUtc(date, { year: 'numeric', month: 'short' });
     }
-  };
-
-  const normalizeWidgetOrder = (currentOrder: string[] | undefined | null, availableIds: string[] | undefined | null) => {
-    const safeCurrentOrder = Array.isArray(currentOrder) ? currentOrder : [];
-    const safeAvailableIds = Array.isArray(availableIds) ? availableIds : [];
-    const filtered = safeCurrentOrder.filter((id) => safeAvailableIds.includes(id));
-    const missing = safeAvailableIds.filter((id) => !filtered.includes(id));
-    return [...filtered, ...missing];
   };
 
   // Load data functions
@@ -400,9 +401,6 @@ export default function OpsDashboard({
           setInventoryFreq('daily');
           setCashFreq('daily');
           setEbitdaFreq('daily');
-          if (Array.isArray(data.preferences.widgetOrder)) {
-            setWidgetOrder(data.preferences.widgetOrder.filter((id: unknown) => typeof id === 'string'));
-          }
         }
       }
     } catch (error) {
@@ -422,8 +420,7 @@ export default function OpsDashboard({
         productFreq,
         inventoryFreq,
         cashFreq,
-        ebitdaFreq,
-        widgetOrder
+        ebitdaFreq
       };
       
       const response = await fetch('/api/ops-dashboard-prefs', {
@@ -1159,9 +1156,17 @@ export default function OpsDashboard({
     );
   };
 
-  const renderFirmReportCard = (title: string, sectionKey: string, children: React.ReactNode, fullWidth = false, helpText = '', headerAction: React.ReactNode = null) => {
+  const renderFirmReportCard = (
+    title: string,
+    sectionKey: string,
+    children: React.ReactNode,
+    fullWidth = false,
+    helpText = '',
+    headerAction: React.ReactNode = null,
+    reportKey?: string,
+  ) => {
     if (!isOverviewReportEnabled(sectionKey)) return null;
-    return (
+    const card = (
       <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', gridColumn: fullWidth ? '1 / -1' : undefined }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>{title}</h3>
@@ -1182,6 +1187,14 @@ export default function OpsDashboard({
         {children}
       </div>
     );
+    const effectiveReportKey = reportKey || [
+      'firmOverview',
+      activeRealEstateExecutiveTab,
+      title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+    ].join(':');
+    return renderFirmReportPanel
+      ? renderFirmReportPanel(effectiveReportKey, card, { gridColumn: fullWidth ? '1 / -1' : undefined })
+      : card;
   };
   const renderExecutiveTrendDrilldown = () => {
     if (!selectedExecutiveTrend) return null;
@@ -1565,7 +1578,7 @@ export default function OpsDashboard({
                   ['kpi', 'KPI'], ['mtd', 'MTD'], ['ytd', 'YTD'], ['budget', 'Budget'], ['priorYear', 'Prior Year'],
                 ]))}
               </>
-            ))}
+            ), false, '', null, 'firmDivisionScorecard')}
             {renderFirmReportCard('Enterprise Value Creation Dashboard', 'realEstateExecutiveReport', renderFirmTable(enterpriseValueCreationRows, simpleColumns([
               ['metric', 'Metric'], ['apr', 'Apr'], ['may', 'May'], ['jun', 'Jun'], ['forecast90', '90 Forecast'],
             ])))}
@@ -1589,7 +1602,7 @@ export default function OpsDashboard({
               numberColumn('offices', 'Offices'),
               numberColumn('producers', 'Producers'),
               moneyColumn('pipeline', 'Pipeline'),
-            ], 'executiveRevenueByDivision'))}
+            ], 'executiveRevenueByDivision'), false, '', null, 'firmRevenueByDivision')}
             {renderFirmReportCard('Revenue by Region', 'realEstateExecutiveReport', renderFirmTable(regionalPerformanceRows, [
               {
                 key: 'region',
@@ -1608,7 +1621,7 @@ export default function OpsDashboard({
               moneyColumn('ebitda', 'EBITDA'),
               { key: 'marginPct', label: 'Margin %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
               { key: 'growthPct', label: 'Growth %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
-            ], 'executiveRevenueByRegion'))}
+            ], 'executiveRevenueByRegion'), false, '', null, 'firmRegionBreakout')}
             {renderExecutiveTrendDrilldown()}
             {renderFirmReportCard('Residential Real Estate Attach Rate', 'realEstateExecutiveReport', (
               renderFirmTable(regionAttachRowsWithTotal, simpleColumns([
@@ -1683,7 +1696,7 @@ export default function OpsDashboard({
               moneyColumn('revenue', 'Revenue'),
               moneyColumn('ebitda', 'EBITDA'),
               { key: 'ebitdaPct', label: 'EBITDA %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
-            ], 'officeProfitability'))}
+            ], 'officeProfitability'), false, '', null, 'firmOfficeLeaderboard')}
           </div>
         )}
 
@@ -1934,7 +1947,7 @@ export default function OpsDashboard({
                   ))}
                 </select>
               </label>
-            ))}
+            ), 'firmDivisionDetail')}
             {renderDivisionTrendChart('divisionRevenue', 'Trend Analysis - Revenue', divisionRevenueTrendRows, formatAxisMoney)}
             {renderDivisionTrendChart('divisionEbitda', 'Trend Analysis - EBITDA', divisionEbitdaTrendRows, formatAxisMoney)}
             {renderDivisionTrendChart('divisionTransactions', 'Trend Analysis - Transactions', divisionTransactionsTrendRows, (value) => Number(value || 0).toLocaleString())}
@@ -1952,7 +1965,7 @@ export default function OpsDashboard({
               moneyColumn('priorYear', 'Prior Year'),
               moneyColumn('ebitda', 'EBITDA'),
               { key: 'ebitdaPct', label: 'EBITDA %', format: (value: any) => `${Number(value || 0).toFixed(1)}%` },
-            ], 'officeScorecard'))}
+            ], 'officeScorecard'), false, '', null, 'firmOfficeDivisionMatrix')}
             {renderFirmReportCard('Residential Real Estate by Office', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
               { key: 'office', label: 'Office' },
               { key: 'region', label: 'Region' },
@@ -1987,7 +2000,7 @@ export default function OpsDashboard({
                   <option value="bottom50">Bottom 50</option>
                 </select>
               </label>
-            ))}
+            ), 'firmAgentProducerLeaderboard')}
             {renderFirmReportCard('Residential Sales Metrics', 'realEstateExecutiveReport', renderFirmTable(officeScorecardRows, [
               { key: 'office', label: 'Office' },
               numberColumn('listingsTaken', 'Listings Taken'),
@@ -2185,75 +2198,18 @@ export default function OpsDashboard({
     );
   };
 
-  const availableWidgetIds = [
-    ...(showCustomerWidget ? ['customers'] : []),
-    ...(showArWidget ? ['ar-aging'] : []),
-    ...(showApWidget ? ['ap-aging'] : []),
-    ...(showProductWidget ? ['products'] : []),
-    ...(showInventoryWidget ? ['inventory'] : []),
-    ...(showCashWidget ? ['cash'] : []),
-    ...(showEbitdaWidget ? ['ebitda'] : []),
-    ...extraWidgets.map((widget) => getExtraWidgetId(widget)),
-  ];
-
-  const normalizedWidgetOrder = normalizeWidgetOrder(widgetOrder, availableWidgetIds);
-
-  useEffect(() => {
-    setWidgetOrder((current) => {
-      const next = normalizeWidgetOrder(current, availableWidgetIds);
-      if (current.length === next.length && current.every((id, index) => id === next[index])) {
-        return current;
-      }
-      return next;
-    });
-  }, [availableWidgetIds.join('|')]);
-
-  const getWidgetPosition = (widgetId: string) => {
-    const index = normalizedWidgetOrder.indexOf(widgetId);
-    return index >= 0 ? index : normalizedWidgetOrder.length;
-  };
-
-  const handleWidgetDrop = (sourceWidgetId: string, targetWidgetId: string) => {
-    if (!sourceWidgetId || sourceWidgetId === targetWidgetId) return;
-    setWidgetOrder((current) => {
-      const base = normalizeWidgetOrder(current, availableWidgetIds);
-      const fromIndex = base.indexOf(sourceWidgetId);
-      const toIndex = base.indexOf(targetWidgetId);
-      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return base;
-      const next = [...base];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
-    setDraggedWidgetId(null);
-  };
-
-  const getDraggableCardProps = (widgetId: string): React.HTMLAttributes<HTMLDivElement> => ({
-    draggable: true,
-    onDragStart: (e) => {
-      setDraggedWidgetId(widgetId);
-      e.dataTransfer.setData('text/plain', widgetId);
-      e.dataTransfer.effectAllowed = 'move';
-    },
-    onDragEnd: () => setDraggedWidgetId(null),
-    onDragOver: (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-    },
-    onDrop: (e) => {
-      e.preventDefault();
-      const droppedId = e.dataTransfer.getData('text/plain') || draggedWidgetId || '';
-      handleWidgetDrop(droppedId, widgetId);
-    },
-  });
-
   return (
+    <OperationalReportPageLayout
+      persistedOrder={reportLayout?.persistedOrder}
+      canReorder={Boolean(reportLayout?.canReorder)}
+      isSaving={Boolean(reportLayout?.isSaving)}
+      onReorder={reportLayout?.onReorder || (() => {})}
+    >
     <div style={{ padding: '24px', background: '#f8fafc', minHeight: '100vh' }}>
       <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
         {!isRealEstateSector && !printSectionKey && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }} className="ops-print-hide">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '13px', color: '#64748b' }}>Drag cards to reorder</span>
             {saveMessage && (
               <span style={{ 
                 fontSize: '14px', 
@@ -2295,9 +2251,11 @@ export default function OpsDashboard({
           
           {/* Customer Sales Widget */}
           {showCustomerWidget && (
-          <div
-            {...getDraggableCardProps('customers')}
-            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('customers'), cursor: 'grab' }}
+          <OperationalReportPanel
+            reportKey="overviewStdRevenue"
+            canReorder={false}
+            onMove={() => {}}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
@@ -2329,14 +2287,16 @@ export default function OpsDashboard({
                 </LineChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </OperationalReportPanel>
           )}
 
           {/* AR Aging Widget */}
           {showArWidget && (
-          <div
-            {...getDraggableCardProps('ar-aging')}
-            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('ar-aging'), cursor: 'grab' }}
+          <OperationalReportPanel
+            reportKey="overviewStdArAging"
+            canReorder={false}
+            onMove={() => {}}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
@@ -2369,14 +2329,16 @@ export default function OpsDashboard({
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </OperationalReportPanel>
           )}
 
           {/* AP Aging Widget */}
           {showApWidget && (
-          <div
-            {...getDraggableCardProps('ap-aging')}
-            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('ap-aging'), cursor: 'grab' }}
+          <OperationalReportPanel
+            reportKey="overviewStdApAging"
+            canReorder={false}
+            onMove={() => {}}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
@@ -2409,14 +2371,16 @@ export default function OpsDashboard({
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </OperationalReportPanel>
           )}
 
           {/* Product Sales Widget */}
           {showProductWidget && (
-          <div
-            {...getDraggableCardProps('products')}
-            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('products'), cursor: 'grab' }}
+          <OperationalReportPanel
+            reportKey="overviewProducts"
+            canReorder={false}
+            onMove={() => {}}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
@@ -2448,14 +2412,16 @@ export default function OpsDashboard({
                 </LineChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </OperationalReportPanel>
           )}
 
           {/* Inventory Widget */}
           {showInventoryWidget && (
-          <div
-            {...getDraggableCardProps('inventory')}
-            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('inventory'), cursor: 'grab' }}
+          <OperationalReportPanel
+            reportKey="overviewStdInventory"
+            canReorder={false}
+            onMove={() => {}}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
@@ -2487,14 +2453,16 @@ export default function OpsDashboard({
                 </LineChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </OperationalReportPanel>
           )}
 
           {/* Cash Widget */}
           {showCashWidget && (
-          <div
-            {...getDraggableCardProps('cash')}
-            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('cash'), cursor: 'grab' }}
+          <OperationalReportPanel
+            reportKey="overviewStdCashTrend"
+            canReorder={false}
+            onMove={() => {}}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
@@ -2526,14 +2494,16 @@ export default function OpsDashboard({
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </OperationalReportPanel>
           )}
 
           {/* EBITDA Widget */}
           {showEbitdaWidget && (
-          <div
-            {...getDraggableCardProps('ebitda')}
-            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', order: getWidgetPosition('ebitda'), cursor: 'grab' }}
+          <OperationalReportPanel
+            reportKey="overviewStdEbitda"
+            canReorder={false}
+            onMove={() => {}}
+            style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>
@@ -2556,19 +2526,20 @@ export default function OpsDashboard({
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </OperationalReportPanel>
           )}
 
           {extraWidgets.map((widget) => {
             const widgetId = getExtraWidgetId(widget);
             return (
-              <div
+              <OperationalReportPanel
                 key={widgetId}
-                {...getDraggableCardProps(widgetId)}
-                style={{ order: getWidgetPosition(widgetId), cursor: 'grab' }}
+                reportKey={`overviewExtra:${widgetId}`}
+                canReorder={false}
+                onMove={() => {}}
               >
                 {renderExtraWidget(widget)}
-              </div>
+              </OperationalReportPanel>
             );
           })}
 
@@ -2576,6 +2547,7 @@ export default function OpsDashboard({
         )}
       </div>
     </div>
+    </OperationalReportPageLayout>
   );
 }
 

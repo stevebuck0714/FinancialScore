@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, type CSSProperties } from 'react';
 import {
   Bar,
   BarChart,
@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { formatMoney } from '@/lib/format/currency';
 import { withIsolvedHubReportName } from '@/lib/operations/operational-hub-layout';
+import OperationalReportPanel from './OperationalReportPanel';
 
 type TrendPoint = {
   monthKey: string;
@@ -50,6 +51,24 @@ type ScorecardPayload = {
 
 type BureauOpsPayload = {
   monthlyScorecard?: ScorecardPayload;
+};
+
+export const PAYROLL_BUREAU_EXECUTIVE_CHART_KEYS = [
+  'bureauExecutivePayrollVolume',
+  'bureauExecutiveGrossPayrollFundsHandled',
+  'bureauExecutiveVolumeComparison',
+  'bureauExecutiveFundsComparison',
+  'bureauExecutiveQuality',
+  'bureauExecutiveExceptions',
+  'bureauExecutiveProcessorWorkload',
+  'bureauExecutiveClientMovement',
+] as const;
+
+type PayrollBureauExecutiveScorecardLayout = {
+  canReorder: boolean;
+  isSaving: boolean;
+  onMove: (sourceReportKey: string, targetReportKey: string) => void;
+  getPanelStyle: (reportKey: string, style: CSSProperties) => CSSProperties;
 };
 
 const cardStyle: React.CSSProperties = {
@@ -130,17 +149,33 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 }
 
 function ChartCard({
+  reportKey,
   title,
   children,
+  reportLayout,
 }: {
+  reportKey: string;
   title: string;
   children: React.ReactNode;
+  reportLayout?: PayrollBureauExecutiveScorecardLayout;
 }) {
-  return (
+  const card = (
     <div style={cardStyle}>
       <div style={cardTitleStyle}>{title}</div>
       <div style={{ width: '100%', height: 280 }}>{children}</div>
     </div>
+  );
+  if (!reportLayout) return card;
+  return (
+    <OperationalReportPanel
+      reportKey={reportKey}
+      canReorder={reportLayout.canReorder}
+      isSaving={reportLayout.isSaving}
+      onMove={reportLayout.onMove}
+      style={reportLayout.getPanelStyle(reportKey, {})}
+    >
+      {card}
+    </OperationalReportPanel>
   );
 }
 
@@ -151,7 +186,13 @@ function axisMoney(value: number) {
   return formatMoney(value, { currency: 'USD' });
 }
 
-export default function PayrollBureauExecutiveScorecard({ data }: { data: BureauOpsPayload | null }) {
+export default function PayrollBureauExecutiveScorecard({
+  data,
+  reportLayout,
+}: {
+  data: BureauOpsPayload | null;
+  reportLayout?: PayrollBureauExecutiveScorecardLayout;
+}) {
   const scorecard = data?.monthlyScorecard;
   const kpis = Array.isArray(scorecard?.kpis) ? scorecard.kpis : [];
   const kpiByKey = useMemo(() => new Map(kpis.map((kpi) => [kpi.key, kpi])), [kpis]);
@@ -312,7 +353,7 @@ export default function PayrollBureauExecutiveScorecard({ data }: { data: Bureau
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
-        <ChartCard title="12-month payroll volume">
+        <ChartCard reportKey="bureauExecutivePayrollVolume" title="12-month payroll volume" reportLayout={reportLayout}>
           <ResponsiveContainer>
             <LineChart data={volumeLine} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -328,7 +369,7 @@ export default function PayrollBureauExecutiveScorecard({ data }: { data: Bureau
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="12-month gross payroll vs funds handled">
+        <ChartCard reportKey="bureauExecutiveGrossPayrollFundsHandled" title="12-month gross payroll vs funds handled" reportLayout={reportLayout}>
           <ResponsiveContainer>
             <LineChart data={fundsLine} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -344,7 +385,7 @@ export default function PayrollBureauExecutiveScorecard({ data }: { data: Bureau
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Current vs prior vs budget vs prior year">
+        <ChartCard reportKey="bureauExecutiveVolumeComparison" title="Current vs prior vs budget vs prior year" reportLayout={reportLayout}>
           <ResponsiveContainer>
             <BarChart data={volumeCompare} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -360,7 +401,7 @@ export default function PayrollBureauExecutiveScorecard({ data }: { data: Bureau
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Funds handled — current vs comparables">
+        <ChartCard reportKey="bureauExecutiveFundsComparison" title="Funds handled — current vs comparables" reportLayout={reportLayout}>
           <ResponsiveContainer>
             <BarChart data={moneyCompare} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -376,7 +417,7 @@ export default function PayrollBureauExecutiveScorecard({ data }: { data: Bureau
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="12-month quality — on-time, first-time-right, retention">
+        <ChartCard reportKey="bureauExecutiveQuality" title="12-month quality — on-time, first-time-right, retention" reportLayout={reportLayout}>
           <ResponsiveContainer>
             <LineChart data={qualityLine} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -392,7 +433,7 @@ export default function PayrollBureauExecutiveScorecard({ data }: { data: Bureau
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="12-month exception rates">
+        <ChartCard reportKey="bureauExecutiveExceptions" title="12-month exception rates" reportLayout={reportLayout}>
           <ResponsiveContainer>
             <LineChart data={exceptionLine} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -407,7 +448,7 @@ export default function PayrollBureauExecutiveScorecard({ data }: { data: Bureau
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="12-month processor workload">
+        <ChartCard reportKey="bureauExecutiveProcessorWorkload" title="12-month processor workload" reportLayout={reportLayout}>
           <ResponsiveContainer>
             <LineChart data={capacityLine} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -422,7 +463,7 @@ export default function PayrollBureauExecutiveScorecard({ data }: { data: Bureau
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="12-month client movement and escalations">
+        <ChartCard reportKey="bureauExecutiveClientMovement" title="12-month client movement and escalations" reportLayout={reportLayout}>
           <ResponsiveContainer>
             <BarChart data={bookLine} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />

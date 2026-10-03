@@ -8,6 +8,7 @@ import { getSectorSchema, getTargetFieldOptions } from '@/lib/constants/sector-t
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import { isAtlanticPrecisionCompany } from '@/lib/operations/company-specific-reports';
 import { calculateEbitda } from '@/lib/financial/ebitda';
+import SortableReportCollection from '@/app/components/operations/SortableReportCollection';
 import {
   CONTRACT_PROGRAM_REVENUE_FIELD,
   lastProductAdjMonthKey,
@@ -21,6 +22,12 @@ interface FinancialForecastTabProps {
   prefetchedMonthlyData?: any[];
   displayMode?: 'full' | 'no-graphs' | 'graphs-only';
   basisMode?: 'cash' | 'accrual';
+  reportLayout?: {
+    persistedOrder?: readonly string[] | null;
+    canReorder: boolean;
+    isSaving?: boolean;
+    onReorder: (orderedIds: string[]) => void;
+  };
 }
 
 type ForecastTab = 'inputs' | 'income-statement' | 'customer-forecast' | 'customer-growth-projections' | 'graphs';
@@ -212,6 +219,7 @@ export default function FinancialForecastTab({
   prefetchedMonthlyData,
   displayMode = 'full',
   basisMode = 'cash',
+  reportLayout,
 }: FinancialForecastTabProps) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
   const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
@@ -3679,30 +3687,49 @@ export default function FinancialForecastTab({
               </button>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
-            <div className="ff-print-chart-card">{renderStackedBarChart(
-              `Revenue Detail (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
-              revenueRowKeys,
-              revenueGraphPoints,
-              `Shaded bars = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then forecast ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(revenueGraphPoints.length - 3, 0)}).`,
-            )}</div>
-            <div className="ff-print-chart-card">{renderStackedBarChart(
-              `COGS Detail (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
-              cogsRowKeys,
-              cogsGraphPoints,
-              `Shaded bars = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then forecast ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(cogsGraphPoints.length - 3, 0)}).`,
-            )}</div>
-            <div className="ff-print-chart-card">{renderTotalsLineChart(
-              `Totals Trend (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
-              totalsLineGraphPoints,
-              `Shaded background = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then projected ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(totalsLineGraphPoints.length - 3, 0)}).`,
-            )}</div>
-            <div className="ff-print-chart-card">{renderCashLiquidityComboChart(
-              'Cash & LOC Capacity (12 Weeks)',
-              cashLiquidityGraphPoints,
-              'Bars show weekly ending cash projection. Orange line is unlevered cash (before LOC draw/repay). Blue line is available LOC = LOC loan amount minus projected LOC balance.',
-            )}</div>
-          </div>
+          <SortableReportCollection
+            items={[
+              {
+                id: 'forecastRevenueDetail',
+                node: <div className="ff-print-chart-card">{renderStackedBarChart(
+                  `Revenue Detail (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
+                  revenueRowKeys,
+                  revenueGraphPoints,
+                  `Shaded bars = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then forecast ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(revenueGraphPoints.length - 3, 0)}).`,
+                )}</div>,
+              },
+              {
+                id: 'forecastCogsDetail',
+                node: <div className="ff-print-chart-card">{renderStackedBarChart(
+                  `COGS Detail (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
+                  cogsRowKeys,
+                  cogsGraphPoints,
+                  `Shaded bars = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then forecast ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(cogsGraphPoints.length - 3, 0)}).`,
+                )}</div>,
+              },
+              {
+                id: 'forecastTotalsTrend',
+                node: <div className="ff-print-chart-card">{renderTotalsLineChart(
+                  `Totals Trend (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
+                  totalsLineGraphPoints,
+                  `Shaded background = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then projected ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(totalsLineGraphPoints.length - 3, 0)}).`,
+                )}</div>,
+              },
+              {
+                id: 'forecastCashLocCapacity',
+                node: <div className="ff-print-chart-card">{renderCashLiquidityComboChart(
+                  'Cash & LOC Capacity (12 Weeks)',
+                  cashLiquidityGraphPoints,
+                  'Bars show weekly ending cash projection. Orange line is unlevered cash (before LOC draw/repay). Blue line is available LOC = LOC loan amount minus projected LOC balance.',
+                )}</div>,
+              },
+            ]}
+            persistedOrder={reportLayout?.persistedOrder}
+            canReorder={Boolean(reportLayout?.canReorder)}
+            isSaving={Boolean(reportLayout?.isSaving)}
+            onReorder={reportLayout?.onReorder || (() => {})}
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}
+          />
         </div>
       )}
 

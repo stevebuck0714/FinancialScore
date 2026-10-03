@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 import { formatMoney } from '@/lib/format/currency';
 
 type BureauOpsPayload = {
@@ -55,10 +55,12 @@ type Props = {
   isSectionEnabled: (sectionKey: string) => boolean;
   clientFilter?: string;
   clientSelector?: React.ReactNode;
+  renderReportPanel?: (reportKey: string, children: React.ReactNode, style?: React.CSSProperties) => React.ReactNode;
 };
 
 type SortDir = 'asc' | 'desc';
 type SortState = { key: string; dir: SortDir };
+type ReportPanelRenderer = NonNullable<Props['renderReportPanel']>;
 
 type TableHeader<T> = {
   label: string;
@@ -74,6 +76,12 @@ const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: '13px', co
 
 const SIZE_RANK: Record<string, number> = { Small: 1, Mid: 2, Large: 3, Enterprise: 4 };
 const HEALTH_RANK: Record<string, number> = { Red: 1, Yellow: 2, Green: 3 };
+const ReportPanelRendererContext = createContext<ReportPanelRenderer | null>(null);
+
+function ReportPanel({ reportKey, children }: { reportKey: string; children: React.ReactNode }) {
+  const renderReportPanel = useContext(ReportPanelRendererContext);
+  return <>{renderReportPanel ? renderReportPanel(reportKey, children) : children}</>;
+}
 
 function money(value: number) {
   return formatMoney(Number(value || 0), { currency: 'USD' });
@@ -295,7 +303,7 @@ function FieldDefinitionsModal({
   );
 }
 
-export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnabled, clientFilter, clientSelector }: Props) {
+export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnabled, clientFilter, clientSelector, renderReportPanel }: Props) {
   const [ctsPeriod, setCtsPeriod] = useState<'month' | 'ytd'>('ytd');
   const [showCtsFieldHelp, setShowCtsFieldHelp] = useState(false);
   if (!data) {
@@ -327,7 +335,7 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
     ? allImplRows
     : allImplRows.filter((row: any) => String(row.clientName || '').trim() === selectedClient);
   const ctsSummary = ctsRows.length === allCtsRows.length
-    ? (ctsBundle?.summary || {})
+    ? { ...(ctsBundle?.summary || {}) }
     : {
         clients: ctsRows.length,
         employees: ctsRows.reduce((sum: number, row: any) => sum + Number(row.employeeCount || 0), 0),
@@ -338,9 +346,9 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
         mappedQbdClients: ctsRows.filter((row: any) => row.mappedToQbd).length,
         unmappedQbdRevenue: 0,
       };
-  if (ctsRows.length !== allCtsRows.length && Number(ctsSummary.netRevenue) > 0) {
-    ctsSummary.avgMarginPct = (Number(ctsSummary.contribution) / Number(ctsSummary.netRevenue)) * 100;
-  }
+  const ctsAvgMarginPct = ctsRows.length !== allCtsRows.length && Number(ctsSummary.netRevenue) > 0
+    ? (Number(ctsSummary.contribution) / Number(ctsSummary.netRevenue)) * 100
+    : ctsSummary.avgMarginPct;
   const ctsNotes = Array.isArray(ctsBundle?.notes) ? ctsBundle.notes : [];
   const performance = data.performance || {};
   const clientQuality = Array.isArray(data.clientQuality) ? data.clientQuality : [];
@@ -393,6 +401,7 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
   };
 
   return (
+    <ReportPanelRendererContext.Provider value={renderReportPanel || null}>
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {clientSelector}
       {note ? <div style={{ fontSize: '12px', color: '#64748b' }}>{note}</div> : null}
@@ -420,7 +429,8 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
           )}
 
           {isSectionEnabled('bureauNeedsAttention') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauNeedsAttention">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Needs Attention Today</div>
               <SortableTable
                 defaultSort={{ key: 'priority', dir: 'asc' }}
@@ -458,10 +468,12 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
 
           {isSectionEnabled('bureauTodayRuns') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauTodayRuns">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Payrolls Due Today</div>
               <SortableTable
                 defaultSort={{ key: 'grossPay', dir: 'desc' }}
@@ -493,10 +505,12 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
 
           {isSectionEnabled('bureauProcessorWorkloadToday') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauProcessorWorkloadToday">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Processor Workload Today</div>
               <SortableTable
                 defaultSort={{ key: 'payrolls', dir: 'desc' }}
@@ -518,6 +532,7 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
         </>
       )}
@@ -550,7 +565,8 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
             </div>
           )}
           {isSectionEnabled('bureauPerfDelaySources') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauPerfDelaySources">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Delay Sources</div>
               <SortableTable
                 headers={[
@@ -573,9 +589,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauClientQualityRanking') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauClientQualityRanking">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Client Service-Quality Ranking</div>
               <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
                 Operational ranking of the {num(clientQuality.length)}-client book. Rank 1 is the most difficult to serve. Cause separates client-driven delays from payroll-company processing problems. This is not the PEPM/profit health score on Client Economics.
@@ -637,6 +655,7 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
         </>
       )}
@@ -644,7 +663,8 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
       {moduleKey === 'processor_capacity' && (
         <>
           {isSectionEnabled('bureauProcessorCapacity') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauProcessorCapacity">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Processor Capacity</div>
               <SortableTable
                 defaultSort={{ key: 'weightedUnits', dir: 'desc' }}
@@ -676,9 +696,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauWorkloadForecast') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauWorkloadForecast">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Next Two Weeks Workload Forecast</div>
               <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
                 {String(forecast.startDate || '')} through {String(forecast.endDate || '')} EST. Payroll calendars, employee counts, and estimated gross/net come from isolved. Processor capacity and known absences come from the payroll company’s staffing system. Mock until live feeds are connected.
@@ -794,9 +816,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 </>
               ) : null}
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauProcessorNextWeek') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauProcessorNextWeek">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Processor Load — Next Two Weeks</div>
               <SortableTable
                 defaultSort={{ key: 'twoWeekUnits', dir: 'desc' }}
@@ -822,6 +846,7 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
         </>
       )}
@@ -857,14 +882,15 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
             </div>
           )}
           {isSectionEnabled('bureauCostToServe') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauCostToServe">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Cost to Serve</div>
               <KpiGrid
                 items={[
                   { label: 'Net Revenue', value: money(ctsSummary.netRevenue), color: '#0f766e' },
                   { label: 'Cost to Serve', value: money(ctsSummary.costToServe), color: '#b45309' },
                   { label: 'Contribution', value: money(ctsSummary.contribution), color: Number(ctsSummary.contribution) >= 0 ? '#15803d' : '#b91c1c' },
-                  { label: 'Avg Margin', value: pct(ctsSummary.avgMarginPct) },
+                  { label: 'Avg Margin', value: pct(ctsAvgMarginPct) },
                   { label: 'QBD-Mapped Clients', value: `${num(ctsSummary.mappedQbdClients)} / ${num(ctsSummary.clients || ctsRows.length)}` },
                   { label: 'Unmapped QBD Revenue', value: money(ctsSummary.unmappedQbdRevenue) },
                 ]}
@@ -946,9 +972,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 />
               )}
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauCostToServeStack') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauCostToServeStack">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Cost-to-Serve Stack</div>
               <SortableTable
                 maxHeight="420px"
@@ -981,9 +1009,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauImplementationCost') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauImplementationCost">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Implementation Cost vs Fee</div>
               <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
                 Estimated setup cost is reported separately from recurring monthly cost-to-serve. Payback uses current-period contribution.
@@ -1019,9 +1049,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauBillingsByCustomer') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauBillingsByCustomer">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Billings by Customer</div>
               <KpiGrid
                 items={[
@@ -1069,9 +1101,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauBillingsByType') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauBillingsByType">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Billings by Customer Type</div>
               <SortableTable
                 defaultSort={{ key: 'revenue', dir: 'desc' }}
@@ -1099,9 +1133,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauBillingsBySize') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauBillingsBySize">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Billings by Customer Size</div>
               <SortableTable
                 defaultSort={{ key: 'revenue', dir: 'desc' }}
@@ -1129,9 +1165,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauProfitByCustomer') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauProfitByCustomer">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Profitability by Customer</div>
               <SortableTable
                 maxHeight="360px"
@@ -1162,9 +1200,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauClientHealth') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauClientHealth">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Client Health</div>
               <SortableTable
                 maxHeight="360px"
@@ -1191,9 +1231,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
           {isSectionEnabled('bureauAccountManagers') && (
-            <div style={cardStyle}>
+            <ReportPanel reportKey="bureauAccountManagers">
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Account Managers</div>
               <SortableTable
                 defaultSort={{ key: 'revenue', dir: 'desc' }}
@@ -1221,9 +1263,11 @@ export default function PayrollBureauOpsViews({ moduleKey, data, isSectionEnable
                 )}
               />
             </div>
+          </ReportPanel>
           )}
         </>
       )}
     </div>
+    </ReportPanelRendererContext.Provider>
   );
 }

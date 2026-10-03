@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { TrendingUp, Users, Package, DollarSign, Warehouse, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react';
+import { TrendingUp, Users, Package, DollarSign, Warehouse, AlertCircle, ArrowUp, ArrowDown, GripVertical } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -24,6 +24,9 @@ import {
   ReferenceLine
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
+import OperationalReportPanel from './OperationalReportPanel';
+import OperationalReportPageLayout from './OperationalReportPageLayout';
+import SortableReportCollection from './SortableReportCollection';
 import FinancialForecastTab from '../FinancialForecastTab';
 import CustomerSalesForecast from './CustomerSalesForecast';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
@@ -43,15 +46,24 @@ import DefaultVendorReport from './DefaultVendorReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
 import PayrollBureauOpsViews from './PayrollBureauOpsViews';
-import PayrollBureauExecutiveScorecard from './PayrollBureauExecutiveScorecard';
+import PayrollBureauExecutiveScorecard, {
+  PAYROLL_BUREAU_EXECUTIVE_CHART_KEYS,
+} from './PayrollBureauExecutiveScorecard';
 import HubSpotSalesTab from './HubSpotSalesTab';
 import CapTableView from '../cap-table/CapTableView';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, isLoansDefaultEnabledForCompany, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
 import { getOperationalHubDefaultModuleKeys, getOperationalHubDefaultReportsForModule } from '@/lib/operations/operational-hub-layout';
-import { parseOperationalHubCustomReports, parseOperationalHubCustomTabs } from '@/lib/operations/operational-hub-overlay';
 import {
+  getOperationalHubReportOrder,
+  orderOperationalHubReports,
+  parseOperationalHubCustomReports,
+  parseOperationalHubCustomTabs,
+  type OperationalHubCustomReport,
+} from '@/lib/operations/operational-hub-overlay';
+import {
+  getAssignedCompanyCatalogReports,
   isAtlanticPrecisionCompany,
   isCogentScientificCompany,
   isCompanySpecificReportForSector,
@@ -91,6 +103,17 @@ interface OperationsTabProps {
 }
 
 type OpTab = 'dashboard' | 'overview' | string;
+
+const HEALTHCARE_OVERVIEW_REPORT_KEYS = [
+  'healthcareEnterpriseGrowth',
+  'healthcareEnterpriseReview',
+  'healthcareRegionalGrowth',
+  'healthcareRegionalScorecard',
+  'healthcareServiceGrowth',
+  'healthcareServiceScorecard',
+];
+const NON_REORDERABLE_OPERATIONAL_SECTION_KEY =
+  /(MetricCards|Kpis|SummaryCards|bureauPerfScorecard|payrollRunScorecard|payrollOnTimeProcessing)$/;
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
@@ -918,6 +941,9 @@ export default function OperationsTab({
   const [customerProfitabilityPeriod, setCustomerProfitabilityPeriod] = useState<'lastMonth' | 'last3' | 'last12'>('last12');
   const [customerConcentrationRenderStage, setCustomerConcentrationRenderStage] = useState(1);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
+  const [draggedReportId, setDraggedReportId] = useState<string | null>(null);
+  const [reportLayoutSaveError, setReportLayoutSaveError] = useState<string | null>(null);
+  const [savingReportLayout, setSavingReportLayout] = useState(false);
   const [companyCurrency, setCompanyCurrency] = useState<{
     baseCurrency: string;
     reportingCurrency: string | null;
@@ -1202,6 +1228,215 @@ export default function OperationsTab({
   const assignedCompanyReportKeySet = new Set(assignedCompanyReportKeys);
   const companyCustomTabKeys = companyCustomTabs.map((tab) => tab.key);
   const companyCustomTabLabelByKey = Object.fromEntries(companyCustomTabs.map((tab) => [tab.key, tab.label]));
+  const canManageReportLayout =
+    ['SITEADMIN', 'CONSULTANT'].includes(String(currentUser?.role || '').trim().toUpperCase()) ||
+    (String(currentUser?.role || '').trim().toUpperCase() === 'USER' &&
+      String((currentUser as any)?.companyRole || '').trim().toLowerCase() === 'admin');
+
+  const saveReportOrder = async (moduleKey: string, reportIds: string[]) => {
+    const normalizedModuleKey = String(moduleKey || '').trim();
+    const normalizedReportIds = Array.from(new Set(reportIds.map((id) => String(id || '').trim()).filter(Boolean)));
+    if (!canManageReportLayout || !normalizedModuleKey || normalizedReportIds.length === 0) return;
+
+    const previousOrder = getOperationalHubReportOrder(companyOperationalHubConfig, normalizedModuleKey)
+      .filter((id) => !NON_REORDERABLE_OPERATIONAL_SECTION_KEY.test(id));
+    const visibleReportIdSet = new Set(normalizedReportIds);
+    const firstExistingVisibleIndex = previousOrder.findIndex((id) => visibleReportIdSet.has(id));
+    const retainedReportIds = previousOrder.filter((id) => !visibleReportIdSet.has(id));
+    const insertionIndex = firstExistingVisibleIndex < 0
+      ? retainedReportIds.length
+      : previousOrder
+          .slice(0, firstExistingVisibleIndex)
+          .filter((id) => !visibleReportIdSet.has(id))
+          .length;
+    const nextPersistedOrder = [...retainedReportIds];
+    nextPersistedOrder.splice(insertionIndex, 0, ...normalizedReportIds);
+    const updateLocalOrder = (nextOrder: string[]) => {
+      setCompanyOperationalHubConfig((current: any) => ({
+        ...(current && typeof current === 'object' ? current : {}),
+        reportOrderByModule: {
+          ...(current?.reportOrderByModule && typeof current.reportOrderByModule === 'object'
+            ? current.reportOrderByModule
+            : {}),
+          [normalizedModuleKey]: nextOrder,
+        },
+      }));
+    };
+
+    setReportLayoutSaveError(null);
+    setSavingReportLayout(true);
+    updateLocalOrder(nextPersistedOrder);
+    try {
+      const response = await fetch('/api/operational-report-layout', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          moduleKey: normalizedModuleKey,
+          reportKeys: nextPersistedOrder,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || 'Could not save the report order.');
+
+    } catch (saveError: any) {
+      updateLocalOrder(previousOrder);
+      setReportLayoutSaveError(saveError?.message || 'Could not save the report order.');
+    } finally {
+      setSavingReportLayout(false);
+    }
+  };
+
+  const moveCustomReport = (moduleKey: string, sourceReportId: string, targetReportId: string, reports: OperationalHubCustomReport[]) => {
+    if (!sourceReportId || sourceReportId === targetReportId) return;
+    const orderedIds = orderOperationalHubReports(
+      reports,
+      getOperationalHubReportOrder(companyOperationalHubConfig, moduleKey)
+    ).map((report) => report.id);
+    const sourceIndex = orderedIds.indexOf(sourceReportId);
+    const targetIndex = orderedIds.indexOf(targetReportId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const nextOrder = [...orderedIds];
+    const [movedId] = nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(targetIndex, 0, movedId);
+    void saveReportOrder(moduleKey, nextOrder);
+  };
+
+  const getActiveReportModuleKey = () => resolveModuleKey(String(activeTab || '').trim());
+  const getActiveReportOrder = (moduleKey = getActiveReportModuleKey()) =>
+    getOperationalHubReportOrder(companyOperationalHubConfig, moduleKey);
+  const moveStandardReport = (sourceReportKey: string, targetReportKey: string, moduleKeyOverride?: string) => {
+    const moduleKey = moduleKeyOverride || getActiveReportModuleKey();
+    const companySpecificReportKeys = getAssignedCompanyCatalogReports({
+      companyId: selectedCompanyId,
+      companyName,
+      sectorCategory: industrySectorCategory,
+      hubConfig: companyOperationalHubConfig,
+      sections: operationalHubSections,
+      tabKey: moduleKey,
+    }).map((report) => report.key);
+    const configuredAgingReportKeys: Record<string, string[]> = {
+      ar: [
+        'arAgingTrend',
+        'arUnpaidByCustomer',
+        'arContractCashFlowSummary',
+        'arUnpaidInvoices',
+        'arAgingByCustomerTable',
+        'arPaidInvoicesByCustomer',
+        'arPaidInvoicesLast12Months',
+        'arCustomerInvoices',
+        'arCollectionsTrend',
+        'arCollectionsRiskQueue',
+        'arAgingByClient',
+        'arDsoTrend',
+        'arCollectionsByClient',
+        'arInvoiceToCashCycle',
+        'arTopPastDueClients',
+      ],
+      ap: [
+        'apPaymentCadenceTrend',
+        'apPastDueRiskQueue',
+        'apUpcomingDueCalendar',
+        'apAging',
+        'apVendorSpend',
+        'apAccruedPayrollLiabilities',
+        'apExpenseRunRate',
+      ],
+      cash: [
+        'cashBalanceTrend',
+        'cash13WeekTrend',
+        'cashBridge',
+        'cashBankAccounts',
+        'cashDistributionByAccount',
+      ],
+    };
+    const availableKeys = [
+      ...getOperationalHubDefaultReportsForModule(moduleKey, industrySectorCategory)
+      .map((report) => report.key)
+      .filter((key) => !NON_REORDERABLE_OPERATIONAL_SECTION_KEY.test(key)),
+      ...companySpecificReportKeys.filter((key) => !/(salesPipelineSummary|rbBillRateLevelSummary|ueUnitEconomicsInputs)$/.test(key)),
+      ...(configuredAgingReportKeys[moduleKey] || []),
+      ...(isHealthcareSector && moduleKey === 'dashboard' ? HEALTHCARE_OVERVIEW_REPORT_KEYS : []),
+      ...(isBureauExecutiveScorecardEnabled && moduleKey === 'dashboard' ? PAYROLL_BUREAU_EXECUTIVE_CHART_KEYS : []),
+    ];
+    const currentOrder = orderOperationalHubReports(
+      availableKeys.map((key) => ({ key })),
+      getOperationalHubReportOrder(companyOperationalHubConfig, moduleKey)
+    ).map((report) => report.key || '');
+    if (!currentOrder.includes(sourceReportKey) || !currentOrder.includes(targetReportKey)) {
+      const visibleReportKeys = typeof document === 'undefined'
+        ? []
+        : Array.from(document.querySelectorAll<HTMLElement>('[data-operational-report-key]'))
+            .filter((element) => element.offsetParent !== null)
+            .map((element) => String(element.dataset.operationalReportKey || '').trim())
+            .filter(Boolean);
+      for (const reportKey of visibleReportKeys) {
+        if (!currentOrder.includes(reportKey)) currentOrder.push(reportKey);
+      }
+    }
+    const sourceIndex = currentOrder.indexOf(sourceReportKey);
+    const targetIndex = currentOrder.indexOf(targetReportKey);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return;
+    const nextOrder = [...currentOrder];
+    const [movedKey] = nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(targetIndex, 0, movedKey);
+    void saveReportOrder(moduleKey, nextOrder);
+  };
+  const getReportPanelStyle = (
+    reportKey: string,
+    style: React.CSSProperties,
+    moduleKey = getActiveReportModuleKey()
+  ): React.CSSProperties => {
+    const position = getActiveReportOrder(moduleKey).indexOf(reportKey);
+    return {
+      ...style,
+      order: position >= 0 ? position : 1000,
+      cursor: canManageReportLayout ? 'grab' : style.cursor,
+      outline: draggedReportId === reportKey ? '2px solid #2563eb' : undefined,
+      outlineOffset: draggedReportId === reportKey ? '2px' : undefined,
+    };
+  };
+  const renderReorderableConstructionReport = (reportKey: string, children: React.ReactNode) => (
+    <OperationalReportPanel
+      reportKey={reportKey}
+      canReorder={canManageReportLayout}
+      isSaving={savingReportLayout}
+      onMove={moveStandardReport}
+      style={getReportPanelStyle(reportKey, {})}
+    >
+      {children}
+    </OperationalReportPanel>
+  );
+  const renderReorderableStandardReport = (
+    reportKey: string,
+    children: React.ReactNode,
+    style: React.CSSProperties = {}
+  ) => (
+    <OperationalReportPanel
+      reportKey={reportKey}
+      canReorder={canManageReportLayout}
+      isSaving={savingReportLayout}
+      onMove={moveStandardReport}
+      style={getReportPanelStyle(reportKey, style)}
+    >
+      {children}
+    </OperationalReportPanel>
+  );
+  const renderReorderableCompanyReport = (
+    reportKey: string,
+    moduleKey: string,
+    children: React.ReactNode,
+  ) => (
+    <OperationalReportPanel
+      reportKey={reportKey}
+      canReorder={canManageReportLayout}
+      isSaving={savingReportLayout}
+      onMove={(sourceReportKey, targetReportKey) => moveStandardReport(sourceReportKey, targetReportKey, moduleKey)}
+      style={getReportPanelStyle(reportKey, {}, moduleKey)}
+    >
+      {children}
+    </OperationalReportPanel>
+  );
   const isSectionAllowedForActiveModule = (sectionKey: string): boolean => {
     const sector = String(industrySectorCategory || '').trim();
     const moduleKey = resolveModuleKey(String(activeTab || '').trim());
@@ -5485,16 +5720,31 @@ export default function OperationsTab({
     };
     const renderCategorySalesHistoryPanel = () =>
       isSectionEnabled('customersPlatoSalesHistoryChart') ? (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Top 15 Items by Month</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            {renderCategorySalesHistoryChart(salesReportPayload.sales)}
-          </ResponsiveContainer>
-        </div>
+        <OperationalReportPanel
+          reportKey="customersPlatoSalesHistoryChart"
+          canReorder={canManageReportLayout}
+          isSaving={savingReportLayout}
+          onMove={moveStandardReport}
+          style={getReportPanelStyle('customersPlatoSalesHistoryChart', {})}
+        >
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Top 15 Items by Month</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              {renderCategorySalesHistoryChart(salesReportPayload.sales)}
+            </ResponsiveContainer>
+          </div>
+        </OperationalReportPanel>
       ) : null;
     const renderTopCustomerTrendPanel = () =>
       isSectionEnabled('customersTop10MonthlyTrend') ? (
-        <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+        <OperationalReportPanel
+          reportKey="customersTop10MonthlyTrend"
+          canReorder={canManageReportLayout}
+          isSaving={savingReportLayout}
+          onMove={moveStandardReport}
+          style={getReportPanelStyle('customersTop10MonthlyTrend', {})}
+        >
+          <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -5605,7 +5855,8 @@ export default function OperationsTab({
               )}
             </>
           )}
-        </div>
+          </div>
+        </OperationalReportPanel>
       ) : null;
 
     return (
@@ -5613,10 +5864,9 @@ export default function OperationsTab({
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           {isRetailSalesLanguage || isSalesAnalyticsTab ? 'Sales Analytics' : 'Customer Sales Analytics'}
         </h2>
-
-        <div style={{ marginBottom: '24px' }}>
+        <div style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column' }}>
             {isSectionEnabled('customersPlatoSalesMetricCards') && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '16px', order: -1 }}>
               {[
                 {
                   title: 'Sales MTD',
@@ -5656,8 +5906,15 @@ export default function OperationsTab({
             {renderTopCustomerTrendPanel()}
 
             {isSectionEnabled('customersGrossMarginHistoryChart') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-                <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Gross Margin $ and % by Month</h3>
+              <OperationalReportPanel
+                reportKey="customersGrossMarginHistoryChart"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('customersGrossMarginHistoryChart', {})}
+              >
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Gross Margin $ and % by Month</h3>
                 {Array.isArray(salesReportPayload.grossMarginHistory?.chartData) && salesReportPayload.grossMarginHistory.chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height={320}>
                     <ComposedChart data={salesReportPayload.grossMarginHistory.chartData}>
@@ -5677,30 +5934,46 @@ export default function OperationsTab({
                       <Line yAxisId="right" type="monotone" dataKey="gmPct" name="Gross Margin %" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
-                ) : renderSalesReportEmptyState()}
-              </div>
+                  ) : renderSalesReportEmptyState()}
+                </div>
+              </OperationalReportPanel>
             )}
 
             {isSectionEnabled('customersPlatoSalesHistoryTables') && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
-                {renderCategorySalesHistoryTable('Customer Sales History', { categoryHistory: customerSalesHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || (
-                  <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Customer Sales History</h3>
-                    {renderSalesReportEmptyState()}
-                  </div>
-                )}
-                {renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || null}
-                {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
-                  <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>
-                    {renderSalesReportEmptyState()}
-                  </div>
-                ))}
-              </div>
+              <OperationalReportPanel
+                reportKey="customersPlatoSalesHistoryTables"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('customersPlatoSalesHistoryTables', {})}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
+                  {renderCategorySalesHistoryTable('Customer Sales History', { categoryHistory: customerSalesHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || (
+                    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                      <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Customer Sales History</h3>
+                      {renderSalesReportEmptyState()}
+                    </div>
+                  )}
+                  {renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || null}
+                  {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
+                    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                      <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>
+                      {renderSalesReportEmptyState()}
+                    </div>
+                  ))}
+                </div>
+              </OperationalReportPanel>
             )}
 
             {isSectionEnabled('customersHistoricalSalesGrowth') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+              <OperationalReportPanel
+                reportKey="customersHistoricalSalesGrowth"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('customersHistoricalSalesGrowth', { marginBottom: '20px' })}
+              >
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
@@ -5789,6 +6062,7 @@ export default function OperationsTab({
                   )
                 )}
               </div>
+              </OperationalReportPanel>
             )}
 
             {!isRetailSalesLanguage && !isAtlanticCompany && (
@@ -5800,14 +6074,22 @@ export default function OperationsTab({
             )}
 
             {isSectionEnabled('customersGrossMarginHistoryTable') && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
+              <OperationalReportPanel
+                reportKey="customersGrossMarginHistoryTable"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('customersGrossMarginHistoryTable', { marginBottom: '20px' })}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
                 {renderGrossMarginHistoryTable('Gross Margin by Month', salesReportPayload.grossMarginHistory) || (
                   <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                     <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Gross Margin by Month</h3>
                     {renderSalesReportEmptyState()}
                   </div>
                 )}
-              </div>
+                </div>
+              </OperationalReportPanel>
             )}
           </div>
 
@@ -6170,7 +6452,14 @@ export default function OperationsTab({
               )}
               {renderCategorySalesHistoryPanel()}
               {!isManufacturingSector && isSectionEnabled('customersWipByCustomer') && (
-              <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+              <OperationalReportPanel
+                reportKey="customersWipByCustomer"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('customersWipByCustomer', { marginBottom: '24px' })}
+              >
+              <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -6301,6 +6590,7 @@ export default function OperationsTab({
                   </div>
                 )}
               </div>
+              </OperationalReportPanel>
               )}
             {(isSectionEnabled('customersTopByRevenue') || isSectionEnabled('customersRevenueDistribution')) && (
             <div
@@ -6313,6 +6603,13 @@ export default function OperationsTab({
             >
               {/* Top revenue table */}
               {isSectionEnabled('customersTopByRevenue') && (
+              <OperationalReportPanel
+                reportKey="customersTopByRevenue"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('customersTopByRevenue', {})}
+              >
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -6407,10 +6704,18 @@ export default function OperationsTab({
                   </table>
                 </div>
               </div>
+              </OperationalReportPanel>
               )}
 
               {/* Revenue distribution chart */}
               {isSectionEnabled('customersRevenueDistribution') && (
+              <OperationalReportPanel
+                reportKey="customersRevenueDistribution"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('customersRevenueDistribution', {})}
+              >
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px', gap: '12px', flexWrap: 'wrap' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
@@ -6494,6 +6799,7 @@ export default function OperationsTab({
                   </div>
                 </div>
               </div>
+              </OperationalReportPanel>
               )}
             </div>
             )}
@@ -6508,6 +6814,13 @@ export default function OperationsTab({
                 }}
               >
               {isSectionEnabled('customersConcentrationRisk') && (
+                <OperationalReportPanel
+                  reportKey="customersConcentrationRisk"
+                  canReorder={canManageReportLayout}
+                  isSaving={savingReportLayout}
+                  onMove={moveStandardReport}
+                  style={getReportPanelStyle('customersConcentrationRisk', {})}
+                >
                 <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -6543,9 +6856,17 @@ export default function OperationsTab({
                   </tbody>
                 </table>
               </div>
+              </OperationalReportPanel>
               )}
 
               {isSectionEnabled('customersRetentionProxy') && (
+                <OperationalReportPanel
+                  reportKey="customersRetentionProxy"
+                  canReorder={canManageReportLayout}
+                  isSaving={savingReportLayout}
+                  onMove={moveStandardReport}
+                  style={getReportPanelStyle('customersRetentionProxy', {})}
+                >
                 <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -6568,6 +6889,7 @@ export default function OperationsTab({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              </OperationalReportPanel>
               )}
             </div>
             )}
@@ -6581,6 +6903,13 @@ export default function OperationsTab({
                 }}
               >
               {isSectionEnabled('customersInvoiceVelocity') && (
+                <OperationalReportPanel
+                  reportKey="customersInvoiceVelocity"
+                  canReorder={canManageReportLayout}
+                  isSaving={savingReportLayout}
+                  onMove={moveStandardReport}
+                  style={getReportPanelStyle('customersInvoiceVelocity', {})}
+                >
                 <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -6604,9 +6933,17 @@ export default function OperationsTab({
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
+              </OperationalReportPanel>
               )}
 
               {isSectionEnabled('customersAtRiskQueue') && (
+                <OperationalReportPanel
+                  reportKey="customersAtRiskQueue"
+                  canReorder={canManageReportLayout}
+                  isSaving={savingReportLayout}
+                  onMove={moveStandardReport}
+                  style={getReportPanelStyle('customersAtRiskQueue', {})}
+                >
                 <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -6650,6 +6987,7 @@ export default function OperationsTab({
                   </div>
                 )}
               </div>
+              </OperationalReportPanel>
               )}
             </div>
             )}
@@ -7304,6 +7642,13 @@ export default function OperationsTab({
 
         {/* AR Aging Trend Chart */}
         {isSectionEnabled('arAgingTrend') && (
+        <OperationalReportPanel
+          reportKey="arAgingTrend"
+          canReorder={canManageReportLayout}
+          isSaving={savingReportLayout}
+          onMove={moveStandardReport}
+          style={getReportPanelStyle('arAgingTrend', {})}
+        >
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Open AR Aging Trend
@@ -7341,10 +7686,18 @@ export default function OperationsTab({
             </BarChart>
           </ResponsiveContainer>
         </div>
+        </OperationalReportPanel>
         )}
 
         {/* Unpaid Invoices by Customer (Top 10) */}
         {isSectionEnabled('arUnpaidByCustomer') && (
+        <OperationalReportPanel
+          reportKey="arUnpaidByCustomer"
+          canReorder={canManageReportLayout}
+          isSaving={savingReportLayout}
+          onMove={moveStandardReport}
+          style={getReportPanelStyle('arUnpaidByCustomer', {})}
+        >
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>
             Unpaid Invoices Amount by Customer (Top 10)
@@ -7408,11 +7761,19 @@ export default function OperationsTab({
             </div>
           )}
         </div>
+        </OperationalReportPanel>
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
           {/* Customer Contract and Cash Flow Summary */}
           {isSectionEnabled('arContractCashFlowSummary') && (
+          <OperationalReportPanel
+            reportKey="arContractCashFlowSummary"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('arContractCashFlowSummary', {})}
+          >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Customer Contract and Cash Flow Summary
@@ -7500,6 +7861,7 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
           )}
         </div>
 
@@ -7518,6 +7880,13 @@ export default function OperationsTab({
         >
           {/* Unpaid Invoices Summary */}
           {isSectionEnabled('arUnpaidInvoices') && (
+          <OperationalReportPanel
+            reportKey="arUnpaidInvoices"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('arUnpaidInvoices', {})}
+          >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Unpaid Invoices
@@ -7610,10 +7979,18 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
           )}
 
           {/* AR Aging by Customer (per-customer summary, complements the per-invoice table above) */}
           {isSectionEnabled('arAgingByCustomerTable') && (
+          <OperationalReportPanel
+            reportKey="arAgingByCustomerTable"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('arAgingByCustomerTable', {})}
+          >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               AR Aging by Customer
@@ -7696,6 +8073,7 @@ export default function OperationsTab({
             </div>
           )}
           </div>
+          </OperationalReportPanel>
           )}
         </div>
         )}
@@ -7714,6 +8092,7 @@ export default function OperationsTab({
         >
           {/* Paid Invoices by Customer */}
           {isSectionEnabled('arPaidInvoicesByCustomer') && (
+          <OperationalReportPanel reportKey="arPaidInvoicesByCustomer" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arPaidInvoicesByCustomer', {})}>
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Paid Invoices by Customer
@@ -7753,10 +8132,12 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
           )}
 
           {/* Last 12 Month Paid Invoices Amount */}
           {isSectionEnabled('arPaidInvoicesLast12Months') && (
+          <OperationalReportPanel reportKey="arPaidInvoicesLast12Months" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arPaidInvoicesLast12Months', {})}>
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Last 12 Month Paid Invoices Amount
@@ -7800,11 +8181,13 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
           )}
         </div>
         )}
 
         {isSectionEnabled('arCustomerInvoices') && (
+        <OperationalReportPanel reportKey="arCustomerInvoices" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arCustomerInvoices', {})}>
         <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -7928,6 +8311,7 @@ export default function OperationsTab({
             </div>
           </div>
         </div>
+        </OperationalReportPanel>
         )}
 
         {(isSectionEnabled('arCollectionsTrend') || isSectionEnabled('arCollectionsRiskQueue')) && (
@@ -7940,6 +8324,7 @@ export default function OperationsTab({
             }}
           >
           {isSectionEnabled('arCollectionsTrend') && (
+            <OperationalReportPanel reportKey="arCollectionsTrend" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arCollectionsTrend', {})}>
             <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Collections Trend / DSO
@@ -7961,9 +8346,11 @@ export default function OperationsTab({
               </LineChart>
             </ResponsiveContainer>
           </div>
+          </OperationalReportPanel>
           )}
 
           {isSectionEnabled('arCollectionsRiskQueue') && (
+            <OperationalReportPanel reportKey="arCollectionsRiskQueue" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arCollectionsRiskQueue', {})}>
             <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Collections Risk Queue
@@ -8000,6 +8387,7 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
           )}
         </div>
         )}
@@ -8007,6 +8395,7 @@ export default function OperationsTab({
         {(isSectionEnabled('arAgingByClient') || isSectionEnabled('arDsoTrend')) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '24px', marginTop: '24px' }}>
             {isSectionEnabled('arAgingByClient') && (
+              <OperationalReportPanel reportKey="arAgingByClient" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arAgingByClient', {})}>
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>AR Aging by Client</h3>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>Top open balances across client aging buckets.</div>
@@ -8026,8 +8415,10 @@ export default function OperationsTab({
                   </table>
                 </div>
               </div>
+              </OperationalReportPanel>
             )}
             {isSectionEnabled('arDsoTrend') && (
+              <OperationalReportPanel reportKey="arDsoTrend" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arDsoTrend', {})}>
               <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>DSO Trend</h3>
                 <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>DSO proxy across the selected window.</div>
@@ -8041,6 +8432,7 @@ export default function OperationsTab({
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+              </OperationalReportPanel>
             )}
           </div>
         )}
@@ -8048,6 +8440,7 @@ export default function OperationsTab({
         {(isSectionEnabled('arCollectionsByClient') || isSectionEnabled('arInvoiceToCashCycle')) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '24px', marginTop: '24px' }}>
             {isSectionEnabled('arCollectionsByClient') && (
+              <OperationalReportPanel reportKey="arCollectionsByClient" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arCollectionsByClient', {})}>
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Collections by Client</h3>
                 <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -8064,8 +8457,10 @@ export default function OperationsTab({
                   </table>
                 </div>
               </div>
+              </OperationalReportPanel>
             )}
             {isSectionEnabled('arInvoiceToCashCycle') && (
+              <OperationalReportPanel reportKey="arInvoiceToCashCycle" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arInvoiceToCashCycle', {})}>
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Invoice-to-Cash Cycle</h3>
                 <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -8082,11 +8477,13 @@ export default function OperationsTab({
                   </table>
                 </div>
               </div>
+              </OperationalReportPanel>
             )}
           </div>
         )}
 
         {isSectionEnabled('arTopPastDueClients') && (
+          <OperationalReportPanel reportKey="arTopPastDueClients" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arTopPastDueClients', {})}>
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Top Past Due Clients</h3>
             <div style={{ overflowX: 'auto' }}>
@@ -8103,6 +8500,7 @@ export default function OperationsTab({
               </table>
             </div>
           </div>
+          </OperationalReportPanel>
         )}
       </div>
     );
@@ -8824,6 +9222,7 @@ export default function OperationsTab({
             }}
           >
           {isSectionEnabled('apPaymentCadenceTrend') && (
+            <OperationalReportPanel reportKey="apPaymentCadenceTrend" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('apPaymentCadenceTrend', {})}>
             <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Payment Cadence / DPO Proxy
@@ -8845,8 +9244,10 @@ export default function OperationsTab({
               </LineChart>
             </ResponsiveContainer>
           </div>
+          </OperationalReportPanel>
           )}
           {isSectionEnabled('apPastDueRiskQueue') && (
+            <OperationalReportPanel reportKey="apPastDueRiskQueue" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('apPastDueRiskQueue', {})}>
             <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               AP Past-Due Risk Queue
@@ -8883,11 +9284,13 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
           )}
         </div>
         )}
 
         {isSectionEnabled('apUpcomingDueCalendar') && (
+          <OperationalReportPanel reportKey="apUpcomingDueCalendar" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('apUpcomingDueCalendar', {})}>
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
             Upcoming Due Calendar (Next 30 Days)
@@ -8958,11 +9361,13 @@ export default function OperationsTab({
             </div>
           )}
         </div>
+        </OperationalReportPanel>
         )}
 
         {(isSectionEnabled('apAging') || isSectionEnabled('apVendorSpend')) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '24px', marginTop: '24px' }}>
             {isSectionEnabled('apAging') && (
+              <OperationalReportPanel reportKey="apAging" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('apAging', {})}>
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>AP Aging</h3>
                 <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -8981,8 +9386,10 @@ export default function OperationsTab({
                   </table>
                 </div>
               </div>
+              </OperationalReportPanel>
             )}
             {isSectionEnabled('apVendorSpend') && (
+              <OperationalReportPanel reportKey="apVendorSpend" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('apVendorSpend', {})}>
               <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Vendor Spend (insurance, benefits, job boards)</h3>
                 <ResponsiveContainer width="100%" height={260}>
@@ -8996,6 +9403,7 @@ export default function OperationsTab({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              </OperationalReportPanel>
             )}
           </div>
         )}
@@ -9003,6 +9411,7 @@ export default function OperationsTab({
         {(isSectionEnabled('apAccruedPayrollLiabilities') || isSectionEnabled('apExpenseRunRate')) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '24px', marginTop: '24px' }}>
             {isSectionEnabled('apAccruedPayrollLiabilities') && (
+              <OperationalReportPanel reportKey="apAccruedPayrollLiabilities" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('apAccruedPayrollLiabilities', {})}>
               <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Accrued Payroll Liabilities</h3>
                 <ResponsiveContainer width="100%" height={260}>
@@ -9015,8 +9424,10 @@ export default function OperationsTab({
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+              </OperationalReportPanel>
             )}
             {isSectionEnabled('apExpenseRunRate') && (
+              <OperationalReportPanel reportKey="apExpenseRunRate" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('apExpenseRunRate', {})}>
               <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Expense Run Rate</h3>
                 <ResponsiveContainer width="100%" height={260}>
@@ -9029,6 +9440,7 @@ export default function OperationsTab({
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+              </OperationalReportPanel>
             )}
           </div>
         )}
@@ -9208,9 +9620,10 @@ export default function OperationsTab({
     const shouldRenderMonthlyRevenue = effectiveProductReportView === 'monthlyRevenue' && isMonthlyRevenueEnabled;
     const shouldRenderRevenueRollup = effectiveProductReportView === 'revenueRollup' && isRevenueRollupEnabled;
     const shouldRenderGoalUpdate = effectiveProductReportView === 'goalUpdate' && isGoalUpdateEnabled;
-    const shouldRenderRetailForecast = effectiveProductReportView === 'retailForecast' && isRetailForecastingEnabled;
-    const shouldRenderMerchandiseProfitability =
-      effectiveProductReportView === 'merchandiseProfitability' && isMerchandiseProfitabilityEnabled;
+    // Retail specialty reports share the Products dashboard with the standard
+    // panels, so build their data whenever the corresponding section is enabled.
+    const shouldRenderRetailForecast = isRetailForecastingEnabled;
+    const shouldRenderMerchandiseProfitability = isMerchandiseProfitabilityEnabled;
     const shouldBuildRetailForecasts = shouldRenderRetailForecast || shouldRenderMerchandiseProfitability;
     const shouldBuildVendorPricingData = shouldRenderVendorPricing;
     const platosMetrics = summary?.platosMetrics || null;
@@ -10622,6 +11035,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('productMarginAnalysis')}
             style={{
+              order: getReportPanelStyle('productsProductMarginAnalysis', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10640,6 +11054,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('wholesaleRawData')}
             style={{
+              order: getReportPanelStyle('productsWholesaleRawData', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10658,6 +11073,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('revenueForecast')}
             style={{
+              order: getReportPanelStyle('productsRevenueForecast', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10676,6 +11092,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('forecastRollup')}
             style={{
+              order: getReportPanelStyle('productsForecastRollup', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10694,6 +11111,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('monthlyRevenue')}
             style={{
+              order: getReportPanelStyle('productsMonthlyRevenue', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10712,6 +11130,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('revenueRollup')}
             style={{
+              order: getReportPanelStyle('productsRevenueRollup', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10730,6 +11149,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('goalUpdate')}
             style={{
+              order: getReportPanelStyle('productsGoalUpdate', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10748,6 +11168,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('performance')}
             style={{
+              order: getReportPanelStyle('productsPerformance', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10766,6 +11187,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('reports')}
             style={{
+              order: getReportPanelStyle('productsReports', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -10784,6 +11206,7 @@ export default function OperationsTab({
             type="button"
             onClick={() => setProductReportView('ytdGap')}
             style={{
+              order: getReportPanelStyle('productsYtdGap', {}, 'products_skus').order,
               border: '1px solid #cbd5e1',
               borderRadius: '999px',
               padding: '8px 12px',
@@ -12726,10 +13149,13 @@ export default function OperationsTab({
     );
 
     if (isVendorsTab) {
-      const standardVendorReports = getOperationalHubDefaultReportsForModule(
-        'vendors',
-        String(industrySectorCategory || '').trim()
-      ).filter((report) => isSectionEnabled(report.key));
+      const standardVendorReports = orderOperationalHubReports(
+        getOperationalHubDefaultReportsForModule(
+          'vendors',
+          String(industrySectorCategory || '').trim()
+        ).filter((report) => isSectionEnabled(report.key)),
+        getActiveReportOrder('vendors')
+      );
       const customVendorReports = [
         { key: 'productsVendorPricing', view: 'vendorPricing' as VendorReportView, label: 'Vendor Pricing', enabled: isWholesaleProductSector && isVendorPricingEnabled },
         { key: 'vendorsDutiesTariffs', view: 'dutiesTariffs' as VendorReportView, label: 'Duties & Tariffs', enabled: isWholesaleProductSector && isDutiesTariffsEnabled },
@@ -12818,25 +13244,29 @@ export default function OperationsTab({
             />
           ) : null}
           {activeStandardReport ? (
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
-              <DefaultVendorReport
-                key={`${selectedCompanyId}-${activeStandardReport.key}`}
-                companyId={selectedCompanyId}
-                reportKey={activeStandardReport.key}
-                reportLabel={activeStandardReport.label}
-                currency={moneyCurrency}
-                locale={moneyLocale}
-              />
-            </div>
+            <DefaultVendorReport
+              key={`${selectedCompanyId}-${activeStandardReport.key}`}
+              companyId={selectedCompanyId}
+              reportKey={activeStandardReport.key}
+              reportLabel={activeStandardReport.label}
+              currency={moneyCurrency}
+              locale={moneyLocale}
+              canReorder={canManageReportLayout}
+              isSaving={savingReportLayout}
+              onMove={(sourceReportKey, targetReportKey) =>
+                moveStandardReport(sourceReportKey, targetReportKey, 'vendors')
+              }
+              panelStyle={getReportPanelStyle(activeStandardReport.key, {}, 'vendors')}
+            />
           ) : activeCustomReport?.view === 'dutiesTariffs' ? (
             <>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
                 Duties & Tariffs
               </h2>
-              <DutiesTariffsReport
+              {renderReorderableCompanyReport('vendorsDutiesTariffs', 'vendors', <DutiesTariffsReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsDutiesTariffs')}
-              />
+              />)}
               {renderProductChartInfoModal()}
             </>
           ) : activeCustomReport?.view === 'sgpFreight' ? (
@@ -12844,30 +13274,30 @@ export default function OperationsTab({
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
                 SGP Freight
               </h2>
-              <SgpFreightReport
+              {renderReorderableCompanyReport('vendorsSgpFreight', 'vendors', <SgpFreightReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsSgpFreight')}
-              />
+              />)}
               {renderProductChartInfoModal()}
             </>
           ) : activeCustomReport?.view === 'monthlyForecast' ? (
             <>
-              <VendorMonthlyForecastReport
+              {renderReorderableCompanyReport('vendorsMonthlyForecast', 'vendors', <VendorMonthlyForecastReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsMonthlyForecast')}
-              />
+              />)}
               {renderProductChartInfoModal()}
             </>
           ) : activeCustomReport?.view === 'forecastRollup' ? (
             <>
-              <VendorForecastRollupReport
+              {renderReorderableCompanyReport('vendorsForecastRollup', 'vendors', <VendorForecastRollupReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsForecastRollup')}
-              />
+              />)}
               {renderProductChartInfoModal()}
             </>
           ) : activeCustomReport?.view === 'vendorPricing' ? (
-            renderVendorPricingReport()
+            renderReorderableCompanyReport('productsVendorPricing', 'vendors', renderVendorPricingReport())
           ) : (
             <div style={{ color: '#64748b', fontSize: 13 }}>No vendor reports are enabled for this company.</div>
           )}
@@ -12882,7 +13312,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderProductMarginAnalysisReport()}
+          {renderReorderableCompanyReport('productsProductMarginAnalysis', 'products_skus', renderProductMarginAnalysisReport())}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -12895,7 +13325,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderWholesaleRawDataReport()}
+          {renderReorderableCompanyReport('productsWholesaleRawData', 'products_skus', renderWholesaleRawDataReport())}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -12908,10 +13338,10 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          <ProductRevenueForecastReport
+          {renderReorderableCompanyReport('productsRevenueForecast', 'products_skus', <ProductRevenueForecastReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsRevenueForecast')}
-          />
+          />)}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -12924,10 +13354,10 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          <ProductForecastRollupReport
+          {renderReorderableCompanyReport('productsForecastRollup', 'products_skus', <ProductForecastRollupReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsForecastRollup')}
-          />
+          />)}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -12940,10 +13370,10 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          <ProductMonthlyRevenueReport
+          {renderReorderableCompanyReport('productsMonthlyRevenue', 'products_skus', <ProductMonthlyRevenueReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsMonthlyRevenue')}
-          />
+          />)}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -12956,10 +13386,10 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          <ProductRevenueRollupReport
+          {renderReorderableCompanyReport('productsRevenueRollup', 'products_skus', <ProductRevenueRollupReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsRevenueRollup')}
-          />
+          />)}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -12972,10 +13402,10 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          <ProductGoalUpdateReport
+          {renderReorderableCompanyReport('productsGoalUpdate', 'products_skus', <ProductGoalUpdateReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsGoalUpdate')}
-          />
+          />)}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -12988,10 +13418,10 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          <ProductReportsChart
+          {renderReorderableCompanyReport('productsReports', 'products_skus', <ProductReportsChart
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsReports')}
-          />
+          />)}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -13004,36 +13434,10 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          <ProductYtdGapReport
+          {renderReorderableCompanyReport('productsYtdGap', 'products_skus', <ProductYtdGapReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsYtdGap')}
-          />
-          {renderProductChartInfoModal()}
-        </div>
-      );
-    }
-
-    if (effectiveProductReportView === 'merchandiseProfitability' && isMerchandiseProfitabilityEnabled) {
-      return (
-        <div style={{ padding: '8px 32px 32px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
-          {productViewSwitcher}
-          {renderMerchandiseProfitabilityReport()}
-          {renderProductChartInfoModal()}
-        </div>
-      );
-    }
-
-    if (effectiveProductReportView === 'retailForecast' && isRetailForecastingEnabled) {
-      return (
-        <div style={{ padding: '8px 32px 32px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
-          {productViewSwitcher}
-          {renderRetailForecastingReport()}
+          />)}
           {renderProductChartInfoModal()}
         </div>
       );
@@ -13062,33 +13466,93 @@ export default function OperationsTab({
         {productViewSwitcher}
         {healthcareProceduresRegionSelector}
 
-        {allProductMetricCards.length > 0 && (
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px' }}>
-              {allProductMetricCards.map((card) => (
-                <div
-                  key={card.title}
-                  style={{
-                    background: 'white',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    minWidth: 0,
-                  }}
-                >
-                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>{card.title}</div>
-                  <div style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', marginBottom: '6px', lineHeight: 1.2 }}>
-                    {card.value}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>{card.detail}</div>
+        {isProductPerformanceEnabled && allProductMetricCards.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
+            {allProductMetricCards.map((card) => (
+              <div
+                key={card.title}
+                style={{
+                  background: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  minWidth: 0,
+                }}
+              >
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>{card.title}</div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', marginBottom: '6px', lineHeight: 1.2 }}>
+                  {card.value}
                 </div>
-              ))}
-            </div>
+                <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>{card.detail}</div>
+              </div>
+            ))}
           </div>
         )}
 
+        {isSectionEnabled('productsScopeSelector') && (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Scope</span>
+            <button
+              onClick={() => setProductScopeMode('total')}
+              style={{
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                background: productScopeMode === 'total' ? '#e0e7ff' : '#ffffff',
+                color: productScopeMode === 'total' ? '#3730a3' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '12px',
+              }}
+            >
+              Total
+            </button>
+            <button
+              onClick={() => setProductScopeMode('product')}
+              style={{
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                background: productScopeMode === 'product' ? '#e0e7ff' : '#ffffff',
+                color: productScopeMode === 'product' ? '#3730a3' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '12px',
+              }}
+            >
+              Product
+            </button>
+            {productScopeMode === 'product' && (
+              <select
+                value={effectiveScopeSku}
+                onChange={(event) => setSelectedScopeSku(event.target.value)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 10px', fontSize: '12px', minWidth: '240px' }}
+              >
+                {productScopeOptions.map((option) => (
+                  <option key={option.sku} value={option.sku}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>
+            Applied to: Price-Cost Trend, Waterfall, Freight/Other Revenue Tracker
+          </div>
+        </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+        {isRetailForecastingEnabled && (
+          renderReorderableStandardReport('productsRetailForecasting', renderRetailForecastingReport(), { gridColumn: '1 / -1' })
+        )}
+        {isMerchandiseProfitabilityEnabled && (
+          renderReorderableStandardReport('productsMerchandiseProfitability', renderMerchandiseProfitabilityReport(), { gridColumn: '1 / -1' })
+        )}
         {isSectionEnabled('productsPriceCostComparison') && (
-          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
+          renderReorderableStandardReport('productsPriceCostComparison', (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '12px', flexWrap: 'wrap' }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Weekly Price-Cost Comparison</h3>
@@ -13210,10 +13674,12 @@ export default function OperationsTab({
             </table>
           </div>
         </div>
+        ), { gridColumn: '1 / -1' })
         )}
 
         {isSectionEnabled('productsLossPrevention') && (
-          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+          renderReorderableStandardReport('productsLossPrevention', (
+          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Loss Prevention</h3>
               {renderChartInfoLink('productsLossPrevention')}
@@ -13251,18 +13717,17 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          ), { gridColumn: '1 / -1' })
         )}
 
         {(isSectionEnabled('productsPareto') || isSectionEnabled('productsScatter')) && (
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: isSectionEnabled('productsPareto') && isSectionEnabled('productsScatter') ? 'repeat(2, minmax(0, 1fr))' : '1fr',
-              gap: '12px',
-              marginBottom: '20px',
+              display: 'contents',
             }}
           >
           {isSectionEnabled('productsPareto') && (
+            renderReorderableStandardReport('productsPareto', (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Top Products by Revenue (Pareto)</h3>
@@ -13288,9 +13753,11 @@ export default function OperationsTab({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          ))
           )}
 
           {isSectionEnabled('productsScatter') && (
+            renderReorderableStandardReport('productsScatter', (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Product Profitability Scatter</h3>
@@ -13334,74 +13801,19 @@ export default function OperationsTab({
               </ScatterChart>
             </ResponsiveContainer>
           </div>
+          ))
           )}
-        </div>
-        )}
-
-        {isSectionEnabled('productsScopeSelector') && (
-          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Scope</span>
-            <button
-              onClick={() => setProductScopeMode('total')}
-              style={{
-                border: '1px solid #cbd5e1',
-                borderRadius: '8px',
-                padding: '6px 10px',
-                background: productScopeMode === 'total' ? '#e0e7ff' : '#ffffff',
-                color: productScopeMode === 'total' ? '#3730a3' : '#334155',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontSize: '12px',
-              }}
-            >
-              Total
-            </button>
-            <button
-              onClick={() => setProductScopeMode('product')}
-              style={{
-                border: '1px solid #cbd5e1',
-                borderRadius: '8px',
-                padding: '6px 10px',
-                background: productScopeMode === 'product' ? '#e0e7ff' : '#ffffff',
-                color: productScopeMode === 'product' ? '#3730a3' : '#334155',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontSize: '12px',
-              }}
-            >
-              Product
-            </button>
-            {productScopeMode === 'product' && (
-              <select
-                value={effectiveScopeSku}
-                onChange={(event) => setSelectedScopeSku(event.target.value)}
-                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 10px', fontSize: '12px', minWidth: '240px' }}
-              >
-                {productScopeOptions.map((option) => (
-                  <option key={option.sku} value={option.sku}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>
-            Applied to: Price-Cost Trend, Waterfall, Freight/Other Revenue Tracker
-          </div>
         </div>
         )}
 
         {(isSectionEnabled('productsPriceCostTrend') || isSectionEnabled('productsPriceCostWaterfall')) && (
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: isSectionEnabled('productsPriceCostTrend') && isSectionEnabled('productsPriceCostWaterfall') ? 'repeat(2, minmax(0, 1fr))' : '1fr',
-              gap: '12px',
-              marginBottom: '20px',
+              display: 'contents',
             }}
           >
           {isSectionEnabled('productsPriceCostTrend') && (
+            renderReorderableStandardReport('productsPriceCostTrend', (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
               <div>
@@ -13493,9 +13905,11 @@ export default function OperationsTab({
               );
             })()}
           </div>
+          ))
           )}
 
           {isSectionEnabled('productsPriceCostWaterfall') && (
+            renderReorderableStandardReport('productsPriceCostWaterfall', (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
@@ -13527,6 +13941,7 @@ export default function OperationsTab({
               </BarChart>
             </ResponsiveContainer>
           </div>
+          ))
           )}
         </div>
         )}
@@ -13534,13 +13949,11 @@ export default function OperationsTab({
         {(isSectionEnabled('productsBottomLossMakers') || isSectionEnabled('productsFreightOtherTracker')) && (
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: isSectionEnabled('productsBottomLossMakers') && isSectionEnabled('productsFreightOtherTracker') ? 'repeat(2, minmax(0, 1fr))' : '1fr',
-              gap: '12px',
-              marginBottom: '20px',
+              display: 'contents',
             }}
           >
           {isSectionEnabled('productsBottomLossMakers') && (
+            renderReorderableStandardReport('productsBottomLossMakers', (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Bottom Products (Loss Makers)</h3>
@@ -13590,6 +14003,7 @@ export default function OperationsTab({
               </table>
             </div>
           </div>
+          ))
           )}
 
           {isSectionEnabled('productsFreightOtherTracker') && (() => {
@@ -13603,6 +14017,7 @@ export default function OperationsTab({
                 Number(row?.returnsMagnitude || 0) !== 0
             );
             return (
+              renderReorderableStandardReport('productsFreightOtherTracker', (
               <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
                   <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
@@ -13643,10 +14058,12 @@ export default function OperationsTab({
                   </div>
                 )}
               </div>
+              ))
             );
           })()}
         </div>
         )}
+        </div>
 
         {productChartInfoKey && productChartInfo[productChartInfoKey] && (
           <div
@@ -14282,9 +14699,17 @@ export default function OperationsTab({
           </div>
         </div>
 
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
         {/* Inventory Value Trend */}
         {isSectionEnabled('inventoryValueTrend') && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <OperationalReportPanel
+            reportKey="inventoryValueTrend"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('inventoryValueTrend', {})}
+          >
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Inventory Value Trend
           </h3>
@@ -14330,11 +14755,19 @@ export default function OperationsTab({
               ))}
             </LineChart>
           </ResponsiveContainer>
-        </div>
+            </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('inventoryMovement') && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <OperationalReportPanel
+            reportKey="inventoryMovement"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('inventoryMovement', {})}
+          >
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
@@ -14443,11 +14876,19 @@ export default function OperationsTab({
                 </tbody>
               </table>
             </div>
-          </div>
+            </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('inventoryRetailTurns') && retailTurns && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <OperationalReportPanel
+            reportKey="inventoryRetailTurns"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('inventoryRetailTurns', {})}
+          >
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
@@ -14563,7 +15004,8 @@ export default function OperationsTab({
                 </tbody>
               </table>
             </div>
-          </div>
+            </div>
+          </OperationalReportPanel>
         )}
 
         {inventoryInfoKey && inventoryInfoContent[inventoryInfoKey] && (
@@ -14626,7 +15068,14 @@ export default function OperationsTab({
         )}
 
         {isSectionEnabled('inventoryRetailProductAging') && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <OperationalReportPanel
+            reportKey="inventoryRetailProductAging"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('inventoryRetailProductAging', {})}
+          >
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
@@ -14681,12 +15130,20 @@ export default function OperationsTab({
                 No used inventory aging rows found yet. Upload a MONTHLY STORE VISIT REPORT workbook with the AGED INVENTORY section to populate this report.
               </div>
             )}
-          </div>
+            </div>
+          </OperationalReportPanel>
         )}
 
         {/* Current Inventory Table */}
         {isSectionEnabled('inventoryCurrentTable') && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <OperationalReportPanel
+            reportKey="inventoryCurrentTable"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('inventoryCurrentTable', {})}
+          >
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <button
@@ -14788,7 +15245,8 @@ export default function OperationsTab({
               )}
             </table>
           </div>
-        </div>
+            </div>
+          </OperationalReportPanel>
         )}
 
         {inventoryCostTrendModalOpen && (
@@ -14891,7 +15349,14 @@ export default function OperationsTab({
 
         {/* Inventory Distribution Chart */}
         {isSectionEnabled('inventoryDistribution') && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <OperationalReportPanel
+            reportKey="inventoryDistribution"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('inventoryDistribution', {})}
+          >
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Top 10 SKUs by Inventory Asset Value
           </h3>
@@ -14914,11 +15379,19 @@ export default function OperationsTab({
               <Tooltip formatter={(value: any) => formatCurrency(value)} />
             </PieChart>
           </ResponsiveContainer>
-        </div>
+            </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('inventoryAgingObsolescenceV1') && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
+          <OperationalReportPanel
+            reportKey="inventoryAgingObsolescenceV1"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('inventoryAgingObsolescenceV1', {})}
+          >
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <button
@@ -15015,8 +15488,10 @@ export default function OperationsTab({
                 )}
               </table>
             </div>
-          </div>
+            </div>
+          </OperationalReportPanel>
         )}
+        </div>
       </div>
     );
   };
@@ -15245,8 +15720,10 @@ export default function OperationsTab({
           </div>
         </div>
 
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '24px' }}>
         {/* Cash Balance Trend Chart */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+        {renderReorderableStandardReport('cashBalanceTrend', (
+        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             {frequency.charAt(0).toUpperCase() + frequency.slice(1)} Cash Balance Trend
           </h3>
@@ -15291,17 +15768,16 @@ export default function OperationsTab({
             </BarChart>
           </ResponsiveContainer>
         </div>
+        ), { gridColumn: '1 / -1' })}
 
         {(isSectionEnabled('cash13WeekTrend') || isSectionEnabled('cashBridge')) && (
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: isSectionEnabled('cash13WeekTrend') && isSectionEnabled('cashBridge') ? '1fr 1fr' : '1fr',
-              gap: '24px',
-              marginBottom: '24px',
+              display: 'contents',
             }}
           >
           {isSectionEnabled('cash13WeekTrend') && (
+            renderReorderableStandardReport('cash13WeekTrend', (
             <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
               13-Week Cash Trend
@@ -15319,8 +15795,10 @@ export default function OperationsTab({
               </LineChart>
             </ResponsiveContainer>
           </div>
+          ))
           )}
           {isSectionEnabled('cashBridge') && (
+            renderReorderableStandardReport('cashBridge', (
             <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
               Cash Bridge (Receipts vs Disbursements)
@@ -15341,6 +15819,7 @@ export default function OperationsTab({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          ))
           )}
         </div>
         )}
@@ -15348,14 +15827,12 @@ export default function OperationsTab({
         {(isSectionEnabled('cashBankAccounts') || isSectionEnabled('cashDistributionByAccount')) && (
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: isSectionEnabled('cashBankAccounts') && isSectionEnabled('cashDistributionByAccount') ? '1fr 1fr' : '1fr',
-              gap: '24px',
-              marginBottom: '24px',
+              display: 'contents',
             }}
           >
             {/* Account Breakdown Table */}
             {isSectionEnabled('cashBankAccounts') && (
+              renderReorderableStandardReport('cashBankAccounts', (
               <div style={{ background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
                 Bank Accounts
@@ -15398,10 +15875,12 @@ export default function OperationsTab({
                 </table>
               </div>
             </div>
+            ))
             )}
 
             {/* Account Distribution Chart */}
             {isSectionEnabled('cashDistributionByAccount') && (
+              renderReorderableStandardReport('cashDistributionByAccount', (
               <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
                 Cash Distribution by Account
@@ -15432,10 +15911,12 @@ export default function OperationsTab({
                 </PieChart>
               </ResponsiveContainer>
             </div>
+            ))
             )}
           </div>
         )}
 
+        </div>
           </div>
         )}
       </div>
@@ -17417,6 +17898,12 @@ Strategies to Improve the CCC
     };
 
   const renderForecast = () => {
+    const forecastReportLayout = {
+      persistedOrder: getOperationalHubReportOrder(companyOperationalHubConfig, 'forecast'),
+      canReorder: canManageReportLayout,
+      isSaving: savingReportLayout,
+      onReorder: (orderedIds: string[]) => void saveReportOrder('forecast', orderedIds),
+    };
     return (
       <div style={{ padding: activeAccrualBasisForecastTab === 'cash-forecast' ? '8px 12px 24px' : '8px 32px 32px' }}>
         <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
@@ -17489,7 +17976,7 @@ Strategies to Improve the CCC
         </div>
 
         {isRealEstateSector && activeAccrualBasisForecastTab === 'residential-revenue-forecast' && (
-          <ResidentialRevenueForecast companyId={selectedCompanyId} />
+          <ResidentialRevenueForecast companyId={selectedCompanyId} reportLayout={forecastReportLayout} />
         )}
 
         {(activeAccrualBasisForecastTab === 'income-statement-forecast' ||
@@ -17501,6 +17988,7 @@ Strategies to Improve the CCC
               industrySectorCategory={industrySectorCategory || null}
               displayMode="no-graphs"
               basisMode="accrual"
+              reportLayout={forecastReportLayout}
             />
           </div>
         )}
@@ -17515,6 +18003,7 @@ Strategies to Improve the CCC
             industrySectorCategory={industrySectorCategory || null}
             displayMode="graphs-only"
             basisMode="accrual"
+            reportLayout={forecastReportLayout}
           />
         )}
       </div>
@@ -18067,7 +18556,7 @@ Strategies to Improve the CCC
         </div>
 
         {/* Main table — swaps based on view */}
-        <div style={caCardStyle}>
+        {renderReorderableConstructionReport('caArMainTable', <div style={caCardStyle}>
           <div style={caCardTitleStyle}>
             {caArView === 'customer' && 'AR by Customer'}
             {caArView === 'project' && 'AR by Project'}
@@ -18218,10 +18707,10 @@ Strategies to Improve the CCC
               </table>
             )}
           </div>
-        </div>
+        </div>)}
 
         {/* Action table — Collections Priority */}
-        <div style={caCardStyle}>
+        {renderReorderableConstructionReport('caArCollectionsPriority', <div style={caCardStyle}>
           <div
             style={{
               display: 'flex',
@@ -18273,7 +18762,7 @@ Strategies to Improve the CCC
               </tbody>
             </table>
           </div>
-        </div>
+        </div>)}
       </div>
     );
   };
@@ -18461,7 +18950,7 @@ Strategies to Improve the CCC
         </div>
 
         {/* Main table */}
-        <div style={caCardStyle}>
+        {renderReorderableConstructionReport('caApMainTable', <div style={caCardStyle}>
           <div style={caCardTitleStyle}>
             {caApView === 'vendor' && 'AP by Vendor'}
             {caApView === 'project' && 'AP by Project'}
@@ -18617,10 +19106,10 @@ Strategies to Improve the CCC
               </table>
             )}
           </div>
-        </div>
+        </div>)}
 
         {/* Action table — Payment Priority */}
-        <div style={caCardStyle}>
+        {renderReorderableConstructionReport('caApPaymentPriority', <div style={caCardStyle}>
           <div
             style={{
               display: 'flex',
@@ -18682,7 +19171,7 @@ Strategies to Improve the CCC
               </tbody>
             </table>
           </div>
-        </div>
+        </div>)}
       </div>
     );
   };
@@ -19052,7 +19541,7 @@ Strategies to Improve the CCC
         </div>
 
         {/* Daily cost vs budget — full width */}
-        <div style={cardStyle}>
+        {renderReorderableConstructionReport('jccDailyCost', <div style={cardStyle}>
           <div
             style={{
               display: 'flex',
@@ -19211,7 +19700,7 @@ Strategies to Improve the CCC
               </div>
             </div>
           )}
-        </div>
+        </div>)}
 
         {/* Cost code variance + Cost by type */}
         <div
@@ -19222,7 +19711,7 @@ Strategies to Improve the CCC
           }}
         >
           {/* Cost code variance */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('jccCostCodeVariance', <div style={cardStyle}>
             {renderJccReportTitle(`Cost code variance${isAll ? ' (all jobs)' : ''}`)}
             {costCodeRows.length === 0 ? (
               <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
@@ -19263,10 +19752,10 @@ Strategies to Improve the CCC
                 </table>
               </div>
             )}
-          </div>
+          </div>)}
 
           {/* Cost by type */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('jccCostByType', <div style={cardStyle}>
             {renderJccReportTitle('Cost by type')}
             {costByTypeRows.length === 0 ? (
               <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
@@ -19303,11 +19792,11 @@ Strategies to Improve the CCC
                 </table>
               </div>
             )}
-          </div>
+          </div>)}
         </div>
 
         {/* Labor detail (expandable) — includes equipment columns */}
-        <div style={cardStyle}>
+        {renderReorderableConstructionReport('jccLaborDetail', <div style={cardStyle}>
           <button
             onClick={() => setJccLaborDetailExpanded((v) => !v)}
             style={{
@@ -19377,7 +19866,7 @@ Strategies to Improve the CCC
               )}
             </div>
           )}
-        </div>
+        </div>)}
 
         {/* Job-Specific AR + AP — only when drilled into a single job */}
         {!isAll && (() => {
@@ -19402,7 +19891,7 @@ Strategies to Improve the CCC
               }}
             >
               {/* AR (Job-Specific) */}
-              <div style={cardStyle}>
+              {renderReorderableConstructionReport('jccJobSpecificAr', <div style={cardStyle}>
                 <div
                   style={{
                     display: 'flex',
@@ -19470,10 +19959,10 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)}
 
               {/* AP (Job-Specific) */}
-              <div style={cardStyle}>
+              {renderReorderableConstructionReport('jccJobSpecificAp', <div style={cardStyle}>
                 <div
                   style={{
                     display: 'flex',
@@ -19541,7 +20030,7 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)}
             </div>
           );
         })()}
@@ -19706,10 +20195,10 @@ Strategies to Improve the CCC
         </div>
         )}
 
-        {(showCrewProductivity || showExceptions) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', gap: '16px', marginBottom: '16px' }}>
+        {(showCrewProductivity || showExceptions || showJobProductivity || showRecentTime) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
           {showCrewProductivity && (
-          <div style={cardStyle}>
+          renderReorderableConstructionReport('crewtracksCrewProductivity', <div style={cardStyle}>
             <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Crew Productivity</h3>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -19741,11 +20230,11 @@ Strategies to Improve the CCC
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>)
           )}
 
           {showExceptions && (
-          <div style={cardStyle}>
+          renderReorderableConstructionReport('crewtracksExceptions', <div style={cardStyle}>
             <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Exceptions</h3>
             <div style={{ display: 'grid', gap: '10px' }}>
               {exceptions.slice(0, 6).map((row) => (
@@ -19759,15 +20248,11 @@ Strategies to Improve the CCC
                 </div>
               ))}
             </div>
-          </div>
+          </div>)
           )}
-        </div>
-        )}
 
-        {(showJobProductivity || showRecentTime) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: '16px' }}>
           {showJobProductivity && (
-          <div style={cardStyle}>
+          renderReorderableConstructionReport('crewtracksJobProductivity', <div style={cardStyle}>
             <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Job Productivity</h3>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -19791,11 +20276,11 @@ Strategies to Improve the CCC
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>)
           )}
 
           {showRecentTime && (
-          <div style={cardStyle}>
+          renderReorderableConstructionReport('crewtracksRecentTime', <div style={cardStyle}>
             <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Recent Crew Time</h3>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -19823,7 +20308,7 @@ Strategies to Improve the CCC
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>)
           )}
         </div>
         )}
@@ -20090,7 +20575,7 @@ Strategies to Improve the CCC
         {(showByCategory || showByJob) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
             {showByCategory && (
-              <div style={cardStyle}>
+              renderReorderableConstructionReport('hiltiAssetsByCategory', <div style={cardStyle}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Assets by Category</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -20133,11 +20618,11 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)
             )}
 
             {showByJob && (
-              <div style={cardStyle}>
+              renderReorderableConstructionReport('hiltiAssetsByJob', <div style={cardStyle}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Assets by Job</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -20180,7 +20665,7 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)
             )}
           </div>
         )}
@@ -20188,7 +20673,7 @@ Strategies to Improve the CCC
         {(showMaintenance || showIdle) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
             {showMaintenance && (
-              <div style={cardStyle}>
+              renderReorderableConstructionReport('hiltiMaintenanceQueue', <div style={cardStyle}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Maintenance & Compliance Queue</h3>
                 <div style={{ display: 'grid', gap: '10px' }}>
                   {maintenanceQueue.slice(0, 7).map((row) => (
@@ -20204,11 +20689,11 @@ Strategies to Improve the CCC
                     </div>
                   ))}
                 </div>
-              </div>
+              </div>)
             )}
 
             {showIdle && (
-              <div style={cardStyle}>
+              renderReorderableConstructionReport('hiltiIdleAssets', <div style={cardStyle}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Idle / Underutilized Assets</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -20232,7 +20717,7 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)
             )}
           </div>
         )}
@@ -20240,7 +20725,7 @@ Strategies to Improve the CCC
         {(showMaterialsByCategory || showMaterialsByJob) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
             {showMaterialsByCategory && (
-              <div style={cardStyle}>
+              renderReorderableConstructionReport('constructionMaterialsByCategory', <div style={cardStyle}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Materials by Category</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -20266,11 +20751,11 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)
             )}
 
             {showMaterialsByJob && (
-              <div style={cardStyle}>
+              renderReorderableConstructionReport('constructionMaterialsByJob', <div style={cardStyle}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Materials by Job</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -20296,7 +20781,7 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)
             )}
           </div>
         )}
@@ -20304,7 +20789,7 @@ Strategies to Improve the CCC
         {(showMaterialsReorder || showMaterialsAging) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '16px' }}>
             {showMaterialsReorder && (
-              <div style={cardStyle}>
+              renderReorderableConstructionReport('constructionMaterialsReorderQueue', <div style={cardStyle}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Materials Reorder Queue</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -20328,11 +20813,11 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)
             )}
 
             {showMaterialsAging && (
-              <div style={cardStyle}>
+              renderReorderableConstructionReport('constructionMaterialsAging', <div style={cardStyle}>
                 <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Materials Aging</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -20356,13 +20841,13 @@ Strategies to Improve the CCC
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </div>)
             )}
           </div>
         )}
 
         {showRegister && (
-          <div style={cardStyle}>
+          renderReorderableConstructionReport('hiltiAssetRegister', <div style={cardStyle}>
             <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a' }}>Asset Register</h3>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -20394,7 +20879,7 @@ Strategies to Improve the CCC
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>)
         )}
       </div>
     );
@@ -20758,7 +21243,7 @@ Strategies to Improve the CCC
           }}
         >
           {/* Left: revenue (bar 1) vs COGS+Expenses stacked (bar 2) by month */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('ppRevenueVsCostChart', <div style={cardStyle}>
             <div style={cardTitleStyle}>Revenue vs cost — rolling 12 months</div>
             {rolling12.length === 0 ? (
               <div style={{ padding: '24px', color: '#64748b', fontSize: '13px' }}>
@@ -20796,10 +21281,10 @@ Strategies to Improve the CCC
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </div>)}
 
           {/* Right: 12-month overhead line chart */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('ppOverheadTrendChart', <div style={cardStyle}>
             <div style={cardTitleStyle}>Overhead trend — rolling 12 months</div>
             {rolling12.length === 0 ? (
               <div style={{ padding: '24px', color: '#64748b', fontSize: '13px' }}>
@@ -20837,11 +21322,11 @@ Strategies to Improve the CCC
                 </LineChart>
               </ResponsiveContainer>
             )}
-          </div>
+          </div>)}
         </div>
 
         {/* Schedule Slippage Impact card */}
-        <div style={cardStyle}>
+        {renderReorderableConstructionReport('ppScheduleSlippage', <div style={cardStyle}>
           <div style={cardTitleStyle}>Schedule slippage impact</div>
           <div
             style={{
@@ -20994,10 +21479,10 @@ Strategies to Improve the CCC
               )}
             </div>
           </div>
-        </div>
+        </div>)}
 
         {isSectionEnabled('projectPortfolioScheduleVsBudget') && (
-          <div style={cardStyle}>
+          renderReorderableConstructionReport('projectPortfolioScheduleVsBudget', <div style={cardStyle}>
             <div
               style={{
                 display: 'flex',
@@ -21180,11 +21665,11 @@ Strategies to Improve the CCC
                 </div>
               </div>
             )}
-          </div>
+          </div>)
         )}
 
         {/* Job Profitability — full width, sortable */}
-        <div style={cardStyle}>
+        {renderReorderableConstructionReport('ppJobProfitability', <div style={cardStyle}>
           <div
             style={{
               display: 'flex',
@@ -21285,7 +21770,7 @@ Strategies to Improve the CCC
               </table>
             </div>
           )}
-        </div>
+        </div>)}
 
         {/* Bottom: Top/Bottom Jobs (left) + Risk Flags (right) */}
         <div
@@ -21296,7 +21781,7 @@ Strategies to Improve the CCC
           }}
         >
           {/* Top / Bottom Jobs */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('ppTopBottomJobs', <div style={cardStyle}>
             <div style={cardTitleStyle}>Top &amp; bottom jobs</div>
             <div
               style={{
@@ -21391,10 +21876,10 @@ Strategies to Improve the CCC
                 </tbody>
               </table>
             )}
-          </div>
+          </div>)}
 
           {/* Risk Flags */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('ppRiskFlags', <div style={cardStyle}>
             <div
               style={{
                 display: 'flex',
@@ -21495,7 +21980,7 @@ Strategies to Improve the CCC
                 </table>
               </div>
             )}
-          </div>
+          </div>)}
         </div>
       </div>
     );
@@ -21692,7 +22177,7 @@ Strategies to Improve the CCC
 
         {/* Standard WIP report */}
         {isSectionEnabled('cfWipReport') && (
-        <div style={cardStyle}>
+        renderReorderableConstructionReport('cfWipReport', <div style={cardStyle}>
           <div
             style={{
               display: 'flex',
@@ -21796,13 +22281,14 @@ Strategies to Improve the CCC
               </table>
             </div>
           )}
-        </div>
+        </div>)
         )}
 
         {!isWipPrintRequest && (
         <>
         {/* Top: Forecast / EAC summary KPI strip */}
-        <div style={cardStyle}>
+        {isSectionEnabled('cfEacSummary') && (
+        renderReorderableConstructionReport('cfEacSummary', <div style={cardStyle}>
           <div
             style={{
               display: 'flex',
@@ -21933,7 +22419,8 @@ Strategies to Improve the CCC
               </table>
             </div>
           )}
-        </div>
+        </div>)
+        )}
 
         {/* Middle row: Commitment exposure (left) + Change order impact (right) */}
         <div
@@ -21944,7 +22431,7 @@ Strategies to Improve the CCC
           }}
         >
           {/* Commitment exposure */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('cfCommitmentExposure', <div style={cardStyle}>
             <div style={cardTitleStyle}>Commitment exposure by job</div>
             {commitmentExposure.length === 0 ? (
               <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No data</div>
@@ -21988,10 +22475,10 @@ Strategies to Improve the CCC
                 </table>
               </div>
             )}
-          </div>
+          </div>)}
 
           {/* Change order impact — ALWAYS rendered per design decision */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('cfChangeOrderImpact', <div style={cardStyle}>
             <div
               style={{
                 display: 'flex',
@@ -22133,11 +22620,11 @@ Strategies to Improve the CCC
                 </table>
               </div>
             )}
-          </div>
+          </div>)}
         </div>
 
         {/* Bottom: Open commitments detail */}
-        <div style={cardStyle}>
+        {renderReorderableConstructionReport('cfOpenCommitments', <div style={cardStyle}>
           <div
             style={{
               display: 'flex',
@@ -22261,7 +22748,7 @@ Strategies to Improve the CCC
               </table>
             </div>
           )}
-        </div>
+        </div>)}
         </>
         )}
       </div>
@@ -22477,7 +22964,7 @@ Strategies to Improve the CCC
           }}
         >
           {/* AR by Job */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('bcArByJob', <div style={cardStyle}>
             <div
               style={{
                 display: 'flex',
@@ -22562,10 +23049,10 @@ Strategies to Improve the CCC
                 </table>
               </div>
             )}
-          </div>
+          </div>)}
 
           {/* AP by Job */}
-          <div style={cardStyle}>
+          {renderReorderableConstructionReport('bcApByJob', <div style={cardStyle}>
             <div
               style={{
                 display: 'flex',
@@ -22650,11 +23137,11 @@ Strategies to Improve the CCC
                 </table>
               </div>
             )}
-          </div>
+          </div>)}
         </div>
 
         {/* Bottom: Collections / Payments Priority */}
-        <div style={cardStyle}>
+        {renderReorderableConstructionReport('bcPriorityList', <div style={cardStyle}>
           <div
             style={{
               display: 'flex',
@@ -22767,7 +23254,7 @@ Strategies to Improve the CCC
               </table>
             </div>
           )}
-        </div>
+        </div>)}
       </div>
     );
   };
@@ -22840,7 +23327,15 @@ Strategies to Improve the CCC
           <div style={{ ...cardStyle, fontSize: '13px', color: '#64748b' }}>{sourceNote}</div>
         ) : null}
 
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>
         {isSectionEnabled('payrollClientCensus') && (
+          <OperationalReportPanel
+            reportKey="payrollClientCensus"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('payrollClientCensus', { gridColumn: '1 / -1' })}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Client / Company Census</div>
             {renderTable(
@@ -22872,9 +23367,17 @@ Strategies to Improve the CCC
                   ))
             )}
           </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('payrollPayGroupCalendar') && (
+          <OperationalReportPanel
+            reportKey="payrollPayGroupCalendar"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('payrollPayGroupCalendar', { gridColumn: '1 / -1' })}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Pay Groups / Calendar</div>
             {renderTable(
@@ -22891,9 +23394,17 @@ Strategies to Improve the CCC
                   ))
             )}
           </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('payrollGrossToNet') && (
+          <OperationalReportPanel
+            reportKey="payrollGrossToNet"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('payrollGrossToNet', { gridColumn: '1 / -1' })}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Gross-to-Net Summary</div>
             {renderTable(
@@ -22911,11 +23422,17 @@ Strategies to Improve the CCC
                   ))
             )}
           </div>
+          </OperationalReportPanel>
         )}
 
-        {(isSectionEnabled('payrollEarningsByCode') || isSectionEnabled('payrollDeductionsByCode')) && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('payrollEarningsByCode') && (
+        {isSectionEnabled('payrollEarningsByCode') && (
+              <OperationalReportPanel
+                reportKey="payrollEarningsByCode"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('payrollEarningsByCode', {})}
+              >
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Earnings by Code</div>
                 {renderTable(
@@ -22931,8 +23448,16 @@ Strategies to Improve the CCC
                       ))
                 )}
               </div>
+              </OperationalReportPanel>
             )}
             {isSectionEnabled('payrollDeductionsByCode') && (
+              <OperationalReportPanel
+                reportKey="payrollDeductionsByCode"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('payrollDeductionsByCode', {})}
+              >
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Deductions by Code</div>
                 {renderTable(
@@ -22948,13 +23473,17 @@ Strategies to Improve the CCC
                       ))
                 )}
               </div>
-            )}
-          </div>
+              </OperationalReportPanel>
         )}
 
-        {(isSectionEnabled('payrollTaxWithholdings') || isSectionEnabled('payrollDirectDepositMix')) && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('payrollTaxWithholdings') && (
+        {isSectionEnabled('payrollTaxWithholdings') && (
+              <OperationalReportPanel
+                reportKey="payrollTaxWithholdings"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('payrollTaxWithholdings', {})}
+              >
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Tax Withholdings</div>
                 {renderTable(
@@ -22970,8 +23499,16 @@ Strategies to Improve the CCC
                       ))
                 )}
               </div>
-            )}
-            {isSectionEnabled('payrollDirectDepositMix') && (
+              </OperationalReportPanel>
+        )}
+        {isSectionEnabled('payrollDirectDepositMix') && (
+              <OperationalReportPanel
+                reportKey="payrollDirectDepositMix"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('payrollDirectDepositMix', {})}
+              >
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Direct Deposit Mix</div>
                 {renderTable(
@@ -22987,11 +23524,17 @@ Strategies to Improve the CCC
                       ))
                 )}
               </div>
-            )}
-          </div>
+              </OperationalReportPanel>
         )}
 
         {isSectionEnabled('payrollGlExportJournal') && (
+          <OperationalReportPanel
+            reportKey="payrollGlExportJournal"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('payrollGlExportJournal', { gridColumn: '1 / -1' })}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>GL Export / Payroll Journal</div>
             {renderTable(
@@ -23008,9 +23551,17 @@ Strategies to Improve the CCC
                   ))
             )}
           </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('payrollBenefitsEnrollments') && (
+          <OperationalReportPanel
+            reportKey="payrollBenefitsEnrollments"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('payrollBenefitsEnrollments', { gridColumn: '1 / -1' })}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Benefits Enrollments</div>
             {renderTable(
@@ -23027,7 +23578,9 @@ Strategies to Improve the CCC
                   ))
             )}
           </div>
+          </OperationalReportPanel>
         )}
+        </div>
 
         {isSectionEnabled('payrollRunScorecard') ? null : payrollRuns.length > 0 ? (
           <div style={cardStyle}>
@@ -23538,6 +24091,13 @@ Strategies to Improve the CCC
           )}
 
           {isSectionEnabled('lsCompensationByRole') && (
+            <OperationalReportPanel
+              reportKey="lsCompensationByRole"
+              canReorder={canManageReportLayout}
+              isSaving={savingReportLayout}
+              onMove={moveStandardReport}
+              style={getReportPanelStyle('lsCompensationByRole', {})}
+            >
             <div style={cardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
                 <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Compensation by Role</div>
@@ -23576,9 +24136,17 @@ Strategies to Improve the CCC
                 </table>
               </div>
             </div>
+            </OperationalReportPanel>
           )}
 
           {isSectionEnabled('lsEmployeeCompensationRoster') && (
+            <OperationalReportPanel
+              reportKey="lsEmployeeCompensationRoster"
+              canReorder={canManageReportLayout}
+              isSaving={savingReportLayout}
+              onMove={moveStandardReport}
+              style={getReportPanelStyle('lsEmployeeCompensationRoster', {})}
+            >
             <div style={cardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
                 <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Employee Compensation Roster by Division / Department</div>
@@ -23633,10 +24201,17 @@ Strategies to Improve the CCC
                 </table>
               </div>
             </div>
+            </OperationalReportPanel>
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('lsHeadcountByRole') && <div style={cardStyle}>
+            {isSectionEnabled('lsHeadcountByRole') && <OperationalReportPanel
+              reportKey="lsHeadcountByRole"
+              canReorder={canManageReportLayout}
+              isSaving={savingReportLayout}
+              onMove={moveStandardReport}
+              style={getReportPanelStyle('lsHeadcountByRole', {})}
+            ><div style={cardStyle}>
               <div style={cardTitleStyle}>Headcount by Location</div>
               <ResponsiveContainer width="100%" height={320}>
                 <BarChart data={headcountByLocation.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 70 }}>
@@ -23647,8 +24222,14 @@ Strategies to Improve the CCC
                   <Bar dataKey="headcount" fill="#2563eb" radius={0} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>}
-            {isSectionEnabled('lsHeadcountByDepartment') && <div style={cardStyle}>
+            </div></OperationalReportPanel>}
+            {isSectionEnabled('lsHeadcountByDepartment') && <OperationalReportPanel
+              reportKey="lsHeadcountByDepartment"
+              canReorder={canManageReportLayout}
+              isSaving={savingReportLayout}
+              onMove={moveStandardReport}
+              style={getReportPanelStyle('lsHeadcountByDepartment', {})}
+            ><div style={cardStyle}>
               <div style={cardTitleStyle}>Headcount by Department</div>
               <ResponsiveContainer width="100%" height={320}>
                 <BarChart data={headcountByDepartment.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 70 }}>
@@ -23659,11 +24240,17 @@ Strategies to Improve the CCC
                   <Bar dataKey="headcount" fill="#0f766e" radius={0} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>}
+            </div></OperationalReportPanel>}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('lsLocationPayTypeMix') && <div style={cardStyle}>
+            {isSectionEnabled('lsLocationPayTypeMix') && <OperationalReportPanel
+              reportKey="lsLocationPayTypeMix"
+              canReorder={canManageReportLayout}
+              isSaving={savingReportLayout}
+              onMove={moveStandardReport}
+              style={getReportPanelStyle('lsLocationPayTypeMix', {})}
+            ><div style={cardStyle}>
               <div style={cardTitleStyle}>Location / Pay Type Mix</div>
               <div style={{ overflowX: 'auto', maxHeight: '360px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -23682,7 +24269,7 @@ Strategies to Improve the CCC
               <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
                 Pay type mix: {payTypeMix.map((row) => `${row.label}: ${row.count}`).join(' · ') || '—'}
               </div>
-            </div>}
+            </div></OperationalReportPanel>}
             {isSectionEnabled('lsBillRateLevelCoverage') && <div style={cardStyle}>
               <div style={cardTitleStyle}>Bill Rate Level Coverage</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '12px' }}>
@@ -23712,6 +24299,13 @@ Strategies to Improve the CCC
           {(isSectionEnabled('lsUtilizationPct') || isSectionEnabled('lsOvertimeAnalysis')) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
               {isSectionEnabled('lsUtilizationPct') && (
+                <OperationalReportPanel
+                  reportKey="lsUtilizationPct"
+                  canReorder={canManageReportLayout}
+                  isSaving={savingReportLayout}
+                  onMove={moveStandardReport}
+                  style={getReportPanelStyle('lsUtilizationPct', {})}
+                >
                 <div style={cardStyle}>
                   <div style={cardTitleStyle}>Utilization % (billable vs paid hours)</div>
                   <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -23732,8 +24326,16 @@ Strategies to Improve the CCC
                     </table>
                   </div>
                 </div>
+                </OperationalReportPanel>
               )}
               {isSectionEnabled('lsOvertimeAnalysis') && (
+                <OperationalReportPanel
+                  reportKey="lsOvertimeAnalysis"
+                  canReorder={canManageReportLayout}
+                  isSaving={savingReportLayout}
+                  onMove={moveStandardReport}
+                  style={getReportPanelStyle('lsOvertimeAnalysis', {})}
+                >
                 <div style={cardStyle}>
                   <div style={cardTitleStyle}>Overtime Analysis</div>
                   {overtimeAnalysis.length === 0 ? (
@@ -23750,10 +24352,18 @@ Strategies to Improve the CCC
                     </ResponsiveContainer>
                   )}
                 </div>
+                </OperationalReportPanel>
               )}
             </div>
           )}
           {isSectionEnabled('lsPtoBalances') && (
+            <OperationalReportPanel
+              reportKey="lsPtoBalances"
+              canReorder={canManageReportLayout}
+              isSaving={savingReportLayout}
+              onMove={moveStandardReport}
+              style={getReportPanelStyle('lsPtoBalances', {})}
+            >
             <div style={cardStyle}>
               <div style={cardTitleStyle}>PTO / Leave Balances</div>
               <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -23775,6 +24385,7 @@ Strategies to Improve the CCC
                 </table>
               </div>
             </div>
+            </OperationalReportPanel>
           )}
         </div>
       );
@@ -24444,6 +25055,13 @@ Strategies to Improve the CCC
         {(isSectionEnabled('hiringApplicantPipeline') || isSectionEnabled('hiringApplicationsByStatus')) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
             {isSectionEnabled('hiringApplicantPipeline') && (
+              <OperationalReportPanel
+                reportKey="hiringApplicantPipeline"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('hiringApplicantPipeline', {})}
+              >
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Applicant Pipeline by Job</div>
                 <ResponsiveContainer width="100%" height={340}>
@@ -24457,8 +25075,16 @@ Strategies to Improve the CCC
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              </OperationalReportPanel>
             )}
             {isSectionEnabled('hiringApplicationsByStatus') && (
+              <OperationalReportPanel
+                reportKey="hiringApplicationsByStatus"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('hiringApplicationsByStatus', {})}
+              >
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Job Stage</div>
                 <ResponsiveContainer width="100%" height={340}>
@@ -24471,11 +25097,19 @@ Strategies to Improve the CCC
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              </OperationalReportPanel>
             )}
           </div>
         )}
 
         {isSectionEnabled('hiringTimeToFillByJob') && (
+          <OperationalReportPanel
+            reportKey="hiringTimeToFillByJob"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('hiringTimeToFillByJob', {})}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Time to Fill by Hire</div>
             <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
@@ -24514,9 +25148,17 @@ Strategies to Improve the CCC
               Time to fill is calculated per hired person from job posted date to that person's hired date. This table uses hired / accepted / start dates for the selected range, not application date.
             </div>
           </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('hiringFunnelByRole') && (
+          <OperationalReportPanel
+            reportKey="hiringFunnelByRole"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('hiringFunnelByRole', {})}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Funnel by Role</div>
             <ResponsiveContainer width="100%" height={360}>
@@ -24559,9 +25201,17 @@ Strategies to Improve the CCC
               </table>
             </div>
           </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('hiringApplicantsByJob') && (
+          <OperationalReportPanel
+            reportKey="hiringApplicantsByJob"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('hiringApplicantsByJob', {})}
+          >
           <div style={cardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: hiringApplicantsByJobExpanded ? '12px' : 0, flexWrap: 'wrap' }}>
               <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Applicants by Job</div>
@@ -24653,9 +25303,17 @@ Strategies to Improve the CCC
               </table>
             </div>}
           </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('hiringPostingPerformance') && (
+          <OperationalReportPanel
+            reportKey="hiringPostingPerformance"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('hiringPostingPerformance', {})}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Posting Performance</div>
             <ResponsiveContainer width="100%" height={340}>
@@ -24668,9 +25326,17 @@ Strategies to Improve the CCC
               </BarChart>
             </ResponsiveContainer>
           </div>
+          </OperationalReportPanel>
         )}
 
         {isSectionEnabled('hiringOnboardingPipeline') && (
+          <OperationalReportPanel
+            reportKey="hiringOnboardingPipeline"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('hiringOnboardingPipeline', {})}
+          >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Onboarding / New Hires</div>
             <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -24700,6 +25366,7 @@ Strategies to Improve the CCC
               </table>
             </div>
           </div>
+          </OperationalReportPanel>
         )}
       </div>
     );
@@ -25168,9 +25835,10 @@ Strategies to Improve the CCC
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '16px', order: 2 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {isSectionEnabled('rbEmployeesByBillRateLevel') && <div style={cardStyle}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {isSectionEnabled('rbEmployeesByBillRateLevel') && renderReorderableStandardReport(
+              'rbEmployeesByBillRateLevel',
+              <div style={cardStyle}>
                 <div style={cardTitleStyle}>Employees by Bill Rate Level</div>
                 <ResponsiveContainer width="100%" height={360}>
                   <BarChart data={billRateLevelRows.slice(0, 14)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
@@ -25181,42 +25849,48 @@ Strategies to Improve the CCC
                     <Bar dataKey="headcount" fill="#7c3aed" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>}
-              {isSectionEnabled('rbEmployeesByMarketBillRateLevel') && <div style={cardStyle}>
-                <div style={cardTitleStyle}>Employees by Market + Bill Rate Level</div>
-                <ResponsiveContainer width="100%" height={360}>
-                  <BarChart data={billRateLevelByMarketRows.slice(0, 18)} margin={{ top: 8, right: 8, left: 8, bottom: 120 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="key" angle={-30} textAnchor="end" height={140} tick={chartLabelStyle} interval={0} />
-                    <YAxis tick={chartLabelStyle} />
-                    <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Employees']} />
-                    <Bar dataKey="headcount" fill="#2563eb" radius={0} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>}
-            </div>
-            {isSectionEnabled('rbEmployeesByMarketBillRateLevel') && <div style={cardStyle}>
-              <div style={cardTitleStyle}>Employees by Market + Bill Rate Level</div>
-              <div style={{ overflowX: 'auto', maxHeight: '720px', overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr><th style={thStyle}>Market</th><th style={thStyle}>Bill Rate Level</th><th style={{ ...thStyle, textAlign: 'right' }}>Employees</th></tr></thead>
-                  <tbody>{billRateLevelByMarketRows.map((row) => (
-                    <tr key={row.key}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.market}</td>
-                      <td style={tdStyle}>{row.billRateLevel}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
               </div>
-              <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
-                CA locations are split into CA - SF and CA - SD for rate-card matching.
+            )}
+            {isSectionEnabled('rbEmployeesByMarketBillRateLevel') && renderReorderableStandardReport(
+              'rbEmployeesByMarketBillRateLevel',
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '16px' }}>
+                <div style={cardStyle}>
+                  <div style={cardTitleStyle}>Employees by Market + Bill Rate Level</div>
+                  <ResponsiveContainer width="100%" height={360}>
+                    <BarChart data={billRateLevelByMarketRows.slice(0, 18)} margin={{ top: 8, right: 8, left: 8, bottom: 120 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="key" angle={-30} textAnchor="end" height={140} tick={chartLabelStyle} interval={0} />
+                      <YAxis tick={chartLabelStyle} />
+                      <Tooltip formatter={(value: any) => [Number(value || 0).toLocaleString('en-US'), 'Employees']} />
+                      <Bar dataKey="headcount" fill="#2563eb" radius={0} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={cardStyle}>
+                  <div style={cardTitleStyle}>Employees by Market + Bill Rate Level</div>
+                  <div style={{ overflowX: 'auto', maxHeight: '720px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr><th style={thStyle}>Market</th><th style={thStyle}>Bill Rate Level</th><th style={{ ...thStyle, textAlign: 'right' }}>Employees</th></tr></thead>
+                      <tbody>{billRateLevelByMarketRows.map((row) => (
+                        <tr key={row.key}>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.market}</td>
+                          <td style={tdStyle}>{row.billRateLevel}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>{Number(row.headcount || 0).toLocaleString('en-US')}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
+                    CA locations are split into CA - SF and CA - SD for rate-card matching.
+                  </div>
+                </div>
               </div>
-            </div>}
+            )}
           </div>
 
-          {isSectionEnabled('rbEstimatedBillableEconomics') && (
-            <div style={{ ...cardStyle, order: 4 }}>
+          {isSectionEnabled('rbEstimatedBillableEconomics') && renderReorderableStandardReport(
+            'rbEstimatedBillableEconomics',
+            <div style={cardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '12px' }}>
                 <div>
                   <div style={cardTitleStyle}>Estimated Billable Economics by Employee</div>
@@ -25276,8 +25950,9 @@ Strategies to Improve the CCC
             </div>
           )}
 
-          {isSectionEnabled('ueCostByBillRateLevel') && (
-            <div style={{ ...cardStyle, order: 3 }}>
+          {isSectionEnabled('ueCostByBillRateLevel') && renderReorderableStandardReport(
+            'ueCostByBillRateLevel',
+            <div style={cardStyle}>
               <div style={cardTitleStyle}>PAY TO BILL RATE LEVEL</div>
               <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -25395,12 +26070,15 @@ Strategies to Improve the CCC
             </div>
           )}
 
-          {isSectionEnabled('rbUnavailableRateInputs') && unavailableReports.length > 0 && <div style={cardStyle}>
-            <div style={cardTitleStyle}>Reports Awaiting Client Rate Card</div>
-            <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', fontSize: '13px', lineHeight: 1.6 }}>
-              {unavailableReports.map((item) => <li key={item}>{item}</li>)}
-            </ul>
-          </div>}
+          {isSectionEnabled('rbUnavailableRateInputs') && unavailableReports.length > 0 && renderReorderableStandardReport(
+            'rbUnavailableRateInputs',
+            <div style={cardStyle}>
+              <div style={cardTitleStyle}>Reports Awaiting Client Rate Card</div>
+              <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', fontSize: '13px', lineHeight: 1.6 }}>
+                {unavailableReports.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          )}
         </div>
       );
     }
@@ -25635,22 +26313,27 @@ Strategies to Improve the CCC
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('ueCostByRole') && <div style={cardStyle}>
-              <div style={cardTitleStyle}>Total Pay by Role</div>
-              <ResponsiveContainer width="100%" height={360}>
-                <BarChart data={payCostByRole.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="key" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
-                  <YAxis tick={chartLabelStyle} tickFormatter={formatAxisMoney} />
-                  <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Total Annual Pay']} />
-                  <Bar dataKey="totalAnnualCost" fill="#2563eb" radius={0} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>}
+            {isSectionEnabled('ueCostByRole') && renderReorderableStandardReport(
+              'ueCostByRole',
+              <div style={cardStyle}>
+                <div style={cardTitleStyle}>Total Pay by Role</div>
+                <ResponsiveContainer width="100%" height={360}>
+                  <BarChart data={payCostByRole.slice(0, 12)} margin={{ top: 8, right: 8, left: 8, bottom: 90 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="key" angle={-30} textAnchor="end" height={110} tick={chartLabelStyle} interval={0} />
+                    <YAxis tick={chartLabelStyle} tickFormatter={formatAxisMoney} />
+                    <Tooltip formatter={(value: any) => [formatCurrency(Number(value || 0)), 'Total Annual Pay']} />
+                    <Bar dataKey="totalAnnualCost" fill="#2563eb" radius={0} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('ueCostByLocation') && <div style={cardStyle}>
+            {isSectionEnabled('ueCostByLocation') && renderReorderableStandardReport(
+              'ueCostByLocation',
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Pay by Location</div>
               <div style={{ overflowX: 'auto', maxHeight: '360px', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -25701,8 +26384,11 @@ Strategies to Improve the CCC
                   })}</tbody>
                 </table>
               </div>
-            </div>}
-            {isSectionEnabled('ueMissingBillRateLevel') && <div style={cardStyle}>
+              </div>
+            )}
+            {isSectionEnabled('ueMissingBillRateLevel') && renderReorderableStandardReport(
+              'ueMissingBillRateLevel',
+              <div style={cardStyle}>
               <div style={cardTitleStyle}>Missing Bill Rate Level / Next Inputs</div>
               <div style={{ overflowX: 'auto', maxHeight: '220px', overflowY: 'auto', marginBottom: '12px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -25719,7 +26405,8 @@ Strategies to Improve the CCC
               <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', fontSize: '13px', lineHeight: 1.6 }}>
                 {unavailableReports.map((item) => <li key={item}>{item}</li>)}
               </ul>
-            </div>}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -27417,12 +28104,12 @@ Strategies to Improve the CCC
     columns: Array<{ key: string; label: string; format?: (value: any, row: any) => string }>
   ) => {
     if (!isSectionEnabled(sectionKey)) return null;
-    return (
+    return renderReorderableStandardReport(sectionKey, (
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
         <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
         {renderRealEstateRowsTable(sectionKey, rows, columns)}
       </div>
-    );
+    ));
   };
 
   const renderRealEstateMetricCards = (cards: Array<{ label: string; value: string | number }>) => (
@@ -27440,6 +28127,7 @@ Strategies to Improve the CCC
 
   const renderRealEstateChartCard = (
     title: string,
+    sectionKey: string,
     type: 'bar' | 'line' | 'pie',
     data: any[],
     config: {
@@ -27449,8 +28137,8 @@ Strategies to Improve the CCC
       valueKey?: string;
     }
   ) => {
-    if (!Array.isArray(data) || data.length === 0) return null;
-    return (
+    if (!isSectionEnabled(sectionKey) || !Array.isArray(data) || data.length === 0) return null;
+    return renderReorderableStandardReport(sectionKey, (
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
         <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
         <div style={{ width: '100%', height: 280 }}>
@@ -27499,7 +28187,7 @@ Strategies to Improve the CCC
           </ResponsiveContainer>
         </div>
       </div>
-    );
+    ));
   };
 
   const renderRealEstatePageShell = (title: string, subtitle: string, children: React.ReactNode) => {
@@ -27520,7 +28208,9 @@ Strategies to Improve the CCC
           <h2 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>{title}</h2>
           <p style={{ margin: '6px 0 0 0', color: '#64748b', fontSize: '14px' }}>{subtitle}</p>
         </div>
-        {children}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {children}
+        </div>
       </div>
     );
   };
@@ -28182,7 +28872,7 @@ Strategies to Improve the CCC
       if (!forecastConfig) return null;
       const chartRows = buildDivisionForecastRows(forecastConfig);
 
-      return (
+      return renderReorderableStandardReport(config.sections.pipeline, (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
           <div style={{ marginBottom: '12px' }}>
             <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>{forecastConfig.title}</h3>
@@ -28218,7 +28908,7 @@ Strategies to Improve the CCC
             </ResponsiveContainer>
           </div>
         </div>
-      );
+      ));
     };
     return renderRealEstatePageShell(
       config.title,
@@ -28236,7 +28926,8 @@ Strategies to Improve the CCC
         {moduleKey !== 'residential_real_estate' && renderDivisionMonthlyForecastCard()}
         {moduleKey === 'residential_real_estate' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', gridColumn: '1 / -1' }}>
+            {renderReorderableStandardReport('residentialClosingsPipeline', (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', gridColumn: '1 / -1' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
                 <div>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Homes Sold - 3 Year Monthly Trend + 12 Month Forecast</h3>
@@ -28312,8 +29003,10 @@ Strategies to Improve the CCC
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-            </div>
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', gridColumn: '1 / -1' }}>
+              </div>
+            ))}
+            {renderReorderableStandardReport('residentialOfficeLeaderboard', (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', gridColumn: '1 / -1' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Average Home Sales Price vs. Listing Price</h3>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', fontWeight: 700 }}>
@@ -28343,7 +29036,8 @@ Strategies to Improve the CCC
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+              </div>
+            ))}
           </div>
         )}
         {moduleKey === 'residential_real_estate' && (
@@ -28355,7 +29049,8 @@ Strategies to Improve the CCC
               { key: 'office', label: 'Office' },
             ])}
             {isSectionEnabled('residentialCustomerAttachmentReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('residentialCustomerAttachmentReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Customer Attachment Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Are brokerage transactions generating mortgage, title, and insurance revenue?</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
@@ -28369,10 +29064,12 @@ Strategies to Improve the CCC
                   ])}
                 </div>
                 {renderResidentialOfficeAttachmentGoalsTable(residentialAttachmentByOfficeRows)}
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('residentialPipelineForecast') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('residentialPipelineForecast', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Pipeline & Forecast Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>What will happen over the next 30-90 days?</p>
                 {renderRealEstateMetricCards([
@@ -28393,10 +29090,12 @@ Strategies to Improve the CCC
                     { key: 'expectedRevenue', label: 'Expected Revenue', format: moneyColumn },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('residentialAgentProductivityReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('residentialAgentProductivityReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Agent Productivity Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Who is producing?</p>
                 {renderRealEstateMetricCards([
@@ -28412,9 +29111,11 @@ Strategies to Improve the CCC
                     { key: 'value', label: 'Value' },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+            {renderReorderableStandardReport('residentialAgentProductivity', (
+              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
                 <div>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Residential Transaction Funnel - Monthly Trend</h3>
@@ -28447,13 +29148,15 @@ Strategies to Improve the CCC
                   <Line type="monotone" dataKey="insuranceCustomers" stroke="#7c3aed" strokeWidth={2} name="Insurance Customers" />
                 </LineChart>
               </ResponsiveContainer>
-            </div>
+              </div>
+            ))}
           </>
         )}
         {moduleKey === 'mortgage' && (
           <>
             {isSectionEnabled('mortgageProductionScorecard') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('mortgageProductionScorecard', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
                   <div>
                     <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Mortgage Production Scorecard</h3>
@@ -28475,10 +29178,12 @@ Strategies to Improve the CCC
                   { key: 'value', label: 'Value', format: encompassMetricValue },
                   { key: 'detail', label: 'Source / Meaning' },
                 ])}
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('mortgagePipelineForecastReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('mortgagePipelineForecastReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Loan Pipeline & Forecast Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Pipeline views, milestones, folders, and projected funding visibility from mortgage loan system data.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.05fr) minmax(0, 1fr)', gap: '14px', alignItems: 'start' }}>
@@ -28504,10 +29209,12 @@ Strategies to Improve the CCC
                     { key: 'avgDaysInStage', label: 'Avg Days', format: (value) => Number(value || 0).toFixed(1) },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('mortgageProductionRankingReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('mortgageProductionRankingReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Production Ranking Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Which branches and loan officers are driving funded volume, pull-through, and operational velocity?</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
@@ -28527,10 +29234,12 @@ Strategies to Improve the CCC
                     { key: 'conditionAgingDays', label: 'Condition Age', format: (value) => Number(value || 0).toFixed(1) },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('mortgageFunnelPullThroughReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('mortgageFunnelPullThroughReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Funnel & Pull-Through Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Application conversion, product/channel pull-through, and fallout reasons from loan pipeline and status data.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
@@ -28548,10 +29257,12 @@ Strategies to Improve the CCC
                     { key: 'falloutPct', label: 'Fallout %', format: pctColumn },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('mortgageCycleTimeByMilestone') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('mortgageCycleTimeByMilestone', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Cycle-Time by Milestone</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Milestone timing from application through funding, compared with internal cycle-time targets.</p>
                 {renderRealEstateRowsTable('encompassCycleTimeRows', encompassCycleTimeRows, [
@@ -28561,10 +29272,12 @@ Strategies to Improve the CCC
                   { key: 'varianceDays', label: 'Variance', format: (value) => `${Number(value || 0) >= 0 ? '+' : ''}${Number(value || 0).toFixed(1)}` },
                   { key: 'loans', label: 'Loans', format: numberColumn },
                 ])}
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('mortgageOperationalBottlenecks') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('mortgageOperationalBottlenecks', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Conditions & Document Bottlenecks</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Operational bottlenecks from enhanced conditions, eFolder documents, disclosures, service orders, and workflow tasks.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
@@ -28582,10 +29295,12 @@ Strategies to Improve the CCC
                     { key: 'eventSource', label: 'Source' },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('mortgageLoanPipelineDetail') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('mortgageLoanPipelineDetail', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Loan Pipeline Detail</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Loan-level operational view with borrower names masked for PII/NPI-safe analytics mockups.</p>
                 {renderRealEstateRowsTable('encompassLoanPipelineDetailRows', encompassLoanPipelineDetailRows, [
@@ -28600,10 +29315,12 @@ Strategies to Improve the CCC
                   { key: 'closingDate', label: 'Est. Closing', format: dateColumn },
                   { key: 'risk', label: 'Risk' },
                 ])}
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('mortgageAttachmentReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('mortgageAttachmentReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Mortgage Attachment Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>How effectively are brokerage transactions converting into mortgage customers?</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
@@ -28630,7 +29347,8 @@ Strategies to Improve the CCC
                     { key: 'attachRate', label: 'Attach Rate' },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
           </>
         )}
@@ -28644,7 +29362,8 @@ Strategies to Improve the CCC
               { key: 'priorYear', label: 'Prior Year' },
             ])}
             {isSectionEnabled('titleEscrowPipelineForecastReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('titleEscrowPipelineForecastReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Escrow Pipeline & Forecast Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Forecast future closings and revenue.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
@@ -28659,10 +29378,12 @@ Strategies to Improve the CCC
                     { key: 'expectedRevenue', label: 'Expected Revenue' },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
             {isSectionEnabled('titleOfficeEscrowOfficerRankingReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('titleOfficeEscrowOfficerRankingReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Office & Escrow Officer Ranking Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>Identify top and bottom performers across offices and escrow officers.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
@@ -28685,7 +29406,8 @@ Strategies to Improve the CCC
                     { key: 'value', label: 'Value' },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
             {renderRealEstateReportCard('Operational Efficiency Report', 'titleOperationalEfficiencyReport', titleOperationalEfficiencyRows, [
               { key: 'kpi', label: 'KPI' },
@@ -28693,7 +29415,8 @@ Strategies to Improve the CCC
               { key: 'goal', label: 'Goal' },
             ])}
             {isSectionEnabled('titleAttachmentReport') && (
-              <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+              renderReorderableStandardReport('titleAttachmentReport', (
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', color: '#1e293b' }}>Title Attachment Report</h3>
                 <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>How effectively are residential and mortgage transactions converting into title business?</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
@@ -28718,7 +29441,8 @@ Strategies to Improve the CCC
                     { key: 'attachRate', label: 'Attach Rate' },
                   ])}
                 </div>
-              </div>
+                </div>
+              ))
             )}
           </>
         )}
@@ -28776,15 +29500,15 @@ Strategies to Improve the CCC
           { label: 'Renewals Due', value: Array.isArray(data.renewalPipeline) ? data.renewalPipeline.reduce((sum: number, row: any) => sum + Number(row.renewalsDue || 0), 0) : 0 },
           { label: 'Delinquency', value: formatCurrency(Array.isArray(data.delinquencyByProperty) ? data.delinquencyByProperty.reduce((sum: number, row: any) => sum + Number(row.delinquentAmount || 0), 0) : 0) },
         ])}
-        {isSectionEnabled('propertiesOccupancyVacancy') && renderRealEstateChartCard('Occupancy by Property', 'bar', data.occupancyVacancy, {
+        {renderRealEstateChartCard('Occupancy by Property', 'propertiesOccupancyVacancyChart', 'bar', data.occupancyVacancy, {
           xKey: 'property',
           yKeys: ['occupiedUnits', 'vacantUnits'],
         })}
-        {isSectionEnabled('propertiesRentalRateTrend') && renderRealEstateChartCard('Rental Rate Trend', 'line', data.rentalRateTrend, {
+        {renderRealEstateChartCard('Rental Rate Trend', 'propertiesRentalRateTrendChart', 'line', data.rentalRateTrend, {
           xKey: 'period',
           yKeys: ['marketRent', 'inPlaceRent', 'renewalRent'],
         })}
-        {isSectionEnabled('propertiesPropertyPerformance') && renderRealEstateChartCard('NOI by Property', 'bar', data.propertyPerformance, {
+        {renderRealEstateChartCard('NOI by Property', 'propertiesPropertyPerformanceChart', 'bar', data.propertyPerformance, {
           xKey: 'property',
           yKeys: ['revenue', 'noi'],
         })}
@@ -28881,15 +29605,15 @@ Strategies to Improve the CCC
           { label: 'Avg Revenue / Customer', value: formatCurrency(Number(data.salesMetricCards?.averageRevenuePerCustomer || 0)) },
           { label: 'At-Risk Accounts', value: data.salesMetricCards?.atRiskAccounts || 0 },
         ])}
-        {isSectionEnabled('customersPlatoSalesHistoryChart') && renderRealEstateChartCard('Sales History Chart', 'line', data.salesHistoryChart, {
+        {renderRealEstateChartCard('Sales History Chart', 'customersPlatoSalesHistoryChartGraphic', 'line', data.salesHistoryChart, {
           xKey: 'period',
           yKeys: ['revenue', 'invoiceCount'],
         })}
-        {isSectionEnabled('customersRevenueDistribution') && renderRealEstateChartCard('Revenue Distribution by Customer', 'pie', data.revenueDistributionByCustomer, {
+        {renderRealEstateChartCard('Revenue Distribution by Customer', 'customersRevenueDistributionChart', 'pie', data.revenueDistributionByCustomer, {
           nameKey: 'customerName',
           valueKey: 'revenue',
         })}
-        {isSectionEnabled('customersGrossMarginHistoryChart') && renderRealEstateChartCard('Gross Margin History Chart', 'line', data.grossMarginHistoryChart, {
+        {renderRealEstateChartCard('Gross Margin History Chart', 'customersGrossMarginHistoryChartGraphic', 'line', data.grossMarginHistoryChart, {
           xKey: 'period',
           yKeys: ['revenue', 'grossMargin'],
         })}
@@ -28970,15 +29694,15 @@ Strategies to Improve the CCC
           { label: 'Estimated Cost', value: formatCurrency(Array.isArray(data.openWorkOrders) ? data.openWorkOrders.reduce((sum: number, row: any) => sum + Number(row.estimatedCost || 0), 0) : 0) },
           { label: 'Urgent / High', value: Array.isArray(data.openWorkOrders) ? data.openWorkOrders.filter((row: any) => row.priority === 'Urgent' || row.priority === 'High').length : 0 },
         ])}
-        {isSectionEnabled('maintenanceBacklogByPriority') && renderRealEstateChartCard('Backlog by Priority', 'bar', data.backlogByPriority, {
+        {renderRealEstateChartCard('Backlog by Priority', 'maintenanceBacklogByPriorityChart', 'bar', data.backlogByPriority, {
           xKey: 'priority',
           yKeys: ['count', 'estimatedCost'],
         })}
-        {isSectionEnabled('maintenanceCompletionTrend') && renderRealEstateChartCard('Completion Trend', 'line', data.completionTrend, {
+        {renderRealEstateChartCard('Completion Trend', 'maintenanceCompletionTrendChart', 'line', data.completionTrend, {
           xKey: 'period',
           yKeys: ['opened', 'completed'],
         })}
-        {isSectionEnabled('maintenanceCostByPropertyUnit') && renderRealEstateChartCard('Maintenance Cost by Property', 'bar', data.costByPropertyUnit, {
+        {renderRealEstateChartCard('Maintenance Cost by Property', 'maintenanceCostByPropertyUnitChart', 'bar', data.costByPropertyUnit, {
           xKey: 'property',
           yKeys: ['totalCost', 'costPerUnit'],
         })}
@@ -29046,15 +29770,15 @@ Strategies to Improve the CCC
       'Commercial Property Types',
       'Brokerage and advisory services across retail, office, industrial, multifamily, and land/development.',
       <>
-        {renderRealEstateChartCard('Pipeline Value by Property Type', 'bar', data.propertyTypeOverview, {
+        {renderRealEstateChartCard('Pipeline Value by Property Type', 'commercialPropertyCommissionsByTypeChart', 'bar', data.propertyTypeOverview, {
           xKey: 'propertyType',
           yKeys: ['pipelineValue', 'expectedFees'],
         })}
-        {isSectionEnabled('commercialPropertyRevenueMixByType') && renderRealEstateChartCard('Revenue Mix by Property Type', 'pie', data.revenueMixByType, {
+        {renderRealEstateChartCard('Revenue Mix by Property Type', 'commercialPropertyRevenueMixByTypeChart', 'pie', data.revenueMixByType, {
           nameKey: 'propertyType',
           valueKey: 'revenue',
         })}
-        {isSectionEnabled('commercialPropertyDealPipelineByType') && renderRealEstateChartCard('Deal Pipeline by Stage', 'bar', data.dealPipelineByType, {
+        {renderRealEstateChartCard('Deal Pipeline by Stage', 'commercialPropertyDealPipelineByTypeChart', 'bar', data.dealPipelineByType, {
           xKey: 'stage',
           yKeys: ['dealCount'],
         })}
@@ -29098,19 +29822,210 @@ Strategies to Improve the CCC
     );
   };
 
+  const renderHealthcareModule = (moduleKey: string) => {
+    const reports = getOperationalHubDefaultReportsForModule(moduleKey, '62')
+      .filter((report) => isSectionEnabled(report.key));
+    const productRows = Array.isArray(productData?.records) ? productData.records : [];
+    const customerRows = Array.isArray(customerData?.records) ? customerData.records : [];
+    const hasValue = (rows: any[], field: string) =>
+      rows.some((row) => row?.[field] !== null && row?.[field] !== undefined && row?.[field] !== '');
+    const number = (value: unknown) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const groupRows = (rows: any[], dimension: string, metrics: string[]) => {
+      const grouped = new Map<string, Record<string, any>>();
+      rows.forEach((row) => {
+        const label = String(row?.[dimension] || '').trim();
+        if (!label) return;
+        const current = grouped.get(label) || { label, sourceRows: 0 };
+        current.sourceRows += 1;
+        metrics.forEach((metric) => {
+          current[metric] = number(current[metric]) + number(row?.[metric]);
+        });
+        grouped.set(label, current);
+      });
+      return [...grouped.values()].sort((a, b) => number(b.revenue || b.testVolume || b.testsOrdered || b.testsCompleted || b.sequencingCapacity || b.labUtilizationPct) - number(a.revenue || a.testVolume || a.testsOrdered || a.testsCompleted || a.sequencingCapacity || a.labUtilizationPct));
+    };
+    const averageRows = (rows: any[], dimension: string, metric: string) => {
+      const grouped = new Map<string, { label: string; total: number; count: number }>();
+      rows.forEach((row) => {
+        const label = String(row?.[dimension] || '').trim();
+        if (!label || row?.[metric] === null || row?.[metric] === undefined || row?.[metric] === '') return;
+        const current = grouped.get(label) || { label, total: 0, count: 0 };
+        current.total += number(row[metric]);
+        current.count += 1;
+        grouped.set(label, current);
+      });
+      return [...grouped.values()]
+        .map((row) => ({ label: row.label, [metric]: row.count ? row.total / row.count : 0 }))
+        .sort((a, b) => number(b[metric]) - number(a[metric]));
+    };
+    const pairRows = (metric: string) => {
+      const grouped = new Map<string, Record<string, any>>();
+      productRows.forEach((row) => {
+        const region = String(row?.region || '').trim();
+        const service = String(row?.productServiceCategory || row?.category || '').trim();
+        if (!region || !service || row?.[metric] === null || row?.[metric] === undefined || row?.[metric] === '') return;
+        const label = `${region} — ${service}`;
+        const current = grouped.get(label) || { label, region, service, [metric]: 0 };
+        current[metric] += number(row[metric]);
+        grouped.set(label, current);
+      });
+      return [...grouped.values()].sort((a, b) => number(b[metric]) - number(a[metric]));
+    };
+    const regionProductRows = groupRows(productRows, 'region', ['revenue', 'grossMargin', 'cogs', 'testVolume', 'testsOrdered', 'testsCompleted', 'sequencingCapacity']);
+    const serviceProductRows = groupRows(productRows, 'productServiceCategory', ['revenue', 'grossMargin', 'cogs', 'testVolume', 'testsOrdered', 'testsCompleted', 'sequencingCapacity']);
+    const regionTatRows = averageRows(productRows, 'region', 'turnaroundTimeDays');
+    const serviceTatRows = averageRows(productRows, 'productServiceCategory', 'turnaroundTimeDays');
+    const regionRejectionRows = averageRows(productRows, 'region', 'sampleRejectionRatePct');
+    const regionUtilizationRows = averageRows(productRows, 'region', 'labUtilizationPct');
+    const serviceUtilizationRows = averageRows(productRows, 'productServiceCategory', 'labUtilizationPct');
+    const oncologyWomensRows = productRows.filter((row) => /oncology|women'?s health/i.test(String(row?.productServiceCategory || row?.category || '')));
+    const biopharmaRows = productRows.filter((row) => /biopharma/i.test(String(row?.productServiceCategory || row?.category || '')));
+    const aiBioinformaticsRows = productRows.filter((row) => /ai|bioinformatics/i.test(String(row?.productServiceCategory || row?.category || '')));
+    const assayRows = productRows.filter((row) => /assay/i.test(String(row?.productServiceCategory || row?.category || '')));
+    const customerDimensionRows = (dimension: string, metrics: string[]) => groupRows(customerRows, dimension, metrics);
+    const healthPanel = (
+      reportKey: string,
+      title: string,
+      description: string,
+      rows: any[],
+      columns: Array<{ key: string; label: string; format?: (value: any) => string }>,
+      unavailableReason?: string,
+    ) => (
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: '16px', color: '#1e293b' }}>{title}</h3>
+        <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: '13px' }}>{description}</p>
+        {rows.length === 0 ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', border: '1px dashed #cbd5e1', borderRadius: '8px', fontSize: '13px' }}>
+            {unavailableReason || 'No source rows are available for this report in the selected period.'}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead><tr>{columns.map((column) => <th key={column.key} style={{ padding: '8px 10px', borderBottom: '1px solid #e2e8f0', color: '#475569', fontSize: '11px', textAlign: column.key === 'label' || column.key === 'region' || column.key === 'service' ? 'left' : 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{column.label}</th>)}</tr></thead>
+              <tbody>{rows.map((row, index) => <tr key={`${row.label || row.region || row.service}-${index}`}>{columns.map((column) => <td key={column.key} style={{ padding: '9px 10px', borderBottom: '1px solid #f1f5f9', color: '#0f172a', textAlign: column.key === 'label' || column.key === 'region' || column.key === 'service' ? 'left' : 'right' }}>{column.format ? column.format(row[column.key]) : String(row[column.key] ?? '')}</td>)}</tr>)}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+    const integer = (value: any) => number(value).toLocaleString();
+    const percent = (value: any) => `${number(value).toFixed(1)}%`;
+    const days = (value: any) => `${number(value).toFixed(1)} days`;
+    const currency = (value: any) => formatCurrency(number(value));
+    const withMarginPct = (rows: any[]) => rows.map((row) => ({
+      ...row,
+      grossMarginPct: number(row.revenue) ? (number(row.grossMargin) / number(row.revenue)) * 100 : 0,
+      costPerTest: number(row.testVolume) ? number(row.cogs) / number(row.testVolume) : 0,
+      backlog: Math.max(0, number(row.testsOrdered) - number(row.testsCompleted)),
+    }));
+    const renderedByKey: Record<string, React.ReactNode> = {
+      patientsTestOrdersByRegion: healthPanel('patientsTestOrdersByRegion', 'Test Orders by Region', 'Actual test-order fields from product operational data, grouped by region.', hasValue(productRows, 'testsOrdered') ? regionProductRows : [], [{ key: 'label', label: 'Region' }, { key: 'testsOrdered', label: 'Orders', format: integer }], 'Test-order fields are not available in the loaded product operational data.'),
+      patientsTestOrdersByProductService: healthPanel('patientsTestOrdersByProductService', 'Test Orders by Product / Service', 'Actual test-order fields from product operational data, grouped by product/service.', hasValue(productRows, 'testsOrdered') ? serviceProductRows : [], [{ key: 'label', label: 'Product / Service' }, { key: 'testsOrdered', label: 'Orders', format: integer }], 'Test-order fields are not available in the loaded product operational data.'),
+      patientsCompletedTestsByRegion: healthPanel('patientsCompletedTestsByRegion', 'Completed Tests by Region', 'Actual completed-test fields from product operational data, grouped by region.', hasValue(productRows, 'testsCompleted') ? regionProductRows : [], [{ key: 'label', label: 'Region' }, { key: 'testsCompleted', label: 'Completed', format: integer }], 'Completed-test fields are not available in the loaded product operational data.'),
+      patientsCompletedTestsByProductService: healthPanel('patientsCompletedTestsByProductService', 'Completed Tests by Product / Service', 'Actual completed-test fields from product operational data, grouped by product/service.', hasValue(productRows, 'testsCompleted') ? serviceProductRows : [], [{ key: 'label', label: 'Product / Service' }, { key: 'testsCompleted', label: 'Completed', format: integer }], 'Completed-test fields are not available in the loaded product operational data.'),
+      patientsTatByRegionAndProduct: healthPanel('patientsTatByRegionAndProduct', 'Turnaround Time by Region and Product / Service', 'Average turnaround time uses populated product operational fields.', hasValue(productRows, 'turnaroundTimeDays') ? [...regionTatRows.map((row) => ({ ...row, dimension: 'Region' })), ...serviceTatRows.map((row) => ({ ...row, dimension: 'Product / Service' }))] : [], [{ key: 'dimension', label: 'View' }, { key: 'label', label: 'Region / Service' }, { key: 'turnaroundTimeDays', label: 'Avg TAT', format: days }], 'Turnaround-time fields are not available in the loaded product operational data.'),
+      patientsBacklogByRegionAndProduct: healthPanel('patientsBacklogByRegionAndProduct', 'Open Test Backlog by Region and Product / Service', 'Backlog is calculated only where both actual ordered and completed test fields are present.', hasValue(productRows, 'testsOrdered') && hasValue(productRows, 'testsCompleted') ? [...withMarginPct(regionProductRows).map((row) => ({ ...row, dimension: 'Region' })), ...withMarginPct(serviceProductRows).map((row) => ({ ...row, dimension: 'Product / Service' }))] : [], [{ key: 'dimension', label: 'View' }, { key: 'label', label: 'Region / Service' }, { key: 'backlog', label: 'Open Backlog', format: integer }], 'Ordered and completed test fields are both required to calculate backlog.'),
+      patientsRejectionRateByRegion: healthPanel('patientsRejectionRateByRegion', 'Sample Rejection Rate by Region', 'Average sample rejection rate uses populated product operational fields.', regionRejectionRows, [{ key: 'label', label: 'Region' }, { key: 'sampleRejectionRatePct', label: 'Rejection Rate', format: percent }], 'Sample rejection-rate fields are not available in the loaded product operational data.'),
+      patientsPositiveDetectionByProduct: healthPanel('patientsPositiveDetectionByProduct', 'Positive Detection Rate by Product / Service', 'Requires a positive-result or detection-rate source field.', [], [{ key: 'label', label: 'Product / Service' }, { key: 'positiveDetectionRate', label: 'Positive Detection Rate', format: percent }], 'Positive-result or detection-rate data is not available from the connected product/customer sources.'),
+      servicesRevenueByRegionAndProduct: healthPanel('servicesRevenueByRegionAndProduct', 'Revenue by Region and Product / Service', 'Recognized revenue from product operational rows grouped by region and product/service.', pairRows('revenue'), [{ key: 'region', label: 'Region' }, { key: 'service', label: 'Product / Service' }, { key: 'revenue', label: 'Revenue', format: currency }]),
+      servicesGrossMarginByRegionAndProduct: healthPanel('servicesGrossMarginByRegionAndProduct', 'Gross Margin by Region and Product / Service', 'Gross margin from product operational rows grouped by region and product/service.', pairRows('grossMargin'), [{ key: 'region', label: 'Region' }, { key: 'service', label: 'Product / Service' }, { key: 'grossMargin', label: 'Gross Margin', format: currency }]),
+      servicesCostPerTestByProduct: healthPanel('servicesCostPerTestByProduct', 'Cost per Test by Product / Service', 'Cost per test is calculated from actual COGS and test-volume fields.', hasValue(productRows, 'testVolume') ? withMarginPct(serviceProductRows) : [], [{ key: 'label', label: 'Product / Service' }, { key: 'costPerTest', label: 'Cost / Test', format: currency }], 'Test-volume fields are required to calculate cost per test.'),
+      servicesVolumeByRegionAndProduct: healthPanel('servicesVolumeByRegionAndProduct', 'Test Volume by Region and Product / Service', 'Actual test volume from product operational rows grouped by region and product/service.', hasValue(productRows, 'testVolume') ? pairRows('testVolume') : [], [{ key: 'region', label: 'Region' }, { key: 'service', label: 'Product / Service' }, { key: 'testVolume', label: 'Test Volume', format: integer }], 'Test-volume fields are not available in the loaded product operational data.'),
+      servicesOncologyVsWomensHealthByRegion: healthPanel('servicesOncologyVsWomensHealthByRegion', "Oncology vs Women's Health by Region", 'Only source product/service categories explicitly labeled Oncology or Women’s Health are included.', groupRows(oncologyWomensRows, 'region', ['revenue', 'testVolume']), [{ key: 'label', label: 'Region' }, { key: 'revenue', label: 'Revenue', format: currency }, { key: 'testVolume', label: 'Test Volume', format: integer }], 'No loaded product/service categories are labeled Oncology or Women’s Health.'),
+      servicesBiopharmaRevenueByRegion: healthPanel('servicesBiopharmaRevenueByRegion', 'Biopharma Revenue by Region', 'Only source product/service categories explicitly labeled Biopharma are included.', groupRows(biopharmaRows, 'region', ['revenue']), [{ key: 'label', label: 'Region' }, { key: 'revenue', label: 'Revenue', format: currency }], 'No loaded product/service categories are labeled Biopharma.'),
+      servicesAiBioinformaticsRevenueByRegion: healthPanel('servicesAiBioinformaticsRevenueByRegion', 'AI / Bioinformatics Revenue by Region', 'Only source product/service categories explicitly labeled AI or Bioinformatics are included.', groupRows(aiBioinformaticsRows, 'region', ['revenue']), [{ key: 'label', label: 'Region' }, { key: 'revenue', label: 'Revenue', format: currency }], 'No loaded product/service categories are labeled AI or Bioinformatics.'),
+      servicesAssayTrendByRegion: healthPanel('servicesAssayTrendByRegion', 'Assay Trend by Region', 'Current-period assay volume uses only source product/service categories explicitly labeled Assay.', groupRows(assayRows, 'region', ['testVolume']), [{ key: 'label', label: 'Region' }, { key: 'testVolume', label: 'Test Volume', format: integer }], 'No loaded product/service categories are labeled Assay.'),
+      staffingLabUtilizationByRegion: healthPanel('staffingLabUtilizationByRegion', 'Laboratory Utilization by Region', 'Average laboratory utilization from populated product operational fields.', regionUtilizationRows, [{ key: 'label', label: 'Region' }, { key: 'labUtilizationPct', label: 'Utilization', format: percent }], 'Laboratory-utilization fields are not available in the loaded product operational data.'),
+      staffingLabUtilizationByProductService: healthPanel('staffingLabUtilizationByProductService', 'Laboratory Utilization by Product / Service', 'Average laboratory utilization from populated product operational fields.', serviceUtilizationRows, [{ key: 'label', label: 'Product / Service' }, { key: 'labUtilizationPct', label: 'Utilization', format: percent }], 'Laboratory-utilization fields are not available in the loaded product operational data.'),
+      staffingSequencingCapacityByRegion: healthPanel('staffingSequencingCapacityByRegion', 'Sequencing Capacity by Region', 'Sequencing capacity from populated product operational fields.', hasValue(productRows, 'sequencingCapacity') ? regionProductRows : [], [{ key: 'label', label: 'Region' }, { key: 'sequencingCapacity', label: 'Capacity', format: integer }], 'Sequencing-capacity fields are not available in the loaded product operational data.'),
+      staffingSequencingCapacityByProduct: healthPanel('staffingSequencingCapacityByProduct', 'Sequencing Capacity by Product / Service', 'Sequencing capacity from populated product operational fields.', hasValue(productRows, 'sequencingCapacity') ? serviceProductRows : [], [{ key: 'label', label: 'Product / Service' }, { key: 'sequencingCapacity', label: 'Capacity', format: integer }], 'Sequencing-capacity fields are not available in the loaded product operational data.'),
+      staffingTestsPerFteByRegion: healthPanel('staffingTestsPerFteByRegion', 'Tests per FTE by Region', 'Requires a provider/FTE source field in addition to test volume.', [], [{ key: 'label', label: 'Region' }, { key: 'testsPerFte', label: 'Tests / FTE', format: integer }], 'Provider/FTE data is not available from the connected product/customer sources.'),
+      staffingTatByLabAndRegion: healthPanel('staffingTatByLabAndRegion', 'TAT by Laboratory and Region', 'Requires a laboratory identifier in the source data.', [], [{ key: 'label', label: 'Laboratory / Region' }, { key: 'turnaroundTimeDays', label: 'Avg TAT', format: days }], 'Laboratory identifiers are not available from the connected product/customer sources.'),
+      staffingThroughputByDepartmentProduct: healthPanel('staffingThroughputByDepartmentProduct', 'Testing Department Throughput by Product / Service', 'Requires a testing-department source field.', [], [{ key: 'label', label: 'Department / Product' }, { key: 'testVolume', label: 'Throughput', format: integer }], 'Testing-department fields are not available from the connected product/customer sources.'),
+      staffingUtilizationExceptionsByRegion: healthPanel('staffingUtilizationExceptionsByRegion', 'Utilization Exceptions by Region', 'Requires a utilization target or exception-status source field.', [], [{ key: 'label', label: 'Region' }, { key: 'exception', label: 'Exception' }], 'Utilization targets or exception-status fields are not available from the connected product/customer sources.'),
+      customersRevenueByHospitalNetwork: healthPanel('customersRevenueByHospitalNetwork', 'Revenue by Hospital Network', 'Customer revenue grouped only when source rows provide a hospital-network field.', hasValue(customerRows, 'hospitalNetwork') ? customerDimensionRows('hospitalNetwork', ['revenue']) : [], [{ key: 'label', label: 'Hospital Network' }, { key: 'revenue', label: 'Revenue', format: currency }], 'Hospital-network fields are not available in the loaded customer operational data.'),
+      customersAccountsByCountry: healthPanel('customersAccountsByCountry', 'Hospital Accounts by Country', 'Customer accounts grouped only when source rows provide a country field.', hasValue(customerRows, 'country') ? customerDimensionRows('country', ['revenue', 'invoiceCount']) : [], [{ key: 'label', label: 'Country' }, { key: 'sourceRows', label: 'Accounts', format: integer }, { key: 'revenue', label: 'Revenue', format: currency }], 'Country fields are not available in the loaded customer operational data.'),
+      customersPipelineBySegment: healthPanel('customersPipelineBySegment', 'Sales Pipeline by Customer Segment', 'Requires sales-pipeline and customer-segment fields.', [], [{ key: 'label', label: 'Customer Segment' }, { key: 'pipeline', label: 'Pipeline', format: currency }], 'Customer-segment pipeline data is not available from the connected product/customer sources.'),
+      customersConcentrationBySegment: healthPanel('customersConcentrationBySegment', 'Customer Concentration by Segment', 'Requires a customer-segment field to calculate concentration.', [], [{ key: 'label', label: 'Customer Segment' }, { key: 'revenue', label: 'Revenue', format: currency }], 'Customer-segment fields are not available in the loaded customer operational data.'),
+      customersCollectionsBySegment: healthPanel('customersCollectionsBySegment', 'Cash Collections by Segment', 'Requires collection and customer-segment fields.', [], [{ key: 'label', label: 'Customer Segment' }, { key: 'collections', label: 'Collections', format: currency }], 'Collection and customer-segment fields are not available from the connected product/customer sources.'),
+      customersGovernmentPrograms: healthPanel('customersGovernmentPrograms', 'Government Screening Programs', 'Requires a government-program classification in customer or product source data.', [], [{ key: 'label', label: 'Program' }, { key: 'revenue', label: 'Revenue', format: currency }], 'Government-program fields are not available from the connected product/customer sources.'),
+      customersPharmaResearchAccounts: healthPanel('customersPharmaResearchAccounts', 'Pharma / Research Accounts', 'Requires an account-type classification in customer source data.', [], [{ key: 'label', label: 'Account' }, { key: 'revenue', label: 'Revenue', format: currency }], 'Pharma/research account classifications are not available in the loaded customer operational data.'),
+    };
+
+    return (
+      <div style={{ padding: '24px 32px 32px' }}>
+        <div style={{ marginBottom: '16px' }}>
+          <h2 style={{ margin: 0, color: '#0f172a', fontSize: '20px' }}>{getOperationalHubModuleLabel(moduleKey, '62')}</h2>
+          <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '13px' }}>Reports use loaded product and customer operational data only. Missing clinical, provider, payor, or segmentation fields remain explicitly unavailable.</p>
+        </div>
+        <div className="ops-print-hide" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', marginBottom: '16px' }}>
+          {[
+            { label: 'Product Operational Rows', value: productRows.length.toLocaleString() },
+            { label: 'Customer Operational Rows', value: customerRows.length.toLocaleString() },
+            { label: 'Configured Reports', value: reports.length.toLocaleString() },
+          ].map((card) => <div key={card.label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px' }}><div style={{ color: '#64748b', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }}>{card.label}</div><div style={{ color: '#0f172a', fontSize: '22px', fontWeight: 800, marginTop: '4px' }}>{card.value}</div></div>)}
+        </div>
+        <SortableReportCollection
+          items={reports.map((report) => ({
+            id: report.key,
+            node: renderedByKey[report.key] || healthPanel(
+              report.key,
+              report.label,
+              'No report renderer is available for this configured key.',
+              [],
+              [],
+              'No renderer is available for this configured report key.'
+            ),
+          }))}
+          persistedOrder={getOperationalHubReportOrder(companyOperationalHubConfig, moduleKey)}
+          canReorder={canManageReportLayout}
+          isSaving={savingReportLayout}
+          onReorder={(orderedIds) => void saveReportOrder(moduleKey, orderedIds)}
+          style={{ display: 'flex', flexDirection: 'column' }}
+        />
+      </div>
+    );
+  };
+
   const renderModuleTabContent = (moduleKey: string) => {
+    const withReportLayout = (node: React.ReactNode) => (
+      <OperationalReportPageLayout
+        persistedOrder={getOperationalHubReportOrder(companyOperationalHubConfig, moduleKey)}
+        canReorder={canManageReportLayout}
+        isSaving={savingReportLayout}
+        onReorder={(orderedIds) => void saveReportOrder(moduleKey, orderedIds)}
+      >
+        {node}
+      </OperationalReportPageLayout>
+    );
+
     if (moduleKey === 'hubspot_sales') {
-      return <HubSpotSalesTab selectedCompanyId={selectedCompanyId} operationalHubSections={operationalHubSections} />;
+      return (
+        <HubSpotSalesTab
+          selectedCompanyId={selectedCompanyId}
+          operationalHubSections={operationalHubSections}
+          canReorderReports={canManageReportLayout}
+          isSavingReportLayout={savingReportLayout}
+          reportOrder={getOperationalHubReportOrder(companyOperationalHubConfig, 'hubspot_sales')}
+          onSaveReportOrder={(orderedIds) => void saveReportOrder('hubspot_sales', orderedIds)}
+        />
+      );
     }
     if (moduleKey === 'forecast') {
-      return renderForecast();
+      return withReportLayout(renderForecast());
+    }
+    if (isHealthcareSector && getOperationalHubDefaultReportsForModule(moduleKey, '62').length > 0) {
+      return renderHealthcareModule(moduleKey);
     }
     if (String(industrySectorCategory || '').trim() === '53') {
-      if (REAL_ESTATE_DIVISION_CONFIG[moduleKey]) return renderRealEstateDivision(moduleKey);
-      if (moduleKey === 'units_properties') return renderRealEstateUnitsProperties();
-      if (moduleKey === 'leasing_sales') return renderRealEstateLeasingSales();
-      if (moduleKey === 'maintenance_work_orders') return renderRealEstateMaintenance();
-      if (moduleKey === 'commercial_property_types') return renderRealEstateCommercialPropertyTypes();
+      if (REAL_ESTATE_DIVISION_CONFIG[moduleKey]) return withReportLayout(renderRealEstateDivision(moduleKey));
+      if (moduleKey === 'units_properties') return withReportLayout(renderRealEstateUnitsProperties());
+      if (moduleKey === 'leasing_sales') return withReportLayout(renderRealEstateLeasingSales());
+      if (moduleKey === 'maintenance_work_orders') return withReportLayout(renderRealEstateMaintenance());
+      if (moduleKey === 'commercial_property_types') return withReportLayout(renderRealEstateCommercialPropertyTypes());
     }
     if (moduleKey === 'working_capital_forecast' || moduleKey === 'working-capital-forecast') {
       return <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} />;
@@ -29130,14 +30045,14 @@ Strategies to Improve the CCC
     const withPrintReady = (id: string, node: React.ReactNode) => (
       <div data-print-ready={id}>{node}</div>
     );
-    if (dataType === 'sales') return withPrintReady('customers', renderCustomers());
-    if (dataType === 'customers') return withPrintReady('customers', renderCustomers());
-    if (dataType === 'customers-sites') return withPrintReady('customers-sites', renderCustomersSites());
-    if (dataType === 'ar-aging') return withPrintReady('ar-aging', renderARaging());
-    if (dataType === 'ap-aging') return withPrintReady('ap-aging', renderAPaging());
-    if (dataType === 'products') return withPrintReady('products', renderProducts());
-    if (dataType === 'labor-scheduling') return renderLaborScheduling();
-    if (dataType === 'payroll') return withPrintReady('payroll', renderPayroll());
+    if (dataType === 'sales') return withReportLayout(withPrintReady('customers', renderCustomers()));
+    if (dataType === 'customers') return withReportLayout(withPrintReady('customers', renderCustomers()));
+    if (dataType === 'customers-sites') return withReportLayout(withPrintReady('customers-sites', renderCustomersSites()));
+    if (dataType === 'ar-aging') return withReportLayout(withPrintReady('ar-aging', renderARaging()));
+    if (dataType === 'ap-aging') return withReportLayout(withPrintReady('ap-aging', renderAPaging()));
+    if (dataType === 'products') return withReportLayout(withPrintReady('products', renderProducts()));
+    if (dataType === 'labor-scheduling') return withReportLayout(renderLaborScheduling());
+    if (dataType === 'payroll') return withReportLayout(withPrintReady('payroll', renderPayroll()));
     if (dataType === 'payroll-bureau-ops') {
       return withPrintReady(
         'payroll-bureau-ops',
@@ -29147,12 +30062,13 @@ Strategies to Improve the CCC
           isSectionEnabled={isSectionEnabled}
           clientFilter={selectedOperationalClient}
           clientSelector={moduleKey === 'client_economics' ? renderOperationalClientSelector('left') : null}
+          renderReportPanel={renderReorderableStandardReport}
         />
       );
     }
-    if (dataType === 'hiring') return renderHiring();
-    if (dataType === 'inventory') return withPrintReady('inventory', renderInventory());
-    if (dataType === 'cash') return renderCash();
+    if (dataType === 'hiring') return withReportLayout(renderHiring());
+    if (dataType === 'inventory') return withReportLayout(withPrintReady('inventory', renderInventory()));
+    if (dataType === 'cash') return withReportLayout(renderCash());
     if (dataType === 'cap-table') {
       return (
         <CapTableView
@@ -29163,18 +30079,22 @@ Strategies to Improve the CCC
       );
     }
     if (dataType === 'daily-financials') return renderDailyFinancials();
-    if (dataType === 'revenue-billables') return renderRevenueBillables();
-    if (dataType === 'unit-economics') return renderUnitEconomics();
-    if (dataType === 'job-cost-control') return renderJobCostControl();
-    if (dataType === 'project-portfolio') return renderProjectPortfolio();
-    if (dataType === 'commitments-forecast') return renderCommitmentsForecast();
-    if (dataType === 'billing-cash') return renderBillingCash();
-    if (dataType === 'construction-ar') return renderConstructionAr();
-    if (dataType === 'construction-ap') return renderConstructionAp();
-    if (dataType === 'hilti-inventory') return renderHiltiInventory();
+    if (dataType === 'revenue-billables') return withReportLayout(renderRevenueBillables());
+    if (dataType === 'unit-economics') return withReportLayout(renderUnitEconomics());
+    if (dataType === 'job-cost-control') return withReportLayout(renderJobCostControl());
+    if (dataType === 'project-portfolio') return withReportLayout(renderProjectPortfolio());
+    if (dataType === 'commitments-forecast') return withReportLayout(renderCommitmentsForecast());
+    if (dataType === 'billing-cash') return withReportLayout(renderBillingCash());
+    if (dataType === 'construction-ar') return withReportLayout(renderConstructionAr());
+    if (dataType === 'construction-ap') return withReportLayout(renderConstructionAp());
+    if (dataType === 'hilti-inventory') return withReportLayout(renderHiltiInventory());
     if (companyCustomTabKeys.includes(moduleKey) || companyCustomTabKeys.includes(resolveModuleKey(moduleKey))) {
-      const reports = companyCustomReports.filter((report) => report.tabKey === moduleKey || report.tabKey === resolveModuleKey(moduleKey));
-      const enabledReports = reports.filter((report) => isSectionEnabled(`customReport:${report.id}`));
+      const reportModuleKey = companyCustomTabKeys.includes(moduleKey) ? moduleKey : resolveModuleKey(moduleKey);
+      const reports = companyCustomReports.filter((report) => report.tabKey === reportModuleKey);
+      const enabledReports = orderOperationalHubReports(
+        reports.filter((report) => isSectionEnabled(`customReport:${report.id}`)),
+        getOperationalHubReportOrder(companyOperationalHubConfig, reportModuleKey)
+      );
       return (
         <div style={{ padding: '32px 24px' }}>
           <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
@@ -29183,6 +30103,11 @@ Strategies to Improve the CCC
           <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
             Company-only tab. Reports listed here are configuration entries until their charts are implemented.
           </div>
+          {reportLayoutSaveError && (
+            <div style={{ marginBottom: '12px', color: '#b91c1c', fontSize: '13px', fontWeight: 600 }}>
+              {reportLayoutSaveError}
+            </div>
+          )}
           {enabledReports.length === 0 ? (
             <div style={{ fontSize: '13px', color: '#94a3b8' }}>No company reports on this tab yet.</div>
           ) : (
@@ -29190,16 +30115,45 @@ Strategies to Improve the CCC
               {enabledReports.map((report) => (
                 <div
                   key={report.id}
+                  draggable={canManageReportLayout && !savingReportLayout}
+                  onDragStart={(event) => {
+                    if (!canManageReportLayout) return;
+                    setDraggedReportId(report.id);
+                    event.dataTransfer.setData('text/plain', report.id);
+                    event.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragEnd={() => setDraggedReportId(null)}
+                  onDragOver={(event) => {
+                    if (!canManageReportLayout) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(event) => {
+                    if (!canManageReportLayout) return;
+                    event.preventDefault();
+                    moveCustomReport(
+                      reportModuleKey,
+                      event.dataTransfer.getData('text/plain') || draggedReportId || '',
+                      report.id,
+                      enabledReports
+                    );
+                    setDraggedReportId(null);
+                  }}
                   style={{
                     background: 'white',
-                    border: '1px solid #e2e8f0',
+                    border: draggedReportId === report.id ? '1px solid #2563eb' : '1px solid #e2e8f0',
                     borderRadius: '8px',
                     padding: '12px 14px',
                     fontSize: '13px',
                     color: '#334155',
                     fontWeight: 600,
+                    cursor: canManageReportLayout ? 'grab' : undefined,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
                   }}
                 >
+                  {canManageReportLayout && <GripVertical size={16} color="#94a3b8" aria-label="Drag to reorder report" />}
                   {report.label}
                 </div>
               ))}
@@ -29594,6 +30548,18 @@ Strategies to Improve the CCC
         </div>
       </div>
     );
+    const renderHealthcareReportPanels = (reports: Record<string, React.ReactNode>) => (
+      <SortableReportCollection
+        items={HEALTHCARE_OVERVIEW_REPORT_KEYS
+          .filter((reportKey) => Boolean(reports[reportKey]))
+          .map((id) => ({ id, node: reports[id] }))}
+        persistedOrder={getOperationalHubReportOrder(companyOperationalHubConfig, 'dashboard')}
+        canReorder={canManageReportLayout}
+        isSaving={savingReportLayout}
+        onReorder={(orderedIds) => void saveReportOrder('dashboard', orderedIds)}
+        style={{ display: 'flex', flexDirection: 'column' }}
+      />
+    );
 
     const currentPage = () => {
       if (loading && !productData) {
@@ -29630,32 +30596,34 @@ Strategies to Improve the CCC
         return (
           <>
             {renderMetricSelector(selectedHealthcareRegionMetric, setSelectedHealthcareRegionMetric)}
-            {renderLineCard(
-              selectedHealthcareRegionMetric === 'grossMarginPct' ? 'Regional Gross Margin % Over Time' : 'Regional Growth Over Time',
-              selectedHealthcareRegionMetric === 'grossMarginPct'
-                ? '36 months of historical regional Gross Margin % plus 12 months projected.'
-                : '36 months of historical regional revenue plus 12 months projected. Gross Margin % is shown on the right axis.',
-              selectedHealthcareRegionMetric === 'grossMarginPct' ? regionGrossMarginPctRows : regionChartRows,
-              topRegionSeries,
-              selectedHealthcareRegionMetric === 'grossMarginPct' ? formatPct : formatCurrency,
-              'Gross Margin %',
-              { metric: selectedHealthcareRegionMetric, showGrossMarginPctReference: selectedHealthcareRegionMetric === 'revenue' },
-            )}
             {renderMetricCards([
               { label: 'Fastest Region', value: regionScorecardRows[0]?.region || 'N/A', detail: `${formatPct(regionScorecardRows[0]?.growth || 0)} revenue growth` },
               { label: 'Best Margin Region', value: regionScorecardRows.slice().sort((a, b) => b.marginPct - a.marginPct)[0]?.region || 'N/A', detail: `${formatPct(regionScorecardRows.slice().sort((a, b) => b.marginPct - a.marginPct)[0]?.marginPct || 0)} gross margin` },
               { label: 'Highest Utilization', value: regionScorecardRows.slice().sort((a, b) => b.utilization - a.utilization)[0]?.region || 'N/A', detail: `${formatPct(regionScorecardRows.slice().sort((a, b) => b.utilization - a.utilization)[0]?.utilization || 0)} lab utilization` },
             ])}
-            {renderExecutiveTable('Regional CEO Scorecard', [
-              { key: 'region', label: 'Region' },
-              { key: 'revenue', label: 'Revenue', align: 'right', format: formatCurrency },
-              { key: 'growth', label: 'Growth', align: 'right', format: formatPct },
-              { key: 'marginPct', label: 'GM %', align: 'right', format: formatPct },
-              { key: 'testVolume', label: 'Tests', align: 'right', format: (value) => Number(value || 0).toLocaleString() },
-              { key: 'tat', label: 'TAT Days', align: 'right', format: (value) => Number(value || 0).toFixed(1) },
-              { key: 'utilization', label: 'Utilization', align: 'right', format: formatPct },
-              { key: 'ceoReadout', label: 'CEO Readout' },
-            ], regionScorecardRows)}
+            {renderHealthcareReportPanels({
+              healthcareRegionalGrowth: renderLineCard(
+                selectedHealthcareRegionMetric === 'grossMarginPct' ? 'Regional Gross Margin % Over Time' : 'Regional Growth Over Time',
+                selectedHealthcareRegionMetric === 'grossMarginPct'
+                  ? '36 months of historical regional Gross Margin % plus 12 months projected.'
+                  : '36 months of historical regional revenue plus 12 months projected. Gross Margin % is shown on the right axis.',
+                selectedHealthcareRegionMetric === 'grossMarginPct' ? regionGrossMarginPctRows : regionChartRows,
+                topRegionSeries,
+                selectedHealthcareRegionMetric === 'grossMarginPct' ? formatPct : formatCurrency,
+                'Gross Margin %',
+                { metric: selectedHealthcareRegionMetric, showGrossMarginPctReference: selectedHealthcareRegionMetric === 'revenue' },
+              ),
+              healthcareRegionalScorecard: renderExecutiveTable('Regional CEO Scorecard', [
+                { key: 'region', label: 'Region' },
+                { key: 'revenue', label: 'Revenue', align: 'right', format: formatCurrency },
+                { key: 'growth', label: 'Growth', align: 'right', format: formatPct },
+                { key: 'marginPct', label: 'GM %', align: 'right', format: formatPct },
+                { key: 'testVolume', label: 'Tests', align: 'right', format: (value) => Number(value || 0).toLocaleString() },
+                { key: 'tat', label: 'TAT Days', align: 'right', format: (value) => Number(value || 0).toFixed(1) },
+                { key: 'utilization', label: 'Utilization', align: 'right', format: formatPct },
+                { key: 'ceoReadout', label: 'CEO Readout' },
+              ], regionScorecardRows),
+            })}
           </>
         );
       }
@@ -29709,33 +30677,35 @@ Strategies to Improve the CCC
                 </select>
               </div>
             </div>
-            {renderLineCard(
-              selectedHealthcareServiceMetric === 'grossMarginPct' ? 'Product / Service Gross Margin % Over Time' : 'Product / Service Growth Over Time',
-              selectedHealthcareServiceMetric === 'grossMarginPct'
-                ? '36 months of historical product/service Gross Margin % plus 12 months projected.'
-                : '36 months of historical product/service revenue plus 12 months projected. Gross Margin % is shown on the right axis.',
-              selectedHealthcareServiceMetric === 'grossMarginPct' ? serviceGrossMarginPctRows : serviceChartRows,
-              topServiceSeries,
-              selectedHealthcareServiceMetric === 'grossMarginPct' ? formatPct : formatCurrency,
-              'Gross Margin %',
-              { metric: selectedHealthcareServiceMetric, showGrossMarginPctReference: selectedHealthcareServiceMetric === 'revenue' },
-            )}
             {renderMetricCards([
               { label: 'Largest Service', value: serviceScorecardRows[0]?.service || 'N/A', detail: `${formatCurrency(serviceScorecardRows[0]?.revenue || 0)} total revenue` },
               { label: 'Fastest Growth', value: serviceScorecardRows.slice().sort((a, b) => b.growth - a.growth)[0]?.service || 'N/A', detail: `${formatPct(serviceScorecardRows.slice().sort((a, b) => b.growth - a.growth)[0]?.growth || 0)} revenue growth` },
               { label: 'Revenue / Test', value: formatCurrency(serviceScorecardRows.slice().sort((a, b) => b.revPerTest - a.revPerTest)[0]?.revPerTest || 0), detail: serviceScorecardRows.slice().sort((a, b) => b.revPerTest - a.revPerTest)[0]?.service || 'Best service economics' },
             ])}
-            {renderExecutiveTable('Product / Service Portfolio Scorecard', [
-              { key: 'service', label: 'Product / Service' },
-              { key: 'revenue', label: 'Revenue', align: 'right', format: formatCurrency },
-              { key: 'growth', label: 'Growth', align: 'right', format: formatPct },
-              { key: 'marginPct', label: 'GM %', align: 'right', format: formatPct },
-              { key: 'testVolume', label: 'Tests', align: 'right', format: (value) => Number(value || 0).toLocaleString() },
-              { key: 'revPerTest', label: 'Rev / Test', align: 'right', format: formatCurrency },
-              { key: 'costPerTest', label: 'Cost / Test', align: 'right', format: formatCurrency },
-              { key: 'rejection', label: 'Reject %', align: 'right', format: formatPct },
-              { key: 'ceoReadout', label: 'CEO Readout' },
-            ], serviceScorecardRows)}
+            {renderHealthcareReportPanels({
+              healthcareServiceGrowth: renderLineCard(
+                selectedHealthcareServiceMetric === 'grossMarginPct' ? 'Product / Service Gross Margin % Over Time' : 'Product / Service Growth Over Time',
+                selectedHealthcareServiceMetric === 'grossMarginPct'
+                  ? '36 months of historical product/service Gross Margin % plus 12 months projected.'
+                  : '36 months of historical product/service revenue plus 12 months projected. Gross Margin % is shown on the right axis.',
+                selectedHealthcareServiceMetric === 'grossMarginPct' ? serviceGrossMarginPctRows : serviceChartRows,
+                topServiceSeries,
+                selectedHealthcareServiceMetric === 'grossMarginPct' ? formatPct : formatCurrency,
+                'Gross Margin %',
+                { metric: selectedHealthcareServiceMetric, showGrossMarginPctReference: selectedHealthcareServiceMetric === 'revenue' },
+              ),
+              healthcareServiceScorecard: renderExecutiveTable('Product / Service Portfolio Scorecard', [
+                { key: 'service', label: 'Product / Service' },
+                { key: 'revenue', label: 'Revenue', align: 'right', format: formatCurrency },
+                { key: 'growth', label: 'Growth', align: 'right', format: formatPct },
+                { key: 'marginPct', label: 'GM %', align: 'right', format: formatPct },
+                { key: 'testVolume', label: 'Tests', align: 'right', format: (value) => Number(value || 0).toLocaleString() },
+                { key: 'revPerTest', label: 'Rev / Test', align: 'right', format: formatCurrency },
+                { key: 'costPerTest', label: 'Cost / Test', align: 'right', format: formatCurrency },
+                { key: 'rejection', label: 'Reject %', align: 'right', format: formatPct },
+                { key: 'ceoReadout', label: 'CEO Readout' },
+              ], serviceScorecardRows),
+            })}
           </>
         );
       }
@@ -29746,30 +30716,32 @@ Strategies to Improve the CCC
             { label: 'Gross Margin', value: formatPct(enterpriseMarginPct), detail: `${formatCurrency(latestEnterpriseMargin)} latest gross margin` },
             { label: 'Latest Test Volume', value: Number(latestEnterpriseVolume || 0).toLocaleString(), detail: 'Completed / ordered testing activity' },
           ])}
-          {renderLineCard(
-            'Enterprise Growth Over Time',
-            'Enterprise-level trend for revenue and gross margin.',
-            enterpriseChartRows.map((row, index) => ({
-              ...row,
-              grossMargin: enterpriseMargin.rows[index]?.Enterprise || 0,
-            })),
-            [
-              { key: 'Enterprise', label: 'Revenue', color: '#2563eb' },
-              { key: 'grossMargin', label: 'Gross Margin', color: '#0f766e' },
-            ],
-            formatCurrency,
-          )}
-          {renderExecutiveTable('Enterprise CEO Review', [
-            { key: 'metric', label: 'Metric' },
-            { key: 'current', label: 'Current', align: 'right' },
-            { key: 'trend', label: 'Trend / Target', align: 'right' },
-            { key: 'ceoReadout', label: 'CEO Readout' },
-          ], [
-            { metric: 'Revenue Growth', current: formatPct(enterpriseGrowth), trend: 'Target: 25%+', ceoReadout: enterpriseGrowth >= 25 ? 'Growth engine is working' : 'Pipeline acceleration needed' },
-            { metric: 'Gross Margin', current: formatPct(enterpriseMarginPct), trend: 'Target: 55%+', ceoReadout: enterpriseMarginPct >= 55 ? 'Attractive portfolio economics' : 'Review pricing and lab cost' },
-            { metric: 'Service Concentration', current: `${formatPct(totalRevenue ? (topServiceSeries[0]?.total || 0) / totalRevenue * 100 : 0)} top service`, trend: 'Target: balanced growth', ceoReadout: 'Watch dependency on largest service line' },
-            { metric: 'Regional Breadth', current: `${topRegionSeries.length} active regions`, trend: 'SEA + India expansion', ceoReadout: 'Compare growth versus operating capacity' },
-          ])}
+          {renderHealthcareReportPanels({
+            healthcareEnterpriseGrowth: renderLineCard(
+              'Enterprise Growth Over Time',
+              'Enterprise-level trend for revenue and gross margin.',
+              enterpriseChartRows.map((row, index) => ({
+                ...row,
+                grossMargin: enterpriseMargin.rows[index]?.Enterprise || 0,
+              })),
+              [
+                { key: 'Enterprise', label: 'Revenue', color: '#2563eb' },
+                { key: 'grossMargin', label: 'Gross Margin', color: '#0f766e' },
+              ],
+              formatCurrency,
+            ),
+            healthcareEnterpriseReview: renderExecutiveTable('Enterprise CEO Review', [
+              { key: 'metric', label: 'Metric' },
+              { key: 'current', label: 'Current', align: 'right' },
+              { key: 'trend', label: 'Trend / Target', align: 'right' },
+              { key: 'ceoReadout', label: 'CEO Readout' },
+            ], [
+              { metric: 'Revenue Growth', current: formatPct(enterpriseGrowth), trend: 'Target: 25%+', ceoReadout: enterpriseGrowth >= 25 ? 'Growth engine is working' : 'Pipeline acceleration needed' },
+              { metric: 'Gross Margin', current: formatPct(enterpriseMarginPct), trend: 'Target: 55%+', ceoReadout: enterpriseMarginPct >= 55 ? 'Attractive portfolio economics' : 'Review pricing and lab cost' },
+              { metric: 'Service Concentration', current: `${formatPct(totalRevenue ? (topServiceSeries[0]?.total || 0) / totalRevenue * 100 : 0)} top service`, trend: 'Target: balanced growth', ceoReadout: 'Watch dependency on largest service line' },
+              { metric: 'Regional Breadth', current: `${topRegionSeries.length} active regions`, trend: 'SEA + India expansion', ceoReadout: 'Compare growth versus operating capacity' },
+            ]),
+          })}
         </>
       );
     };
@@ -29828,11 +30800,38 @@ Strategies to Improve the CCC
         baseCurrency={companyCurrency.baseCurrency}
         reportingCurrency={companyCurrency.reportingCurrency}
         locale={companyCurrency.locale}
+        reportLayout={{
+          persistedOrder: getOperationalHubReportOrder(companyOperationalHubConfig, 'dashboard'),
+          canReorder: canManageReportLayout,
+          isSaving: savingReportLayout,
+          onReorder: (orderedIds) => void saveReportOrder('dashboard', orderedIds),
+        }}
+        renderFirmReportPanel={(reportKey, children, style = {}) => (
+          <OperationalReportPanel
+            reportKey={reportKey}
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={(sourceReportKey, targetReportKey) => moveStandardReport(sourceReportKey, targetReportKey, 'firm')}
+            style={getReportPanelStyle(reportKey, style, 'firm')}
+          >
+            {children}
+          </OperationalReportPanel>
+        )}
       />
     );
 
     if (isBureauExecutiveScorecardEnabled) {
-      const scorecard = <PayrollBureauExecutiveScorecard data={payrollBureauOpsData} />;
+      const scorecard = (
+        <PayrollBureauExecutiveScorecard
+          data={payrollBureauOpsData}
+          reportLayout={{
+            canReorder: canManageReportLayout,
+            isSaving: savingReportLayout,
+            onMove: moveStandardReport,
+            getPanelStyle: getReportPanelStyle,
+          }}
+        />
+      );
       if (initialPrintSectionKey === 'overviewBureauExecutiveScorecard') {
         return scorecard;
       }
@@ -30006,6 +31005,12 @@ Strategies to Improve the CCC
 
       {/* Filters */}
       <div className="ops-print-hide">{renderFilters()}</div>
+
+      {reportLayoutSaveError && (
+        <div className="ops-print-hide" role="alert" style={{ margin: '12px 32px 0', color: '#b91c1c', fontSize: '13px', fontWeight: 700 }}>
+          {reportLayoutSaveError}
+        </div>
+      )}
 
       {/* Content */}
       {activeTab === 'dashboard' && renderDashboardOverviewContent()}

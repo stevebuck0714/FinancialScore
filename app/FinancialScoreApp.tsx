@@ -17115,6 +17115,7 @@ function FinancialScorePage() {
           industrySectorCategory={effectiveCompanySectorCategory}
           currentUser={currentUser}
           monthly={monthly}
+          operationalHubConfig={selectedCompanyOperationalHub}
           initialTab={operationsPrintConfig?.tab}
           initialForecastBasisTab={operationsPrintConfig?.forecastBasisTab}
           initialForecastSubTab={operationsPrintConfig?.forecastSubTab}
@@ -21177,6 +21178,7 @@ function FinancialScorePage() {
           industrySectorCategory={effectiveCompanySectorCategory}
           currentUser={currentUser}
           monthly={monthly}
+          operationalHubConfig={selectedCompanyOperationalHub}
           viewMode="overview-only"
         />
       )}

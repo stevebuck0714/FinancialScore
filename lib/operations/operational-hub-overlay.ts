@@ -107,6 +107,46 @@ export function parseOperationalHubCustomReports(value: unknown): OperationalHub
     .filter(Boolean) as OperationalHubCustomReport[];
 }
 
+export function getOperationalHubReportOrder(value: unknown, moduleKey: string): string[] {
+  const config = parseOperationalHubConfig(value);
+  const orders =
+    config.reportOrderByModule &&
+    typeof config.reportOrderByModule === 'object' &&
+    !Array.isArray(config.reportOrderByModule)
+      ? config.reportOrderByModule as Record<string, unknown>
+      : {};
+  const order = orders[String(moduleKey || '').trim()];
+  if (!Array.isArray(order)) return [];
+
+  return Array.from(
+    new Set(
+      order
+        .map((key) => String(key || '').trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+export function orderOperationalHubReports<T extends { id?: string; key?: string }>(
+  reports: T[],
+  configuredOrder: string[]
+): T[] {
+  const positions = new Map(configuredOrder.map((key, index) => [key, index]));
+  return reports
+    .map((report, index) => ({
+      report,
+      index,
+      position: positions.get(String(report.key || report.id || '').trim()),
+    }))
+    .sort((left, right) => {
+      if (left.position === undefined && right.position === undefined) return left.index - right.index;
+      if (left.position === undefined) return 1;
+      if (right.position === undefined) return -1;
+      return left.position - right.position;
+    })
+    .map(({ report }) => report);
+}
+
 export function slugifyCompanyTabKey(label: string): string {
   const base = String(label || '')
     .trim()
@@ -144,12 +184,18 @@ export function mergeOperationalHubConfig(
   const next = parseOperationalHubConfig(incoming);
   const baseSections = isPlainObject(base.sections) ? base.sections : {};
   const nextSections = isPlainObject(next.sections) ? next.sections : {};
+  const baseReportOrderByModule = isPlainObject(base.reportOrderByModule) ? base.reportOrderByModule : {};
+  const nextReportOrderByModule = isPlainObject(next.reportOrderByModule) ? next.reportOrderByModule : {};
   return {
     ...base,
     ...next,
     sections: {
       ...baseSections,
       ...nextSections,
+    },
+    reportOrderByModule: {
+      ...baseReportOrderByModule,
+      ...nextReportOrderByModule,
     },
     customReports: unionById(
       Array.isArray(base.customReports) ? base.customReports : [],
