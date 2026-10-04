@@ -3001,15 +3001,21 @@ function FinancialScorePage() {
         throw new Error(String(data?.error || data?.details || `HTTP ${response.status}`));
       }
       const normalized = normalizeAccountReviewApiValues(data?.values);
+      if (Object.keys(normalized).length === 0) {
+        console.warn('Account Review latest-values response contained no usable values; preserving the currently displayed values.');
+        return normalized;
+      }
       accountReviewValuesCache.set(cacheKey, {
         cachedAt: Date.now(),
         values: normalized,
       });
-      setAccountReviewApiValues(normalized);
+      setAccountReviewApiValues((current) => ({ ...current, ...normalized }));
       return normalized;
     } catch (error) {
       console.warn('Failed to refresh account review latest values', error);
-      if (clearOnFailure) setAccountReviewApiValues({});
+      if (clearOnFailure) {
+        setAccountReviewApiValues((current) => Object.keys(current).length > 0 ? current : {});
+      }
       return null;
     }
   };
@@ -6381,15 +6387,19 @@ function FinancialScorePage() {
             if (canonical) normalized[`id:${canonical}`] = num;
           }
         });
+        if (Object.keys(normalized).length === 0) {
+          console.warn('Account Review latest-values response contained no usable values; preserving the currently displayed values.');
+          return;
+        }
         accountReviewValuesCache.set(cacheKey, {
           cachedAt: Date.now(),
           values: normalized,
         });
-        setAccountReviewApiValues(normalized);
+        setAccountReviewApiValues((current) => ({ ...current, ...normalized }));
       } catch (error) {
         if (cancelled) return;
         console.warn('Failed to load account review latest values', error);
-        setAccountReviewApiValues({});
+        setAccountReviewApiValues((current) => Object.keys(current).length > 0 ? current : {});
       }
     };
     load();
