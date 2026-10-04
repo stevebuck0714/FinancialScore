@@ -996,7 +996,6 @@ export default function OperationsTab({
   const [grossMarginHistoryRollup, setGrossMarginHistoryRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('monthly');
   const [grossMarginHistoryStartDate, setGrossMarginHistoryStartDate] = useState('');
   const [grossMarginHistoryEndDate, setGrossMarginHistoryEndDate] = useState('');
-  const [hiddenCategorySalesSeries, setHiddenCategorySalesSeries] = useState<Record<string, boolean>>({});
   const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
   const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
@@ -5204,102 +5203,8 @@ export default function OperationsTab({
         </div>
       );
     };
-    const renderCategorySalesHistoryChart = (section: any) => {
-      const categoryHistory = section?.categoryHistory;
-      const toggleCategorySalesSeries = (entry: any) => {
-        const dataKey = String(entry?.dataKey || '');
-        if (!dataKey) return;
-        setHiddenCategorySalesSeries((prev) => ({
-          ...prev,
-          [dataKey]: !prev[dataKey],
-        }));
-      };
-      if (
-        !categoryHistory ||
-        !Array.isArray(categoryHistory.months) ||
-        categoryHistory.months.length === 0 ||
-        !Array.isArray(categoryHistory.rows) ||
-        categoryHistory.rows.length === 0
-      ) {
-        return (
-          <BarChart data={Array.isArray(section?.chartData) ? section.chartData : []}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-            <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
-            <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
-            <Legend />
-            {[
-              section?.currentYearLabel,
-              section?.priorYearLabel,
-              Array.isArray(section?.rows)
-                ? section.rows.find((row: any) => /^\d{4}$/.test(String(row?.label || '')) && row?.label !== section?.currentYearLabel && row?.label !== section?.priorYearLabel)?.label
-                : null,
-            ]
-              .filter(Boolean)
-              .map((label: any, index: number) => (
-                <Bar
-                  key={String(label)}
-                  dataKey={String(label)}
-                  name={String(label)}
-                  fill={['#2563eb', '#0f766e', '#94a3b8'][index] || '#64748b'}
-                  radius={0}
-                />
-              ))}
-          </BarChart>
-        );
-      }
-
-      const chartRows = categoryHistory.months.map((month: any) => {
-        const row: Record<string, any> = {
-          month: month.monthLabel || month.monthKey,
-        };
-        categoryHistory.rows.forEach((category: any) => {
-          const label = String(category?.label || 'Unknown');
-          row[label] = Number(category?.values?.[month.monthKey] || 0);
-        });
-        return row;
-      });
-      const visibleCategoryRows = [...categoryHistory.rows]
-        .sort((a: any, b: any) => Number(b?.total || 0) - Number(a?.total || 0))
-        .slice(0, 15);
-
-      return (
-        <LineChart data={chartRows}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-          <XAxis
-            dataKey="month"
-            stroke="#64748b"
-            style={{ fontSize: '11px' }}
-            interval={0}
-            angle={-45}
-            textAnchor="end"
-            height={72}
-            tickMargin={12}
-          />
-          <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
-          <Tooltip formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name)]} />
-          <Legend onClick={toggleCategorySalesSeries} wrapperStyle={{ cursor: 'pointer' }} />
-          {visibleCategoryRows.map((category: any, index: number) => {
-            const label = String(category?.label || 'Unknown');
-            return (
-              <Line
-                key={label}
-                type="monotone"
-                dataKey={label}
-                name={label}
-                stroke={COLORS[index % COLORS.length]}
-                strokeWidth={2}
-                dot={{ r: 2 }}
-                connectNulls
-                hide={Boolean(hiddenCategorySalesSeries[label])}
-              />
-            );
-          })}
-        </LineChart>
-      );
-    };
-    const renderGrossMarginHistoryTable = (title: string, section: any) => {
-      if (!section || !Array.isArray(section.rows) || section.rows.length === 0) return null;
+    const getGrossMarginHistoryChartRows = (section: any) => {
+      if (!section || !Array.isArray(section.rows) || section.rows.length === 0) return [];
       const parseGrossMarginDate = (row: any): Date | null => {
         const raw = String(row?.monthKey || row?.dateKey || row?.periodKey || '').trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return parseDateValue(raw);
@@ -5373,6 +5278,11 @@ export default function OperationsTab({
           gmDollars: row.gmDollars,
           gmPct: row.revenueBasis > 0 ? (row.gmDollars / row.revenueBasis) * 100 : null,
         }));
+      return chartRows;
+    };
+    const renderGrossMarginHistoryTable = (title: string, section: any) => {
+      const chartRows = getGrossMarginHistoryChartRows(section);
+      if (chartRows.length === 0) return null;
       return (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
@@ -5725,14 +5635,26 @@ export default function OperationsTab({
           canReorder={canManageReportLayout}
           isSaving={savingReportLayout}
           onMove={moveStandardReport}
-          style={getReportPanelStyle('customersPlatoSalesHistoryChart', {})}
+          style={getReportPanelStyle('customersPlatoSalesHistoryChart', { gridColumn: '1 / -1', minWidth: 0 })}
         >
-          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Top 15 Items by Month</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              {renderCategorySalesHistoryChart(salesReportPayload.sales)}
-            </ResponsiveContainer>
-          </div>
+          {renderCategorySalesHistoryTable(
+            'Top 15 Items by Month',
+            {
+              ...salesReportPayload.sales,
+              categoryHistory: {
+                ...salesReportPayload.sales?.categoryHistory,
+                rows: [...(salesReportPayload.sales?.categoryHistory?.rows || [])]
+                  .sort((a: any, b: any) => Number(b?.total || 0) - Number(a?.total || 0))
+                  .slice(0, 15),
+              },
+            },
+            { rowHeaderLabel: 'Item', itemHeaderLabel: 'Item Name', countLabel: 'items', showItemNameColumn: false },
+          ) || (
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Top 15 Items by Month</h3>
+              {renderSalesReportEmptyState()}
+            </div>
+          )}
         </OperationalReportPanel>
       ) : null;
     const renderTopCustomerTrendPanel = () =>
@@ -5915,11 +5837,11 @@ export default function OperationsTab({
               >
                 <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
                   <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Gross Margin $ and % by Month</h3>
-                {Array.isArray(salesReportPayload.grossMarginHistory?.chartData) && salesReportPayload.grossMarginHistory.chartData.length > 0 ? (
+                {getGrossMarginHistoryChartRows(salesReportPayload.grossMarginHistory).length > 0 ? (
                   <ResponsiveContainer width="100%" height={320}>
-                    <ComposedChart data={salesReportPayload.grossMarginHistory.chartData}>
+                    <ComposedChart data={getGrossMarginHistoryChartRows(salesReportPayload.grossMarginHistory)}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
+                      <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
                       <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
                       <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
                       <Tooltip
@@ -6066,11 +5988,19 @@ export default function OperationsTab({
             )}
 
             {!isRetailSalesLanguage && !isAtlanticCompany && (
-              <CustomerSalesForecast
-                companyId={selectedCompanyId}
-                industrySectorCategory={industrySectorCategory}
-                basisMode="accrual"
-              />
+              <OperationalReportPanel
+                reportKey="customersSalesForecast"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('customersSalesForecast', { gridColumn: '1 / -1', minWidth: 0 })}
+              >
+                <CustomerSalesForecast
+                  companyId={selectedCompanyId}
+                  industrySectorCategory={industrySectorCategory}
+                  basisMode="accrual"
+                />
+              </OperationalReportPanel>
             )}
 
             {isSectionEnabled('customersGrossMarginHistoryTable') && (

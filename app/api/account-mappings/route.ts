@@ -5,6 +5,7 @@ import { publishMonthsFromMonthlyFinancialDirect } from "@/lib/financial/publish
 import { enqueueFinancialMappingRebuildRun } from "@/lib/infor-m3/sync-queue";
 import { isQuickBooksDesktopFamily } from "@/lib/quickbooks-desktop/family";
 import { resolveCompanyIndustrySectorCategory } from "@/lib/industry-sector-resolver";
+import { requireCompanyAccess } from "@/lib/tenant-security";
 
 export const dynamic = "force-dynamic";
 // Mapping save can trigger a downstream DFS rebuild (Infor tenants only)
@@ -498,6 +499,7 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
+    await requireCompanyAccess(companyId);
 
     const mappings = await prisma.accountMapping.findMany({
       where: { companyId },
@@ -704,9 +706,10 @@ export async function GET(request: NextRequest) {
     console.error("❌ Error fetching mappings:", error);
     console.error("❌ Error details:", error.message);
     console.error("❌ Error stack:", error.stack);
+    const status = String(error?.message || "").startsWith("Forbidden:") ? 403 : 500;
     return NextResponse.json(
-      { error: "Failed to fetch mappings", details: error.message },
-      { status: 500 },
+      { error: status === 403 ? "Forbidden" : "Failed to fetch mappings", details: error.message },
+      { status },
     );
   }
 }
@@ -723,6 +726,7 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    await requireCompanyAccess(companyId);
 
     console.log(`Saving ${mappings.length} mappings for company ${companyId}`);
     console.log("First few mappings:", mappings.slice(0, 3));
@@ -1190,9 +1194,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error("Error saving mappings:", error);
+    const status = String(error?.message || "").startsWith("Forbidden:") ? 403 : 500;
     return NextResponse.json(
-      { error: "Failed to save mappings", details: error.message },
-      { status: 500 },
+      { error: status === 403 ? "Forbidden" : "Failed to save mappings", details: error.message },
+      { status },
     );
   }
 }
@@ -1206,6 +1211,7 @@ export async function DELETE(request: NextRequest) {
 
     // If companyId is provided, delete all mappings for that company
     if (companyId) {
+      await requireCompanyAccess(companyId);
       const deleted = await prisma.accountMapping.deleteMany({
         where: { companyId },
       });
@@ -1215,6 +1221,14 @@ export async function DELETE(request: NextRequest) {
 
     // If id is provided, delete that specific mapping
     if (id) {
+      const mapping = await prisma.accountMapping.findUnique({
+        where: { id },
+        select: { companyId: true },
+      });
+      if (!mapping) {
+        return NextResponse.json({ error: "Mapping not found" }, { status: 404 });
+      }
+      await requireCompanyAccess(mapping.companyId);
       await prisma.accountMapping.delete({
         where: { id },
       });
@@ -1227,9 +1241,10 @@ export async function DELETE(request: NextRequest) {
     );
   } catch (error: any) {
     console.error("Error deleting mapping:", error);
+    const status = String(error?.message || "").startsWith("Forbidden:") ? 403 : 500;
     return NextResponse.json(
-      { error: "Failed to delete mapping", details: error.message },
-      { status: 500 },
+      { error: status === 403 ? "Forbidden" : "Failed to delete mapping", details: error.message },
+      { status },
     );
   }
 }

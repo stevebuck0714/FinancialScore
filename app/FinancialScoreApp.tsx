@@ -3192,6 +3192,11 @@ function FinancialScorePage() {
         return;
       }
 
+      if (aiMappingsCompanyId !== currentCompany.id) {
+        alert('Account mappings are still loading for the selected company. Please wait before saving.');
+        return;
+      }
+
       if (!aiMappings || aiMappings.length === 0) {
         alert('No mappings to save. Please generate AI mappings first.');
         return;
@@ -4104,6 +4109,7 @@ function FinancialScorePage() {
 
   // State - AI Mapping
   const [aiMappings, setAiMappings] = useState<any[]>([]);
+  const [aiMappingsCompanyId, setAiMappingsCompanyId] = useState<string | null>(null);
   const [isGeneratingMappings, setIsGeneratingMappings] = useState(false);
   const [isSavingMappings, setIsSavingMappings] = useState(false);
   const [showOnlyActionableMappings, setShowOnlyActionableMappings] = useState(false);
@@ -5237,6 +5243,7 @@ function FinancialScorePage() {
               }
               return loadedMappings;
             });
+            setAiMappingsCompanyId(selectedCompanyId);
             setShowMappingSection(true);
             setMappingSourceSummary(data.sourceSummary || null);
           } else {
@@ -5394,6 +5401,7 @@ function FinancialScorePage() {
     if (generatedMappings.length > 0) {
       // Always refresh from latest QBO sources and preserve existing user mappings/allocations.
       setAiMappings((prev) => mergeGeneratedMappingsWithExisting(generatedMappings, prev));
+      setAiMappingsCompanyId(selectedCompanyId);
       setShowMappingSection(true);
     }
   }, [selectedCompanyId, adminDashboardTab, qbRawData, accountReviewRawData]);
@@ -5758,6 +5766,10 @@ function FinancialScorePage() {
         setQbRawData(null);
         setAccountReviewRawData(null);
         setAccountReviewApiValues({});
+        setAccountReviewTypeOverrides({});
+        setAiMappings([]);
+        setAiMappingsCompanyId(selectedCompanyId);
+        setMappingSourceSummary(null);
         setCsvTrialBalanceData(null);
         setHasSavedCsvInLocalStorage(false);
         setRawRows([]);
@@ -5799,6 +5811,7 @@ function FinancialScorePage() {
         if (!records || records.length === 0) {
           console.log(`?? No records found - clearing aiMappings too`);
           setAiMappings([]);
+          setAiMappingsCompanyId(selectedCompanyId);
           setLatestFinancialSource(null);
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
@@ -6099,6 +6112,7 @@ function FinancialScorePage() {
                   ? mergeGeneratedMappingsWithExisting(prev, mappings)
                   : normalizeMappingsForUi(mappings)
               );
+              setAiMappingsCompanyId(selectedCompanyId);
               if (savedLobs && Array.isArray(savedLobs) && savedLobs.length > 0) {
                 console.log('Loaded saved Lines of Business:', savedLobs);
               // Convert from stored format to LOBData format
@@ -8335,6 +8349,7 @@ function FinancialScorePage() {
         }))
       : [];
     setAiMappings(normalizeMappingsForUi(loadedMappings));
+    setAiMappingsCompanyId(companyId);
     setShowMappingSection(loadedMappings.length > 0);
     setMappingSourceSummary(data.sourceSummary || null);
   };
@@ -18330,8 +18345,10 @@ function FinancialScorePage() {
           )}
 
           {/* Account Mapping Interface - Shows after CSV is uploaded */}
-          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && (hasCsvDataForSelectedCompany || aiMappings.length > 0)) && (() => {
+          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId) && (() => {
             const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+            const aiMappingsForSelectedCompany =
+              aiMappingsCompanyId === selectedCompanyId ? aiMappings : [];
 
             const hasCsvData = hasCsvDataForSelectedCompany;
             const hasRawQboImportData = !!(
@@ -18556,6 +18573,7 @@ function FinancialScorePage() {
 
                             const data = await response.json();
                             setAiMappings((prev) => mergeGeneratedMappingsWithExisting(data.mappings || [], prev));
+                            setAiMappingsCompanyId(selectedCompanyId);
                             setMappingSourceSummary(null);
                             setShowMappingSection(true);
                           } catch (error: any) {
@@ -18624,8 +18642,8 @@ function FinancialScorePage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
                         <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                          {aiMappings.filter(m => m.targetField === 'unmapped').length > 0
-                            ? `Use AI to automatically suggest mappings for ${aiMappings.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields`
+                          {aiMappingsForSelectedCompany.filter(m => m.targetField === 'unmapped').length > 0
+                            ? `Use AI to automatically suggest mappings for ${aiMappingsForSelectedCompany.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields`
                             : 'All accounts are currently mapped. Re-run AI suggestions if you imported corrected accounting data.'}
                         </p>
                       </div>
@@ -18634,7 +18652,7 @@ function FinancialScorePage() {
                           setIsGeneratingMappings(true);
                           try {
                             // Convert current accounts to format expected by AI mapping
-                            const qbAccountsWithClass = aiMappings.map(acc => ({
+                            const qbAccountsWithClass = aiMappingsForSelectedCompany.map(acc => ({
                               name: acc.accountName,
                               classification: acc.accountClassification,
                               accountId: acc.accountId,
@@ -18665,6 +18683,7 @@ function FinancialScorePage() {
 
                             const data = await response.json();
                             setAiMappings((prev) => mergeGeneratedMappingsWithExisting(data.mappings || [], prev));
+                            setAiMappingsCompanyId(selectedCompanyId);
                             setMappingSourceSummary(null);
                             setShowMappingSection(true);
                           } catch (error: any) {
@@ -18698,7 +18717,7 @@ function FinancialScorePage() {
                         ) : (
                           <>
                             <TrendingUp size={16} />
-                            <span>{aiMappings.filter(m => m.targetField === 'unmapped').length > 0 ? 'Generate AI Mappings' : 'Regenerate AI Mappings'}</span>
+                            <span>{aiMappingsForSelectedCompany.filter(m => m.targetField === 'unmapped').length > 0 ? 'Generate AI Mappings' : 'Regenerate AI Mappings'}</span>
                           </>
                         )}
                       </button>
@@ -18709,7 +18728,7 @@ function FinancialScorePage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                         <span style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', flexShrink: 0 }}>Accounts by Classification:</span>
                         {Object.entries(
-                          aiMappings.reduce((acc: any, m) => {
+                          aiMappingsForSelectedCompany.reduce((acc: any, m) => {
                             const type = getClassificationDisplayLabel(m.accountClassification);
                             acc[type] = (acc[type] || 0) + 1;
                             return acc;
@@ -18733,7 +18752,7 @@ function FinancialScorePage() {
                 )}
 
                 {/* Mapping Results Section */}
-                {showMappingSection && aiMappings.length > 0 && (
+                {showMappingSection && aiMappingsForSelectedCompany.length > 0 && (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
                     <div
                       style={{
@@ -18753,7 +18772,7 @@ function FinancialScorePage() {
                       }}
                     >
                       <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0, flexShrink: 0 }}>
-                        Account Mappings ({aiMappings.length} accounts)
+                        Account Mappings ({aiMappingsForSelectedCompany.length} accounts)
                       </h2>
                       <button
                         onClick={() => setShowOnlyActionableMappings((prev) => !prev)}
@@ -18771,7 +18790,7 @@ function FinancialScorePage() {
                       >
                         {showOnlyActionableMappings ? 'Showing New/Changed/Unmapped' : 'Showing All Accounts'}
                       </button>
-                      <span><strong>Total:</strong> {mappingSourceSummary?.total ?? aiMappings.length}</span>
+                      <span><strong>Total:</strong> {mappingSourceSummary?.total ?? aiMappingsForSelectedCompany.length}</span>
                       <span><strong>New:</strong> {mappingSourceSummary?.new ?? 0}</span>
                       <span><strong>Changed:</strong> {mappingSourceSummary?.changed ?? 0}</span>
                       <span><strong>Inactive:</strong> {mappingSourceSummary?.inactive ?? 0}</span>
@@ -18797,7 +18816,7 @@ function FinancialScorePage() {
                     </div>
 
                     <AccountMappingTable
-                      mappings={aiMappings}
+                      mappings={aiMappingsForSelectedCompany}
                       linesOfBusiness={linesOfBusiness}
                       userDefinedAllocations={userDefinedAllocations}
                       industrySectorCategory={resolveCompanyIndustrySectorCategory(
@@ -19586,13 +19605,12 @@ function FinancialScorePage() {
                 )}
 
                 {/* Account Preview Section */}
-                {(hasCsvData || aiMappings.length > 0 || hasRawQboImportData) && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                       {hasCsvData && csvTrialBalanceData
                         ? `Account Review - All ${csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)`
-                        : `Account Review - All ${aiMappings.length} QBO mapping accounts`}
+                        : `Account Review - All ${aiMappingsForSelectedCompany.length} mapping accounts`}
                     </h2>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <button
@@ -20176,7 +20194,7 @@ function FinancialScorePage() {
                                 );
                               });
                             })()
-                          : aiMappings
+                          : aiMappingsForSelectedCompany
                               .map((mapping: any, originalIndex: number) => {
                                 const idRaw = String(mapping.accountId || '').trim();
                                 const codeRaw = String(mapping.accountCode || '').trim();
@@ -20309,7 +20327,7 @@ function FinancialScorePage() {
                       </p>
                     )}
                     <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>
-                      Total accounts: {hasCsvData && csvTrialBalanceData ? (csvTrialBalanceData.accounts?.length || 0) : aiMappings.length} |
+                      Total accounts: {hasCsvData && csvTrialBalanceData ? (csvTrialBalanceData.accounts?.length || 0) : aiMappingsForSelectedCompany.length} |
                       Scroll to see all accounts | Use this to verify account mappings and amounts
                     </p>
                   </div>
@@ -20510,8 +20528,7 @@ function FinancialScorePage() {
                     </div>
                   )}
                 </div>
-                )}
-              </div>
+                </div>
             );
           })()}
         </div>

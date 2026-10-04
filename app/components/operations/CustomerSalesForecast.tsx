@@ -48,6 +48,7 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [tableCollapsed, setTableCollapsed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +175,14 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
           <div style={{ color: '#64748b', fontSize: '12px', marginTop: '4px' }}>Annual account growth is compounded into the monthly income-statement forecast.</div>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => setTableCollapsed((current) => !current)}
+            aria-expanded={!tableCollapsed}
+            style={{ border: '1px solid #cbd5e1', background: 'white', color: '#334155', borderRadius: '7px', padding: '7px 12px', fontWeight: 700, cursor: 'pointer' }}
+          >
+            {tableCollapsed ? 'Expand Table' : 'Collapse Table'}
+          </button>
           <select value={baselineMode} onChange={(event) => updateBaseline(event.target.value as BaselineMode)} style={{ padding: '7px', border: '1px solid #cbd5e1', borderRadius: '6px' }}>
             <option value="monthly">Monthly Baseline</option>
             <option value="quarterly">Quarterly Baseline</option>
@@ -185,54 +194,56 @@ export default function CustomerSalesForecast({ companyId, industrySectorCategor
         </div>
       </div>
       {savedAt && <div style={{ marginBottom: '10px', color: '#64748b', fontSize: '11px' }}>Last saved {formatEstDateTime(savedAt)}</div>}
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-          <colgroup>
-            <col style={{ width: '130px' }} />
-            <col style={{ width: '130px' }} />
-            <col style={{ width: '90px' }} />
-          </colgroup>
-          <thead>
-            <tr style={{ background: '#f8fafc' }}>
-              <th rowSpan={2} style={{ width: '130px', textAlign: 'left', padding: '8px' }}>Customer</th>
-              <th rowSpan={2} style={{ width: '130px', textAlign: 'left', padding: '8px' }}>Revenue Category</th>
-              <th rowSpan={2} style={{ width: '90px', textAlign: 'right', padding: '8px' }}>Baseline</th>
-              <th colSpan={FORECAST_YEAR_COUNT} style={{ textAlign: 'center', padding: '8px' }}>Annual Growth Rate</th>
-              <th colSpan={FORECAST_YEAR_COUNT} style={{ textAlign: 'center', padding: '8px' }}>Forecast Sales</th>
-            </tr>
-            <tr style={{ background: '#f8fafc' }}>
-              {years.map((year) => <th key={`growth-${year}`} style={{ textAlign: 'center', padding: '8px' }}>{year}</th>)}
-              {years.map((year) => <th key={`projected-${year}`} style={{ textAlign: 'center', padding: '8px' }}>{year}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {customers.map((row) => (
-              <tr key={row.key} style={{ borderTop: '1px solid #e2e8f0' }}>
-                <td style={{ width: '130px', padding: '8px', fontWeight: 600, overflowWrap: 'anywhere' }}>{row.name}</td>
-                <td style={{ width: '130px', padding: '8px' }}>
-                  <select value={row.category} onChange={(event) => updateCategory(row.key, event.target.value)} style={{ width: '100%', padding: '5px', border: '1px solid #cbd5e1', borderRadius: '5px' }}>
-                    <option value="">Unmapped</option>
-                    {revenueCategories.map((key) => <option key={key} value={key}>{getFieldDisplayName(key)}</option>)}
-                  </select>
-                </td>
-                <td style={{ width: '90px', padding: '8px', textAlign: 'right', whiteSpace: 'nowrap' }}>{currency(row.baseline)}</td>
-                {row.annualGrowthPcts.map((value: number, index: number) => <td key={`${row.key}-growth-${index}`} style={{ padding: '8px', textAlign: 'right' }}><input value={value} onChange={(event) => updateGrowth(row.key, index, event.target.value)} inputMode="decimal" style={{ width: '56px', textAlign: 'right', padding: '4px' }} />%</td>)}
-                {row.projectedAnnual.map((value: number, index: number) => <td key={`${row.key}-projected-${index}`} style={{ padding: '8px', textAlign: 'right' }}>{currency(value)}</td>)}
+      {!tableCollapsed && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <colgroup>
+              <col style={{ width: '130px' }} />
+              <col style={{ width: '130px' }} />
+              <col style={{ width: '90px' }} />
+            </colgroup>
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                <th rowSpan={2} style={{ width: '130px', textAlign: 'left', padding: '8px' }}>Customer</th>
+                <th rowSpan={2} style={{ width: '130px', textAlign: 'left', padding: '8px' }}>Revenue Category</th>
+                <th rowSpan={2} style={{ width: '90px', textAlign: 'right', padding: '8px' }}>Baseline</th>
+                <th colSpan={FORECAST_YEAR_COUNT} style={{ textAlign: 'center', padding: '8px' }}>Annual Growth Rate</th>
+                <th colSpan={FORECAST_YEAR_COUNT} style={{ textAlign: 'center', padding: '8px' }}>Forecast Sales</th>
               </tr>
-            ))}
-            <tr style={{ background: '#eff6ff', borderTop: '2px solid #bfdbfe', fontWeight: 700 }}>
-              <td colSpan={2} style={{ padding: '8px' }}>Total</td>
-              <td style={{ padding: '8px', textAlign: 'right' }}>{currency(totalBaseline)}</td>
-              {years.map((_, index) => {
-                const prior = index === 0 ? (baselineMode === 'yearly' ? totalBaseline : totalBaseline * 12) : totalProjected[index - 1];
-                const growth = prior > 0 ? ((totalProjected[index] / prior) - 1) * 100 : 0;
-                return <td key={`total-growth-${index}`} style={{ padding: '8px', textAlign: 'right' }}>{growth.toFixed(1)}%</td>;
-              })}
-              {totalProjected.map((value, index) => <td key={`total-project-${index}`} style={{ padding: '8px', textAlign: 'right' }}>{currency(value)}</td>)}
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              <tr style={{ background: '#f8fafc' }}>
+                {years.map((year) => <th key={`growth-${year}`} style={{ textAlign: 'center', padding: '8px' }}>{year}</th>)}
+                {years.map((year) => <th key={`projected-${year}`} style={{ textAlign: 'center', padding: '8px' }}>{year}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {customers.map((row) => (
+                <tr key={row.key} style={{ borderTop: '1px solid #e2e8f0' }}>
+                  <td style={{ width: '130px', padding: '8px', fontWeight: 600, overflowWrap: 'anywhere' }}>{row.name}</td>
+                  <td style={{ width: '130px', padding: '8px' }}>
+                    <select value={row.category} onChange={(event) => updateCategory(row.key, event.target.value)} style={{ width: '100%', padding: '5px', border: '1px solid #cbd5e1', borderRadius: '5px' }}>
+                      <option value="">Unmapped</option>
+                      {revenueCategories.map((key) => <option key={key} value={key}>{getFieldDisplayName(key)}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ width: '90px', padding: '8px', textAlign: 'right', whiteSpace: 'nowrap' }}>{currency(row.baseline)}</td>
+                  {row.annualGrowthPcts.map((value: number, index: number) => <td key={`${row.key}-growth-${index}`} style={{ padding: '8px', textAlign: 'right' }}><input value={value} onChange={(event) => updateGrowth(row.key, index, event.target.value)} inputMode="decimal" style={{ width: '56px', textAlign: 'right', padding: '4px' }} />%</td>)}
+                  {row.projectedAnnual.map((value: number, index: number) => <td key={`${row.key}-projected-${index}`} style={{ padding: '8px', textAlign: 'right' }}>{currency(value)}</td>)}
+                </tr>
+              ))}
+              <tr style={{ background: '#eff6ff', borderTop: '2px solid #bfdbfe', fontWeight: 700 }}>
+                <td colSpan={2} style={{ padding: '8px' }}>Total</td>
+                <td style={{ padding: '8px', textAlign: 'right' }}>{currency(totalBaseline)}</td>
+                {years.map((_, index) => {
+                  const prior = index === 0 ? (baselineMode === 'yearly' ? totalBaseline : totalBaseline * 12) : totalProjected[index - 1];
+                  const growth = prior > 0 ? ((totalProjected[index] / prior) - 1) * 100 : 0;
+                  return <td key={`total-growth-${index}`} style={{ padding: '8px', textAlign: 'right' }}>{growth.toFixed(1)}%</td>;
+                })}
+                {totalProjected.map((value, index) => <td key={`total-project-${index}`} style={{ padding: '8px', textAlign: 'right' }}>{currency(value)}</td>)}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
