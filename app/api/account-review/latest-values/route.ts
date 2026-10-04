@@ -805,16 +805,27 @@ async function collectValuesFromQuickBooksDesktopReports(
 
   const balanceRows = await loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery');
   const targetMonthEnd = resolveMonthEndUtc(targetMonth);
-  const balanceSheetReportDateKey = qbdBalanceSheetReportDateKey(balanceRows);
-  const balanceSheetReportDate = balanceSheetReportDateKey ? new Date(`${balanceSheetReportDateKey}T23:59:59.999Z`) : null;
-  if (!targetMonthEnd || !balanceSheetReportDate || balanceSheetReportDate <= targetMonthEnd) {
-    for (const row of balanceRows) {
-      const rowType = String(row.rowType || '').trim().toLowerCase();
-      if (rowType && rowType !== 'account') continue;
-      if (!rowType && String(row.rowKind || '').trim() !== 'DataRow') continue;
-      const accountName = qbdReportAccountName(row);
-      setMappedAccountValue(accountName, qbdReportAmount(row));
-    }
+  const balanceRowsByReportDate = new Map<string, Record<string, unknown>[]>();
+  for (const row of balanceRows) {
+    const reportDateKey = qbdBalanceSheetReportDateKey([row]);
+    if (!reportDateKey) continue;
+    const snapshotRows = balanceRowsByReportDate.get(reportDateKey) || [];
+    snapshotRows.push(row);
+    balanceRowsByReportDate.set(reportDateKey, snapshotRows);
+  }
+  const eligibleBalanceSheetDates = Array.from(balanceRowsByReportDate.keys())
+    .filter((dateKey) => !targetMonthEnd || new Date(`${dateKey}T23:59:59.999Z`) <= targetMonthEnd)
+    .sort();
+  const selectedBalanceSheetDate = eligibleBalanceSheetDates[eligibleBalanceSheetDates.length - 1] || null;
+  const selectedBalanceRows = selectedBalanceSheetDate
+    ? balanceRowsByReportDate.get(selectedBalanceSheetDate) || []
+    : [];
+  for (const row of selectedBalanceRows) {
+    const rowType = String(row.rowType || '').trim().toLowerCase();
+    if (rowType && rowType !== 'account') continue;
+    if (!rowType && String(row.rowKind || '').trim() !== 'DataRow') continue;
+    const accountName = qbdReportAccountName(row);
+    setMappedAccountValue(accountName, qbdReportAmount(row));
   }
 
   const generalLedgerRows = await loadQbdPageRecords(companyId, 'GeneralDetailReportQuery');
