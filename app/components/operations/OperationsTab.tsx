@@ -4996,7 +4996,7 @@ export default function OperationsTab({
         </button>
       );
       return (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxSizing: 'border-box', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }}>
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxSizing: 'border-box', maxWidth: '100%', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px', maxWidth: '100%', minWidth: 0 }}>
             <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>{title}</h3>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
@@ -5063,7 +5063,7 @@ export default function OperationsTab({
             </div>
           </div>
           <div hidden={isTableCollapsed} style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', paddingBottom: '8px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + months.length * 112)}px` }}>
+            <table style={{ width: 'max-content', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + months.length * 112)}px` }}>
               <thead>
                 <tr>
                   <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>

@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback, ChangeEvent, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useLayoutEffect, ChangeEvent, useRef } from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
 import dynamic from 'next/dynamic';
 import { upload } from '@vercel/blob/client';
@@ -3709,6 +3709,8 @@ function FinancialScorePage() {
   const [accountReviewRawData, setAccountReviewRawData] = useState<any>(null);
   const [accountReviewApiValues, setAccountReviewApiValues] = useState<Record<string, number>>({});
   const accountReviewValuesCompanyIdRef = useRef<string | null>(null);
+  const accountReviewScrollRef = useRef<HTMLDivElement | null>(null);
+  const accountReviewScrollTopRef = useRef(0);
   const [accountReviewSort, setAccountReviewSort] = useState<{ key: 'type' | 'account' | 'description' | 'value'; direction: 'asc' | 'desc' }>({
     key: 'account',
     direction: 'asc',
@@ -3719,6 +3721,17 @@ function FinancialScorePage() {
   const performanceAutoRunInFlightRef = useRef<Set<string>>(new Set());
   const suppressHistorySyncRef = useRef(false);
   const [dataRefreshKey, setDataRefreshKey] = useState(0);
+
+  // The account table is rebuilt when background company/value state changes.
+  // Retain the user's position so copying a row is never interrupted by a rerender.
+  useLayoutEffect(() => {
+    const container = accountReviewScrollRef.current;
+    if (!container) return;
+    const savedScrollTop = accountReviewScrollTopRef.current;
+    if (Math.abs(container.scrollTop - savedScrollTop) > 1) {
+      container.scrollTop = savedScrollTop;
+    }
+  });
   
   // State - CSV Trial Balance Data
   const [csvTrialBalanceData, setCsvTrialBalanceData] = useState<any>(null);
@@ -19673,7 +19686,14 @@ function FinancialScorePage() {
                       </button>
                     </div>
                   </div>
-                  <div id="account-review-print-area" style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
+                  <div
+                    id="account-review-print-area"
+                    ref={accountReviewScrollRef}
+                    onScroll={(event) => {
+                      accountReviewScrollTopRef.current = event.currentTarget.scrollTop;
+                    }}
+                    style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}
+                  >
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
