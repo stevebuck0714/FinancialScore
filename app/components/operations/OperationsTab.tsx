@@ -24041,7 +24041,7 @@ Strategies to Improve the CCC
               canReorder={canManageReportLayout}
               isSaving={savingReportLayout}
               onMove={moveStandardReport}
-              style={getReportPanelStyle('lsEmployeeCompensationRoster', {})}
+              style={getReportPanelStyle('lsEmployeeCompensationRoster', { gridColumn: '1 / -1', minWidth: 0 })}
             >
             <div style={cardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -24166,31 +24166,41 @@ Strategies to Improve the CCC
                 Pay type mix: {payTypeMix.map((row) => `${row.label}: ${row.count}`).join(' · ') || '—'}
               </div>
             </div></OperationalReportPanel>}
-            {isSectionEnabled('lsBillRateLevelCoverage') && <div style={cardStyle}>
-              <div style={cardTitleStyle}>Bill Rate Level Coverage</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '12px' }}>
-                {billRateLevelCoverage.map((row) => (
-                  <div key={row.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>{row.label}</div>
-                    <div style={{ fontSize: '20px', fontWeight: 700 }}>{Number(row.count || 0).toLocaleString('en-US')}</div>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>{Number(row.pct || 0).toFixed(1)}%</div>
+            {isSectionEnabled('lsBillRateLevelCoverage') && (
+              <OperationalReportPanel
+                reportKey="lsBillRateLevelCoverage"
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={moveStandardReport}
+                style={getReportPanelStyle('lsBillRateLevelCoverage', {})}
+              >
+                <div style={cardStyle}>
+                  <div style={cardTitleStyle}>Bill Rate Level Coverage</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '12px' }}>
+                    {billRateLevelCoverage.map((row) => (
+                      <div key={row.label} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>{row.label}</div>
+                        <div style={{ fontSize: '20px', fontWeight: 700 }}>{Number(row.count || 0).toLocaleString('en-US')}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>{Number(row.pct || 0).toFixed(1)}%</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div style={{ overflowX: 'auto', maxHeight: '250px', overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr><th style={thStyle}>Employee ID</th><th style={thStyle}>Role</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th></tr></thead>
-                  <tbody>{missingBillRateLevel.slice(0, 10).map((row) => (
-                    <tr key={row.employeeId}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeId}</td>
-                      <td style={tdStyle}>{row.role}</td>
-                      <td style={tdStyle}>{row.department}</td>
-                      <td style={tdStyle}>{row.location}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            </div>}
+                  <div style={{ overflowX: 'auto', maxHeight: '250px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr><th style={thStyle}>Employee ID</th><th style={thStyle}>Role</th><th style={thStyle}>Department</th><th style={thStyle}>Location</th></tr></thead>
+                      <tbody>{missingBillRateLevel.slice(0, 10).map((row) => (
+                        <tr key={row.employeeId}>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.employeeId}</td>
+                          <td style={tdStyle}>{row.role}</td>
+                          <td style={tdStyle}>{row.department}</td>
+                          <td style={tdStyle}>{row.location}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              </OperationalReportPanel>
+            )}
           </div>
           {(isSectionEnabled('lsUtilizationPct') || isSectionEnabled('lsOvertimeAnalysis')) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
@@ -25004,7 +25014,7 @@ Strategies to Improve the CCC
             canReorder={canManageReportLayout}
             isSaving={savingReportLayout}
             onMove={moveStandardReport}
-            style={getReportPanelStyle('hiringTimeToFillByJob', {})}
+            style={getReportPanelStyle('hiringTimeToFillByJob', { gridColumn: '1 / -1', minWidth: 0 })}
           >
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Time to Fill by Hire</div>
@@ -25314,7 +25324,8 @@ Strategies to Improve the CCC
 
         {(isSectionEnabled('csRevenueByClient') || isSectionEnabled('csClientProfitability')) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('csRevenueByClient') && (
+            {isSectionEnabled('csRevenueByClient') && renderReorderableStandardReport(
+              'csRevenueByClient',
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Revenue by Client</div>
                 <ResponsiveContainer width="100%" height={320}>
@@ -25326,9 +25337,10 @@ Strategies to Improve the CCC
                     <Bar dataKey="revenue" fill="#2563eb" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
+              </div>,
             )}
-            {isSectionEnabled('csClientProfitability') && (
+            {isSectionEnabled('csClientProfitability') && renderReorderableStandardReport(
+              'csClientProfitability',
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Client Profitability</div>
                 <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -25343,14 +25355,15 @@ Strategies to Improve the CCC
                     ))}</tbody>
                   </table>
                 </div>
-              </div>
+              </div>,
             )}
           </div>
         )}
 
         {(isSectionEnabled('csRevenueConcentration') || isSectionEnabled('csContractRateCards')) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('csRevenueConcentration') && (
+            {isSectionEnabled('csRevenueConcentration') && renderReorderableStandardReport(
+              'csRevenueConcentration',
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Revenue Concentration (Top 5 / Top 10)</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '12px' }}>
@@ -25366,9 +25379,10 @@ Strategies to Improve the CCC
                     <Bar dataKey="revenue" fill="#7c3aed" radius={0} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
+              </div>,
             )}
-            {isSectionEnabled('csContractRateCards') && (
+            {isSectionEnabled('csContractRateCards') && renderReorderableStandardReport(
+              'csContractRateCards',
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Contract Rate Cards</div>
                 <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -25385,14 +25399,15 @@ Strategies to Improve the CCC
                     ))}</tbody>
                   </table>
                 </div>
-              </div>
+              </div>,
             )}
           </div>
         )}
 
         {(isSectionEnabled('csClientRetentionChurn') || isSectionEnabled('csLowMarginClients')) && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
-            {isSectionEnabled('csClientRetentionChurn') && (
+            {isSectionEnabled('csClientRetentionChurn') && renderReorderableStandardReport(
+              'csClientRetentionChurn',
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Client Retention / Churn</div>
                 <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -25407,9 +25422,10 @@ Strategies to Improve the CCC
                     ))}</tbody>
                   </table>
                 </div>
-              </div>
+              </div>,
             )}
-            {isSectionEnabled('csLowMarginClients') && (
+            {isSectionEnabled('csLowMarginClients') && renderReorderableStandardReport(
+              'csLowMarginClients',
               <div style={cardStyle}>
                 <div style={cardTitleStyle}>Low-Margin Clients</div>
                 <div style={{ overflowX: 'auto', maxHeight: '340px', overflowY: 'auto' }}>
@@ -25424,12 +25440,13 @@ Strategies to Improve the CCC
                     ))}</tbody>
                   </table>
                 </div>
-              </div>
+              </div>,
             )}
           </div>
         )}
 
-        {isSectionEnabled('csClientLifetimeValue') && (
+        {isSectionEnabled('csClientLifetimeValue') && renderReorderableStandardReport(
+          'csClientLifetimeValue',
           <div style={cardStyle}>
             <div style={cardTitleStyle}>Client Lifetime Value (proxy)</div>
             <div style={{ overflowX: 'auto', maxHeight: '360px', overflowY: 'auto' }}>
@@ -25444,7 +25461,7 @@ Strategies to Improve the CCC
                 ))}</tbody>
               </table>
             </div>
-          </div>
+          </div>,
         )}
       </div>
     );
@@ -25843,7 +25860,8 @@ Strategies to Improve the CCC
                   Upload and sync an active Cogent Rate Card to match employees to market bill rates.
                 </div>
               )}
-            </div>
+            </div>,
+            { gridColumn: '1 / -1', minWidth: 0 },
           )}
 
           {isSectionEnabled('ueCostByBillRateLevel') && renderReorderableStandardReport(
