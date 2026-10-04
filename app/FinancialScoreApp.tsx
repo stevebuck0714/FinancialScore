@@ -6358,7 +6358,11 @@ function FinancialScorePage() {
       : '';
     const cacheKey = `${selectedCompanyId}|${targetMonth}`;
     const cached = accountReviewValuesCache.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt < ACCOUNT_REVIEW_VALUES_CACHE_TTL_MS) {
+    if (
+      cached &&
+      Object.keys(cached.values).length > 0 &&
+      Date.now() - cached.cachedAt < ACCOUNT_REVIEW_VALUES_CACHE_TTL_MS
+    ) {
       setAccountReviewApiValues(cached.values);
       return;
     }
@@ -6366,7 +6370,7 @@ function FinancialScorePage() {
     const load = async () => {
       try {
         const response = await fetch(
-          `/api/account-review/latest-values?companyId=${encodeURIComponent(selectedCompanyId)}&targetMonth=${encodeURIComponent(targetMonth)}`,
+          `/api/account-review/latest-values?companyId=${encodeURIComponent(selectedCompanyId)}&targetMonth=${encodeURIComponent(targetMonth)}&forceRefresh=1`,
           { cache: 'no-store' },
         );
         const data = await response.json();
