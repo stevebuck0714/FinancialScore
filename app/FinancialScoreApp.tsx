@@ -3708,6 +3708,7 @@ function FinancialScorePage() {
   const [qbRawData, setQbRawData] = useState<any>(null);
   const [accountReviewRawData, setAccountReviewRawData] = useState<any>(null);
   const [accountReviewApiValues, setAccountReviewApiValues] = useState<Record<string, number>>({});
+  const accountReviewValuesCompanyIdRef = useRef<string | null>(null);
   const [accountReviewSort, setAccountReviewSort] = useState<{ key: 'type' | 'account' | 'description' | 'value'; direction: 'asc' | 'desc' }>({
     key: 'account',
     direction: 'asc',
@@ -5771,7 +5772,13 @@ function FinancialScorePage() {
         setLatestFinancialSource(null);
         setQbRawData(null);
         setAccountReviewRawData(null);
-        setAccountReviewApiValues({});
+        // A follow-up company load (for example, after sync metadata changes)
+        // must not erase values that the Account Review endpoint just loaded
+        // for this same company. Only discard values from a different company.
+        if (accountReviewValuesCompanyIdRef.current !== selectedCompanyId) {
+          accountReviewValuesCompanyIdRef.current = null;
+          setAccountReviewApiValues({});
+        }
         setAccountReviewTypeOverrides({});
         setAiMappings([]);
         setAiMappingsCompanyId(selectedCompanyId);
@@ -5827,6 +5834,7 @@ function FinancialScorePage() {
             setLoadedMonthlyData([]);
             setQbRawData(null);
             setAccountReviewRawData(null);
+            accountReviewValuesCompanyIdRef.current = null;
             setAccountReviewApiValues({});
             setLatestFinancialSource(null);
             return;
@@ -6350,6 +6358,7 @@ function FinancialScorePage() {
     const system = String(selectedCompany?.accountingSystem || '').toUpperCase();
     const supportsAccountReviewLatestValues = ['INFOR_M3', 'INFOR_CSI', 'QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'QUICKBOOKS_ENTERPRISE'].includes(system);
     if (!selectedCompanyId || !currentUser || !supportsAccountReviewLatestValues) {
+      accountReviewValuesCompanyIdRef.current = null;
       setAccountReviewApiValues({});
       return;
     }
@@ -6363,6 +6372,7 @@ function FinancialScorePage() {
       Object.keys(cached.values).length > 0 &&
       Date.now() - cached.cachedAt < ACCOUNT_REVIEW_VALUES_CACHE_TTL_MS
     ) {
+      accountReviewValuesCompanyIdRef.current = selectedCompanyId;
       setAccountReviewApiValues(cached.values);
       return;
     }
@@ -6399,6 +6409,7 @@ function FinancialScorePage() {
           cachedAt: Date.now(),
           values: normalized,
         });
+        accountReviewValuesCompanyIdRef.current = selectedCompanyId;
         setAccountReviewApiValues((current) => ({ ...current, ...normalized }));
       } catch (error) {
         if (cancelled) return;
