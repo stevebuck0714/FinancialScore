@@ -5063,7 +5063,7 @@ export default function OperationsTab({
             </div>
           </div>
           <div hidden={isTableCollapsed} style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', paddingBottom: '8px' }}>
-            <table style={{ width: 'max-content', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + months.length * 112)}px` }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + months.length * 112)}px` }}>
               <thead>
                 <tr>
                   <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>
@@ -5833,7 +5833,7 @@ export default function OperationsTab({
                 canReorder={canManageReportLayout}
                 isSaving={savingReportLayout}
                 onMove={moveStandardReport}
-                style={getReportPanelStyle('customersPlatoSalesHistoryTables', {})}
+                style={getReportPanelStyle('customersPlatoSalesHistoryTables', { gridColumn: '1 / -1', minWidth: 0 })}
               >
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
                   {renderCategorySalesHistoryTable('Customer Sales History', { categoryHistory: customerSalesHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || (
