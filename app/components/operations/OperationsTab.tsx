@@ -5827,40 +5827,6 @@ export default function OperationsTab({
 
             {renderTopCustomerTrendPanel()}
 
-            {isSectionEnabled('customersGrossMarginHistoryChart') && (
-              <OperationalReportPanel
-                reportKey="customersGrossMarginHistoryChart"
-                canReorder={canManageReportLayout}
-                isSaving={savingReportLayout}
-                onMove={moveStandardReport}
-                style={getReportPanelStyle('customersGrossMarginHistoryChart', {})}
-              >
-                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-                  <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Gross Margin $ and % by Month</h3>
-                {getGrossMarginHistoryChartRows(salesReportPayload.grossMarginHistory).length > 0 ? (
-                  <ResponsiveContainer width="100%" height={320}>
-                    <ComposedChart data={getGrossMarginHistoryChartRows(salesReportPayload.grossMarginHistory)}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
-                      <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
-                      <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`} />
-                      <Tooltip
-                        formatter={(value: any, name: any) =>
-                          String(name).includes('%')
-                            ? [`${Number(value || 0).toFixed(1)}%`, String(name)]
-                            : [formatCurrency(Number(value || 0)), String(name)]
-                        }
-                      />
-                      <Legend />
-                      <Bar yAxisId="left" dataKey="gmDollars" name="Gross Margin $" fill="#2563eb" radius={0} />
-                      <Line yAxisId="right" type="monotone" dataKey="gmPct" name="Gross Margin %" stroke="#16a34a" strokeWidth={3} dot={{ r: 3 }} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  ) : renderSalesReportEmptyState()}
-                </div>
-              </OperationalReportPanel>
-            )}
-
             {isSectionEnabled('customersPlatoSalesHistoryTables') && (
               <OperationalReportPanel
                 reportKey="customersPlatoSalesHistoryTables"
