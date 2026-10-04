@@ -131,6 +131,59 @@ function qbdReportColValue(record: Record<string, unknown>, colID: string): stri
   return String(column?.value ?? '').trim();
 }
 
+function qbdLookupKey(value: unknown): string {
+  return String(value ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function qbdAccountLookupKeys(value: unknown): string[] {
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+  const keys = new Set<string>();
+  const add = (candidate: unknown) => {
+    const key = qbdLookupKey(candidate);
+    if (key) keys.add(key);
+  };
+  add(raw);
+  const leadingCode = raw.match(/^\s*([0-9][0-9.\-]*)\s+(.+)$/);
+  if (leadingCode) {
+    add(leadingCode[1]);
+    add(leadingCode[2]);
+  }
+  const parenthesizedCode = raw.match(/^(.+?)\s+\(([0-9][0-9.\-]*)\)\s*$/);
+  if (parenthesizedCode) {
+    add(parenthesizedCode[1]);
+    add(parenthesizedCode[2]);
+  }
+  const colonParts = raw.split(':').map((part) => part.trim()).filter(Boolean);
+  if (colonParts.length > 1) add(colonParts[colonParts.length - 1]);
+  return Array.from(keys);
+}
+
+function qbdReportColValueByTitle(
+  record: Record<string, unknown>,
+  titleCandidates: string[],
+  fallbackColIDs: string[] = [],
+): string {
+  const normalizeTitle = (value: unknown) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const candidates = new Set(titleCandidates.map(normalizeTitle).filter(Boolean));
+  const colData = Array.isArray(record.colData)
+    ? record.colData.filter((col): col is Record<string, unknown> => Boolean(col && typeof col === 'object' && !Array.isArray(col)))
+    : [];
+  const titledColumn = colData.find((col) => candidates.has(normalizeTitle(col.colTitle)));
+  if (titledColumn) return String(titledColumn.value ?? '').trim();
+  for (const colID of fallbackColIDs) {
+    const value = qbdReportColValue(record, colID);
+    if (value) return value;
+  }
+  return '';
+}
+
+function qbdReportAccountName(record: Record<string, unknown>): string {
+  return String(record.accountName || record.rowValue || record.label || '').trim() ||
+    qbdReportColValueByTitle(record, ['Account', 'Name'], ['1', '0']) ||
+    qbdReportColValue(record, '1');
+}
+
 function qbdReportAmount(record: Record<string, unknown>): number {
   const colData = Array.isArray(record.colData)
     ? record.colData.filter((col): col is Record<string, unknown> => Boolean(col && typeof col === 'object' && !Array.isArray(col)))
@@ -713,27 +766,41 @@ async function collectValuesFromQuickBooksDesktopReports(
   mappings: Array<{ accountId: string | null; accountCode: string | null; accountName: string | null; targetField: string | null }>
 ): Promise<Map<string, number>> {
   const valueByKey = new Map<string, number>();
-  const mappingByName = new Map<string, { accountId: string; accountCode: string; accountName: string }>();
+  const mappingByKey = new Map<string, { accountId: string; accountCode: string; accountName: string; targetField: string }>();
   for (const mapping of mappings) {
-    const accountName = String(mapping.accountName || '').trim();
-    if (!accountName) continue;
-    mappingByName.set(accountName.toLowerCase(), {
+    const normalizedMapping = {
       accountId: String(mapping.accountId || '').trim(),
       accountCode: String(mapping.accountCode || '').trim(),
-      accountName,
-    });
+      accountName: String(mapping.accountName || '').trim(),
+      targetField: String(mapping.targetField || '').trim(),
+    };
+    for (const identity of [normalizedMapping.accountId, normalizedMapping.accountCode, normalizedMapping.accountName]) {
+      for (const key of qbdAccountLookupKeys(identity)) {
+        if (!mappingByKey.has(key)) mappingByKey.set(key, normalizedMapping);
+      }
+    }
   }
 
-  const setMappedAccountValue = (accountNameRaw: unknown, amount: number) => {
+  const setMappedAccountValue = (accountNameRaw: unknown, amount: number, isIncomeStatement = false) => {
     const accountName = String(accountNameRaw || '').trim();
     if (!accountName || /^total\b/i.test(accountName)) return;
-    const normalizedName = accountName.toLowerCase();
-    valueByKey.set(`name:${normalizedName}`, amount);
-    const mapping = mappingByName.get(normalizedName);
+    let mapping: { accountId: string; accountCode: string; accountName: string; targetField: string } | undefined;
+    for (const key of qbdAccountLookupKeys(accountName)) {
+      mapping = mappingByKey.get(key);
+      if (mapping) break;
+    }
+    const signedAmount = isIncomeStatement && (
+      mapping?.targetField === 'revenue' ||
+      mapping?.targetField.startsWith('rev_') ||
+      mapping?.targetField === 'nonOperatingIncome'
+    )
+      ? amount * -1
+      : amount;
+    valueByKey.set(`name:${qbdLookupKey(accountName)}`, signedAmount);
     if (!mapping) return;
-    if (mapping.accountId) setAccountValueByAliases(valueByKey, mapping.accountId, amount);
-    if (mapping.accountCode) setAccountValueByAliases(valueByKey, mapping.accountCode, amount);
-    if (mapping.accountName) valueByKey.set(`name:${mapping.accountName.toLowerCase()}`, amount);
+    if (mapping.accountId) setAccountValueByAliases(valueByKey, mapping.accountId, signedAmount);
+    if (mapping.accountCode) setAccountValueByAliases(valueByKey, mapping.accountCode, signedAmount);
+    if (mapping.accountName) valueByKey.set(`name:${qbdLookupKey(mapping.accountName)}`, signedAmount);
   };
 
   const balanceRows = await loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery');
@@ -742,8 +809,10 @@ async function collectValuesFromQuickBooksDesktopReports(
   const balanceSheetReportDate = balanceSheetReportDateKey ? new Date(`${balanceSheetReportDateKey}T23:59:59.999Z`) : null;
   if (!targetMonthEnd || !balanceSheetReportDate || balanceSheetReportDate <= targetMonthEnd) {
     for (const row of balanceRows) {
-      if (String(row.rowType || '').trim().toLowerCase() !== 'account') continue;
-      const accountName = String(row.accountName || row.rowValue || '').trim();
+      const rowType = String(row.rowType || '').trim().toLowerCase();
+      if (rowType && rowType !== 'account') continue;
+      if (!rowType && String(row.rowKind || '').trim() !== 'DataRow') continue;
+      const accountName = qbdReportAccountName(row);
       setMappedAccountValue(accountName, qbdReportAmount(row));
     }
   }
@@ -752,17 +821,16 @@ async function collectValuesFromQuickBooksDesktopReports(
   const pnlMovementsByAccount = new Map<string, number>();
   for (const row of generalLedgerRows) {
     if (String(row.rowKind || '').trim() !== 'DataRow') continue;
-    const dateKey = toYearMonth(qbdReportColValue(row, '3'));
+    const dateKey = toYearMonth(qbdReportColValueByTitle(row, ['Txn Date', 'Date'], ['3']));
     if (targetMonth && dateKey && dateKey !== targetMonth) continue;
     if (targetMonth && !dateKey) continue;
-    const accountName = String(row.accountName || row.rowValue || '').trim();
+    const accountName = qbdReportAccountName(row);
     if (!accountName) continue;
-    const amount = normalizeNumber(qbdReportColValue(row, '8'));
-    if (amount === 0) continue;
+    const amount = normalizeNumber(qbdReportColValueByTitle(row, ['Amount'], ['8']));
     pnlMovementsByAccount.set(accountName, Number(pnlMovementsByAccount.get(accountName) || 0) + amount);
   }
   for (const [accountName, amount] of pnlMovementsByAccount.entries()) {
-    setMappedAccountValue(accountName, amount);
+    setMappedAccountValue(accountName, amount, true);
   }
 
   return valueByKey;
@@ -806,14 +874,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Mappings drive both the BS-vs-P&L classification (via targetField) and
-    // the 1:1 fan-out guardrails inside the MonthlyFinancial collectors.
+    // Account Review displays every seeded account, including accounts that are
+    // not yet mapped to a financial-statement target. QBD report values must
+    // therefore receive the complete account list for ID/code/name aliasing.
     const mappings = await withPrismaReconnectRetry(
       () =>
         prisma.accountMapping.findMany({
           where: {
             companyId,
-            targetField: { notIn: ['', 'unmapped', 'UNMAPPED', 'ignored', 'IGNORED'] },
           },
           select: {
             accountId: true,
