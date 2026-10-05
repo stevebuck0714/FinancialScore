@@ -7944,6 +7944,51 @@ async function saveAPPayments(
   return result?.count ?? uniqueRows.length;
 }
 
+const PRIOR_ORDER_LINE_BASELINE_LOOKBACK_DAYS = 45;
+
+/**
+ * QtyInvoiced on an order line is cumulative, so daily sales are the change
+ * since the most recent earlier order-line pull. Returns null when no earlier
+ * pull exists; treating a missing baseline as zero books every line's lifetime
+ * invoiced quantity into a single day.
+ */
+async function loadPriorOrderLineInvoicedBaseline(
+  companyId: string,
+  snapshotDate: Date,
+  lineKey: (record: Record<string, unknown>) => string
+): Promise<Map<string, { qtyInvoiced: number; qtyShipped: number }> | null> {
+  const snapshotDay = startOfUtcDay(snapshotDate);
+  const lookbackStart = new Date(snapshotDay);
+  lookbackStart.setUTCDate(lookbackStart.getUTCDate() - PRIOR_ORDER_LINE_BASELINE_LOOKBACK_DAYS);
+  const where = {
+    companyId,
+    platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+    miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+  };
+  const prior = await (prisma as any).inforRawRecord.findFirst({
+    where: { ...where, businessDate: { gte: lookbackStart, lt: snapshotDay } },
+    orderBy: { businessDate: 'desc' },
+    select: { businessDate: true },
+  });
+  if (!prior?.businessDate) return null;
+
+  const prevRows = await (prisma as any).inforRawRecord.findMany({
+    where: { ...where, businessDate: prior.businessDate },
+    select: { payload: true },
+    take: 300000,
+  });
+  const prevByLine = new Map<string, { qtyInvoiced: number; qtyShipped: number }>();
+  for (const row of prevRows as any[]) {
+    const payload = asRawRecordPayload(row.payload);
+    if (!payload) continue;
+    prevByLine.set(lineKey(payload), {
+      qtyInvoiced: pickNumber(payload, ['QtyInvoiced', 'qtyInvoiced']),
+      qtyShipped: pickNumber(payload, ['QtyShipped', 'qtyShipped']),
+    });
+  }
+  return prevByLine.size > 0 ? prevByLine : null;
+}
+
 async function saveCustomerSales(
   companyId: string,
   snapshotDate: Date,
@@ -7960,33 +8005,13 @@ async function saveCustomerSales(
     return `${coNum}|${coLine}|${coRelease}`;
   };
 
-  const prevBusinessDate = new Date(snapshotDate);
-  let attempts = 0;
-  do {
-    prevBusinessDate.setUTCDate(prevBusinessDate.getUTCDate() - 1);
-    attempts++;
-  } while ((prevBusinessDate.getUTCDay() === 0 || prevBusinessDate.getUTCDay() === 6) && attempts < 5);
-
-  const prevRows = await (prisma as any).inforRawRecord.findMany({
-    where: {
+  const prevByLine = await loadPriorOrderLineInvoicedBaseline(companyId, snapshotDate, lineKey);
+  if (!prevByLine) {
+    console.warn('[infor] customer sales skipped: no prior order-line baseline', {
       companyId,
-      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-      businessDate: startOfUtcDay(prevBusinessDate),
-      miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
-    },
-    select: { payload: true },
-    take: 300000,
-  });
-
-  const prevByLine = new Map<string, { qtyInvoiced: number; qtyShipped: number }>();
-  for (const row of prevRows as any[]) {
-    const payload = asRawRecordPayload(row.payload);
-    if (!payload) continue;
-    const key = lineKey(payload);
-    prevByLine.set(key, {
-      qtyInvoiced: pickNumber(payload, ['QtyInvoiced', 'qtyInvoiced']),
-      qtyShipped: pickNumber(payload, ['QtyShipped', 'qtyShipped']),
+      snapshotDate: snapshotDate.toISOString().slice(0, 10),
     });
+    return 0;
   }
 
   const custItemCostLookup = new Map<string, number>();
@@ -8108,33 +8133,13 @@ async function saveProductSales(
     return `${coNum}|${coLine}|${coRelease}`;
   };
 
-  const prevBusinessDate = new Date(snapshotDate);
-  let attempts = 0;
-  do {
-    prevBusinessDate.setUTCDate(prevBusinessDate.getUTCDate() - 1);
-    attempts++;
-  } while ((prevBusinessDate.getUTCDay() === 0 || prevBusinessDate.getUTCDay() === 6) && attempts < 5);
-
-  const prevRows = await (prisma as any).inforRawRecord.findMany({
-    where: {
+  const prevByLine = await loadPriorOrderLineInvoicedBaseline(companyId, snapshotDate, lineKey);
+  if (!prevByLine) {
+    console.warn('[infor] product sales skipped: no prior order-line baseline', {
       companyId,
-      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-      businessDate: startOfUtcDay(prevBusinessDate),
-      miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
-    },
-    select: { payload: true },
-    take: 300000,
-  });
-
-  const prevByLine = new Map<string, { qtyInvoiced: number; qtyShipped: number }>();
-  for (const row of prevRows as any[]) {
-    const payload = asRawRecordPayload(row.payload);
-    if (!payload) continue;
-    const key = lineKey(payload);
-    prevByLine.set(key, {
-      qtyInvoiced: pickNumber(payload, ['QtyInvoiced', 'qtyInvoiced']),
-      qtyShipped: pickNumber(payload, ['QtyShipped', 'qtyShipped']),
+      snapshotDate: snapshotDate.toISOString().slice(0, 10),
     });
+    return 0;
   }
 
   const itemCostLookup = new Map<string, number>();

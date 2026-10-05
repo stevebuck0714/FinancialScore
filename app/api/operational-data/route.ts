@@ -3607,7 +3607,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
-              cacheType === 'customers' ? 'customers-display-names-items-v3' : null,
+              cacheType === 'customers' ? 'customers-display-names-items-v4-infor-invoice-lines' : null,
               cacheType === 'hiring' ? HIRING_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION : null,
               isWholesaleProductsReportRequest ? `wholesale-report-mode:${wholesaleProductsReportMode}` : null,
@@ -4808,7 +4808,6 @@ export async function GET(request: NextRequest) {
                 return Number.isNaN(snapshot.getTime()) || !outlierDailyDates.has(snapshot.toISOString().slice(0, 10));
               })
             : rawRowsForPayload;
-          if (rowsForPayload.length === 0) return null;
 
           const canonicalProductKey = (value: unknown): string =>
             String(value || '')
@@ -4816,6 +4815,76 @@ export async function GET(request: NextRequest) {
               .replace(/\s+/g, '')
               .replace(/[^A-Za-z0-9]/g, '')
               .toUpperCase();
+          // Infor order-line snapshots only yield sales as day-over-day QtyInvoiced
+          // deltas, which historically booked lifetime totals whenever a prior day
+          // was missing. Posted invoice lines are the authoritative item sales.
+          const invoiceLineRowsForPayload = await (async (): Promise<any[]> => {
+            if (!isInforCompany) return [];
+            try {
+              const factRows = await prisma.$queryRaw<Array<{
+                invoiceDay: Date;
+                itemSku: string | null;
+                quantity: number | null;
+                revenue: number | null;
+              }>>(Prisma.sql`
+                SELECT
+                  date_trunc('day', "invoiceDate") AS "invoiceDay",
+                  "itemSku",
+                  SUM("quantity")::double precision AS quantity,
+                  SUM("revenue")::double precision AS revenue
+                FROM "ProductInvoiceLineFact"
+                WHERE "companyId" = ${companyId}
+                  AND "invoiceDate" >= ${startDate}
+                  AND "invoiceDate" <= ${endDate}
+                GROUP BY 1, 2
+              `);
+              if (factRows.length === 0) return [];
+              // Snapshot COGS and revenue are inflated by the same factor, so their
+              // ratio still gives a usable per-item cost rate for gross margin.
+              const snapshotCostByItem = new Map<string, { revenue: number; cogs: number; itemName: string }>();
+              let snapshotRevenueTotal = 0;
+              let snapshotCogsTotal = 0;
+              for (const row of rawRowsForPayload as any[]) {
+                const key = canonicalProductKey(row?.sku || row?.itemId || row?.itemName);
+                const revenue = Number(row?.revenue || 0);
+                const cogs = Number(row?.cogs || 0);
+                snapshotRevenueTotal += revenue;
+                snapshotCogsTotal += cogs;
+                if (!key) continue;
+                const entry = snapshotCostByItem.get(key) || { revenue: 0, cogs: 0, itemName: String(row?.itemName || '').trim() };
+                entry.revenue += revenue;
+                entry.cogs += cogs;
+                snapshotCostByItem.set(key, entry);
+              }
+              const fallbackCostRatio = snapshotRevenueTotal > 0 ? snapshotCogsTotal / snapshotRevenueTotal : 0;
+              return factRows
+                .filter((row) => String(row.itemSku || '').trim() && Number(row.revenue || 0) !== 0)
+                .map((row) => {
+                  const itemSku = String(row.itemSku || '').trim();
+                  const snapshotItem = snapshotCostByItem.get(canonicalProductKey(itemSku));
+                  const costRatio = snapshotItem && snapshotItem.revenue > 0
+                    ? snapshotItem.cogs / snapshotItem.revenue
+                    : fallbackCostRatio;
+                  const revenue = Number(row.revenue || 0);
+                  const cogs = revenue * costRatio;
+                  return {
+                    snapshotDate: row.invoiceDay,
+                    itemId: itemSku,
+                    sku: itemSku,
+                    itemName: snapshotItem?.itemName || itemSku,
+                    quantitySold: Number(row.quantity || 0),
+                    revenue,
+                    cogs,
+                    grossMargin: revenue - cogs,
+                  };
+                });
+            } catch (error) {
+              console.warn('Infor invoice-line item sales load failed; using product snapshots:', error);
+              return [];
+            }
+          })();
+          const salesRowsForPayload = invoiceLineRowsForPayload.length > 0 ? invoiceLineRowsForPayload : rowsForPayload;
+          if (salesRowsForPayload.length === 0) return null;
           const qbdLooksLikeListId = (value: unknown): boolean =>
             /^800[0-9A-F]*-\d+$/i.test(String(value || '').trim());
           const qbdItemMastersByKey = new Map<string, { displayName: string; sku: string | null }>();
@@ -4956,7 +5025,7 @@ export async function GET(request: NextRequest) {
           };
           const inforItemNumberCandidates = Array.from(
             new Set(
-              (rowsForPayload as any[])
+              (salesRowsForPayload as any[])
                 .flatMap((row) => [row?.itemId, row?.sku, row?.itemName])
                 .flatMap((value) => {
                   const text = String(value || '').trim();
@@ -5006,7 +5075,7 @@ export async function GET(request: NextRequest) {
           let totalValue = 0;
           let priorYtdValue = 0;
 
-          for (const row of rowsForPayload as any[]) {
+          for (const row of salesRowsForPayload as any[]) {
             const snapshot = new Date(row.snapshotDate);
             if (Number.isNaN(snapshot.getTime())) continue;
             const revenue = Number(row.revenue || 0);
