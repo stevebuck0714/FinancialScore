@@ -114,7 +114,7 @@ export default function OperationalReportPageLayout({
         onReorder={onReorder}
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, max(460px, calc((100% - 16px) / 2))), 1fr))',
           gap: '16px',
           padding: '0 32px 32px',
         }}
