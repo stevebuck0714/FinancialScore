@@ -7607,22 +7607,7 @@ export default function OperationsTab({
             </div>
           ) : (
             <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1.8, minWidth: 0 }}>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={unpaidByCustomer} layout="vertical" margin={{ left: 24 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis type="number" stroke="#64748b" tickFormatter={formatAxisMoney} />
-                    <YAxis type="category" dataKey="customerName" tick={false} axisLine={false} tickLine={false} width={0} />
-                    <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                    <Bar dataKey="totalDue" name="Unpaid Amount">
-                      {unpaidByCustomer.map((entry, index) => (
-                        <Cell key={`bar-cell-${entry.customerName}-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div style={{ flex: 1.2, minWidth: 280, display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <div style={{ flex: 1, minWidth: 280, display: 'flex', gap: '16px', alignItems: 'center' }}>
                 <div style={{ flex: 1 }}>
                   <ResponsiveContainer width="100%" height={260}>
                     <PieChart>
