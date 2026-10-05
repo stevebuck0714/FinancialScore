@@ -1031,6 +1031,7 @@ export default function OperationsTab({
   const [customerConcentrationMetricChart, setCustomerConcentrationMetricChart] = useState<any | null>(null);
   const operationalDataCacheRef = useRef(operationalDataCacheStore);
   const operationalDataInflightRef = useRef(operationalDataInflightStore);
+  const latestTabLoadKeyRef = useRef<string>('');
   const wholesaleProductsReportCacheRef = useRef(wholesaleProductsReportCacheStore);
   const wholesaleProductsReportInflightRef = useRef(wholesaleProductsReportInflightStore);
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
@@ -2268,7 +2269,9 @@ export default function OperationsTab({
     // The API expands this to a 5k analysis window, which is sufficient for
     // the dashboard while retaining a deterministic upper bound.
     const typeLimit = type === 'sales' ? '5000' : apiType === 'products' ? '500' : apiType === 'customers' ? '500' : '1000';
-    const timeoutMs = apiType === 'customers' && options?.refreshConcentration
+    // A cold customers build for a multi-month saved range can exceed 45s;
+    // the API route allows up to 300s.
+    const timeoutMs = apiType === 'customers'
       ? 120000
       : apiType === 'hiring'
       ? 90000
@@ -3083,8 +3086,13 @@ export default function OperationsTab({
   }
 
   async function loadTabData(tab: string) {
+    const type = mapModuleToDataType(tab) || null;
+    // A slow response for an earlier date range must not replace data for
+    // the range the user is looking at now.
+    const requestKey = type ? buildOperationalDataCacheKey(type) : '';
+    latestTabLoadKeyRef.current = requestKey;
+    const isLatestRequest = () => latestTabLoadKeyRef.current === requestKey;
     try {
-      const type = mapModuleToDataType(tab) || null;
       if (!type) {
         return;
       }
@@ -3117,11 +3125,14 @@ export default function OperationsTab({
       setLoading(true);
       setError(null);
       const data = await fetchOperationalTypeWithCache(type, { preferCache: true });
+      if (!isLatestRequest()) return;
       applyOperationalTypeData(type, data);
     } catch (err: any) {
+      if (!isLatestRequest()) return;
+      if (type) applyOperationalTypeData(type, null);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (isLatestRequest()) setLoading(false);
     }
   }
 
@@ -4256,6 +4267,20 @@ export default function OperationsTab({
     }
 
     if (!customerData) {
+      if (error) {
+        return (
+          <div data-print-ready="error" style={{ padding: '40px', textAlign: 'center', color: '#b91c1c' }}>
+            <div>{error}</div>
+            <button
+              type="button"
+              onClick={() => void loadTabData(activeTab)}
+              style={{ marginTop: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 12px', background: '#ffffff', color: '#334155', fontWeight: 600, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
+        );
+      }
       return <div data-print-ready="loading" style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading customer data...</div>;
     }
     const isSalesAnalyticsTab = mapModuleToDataType(activeTab) === 'sales';
