@@ -1059,6 +1059,7 @@ export default function OperationsTab({
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('');
+  const [productMarginItemSearch, setProductMarginItemSearch] = useState('');
   const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
   const [productMarginSortKey, setProductMarginSortKey] = useState<ProductMarginSortKey>('customerName');
   const [productMarginSortDir, setProductMarginSortDir] = useState<'asc' | 'desc'>('asc');
@@ -10393,10 +10394,23 @@ export default function OperationsTab({
         })
         .sort((a, b) => String(a.customerName).localeCompare(String(b.customerName), undefined, { sensitivity: 'base', numeric: true }));
     })();
-    const visibleProductMarginCustomerGroups =
+    const productMarginItemSearchTerm = productMarginItemSearch.trim().toLowerCase();
+    const visibleProductMarginCustomerGroups = (
       productMarginCustomerFilter === 'all'
         ? productMarginCustomerGroups
-        : productMarginCustomerGroups.filter((group) => group.key === productMarginCustomerFilter);
+        : productMarginCustomerGroups.filter((group) => group.key === productMarginCustomerFilter)
+    )
+      .map((group) => (
+        productMarginItemSearchTerm
+          ? {
+              ...group,
+              rows: group.rows.filter((row: any) =>
+                String(row?.aprPartNumber || '').toLowerCase().includes(productMarginItemSearchTerm)
+              ),
+            }
+          : group
+      ))
+      .filter((group) => !productMarginItemSearchTerm || group.rows.length > 0);
     const productMarginTextSortKeys = new Set<ProductMarginSortKey>([
       'aprPartNumber',
       'customerId',
@@ -11329,12 +11343,22 @@ export default function OperationsTab({
               >
                 Collapse Visible
               </button>
+              <input
+                type="search"
+                value={productMarginItemSearch}
+                onChange={(event) => setProductMarginItemSearch(event.target.value)}
+                placeholder="Search Item #"
+                aria-label="Search Item #"
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
+              />
             </div>
           </div>
 
           {!sortedVisibleProductMarginCustomerGroups.length ? (
             <div style={{ border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '32px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-              Select a customer to view product margins.
+              {productMarginCustomerFilter && productMarginItemSearchTerm
+                ? `No items match "${productMarginItemSearch.trim()}".`
+                : 'Select a customer to view product margins.'}
             </div>
           ) : (
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
@@ -11377,7 +11401,10 @@ export default function OperationsTab({
               </thead>
               <tbody>
                 {sortedVisibleProductMarginCustomerGroups.map((group) => {
-                  const expanded = productMarginCustomerFilter !== 'all' || expandedProductMarginCustomers[group.key] === true;
+                  const expanded =
+                    productMarginCustomerFilter !== 'all' ||
+                    Boolean(productMarginItemSearchTerm) ||
+                    expandedProductMarginCustomers[group.key] === true;
                   return (
                     <React.Fragment key={group.key}>
                       <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
