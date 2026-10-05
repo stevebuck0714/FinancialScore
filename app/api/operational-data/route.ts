@@ -3343,7 +3343,7 @@ export async function GET(request: NextRequest) {
     const isCronOperationalPageWarmup =
       hasCronCacheWarmupAuth &&
       CRON_OPERATIONAL_CACHE_WARMUP_TYPES.has(String(type || '').trim()) &&
-      frequency === 'daily' &&
+      (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') &&
       ((type === 'customers' || type === 'products') ? boundedLimit === 500 : boundedLimit === 1000);
     const isCronOperationalCacheWarmup = isCronWholesaleProductsWarmup || isCronOperationalPageWarmup;
 

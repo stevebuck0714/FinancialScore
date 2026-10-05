@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
+
+// Leaves room for the post-response operational cache rebuild.
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,6 +88,10 @@ export async function POST(request: NextRequest) {
         now,
         now
       );
+    }
+
+    if (preferences?.dateRange?.manualSave === true) {
+      scheduleOperationalCacheWarmupAfterSave(request, companyId, 'ops-dashboard-date-range');
     }
 
     console.log('✅ API: Ops dashboard preferences saved successfully');
