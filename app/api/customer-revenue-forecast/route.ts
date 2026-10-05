@@ -5,6 +5,8 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
 import { filterActiveCustomerRows } from '@/lib/accounting/active-customer-filter';
+import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
+import { formatEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,7 +79,11 @@ export async function GET(request: NextRequest) {
     const denied = await assertCustomerForecastAccess(companyId, 'READ');
     if (denied) return denied;
 
-    const [settings, actuals] = await Promise.all([
+    const [company, settings, actuals] = await Promise.all([
+      prisma.company.findUnique({
+        where: { id: companyId },
+        select: { forceOperationalMockData: true, industrySectorCategory: true },
+      }),
       prisma.financialForecastInputSettings.findUnique({
         where: { companyId },
         select: { revenueGrowthByRow: true, updatedAt: true },
@@ -99,9 +105,32 @@ export async function GET(request: NextRequest) {
         take: 100000,
       }),
     ]);
-    const activeActuals = await filterActiveCustomerRows(companyId, actuals);
     const revenueInputs = scopedPayload(settings?.revenueGrowthByRow, basisMode);
     const forecast = asObject(revenueInputs.__customerRevenueForecast);
+    if (company?.forceOperationalMockData) {
+      const endDate = new Date(`${formatEstDate()}T00:00:00.000Z`);
+      const mockPayload = buildOperationalMockResponse({
+        type: 'customers',
+        companyId,
+        sectorCategory: company.industrySectorCategory,
+        frequency: 'monthly',
+        startDate: new Date(Date.UTC(endDate.getUTCFullYear() - 3, 0, 1)),
+        endDate,
+        limit: 100000,
+      }) as { records?: any[] };
+      return NextResponse.json({
+        forecast,
+        updatedAt: settings?.updatedAt || null,
+        actuals: (mockPayload.records || []).map((row: any) => ({
+          monthKey: String(row.snapshotDate || '').slice(0, 7),
+          customerId: String(row.customerId || ''),
+          customerName: row.customerName,
+          revenue: Number(row.revenue || 0),
+          invoiceCount: Number(row.invoiceCount || 0),
+        })),
+      });
+    }
+    const activeActuals = await filterActiveCustomerRows(companyId, actuals);
 
     return NextResponse.json({
       forecast,

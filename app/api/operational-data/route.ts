@@ -3593,7 +3593,7 @@ export async function GET(request: NextRequest) {
               statementRollup,
               productsLimitIsAll ? 'all' : boundedLimit,
               'qbd-current-year-net-income-v1',
-              shouldUseMockData ? 'mock-operational-data-v4' : 'real-operational-data-v2-hts-duty',
+              shouldUseMockData ? 'mock-operational-data-v5' : 'real-operational-data-v2-hts-duty',
               cacheType === 'ar-aging' || cacheType === 'ar'
                 ? 'qbd-authoritative-aging-snapshots-v4'
                 : null,

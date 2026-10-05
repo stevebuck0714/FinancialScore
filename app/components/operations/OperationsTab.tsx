@@ -4365,6 +4365,8 @@ export default function OperationsTab({
       ? 'Invoice history'
       : summary?.customerHistoricalSales?.source === 'customer_sales_snapshot_monthly'
         ? 'Monthly customer history'
+        : summary?.customerHistoricalSales?.source === 'force_operational_mock_data'
+          ? 'Demo customer history'
         : 'No canonical customer history';
     const customerSalesCurrentMonthKey =
       selectedEndForCustomer
@@ -7312,6 +7314,9 @@ export default function OperationsTab({
         : frequency === 'weekly'
           ? Math.max(Math.ceil(chartData.length / 20) - 1, 0)
           : 0;
+    const chartHasUnavailableAging = chartData.some(
+      (row: any) => row.hasData && !row.agingAllocationAvailable
+    );
     const arCollectionsTrend = chartData.map((row: any) => {
       const total = Number(row.total || 0);
       const dCurrent = Number(row['Current'] || 0);
@@ -7573,7 +7578,7 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="Books AR (aging unavailable)" fill="#64748b" />
+              {chartHasUnavailableAging && <Bar dataKey="Books AR (aging unavailable)" fill="#64748b" />}
               <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="Open AR 1-30" stackId="a" fill={AR_TREND_COLORS[1]} />
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
@@ -7612,7 +7617,7 @@ export default function OperationsTab({
                   <BarChart data={unpaidByCustomer} layout="vertical" margin={{ left: 24 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis type="number" stroke="#64748b" tickFormatter={formatAxisMoney} />
-                    <YAxis type="category" dataKey="customerName" stroke="#64748b" style={{ fontSize: '12px' }} width={140} />
+                    <YAxis type="category" dataKey="customerName" tick={false} axisLine={false} tickLine={false} width={0} />
                     <Tooltip formatter={(value: any) => formatCurrency(value)} />
                     <Bar dataKey="totalDue" name="Unpaid Amount">
                       {unpaidByCustomer.map((entry, index) => (

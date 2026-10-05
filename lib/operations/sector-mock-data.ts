@@ -697,7 +697,7 @@ function buildMockCustomerHistory(records: Array<{
   customerName: string;
   revenue: number;
   invoiceCount: number;
-}>) {
+}>, source = 'force_operational_mock_data') {
   const monthMap = new Map<string, { monthKey: string; monthLabel: string; date: Date }>();
   const customerMaps = {
     revenue: new Map<string, { label: string; values: Record<string, number>; total: number }>(),
@@ -746,7 +746,7 @@ function buildMockCustomerHistory(records: Array<{
     };
   };
   return {
-    source: 'force_operational_mock_data',
+    source,
     sales: buildHistory('revenue', 'Total Customer Sales', 'currency'),
     invoiceVolume: buildHistory('invoiceCount', 'Total Customer Invoice Volume', 'number'),
   };
@@ -793,6 +793,47 @@ function buildCompanyInventoryMovement(
   });
 
   return { rows };
+}
+
+function buildMockRetailProductAging(req: MockRequest, profile: SectorProfile) {
+  const buckets = [
+    { key: 'age_0_90', label: '0–90 Days' },
+    { key: 'age_91_180', label: '91–180 Days' },
+    { key: 'age_181_365', label: '181–365 Days' },
+    { key: 'age_366_plus', label: '366+ Days' },
+  ];
+  const chartData = listMonthlyDatesAscending(req.startDate, req.endDate, 18).map((date, monthIndex) => {
+    const row: Record<string, number | string> = {
+      monthKey: mockMonthKey(date),
+      monthLabel: mockMonthLabel(date),
+      totalDollars: 0,
+      totalUnits: 0,
+    };
+    buckets.forEach((bucket, bucketIndex) => {
+      const units = Math.round(metric(340 - bucketIndex * 68, monthIndex + bucketIndex + 1, profile.scale));
+      const dollars = Math.round(units * (26 + bucketIndex * 7.5));
+      row[bucket.key] = dollars;
+      row[`${bucket.key}Units`] = units;
+      row[`${bucket.key}Pct`] = 0;
+      row.totalDollars = Number(row.totalDollars || 0) + dollars;
+      row.totalUnits = Number(row.totalUnits || 0) + units;
+    });
+    buckets.forEach((bucket) => {
+      row[`${bucket.key}Pct`] = Number(row.totalDollars || 0) > 0
+        ? (Number(row[bucket.key] || 0) / Number(row.totalDollars || 0)) * 100
+        : 0;
+    });
+    return row;
+  });
+  const latest = chartData[chartData.length - 1];
+  return {
+    buckets,
+    chartData,
+    latestMonthKey: latest?.monthKey || null,
+    latestMonthLabel: latest?.monthLabel || null,
+    latestTotalDollars: Number(latest?.totalDollars || 0),
+    latestTotalUnits: Number(latest?.totalUnits || 0),
+  };
 }
 
 function summarizeByDimension<T extends Record<string, any>>(
@@ -1630,6 +1671,19 @@ function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
       })
     );
     const limited = records.slice(0, req.limit || 1000);
+    const historicalDates = listMonthlyDatesAscending(
+      new Date(Date.UTC(req.endDate.getUTCFullYear() - 3, 0, 1)),
+      req.endDate,
+      36,
+    );
+    const historicalRecords = historicalDates.flatMap((date, i) =>
+      customers.map((name, idx) => ({
+        snapshotDate: date.toISOString(),
+        customerName: name,
+        revenue: metric(7800 + idx * 925, i + idx + 1, profile.scale),
+        invoiceCount: Math.max(1, Math.round(metric(5 + (idx % 4), i + 1, 1))),
+      })),
+    );
     const totals = customers.map((name) => {
       const rows = limited.filter((row) => row.customerName === name);
       return {
@@ -1649,6 +1703,10 @@ function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
         revenueByRegion: summarizeByDimension(limited, 'region', ['revenue', 'invoiceCount']),
         productServiceCategories: companyProductProfile.categories,
         customerHistory: buildMockCustomerHistory(limited),
+        customerHistoricalSales: {
+          source: 'force_operational_mock_data',
+          sales: buildMockCustomerHistory(historicalRecords).sales,
+        },
         sourceSystemSalesPage: buildCompanyMockSalesPage(req, profile, companyProductProfile),
         topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
       },
@@ -2017,6 +2075,7 @@ function buildInventoryResponse(req: MockRequest, profile: SectorProfile) {
         snapshotDate: date.toISOString(),
         frequency: req.frequency,
         itemName: item,
+        department: ['Production Components', 'Finished Goods', 'Aftermarket'][idx % 3],
         sku: companyProductProfile ? `${getCompanySkuPrefix(req.companyId)}-INV-${idx + 200}` : `INV-${idx + 200}`,
         qtyOnHand,
         avgCost,
@@ -2026,13 +2085,45 @@ function buildInventoryResponse(req: MockRequest, profile: SectorProfile) {
   );
   const latestDate = records[0]?.snapshotDate;
   const latest = records.filter((r) => r.snapshotDate === latestDate);
+  const trend = Array.from(
+    records.reduce((byDate, row) => {
+      const current = byDate.get(row.snapshotDate) || {
+        snapshotDate: row.snapshotDate,
+        assetValue: 0,
+        qtyOnHand: 0,
+      };
+      current.assetValue += row.assetValue;
+      current.qtyOnHand += row.qtyOnHand;
+      byDate.set(row.snapshotDate, current);
+      return byDate;
+    }, new Map<string, { snapshotDate: string; assetValue: number; qtyOnHand: number }>())
+      .values(),
+  );
+  const departmentTrend = Array.from(
+    records.reduce((byDepartmentDate, row) => {
+      const key = `${row.snapshotDate}:${row.department}`;
+      const current = byDepartmentDate.get(key) || {
+        snapshotDate: row.snapshotDate,
+        department: row.department,
+        assetValue: 0,
+      };
+      current.assetValue += row.assetValue;
+      byDepartmentDate.set(key, current);
+      return byDepartmentDate;
+    }, new Map<string, { snapshotDate: string; department: string; assetValue: number }>())
+      .values(),
+  );
+  const retailProductAging = companyProductProfile ? buildMockRetailProductAging(req, profile) : null;
   return {
     records: records.slice(0, req.limit || 1000),
+    trend,
+    departmentTrend,
     summary: {
       totalValue: latest.reduce((sum, row) => sum + row.assetValue, 0),
       itemCount: latest.length,
       topItems: [...latest].sort((a, b) => b.assetValue - a.assetValue).slice(0, 10),
       ...(companyProductProfile ? { inventoryMovement: buildCompanyInventoryMovement(req, profile, companyProductProfile) } : {}),
+      ...(retailProductAging ? { retailProductAging } : {}),
       topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
     },
   };
