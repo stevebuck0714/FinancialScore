@@ -268,6 +268,12 @@ const WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS = new Set([
   'inventoryRetailTurns',
   'inventoryRetailProductAging',
 ]);
+// Sector 42 toggles these tables separately; companies saved before the split
+// inherit the combined history-tables setting.
+const WHOLESALE_SPLIT_SECTION_PARENT_KEYS: Record<string, string> = {
+  customersSalesHistoryTable: 'customersPlatoSalesHistoryTables',
+  customersInvoiceVolumeHistoryTable: 'customersPlatoSalesHistoryTables',
+};
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const toFiniteNumber = (value: unknown): number | null => {
   const num = Number(value);
@@ -1463,7 +1469,8 @@ export default function OperationsTab({
     ) {
       return false;
     }
-    const value = operationalHubSections[sectionKey];
+    const parentKey = WHOLESALE_SPLIT_SECTION_PARENT_KEYS[sectionKey];
+    const value = operationalHubSections[sectionKey] ?? (parentKey ? operationalHubSections[parentKey] : undefined);
     return value === undefined ? true : value !== false;
   };
   const toggleWipCustomerExpanded = (key: string) => {
@@ -4771,6 +4778,10 @@ export default function OperationsTab({
     }));
     const isRetailSalesLanguage = industrySectorCategory === '45';
     const isManufacturingSector = industrySectorCategory === '32';
+    const isWholesaleCustomerHistorySplit = String(industrySectorCategory || '').trim() === '42';
+    const showCustomerSalesHistoryTable = !isWholesaleCustomerHistorySplit || isSectionEnabled('customersSalesHistoryTable');
+    const showCustomerInvoiceVolumeHistoryTable =
+      !isWholesaleCustomerHistorySplit || isSectionEnabled('customersInvoiceVolumeHistoryTable');
     const retailizeCustomerText = (text: string): string => {
       if (!isRetailSalesLanguage) return text;
       return [
@@ -5851,7 +5862,9 @@ export default function OperationsTab({
 
             {renderTopCustomerTrendPanel()}
 
-            {isSectionEnabled('customersPlatoSalesHistoryTables') && (
+            {(isWholesaleCustomerHistorySplit
+              ? showCustomerSalesHistoryTable || showCustomerInvoiceVolumeHistoryTable
+              : isSectionEnabled('customersPlatoSalesHistoryTables')) && (
               <OperationalReportPanel
                 reportKey="customersPlatoSalesHistoryTables"
                 canReorder={canManageReportLayout}
@@ -5860,13 +5873,13 @@ export default function OperationsTab({
                 style={getReportPanelStyle('customersPlatoSalesHistoryTables', { gridColumn: '1 / -1', minWidth: 0 })}
               >
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
-                  {renderCategorySalesHistoryTable('Customer Sales History', { categoryHistory: customerSalesHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || (
+                  {showCustomerSalesHistoryTable && (renderCategorySalesHistoryTable('Customer Sales History', { categoryHistory: customerSalesHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || (
                     <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                       <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Customer Sales History</h3>
                       {renderSalesReportEmptyState()}
                     </div>
-                  )}
-                  {renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || null}
+                  ))}
+                  {showCustomerInvoiceVolumeHistoryTable && (renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || null)}
                   {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
                     <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                       <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>

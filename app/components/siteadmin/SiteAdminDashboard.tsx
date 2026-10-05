@@ -340,18 +340,36 @@ const WHOLESALE_ORDERS_SALES_EXCLUDED_REPORT_KEYS = new Set([
 ]);
 
 const WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS = new Set([
-  'customersWipByCustomer',
   'customersPlatoSalesMetricCards',
-  'customersPlatoSalesHistoryChart',
-  'customersPlatoSalesHistoryTables',
-  'customersGrossMarginHistoryTable',
-  'customersRetentionProxy',
-  'customersInvoiceVelocity',
 ]);
+
+const WHOLESALE_CUSTOMERS_REPORT_LABELS: Record<string, string> = {
+  customersRetentionProxy: 'Revenue Retention Proxy (Top Accounts)',
+};
+
+// Sector 42 toggles the two customer history tables independently.
+const WHOLESALE_CUSTOMERS_SPLIT_REPORT_OPTIONS: Record<string, Array<{ key: string; label: string }>> = {
+  customersPlatoSalesHistoryTables: [
+    { key: 'customersSalesHistoryTable', label: 'Customer Sales History' },
+    { key: 'customersInvoiceVolumeHistoryTable', label: 'Customer Invoice Volume History' },
+  ],
+};
+
+const WHOLESALE_CUSTOMERS_SPLIT_PARENT_KEYS: Record<string, string> = Object.fromEntries(
+  Object.entries(WHOLESALE_CUSTOMERS_SPLIT_REPORT_OPTIONS).flatMap(([parentKey, entries]) =>
+    entries.map((entry) => [entry.key, parentKey] as const)
+  )
+);
+
+// Rendered on the Customers page but catalogued under Inventory for other sectors.
+const WHOLESALE_CUSTOMERS_EXTRA_REPORT_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: 'customersWipByCustomer', label: 'Open Backlog by Customer' },
+];
 
 const WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS = new Set([
   'inventoryRetailTurns',
   'inventoryRetailProductAging',
+  'customersWipByCustomer',
 ]);
 
 const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
@@ -1718,6 +1736,17 @@ export default function SiteAdminDashboard(props: any) {
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'customers' || !WHOLESALE_CUSTOMERS_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory !== '42' || moduleKey !== 'inventory' || !WHOLESALE_INVENTORY_EXCLUDED_REPORT_KEYS.has(item.key))
         .filter((item) => companySectorCategory === '45' || !RETAIL_ONLY_PRODUCT_REPORT_KEYS.has(item.key))
+        .flatMap((item) => {
+          if (companySectorCategory !== '42' || moduleKey !== 'customers') return [item];
+          const split = WHOLESALE_CUSTOMERS_SPLIT_REPORT_OPTIONS[item.key];
+          if (split) return split.map((entry) => ({ ...entry, group: item.group }));
+          return [{ ...item, label: WHOLESALE_CUSTOMERS_REPORT_LABELS[item.key] || item.label }];
+        })
+        .concat(
+          companySectorCategory === '42' && moduleKey === 'customers'
+            ? WHOLESALE_CUSTOMERS_EXTRA_REPORT_OPTIONS.map((entry) => ({ ...entry, group: sourceGroup }))
+            : []
+        )
         .map((item) => ({
           ...item,
           group: option.label,
@@ -1744,7 +1773,8 @@ export default function SiteAdminDashboard(props: any) {
     const sections = getOperationalHubConfig(company);
     const options = getOperationalHubSectionOptionsForCompany(company, sections);
     return options.reduce<Record<string, boolean>>((acc, option) => {
-      const explicit = sections[option.key];
+      const parentKey = WHOLESALE_CUSTOMERS_SPLIT_PARENT_KEYS[option.key];
+      const explicit = sections[option.key] ?? (parentKey ? sections[parentKey] : undefined);
       acc[option.key] = explicit === undefined ? isOperationalHubTabDefaultEnabled(option.key, company) : explicit !== false;
       return acc;
     }, {});
