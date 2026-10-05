@@ -872,6 +872,21 @@ function listDates(startDate: Date, endDate: Date, frequency: Frequency): Date[]
   return dates.slice(-maxPoints).reverse();
 }
 
+function listArAgingDates(startDate: Date, endDate: Date, frequency: Frequency): Date[] {
+  const dates: Date[] = [];
+  const cursor = new Date(startDate);
+  while (cursor <= endDate) {
+    if (frequency !== 'daily' || (cursor.getUTCDay() !== 0 && cursor.getUTCDay() !== 6)) {
+      dates.push(new Date(cursor));
+    }
+    if (frequency === 'daily') cursor.setUTCDate(cursor.getUTCDate() + 1);
+    else if (frequency === 'weekly') cursor.setUTCDate(cursor.getUTCDate() + 7);
+    else cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  const maxPoints = frequency === 'daily' ? 520 : frequency === 'weekly' ? 156 : 60;
+  return dates.slice(-maxPoints).reverse();
+}
+
 function metric(base: number, index: number, scale: number): number {
   const seasonal = 1 + Math.sin(index / 2.2) * 0.08;
   const trend = 1 + index * 0.012;
@@ -1671,6 +1686,14 @@ function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
       })
     );
     const limited = records.slice(0, req.limit || 1000);
+    const selectedPeriodRecords = listMonthlyDatesAscending(req.startDate, req.endDate, 36).flatMap((date, i) =>
+      customers.map((name, idx) => ({
+        snapshotDate: date.toISOString(),
+        customerName: name,
+        revenue: metric(7800 + idx * 925, i + idx + 1, profile.scale),
+        invoiceCount: Math.max(1, Math.round(metric(5 + (idx % 4), i + 1, 1))),
+      })),
+    );
     const historicalDates = listMonthlyDatesAscending(
       new Date(Date.UTC(req.endDate.getUTCFullYear() - 3, 0, 1)),
       req.endDate,
@@ -1702,7 +1725,7 @@ function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
         topCustomers: totals.sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10),
         revenueByRegion: summarizeByDimension(limited, 'region', ['revenue', 'invoiceCount']),
         productServiceCategories: companyProductProfile.categories,
-        customerHistory: buildMockCustomerHistory(limited),
+        customerHistory: buildMockCustomerHistory(selectedPeriodRecords),
         customerHistoricalSales: {
           source: 'force_operational_mock_data',
           sales: buildMockCustomerHistory(historicalRecords).sales,
@@ -1807,7 +1830,7 @@ function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
 }
 
 function buildArResponse(req: MockRequest, profile: SectorProfile) {
-  const dates = listDates(req.startDate, req.endDate, req.frequency);
+  const dates = listArAgingDates(req.startDate, req.endDate, req.frequency);
   const records = dates.map((date, i) => {
     const totalAR = metric(88000, i + 1, profile.scale);
     const current = totalAR * 0.62;
