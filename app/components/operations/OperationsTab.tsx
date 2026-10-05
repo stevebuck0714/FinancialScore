@@ -1058,7 +1058,7 @@ export default function OperationsTab({
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('');
-  const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('all');
+  const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('');
   const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
   const [productMarginSortKey, setProductMarginSortKey] = useState<ProductMarginSortKey>('customerName');
   const [productMarginSortDir, setProductMarginSortDir] = useState<'asc' | 'desc'>('asc');
@@ -10223,13 +10223,6 @@ export default function OperationsTab({
         insurancePerPiece: Number.isFinite(Number(selected.insurancePerPiece)) && Number(selected.insurancePerPiece) > 0 ? Number(selected.insurancePerPiece) : null,
       };
     };
-    const productMarginLatestDate = shouldRenderProductMargin
-      ? wholesaleProductRecords
-          .map((row: any) => String(row?.snapshotDate || '').slice(0, 10))
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b))
-          .slice(-1)[0] || ''
-      : '';
     const productMarginRows = getCachedProductTransform('products-margin-rows', [shouldRenderProductMargin, wholesaleProductRecords, productMarginOpexPct, productMarginItemOverlays], () => {
       if (!shouldRenderProductMargin) return [];
       const latestRowsByItem = new Map<string, { latestMs: number; rows: any[] }>();
@@ -11184,8 +11177,6 @@ export default function OperationsTab({
         maxWidth?: string;
       }> = [
         { key: 'aprPartNumber', label: 'Item #', summaryColumn: true },
-        { key: 'customerId', label: 'Customer ID', width: '76px', maxWidth: '84px' },
-        { key: 'customerName', label: 'Customer Name', width: '150px', maxWidth: '170px' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '92px', maxWidth: '108px' },
         { key: 'currentPrice', label: ['SGP Price', '($)'], compact: true },
         { key: 'materialCost', label: ['SGP Cost', 'of Material', '($)'], compact: true },
@@ -11217,9 +11208,6 @@ export default function OperationsTab({
         <td style={{ padding: '6px 5px', fontSize: '11.5px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', width: '64px', maxWidth: '70px' }}>
           {formatMarginPct(value)}
         </td>
-      );
-      const renderBlankMarginCell = () => (
-        <td style={{ padding: '6px 5px', fontSize: '11.5px', color: '#334155', textAlign: 'right', fontWeight: 500, whiteSpace: 'nowrap', width: '64px', maxWidth: '70px' }} />
       );
       const productMarginTextCellStyle = (column: ProductMarginSortKey, emphasis: React.CSSProperties = {}): React.CSSProperties => {
         const columnConfig = productMarginColumns.find((candidate) => candidate.key === column);
@@ -11262,14 +11250,6 @@ export default function OperationsTab({
                 <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Product Margin Analysis</h3>
                 {renderChartInfoLink('productsProductMarginAnalysis')}
               </div>
-              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Price from Infor open orders. Material, tariff, duties, and freight from the Freight and Duties pages.
-              </div>
-              {productMarginLatestDate && (
-                <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
-                  Latest snapshot: {formatCoverageDate(productMarginLatestDate)}
-                </div>
-              )}
               <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <label htmlFor="product-margin-opex-pct" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
                   Operating Expenses %
@@ -11327,6 +11307,7 @@ export default function OperationsTab({
                 onChange={(event) => setProductMarginCustomerFilter(event.target.value)}
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '260px', background: 'white' }}
               >
+                <option value="">Select a customer</option>
                 <option value="all">All customers ({productMarginCustomerGroups.length})</option>
                 {productMarginCustomerGroups.map((group) => (
                   <option key={group.key} value={group.key}>
@@ -11351,8 +11332,13 @@ export default function OperationsTab({
             </div>
           </div>
 
+          {!sortedVisibleProductMarginCustomerGroups.length ? (
+            <div style={{ border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '32px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+              Select a customer to view product margins.
+            </div>
+          ) : (
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '1480px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <table style={{ width: '100%', minWidth: '1240px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <colgroup>
                 {productMarginColumns.map((column) => (
                   <col
@@ -11373,7 +11359,7 @@ export default function OperationsTab({
                         padding: column.compact ? '6px 5px' : '8px',
                         fontSize: column.compact ? '11.5px' : '12px',
                         color: '#334155',
-                        textAlign: index >= 4 ? 'right' : 'left',
+                        textAlign: index >= 2 ? 'right' : 'left',
                         whiteSpace: column.compact ? 'normal' : 'nowrap',
                         lineHeight: 1.15,
                         cursor: 'pointer',
@@ -11404,22 +11390,17 @@ export default function OperationsTab({
                             {expanded ? '▼' : '▶'} Summary
                           </button>
                         </td>
-                        <td style={productMarginTextCellStyle('customerId', { color: '#475569', fontWeight: 700 })} title={group.customerId || 'N/A'}>{group.customerId || 'N/A'}</td>
-                        <td style={productMarginTextCellStyle('customerName', { color: '#0f172a', fontWeight: 800 })} title={group.customerName}>{group.customerName}</td>
-                        <td style={productMarginTextCellStyle('customerPartNumber', { color: '#64748b' })} title={`${Number(group.purchaseOrderCount || 0).toLocaleString()} purchase orders`}>
-                          {Number(group.purchaseOrderCount || 0).toLocaleString()}
+                        <td
+                          colSpan={productMarginColumns.length - 1}
+                          style={{ padding: '8px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          title={`${group.customerName} · Customer ID ${group.customerId || 'N/A'}`}
+                        >
+                          <span style={{ color: '#0f172a', fontWeight: 800 }}>{group.customerName}</span>
+                          <span style={{ marginLeft: '12px', fontWeight: 700 }}>Customer ID: {group.customerId || 'N/A'}</span>
+                          <span style={{ marginLeft: '12px', color: '#64748b' }}>
+                            {Number(group.purchaseOrderCount || 0).toLocaleString()} purchase orders
+                          </span>
                         </td>
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
-                        {renderBlankMarginCell()}
                       </tr>
                       {expanded && group.rows.map((row: any) => (
                         <tr key={row.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -11443,8 +11424,6 @@ export default function OperationsTab({
                               {productMarginNoteLoadingKey === row.key ? 'Loading notes...' : row.partNote ? 'View notes' : 'Load notes'}
                             </button>
                           </td>
-                          <td style={productMarginTextCellStyle('customerId', { color: '#475569' })} title={row.customerId || 'N/A'}>{row.customerId || 'N/A'}</td>
-                          <td style={productMarginTextCellStyle('customerName')} title={row.customerName}>{row.customerName}</td>
                           <td style={productMarginTextCellStyle('customerPartNumber', { color: '#475569' })} title={row.customerPartNumber || 'N/A'}>{row.customerPartNumber || 'N/A'}</td>
                           {renderMoneyCell(row.currentPrice)}
                           {renderMoneyCell(row.materialCost)}
@@ -11465,6 +11444,7 @@ export default function OperationsTab({
               </tbody>
             </table>
           </div>
+          )}
           {productMarginNoteModal && (
             <div
               onClick={() => setProductMarginNoteModal(null)}
