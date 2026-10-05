@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { formatEstDate } from '@/lib/time/eastern';
 import { ensureProductRevenueTables } from '@/lib/operations/product-revenue-actual-db';
 import { ensureVendorMonthlyForecastTables, assertVendorsForecastAccess } from '@/lib/operations/vendor-monthly-forecast-db';
+import { buildMockVendorReportsPayload } from '@/lib/operations/sector-mock-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,14 @@ export async function GET(request: NextRequest) {
 
     const denied = await assertVendorsForecastAccess(companyId);
     if (denied) return denied;
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { forceOperationalMockData: true, industrySectorCategory: true },
+    });
+    if (company?.forceOperationalMockData) {
+      return NextResponse.json(buildMockVendorReportsPayload(companyId, company.industrySectorCategory));
+    }
 
     await Promise.all([ensureVendorMonthlyForecastTables(), ensureProductRevenueTables()]);
     const year = asYear(request.nextUrl.searchParams.get('year'));

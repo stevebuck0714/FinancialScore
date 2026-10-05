@@ -1,4 +1,5 @@
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
+import { formatEstDate } from '@/lib/time/eastern';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 type DataType = 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'ap';
@@ -117,6 +118,41 @@ const COMPANY_PRODUCT_SERVICE_PROFILES: Record<string, CompanyProductServiceProf
       },
     ],
   },
+};
+
+const DEFAULT_MANUFACTURING_PRODUCT_PROFILE: CompanyProductServiceProfile = {
+  categories: [
+    {
+      category: 'Fabricated Components',
+      productsServices: 'Precision fabricated metal components and subassemblies for industrial equipment.',
+      primaryCustomers: ['Northstar Industrial Supply', 'Pioneer Equipment Group', 'Summit Distribution'],
+    },
+    {
+      category: 'Machined Parts',
+      productsServices: 'CNC-machined production parts, replacement components, and configured kits.',
+      primaryCustomers: ['Pioneer Equipment Group', 'Keystone Manufacturing', 'Allied Service Partners'],
+    },
+    {
+      category: 'Assembly Systems',
+      productsServices: 'Configured assemblies and production-line subassemblies for OEM customers.',
+      primaryCustomers: ['Northstar Industrial Supply', 'Metro Operations Group', 'Keystone Manufacturing'],
+    },
+    {
+      category: 'Industrial Controls',
+      productsServices: 'Control panels, sensors, electrical components, and automation retrofit kits.',
+      primaryCustomers: ['Summit Distribution', 'Metro Operations Group', 'Allied Service Partners'],
+    },
+    {
+      category: 'Replacement Parts',
+      productsServices: 'Aftermarket replacement parts, repair kits, and service inventory.',
+      primaryCustomers: ['Pioneer Equipment Group', 'Allied Service Partners', 'Regional Maintenance Supply'],
+    },
+    {
+      category: 'Custom Production Runs',
+      productsServices: 'Customer-specific engineered production runs and private-label assemblies.',
+      primaryCustomers: ['Keystone Manufacturing', 'Northstar Industrial Supply', 'Regional Maintenance Supply'],
+    },
+  ],
 };
 
 const COMPANY_REPORTING_PROFILES: Record<string, CompanyReportingProfile> = {
@@ -525,6 +561,14 @@ function getCompanyProductServiceProfile(companyId: string): CompanyProductServi
   return COMPANY_PRODUCT_SERVICE_PROFILES[String(companyId || '').trim()] || null;
 }
 
+function resolveCompanyProductServiceProfile(
+  companyId: string,
+  sectorCategory?: string | null,
+): CompanyProductServiceProfile | null {
+  return getCompanyProductServiceProfile(companyId)
+    || (normalizeSectorCategory(sectorCategory) === '32' ? DEFAULT_MANUFACTURING_PRODUCT_PROFILE : null);
+}
+
 function getCompanyReportingProfile(companyId: string): CompanyReportingProfile | null {
   return COMPANY_REPORTING_PROFILES[String(companyId || '').trim()] || null;
 }
@@ -645,6 +689,66 @@ function buildCompanyMockSalesPage(
         gmPct: row.gmPct,
       })),
     },
+  };
+}
+
+function buildMockCustomerHistory(records: Array<{
+  snapshotDate: string;
+  customerName: string;
+  revenue: number;
+  invoiceCount: number;
+}>) {
+  const monthMap = new Map<string, { monthKey: string; monthLabel: string; date: Date }>();
+  const customerMaps = {
+    revenue: new Map<string, { label: string; values: Record<string, number>; total: number }>(),
+    invoiceCount: new Map<string, { label: string; values: Record<string, number>; total: number }>(),
+  };
+  for (const record of records) {
+    const snapshot = new Date(record.snapshotDate);
+    if (Number.isNaN(snapshot.getTime())) continue;
+    const monthKey = mockMonthKey(snapshot);
+    if (!monthMap.has(monthKey)) {
+      monthMap.set(monthKey, {
+        monthKey,
+        monthLabel: mockMonthLabel(snapshot),
+        date: new Date(Date.UTC(snapshot.getUTCFullYear(), snapshot.getUTCMonth(), 1)),
+      });
+    }
+    (['revenue', 'invoiceCount'] as const).forEach((metricKey) => {
+      const customerMap = customerMaps[metricKey];
+      const bucket = customerMap.get(record.customerName) || {
+        label: record.customerName,
+        values: {},
+        total: 0,
+      };
+      const value = Number(record[metricKey] || 0);
+      bucket.values[monthKey] = Number(bucket.values[monthKey] || 0) + value;
+      bucket.total += value;
+      customerMap.set(record.customerName, bucket);
+    });
+  }
+  const months = Array.from(monthMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+  const buildHistory = (metricKey: 'revenue' | 'invoiceCount', label: string, valueFormat: 'currency' | 'number') => {
+    const rows = Array.from(customerMaps[metricKey].values()).sort((a, b) => b.total - a.total);
+    const values = months.reduce((totals: Record<string, number>, month) => {
+      totals[month.monthKey] = rows.reduce((sum, row) => sum + Number(row.values[month.monthKey] || 0), 0);
+      return totals;
+    }, {});
+    return {
+      months,
+      rows,
+      totalRow: {
+        label,
+        values,
+        total: Object.values(values).reduce((sum, value) => sum + Number(value || 0), 0),
+      },
+      valueFormat,
+    };
+  };
+  return {
+    source: 'force_operational_mock_data',
+    sales: buildHistory('revenue', 'Total Customer Sales', 'currency'),
+    invoiceVolume: buildHistory('invoiceCount', 'Total Customer Invoice Volume', 'number'),
   };
 }
 
@@ -1498,7 +1602,7 @@ export function getSectorArApFallbacks(sectorCategory?: string | null) {
 }
 
 function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
-  const companyProductProfile = getCompanyProductServiceProfile(req.companyId);
+  const companyProductProfile = resolveCompanyProductServiceProfile(req.companyId, req.sectorCategory);
   if (companyProductProfile) {
     const customers = uniqueCompanyCustomerGroups(companyProductProfile);
     const regions = getCompanyRegions(req.companyId);
@@ -1544,6 +1648,7 @@ function buildCustomersResponse(req: MockRequest, profile: SectorProfile) {
         topCustomers: totals.sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10),
         revenueByRegion: summarizeByDimension(limited, 'region', ['revenue', 'invoiceCount']),
         productServiceCategories: companyProductProfile.categories,
+        customerHistory: buildMockCustomerHistory(limited),
         sourceSystemSalesPage: buildCompanyMockSalesPage(req, profile, companyProductProfile),
         topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
       },
@@ -1662,6 +1767,7 @@ function buildArResponse(req: MockRequest, profile: SectorProfile) {
       days31to60,
       days61to90,
       days90plus,
+      agingAllocationAvailable: true,
     };
   });
   const latest = records[0];
@@ -1725,7 +1831,7 @@ function buildApResponse(req: MockRequest, profile: SectorProfile) {
 }
 
 function buildProductResponse(req: MockRequest, profile: SectorProfile) {
-  const companyProductProfile = getCompanyProductServiceProfile(req.companyId);
+  const companyProductProfile = resolveCompanyProductServiceProfile(req.companyId, req.sectorCategory);
   const companyCategories = companyProductProfile?.categories || [];
   const items = companyCategories.length > 0
     ? companyCategories.map((category) => category.category)
@@ -1896,7 +2002,7 @@ function buildProductResponse(req: MockRequest, profile: SectorProfile) {
 }
 
 function buildInventoryResponse(req: MockRequest, profile: SectorProfile) {
-  const companyProductProfile = getCompanyProductServiceProfile(req.companyId);
+  const companyProductProfile = resolveCompanyProductServiceProfile(req.companyId, req.sectorCategory);
   const items = companyProductProfile?.categories.length
     ? companyProductProfile.categories.map((category) => category.category)
     : topLineNames(profile.productPrefix, 8);
@@ -2047,5 +2153,94 @@ export function buildOperationalMockSummaryCounts(sectorCategory?: string | null
     cashRecords: 24,
     topLineBuckets: getTopLineBucketsForSector(sectorCategory),
     reportingProfile: companyId ? getCompanyReportingProfile(companyId) : null,
+  };
+}
+
+export function buildMockVendorReportsPayload(companyId: string, sectorCategory?: string | null) {
+  const profile = SECTOR_PROFILES[normalizeSectorCategory(sectorCategory)] || SECTOR_PROFILES['01'];
+  const categories = resolveCompanyProductServiceProfile(companyId, sectorCategory)?.categories
+    || Array.from({ length: 6 }, (_, index) => ({
+      category: `${profile.productPrefix} ${index + 1}`,
+      productsServices: '',
+      primaryCustomers: [],
+    }));
+  const vendorNames = Array.from({ length: 6 }, (_, index) => `${profile.vendorPrefix} ${index + 1}`);
+  const now = new Date();
+  const asOf = formatEstDate(now);
+  const [currentYear, currentMonth] = asOf.split('-').map(Number);
+  const months = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(Date.UTC(currentYear, currentMonth - 6 + index, 1));
+    return {
+      month: date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
+      index,
+    };
+  });
+  const catalog = vendorNames.map((vendorName, index) => {
+    const purchaseYtd = Math.round((225000 - index * 21800) * profile.scale);
+    return {
+      vendorId: `MOCK-V${String(index + 1).padStart(3, '0')}`,
+      vendorName,
+      termsCode: index % 3 === 0 ? 'Net 30' : index % 3 === 1 ? 'Net 45' : 'Net 60',
+      status: 'Active',
+      lastPurchaseDate: `${asOf.slice(0, 8)}${String(Math.max(1, 24 - index * 3)).padStart(2, '0')}`,
+      purchaseYtd,
+      purchaseLastYear: Math.round(purchaseYtd * (0.9 + (index % 3) * 0.03)),
+      payYtd: Math.round(purchaseYtd * 0.92),
+      payLastYear: Math.round(purchaseYtd * 0.86),
+    };
+  });
+  const itemVolumePricing = categories.flatMap((category, categoryIndex) =>
+    vendorNames.slice(0, 2).map((vendorName, vendorIndex) => {
+      const contractPrice = Number((42 + categoryIndex * 6.25 + vendorIndex * 1.8).toFixed(2));
+      const sgpPrice = Number((contractPrice * (0.98 + ((categoryIndex + vendorIndex) % 4) * 0.015)).toFixed(2));
+      return {
+        vendorName,
+        itemSku: `MFG-${String(categoryIndex + 100).padStart(3, '0')}`,
+        actual6mo: Math.round(850 - categoryIndex * 58 + vendorIndex * 42),
+        forecast6mo: Math.round(900 - categoryIndex * 53 + vendorIndex * 45),
+        contractPrice,
+        sgpPrice,
+        category: category.category,
+      };
+    }),
+  );
+  const paymentHistory = catalog.map((vendor, vendorIndex) => {
+    const monthlyAmounts = months.map(({ month, index }) => ({
+      month,
+      amount: Math.round((vendor.payYtd / 8) * (0.85 + ((index + vendorIndex) % 4) * 0.1)),
+    }));
+    return {
+      vendorName: vendor.vendorName,
+      totalPaid: monthlyAmounts.reduce((sum, row) => sum + row.amount, 0),
+      months: monthlyAmounts,
+    };
+  });
+  const totalSpend = paymentHistory.reduce((sum, row) => sum + row.totalPaid, 0);
+  const priceChanges = itemVolumePricing.map(({ category: _category, ...row }) => ({
+    ...row,
+    variance: Number((row.sgpPrice - row.contractPrice).toFixed(2)),
+    variancePct: row.contractPrice ? ((row.sgpPrice - row.contractPrice) / row.contractPrice) * 100 : 0,
+  }));
+  const spendByItemCategory = categories.map((category, categoryIndex) => ({
+    category: category.category,
+    spend: itemVolumePricing
+      .filter((row) => row.category === category.category)
+      .reduce((sum, row) => sum + row.actual6mo * row.contractPrice, 0)
+      + categoryIndex,
+  }));
+  return {
+    year: currentYear,
+    asOf,
+    hasData: true,
+    catalog,
+    itemVolumePricing: itemVolumePricing.map(({ category: _category, ...row }) => row),
+    paymentHistory,
+    concentration: paymentHistory.map((row) => ({
+      vendorName: row.vendorName,
+      spend: row.totalPaid,
+      sharePct: totalSpend ? (row.totalPaid / totalSpend) * 100 : 0,
+    })),
+    priceChanges,
+    spendByItemCategory,
   };
 }

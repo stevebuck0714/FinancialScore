@@ -7385,7 +7385,7 @@ export default function OperationsTab({
 
         {/* KPI Cards */}
         {isSectionEnabled('arSummaryCards') && summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, minmax(0, 1fr))', gap: '12px', marginBottom: '24px' }}>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total Open AR</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
@@ -7635,7 +7635,6 @@ export default function OperationsTab({
                         dataKey="totalDue"
                         nameKey="customerName"
                         labelLine={false}
-                        label={renderDonutLabel}
                       >
                         {unpaidByCustomer.map((entry, index) => (
                           <Cell key={`cell-${entry.customerName}-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -7668,7 +7667,7 @@ export default function OperationsTab({
             canReorder={canManageReportLayout}
             isSaving={savingReportLayout}
             onMove={moveStandardReport}
-            style={getReportPanelStyle('arContractCashFlowSummary', {})}
+            style={getReportPanelStyle('arContractCashFlowSummary', { gridColumn: '1 / -1', minWidth: 0 })}
           >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
@@ -8124,7 +8123,6 @@ export default function OperationsTab({
                   <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Invoice No.</th>
                   <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
                   <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
-                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Currency</th>
                   <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
                     Amount in currency
                   </th>
@@ -8143,7 +8141,6 @@ export default function OperationsTab({
                     <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.invoiceNo}</td>
                     <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.date}</td>
                     <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.dueDate}</td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.currency}</td>
                     <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
                       {formatCurrencyWithCents(row.amountCurrency)}
                     </td>
@@ -8156,7 +8153,7 @@ export default function OperationsTab({
                   </tr>
                 ))}
                 <tr>
-                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '700' }} colSpan={5}>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '700' }} colSpan={4}>
                     Grand total
                   </td>
                   <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
