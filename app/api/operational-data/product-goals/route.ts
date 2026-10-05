@@ -10,9 +10,11 @@ import {
   saveProductMonthlyRevenueGoalsByYear,
 } from '@/lib/operations/product-revenue-actual-db';
 import { workbookUpdatedDate } from '@/lib/operations/product-revenue-actual';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Leaves room for the post-response operational cache rebuild.
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   try {
@@ -71,6 +73,7 @@ export async function PATCH(request: NextRequest) {
         companyId,
         years: yearsBody,
       });
+      scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-goals');
       const snapshot = await loadProductGoalUpdate({ companyId, year });
       return NextResponse.json({
         ok: true,
@@ -86,6 +89,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const snapshot = await saveProductMonthlyRevenueGoals({ companyId, year, months });
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-goals');
     return NextResponse.json({
       ok: true,
       ...snapshot,

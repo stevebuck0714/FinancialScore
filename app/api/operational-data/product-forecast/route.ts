@@ -21,6 +21,7 @@ import {
 } from '@/lib/operations/product-catalog-carryforward';
 
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -151,6 +152,7 @@ export async function PUT(request: NextRequest) {
       preserveLockedMonthQtys: true,
       lines,
     });
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-forecast');
 
     const saved = await loadProductForecastLinesWithCatalog({
       companyId,

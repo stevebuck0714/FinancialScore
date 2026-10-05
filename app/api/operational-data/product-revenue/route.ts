@@ -13,6 +13,7 @@ import {
 } from '@/lib/operations/product-revenue-actual-db';
 import { workbookUpdatedDate } from '@/lib/operations/product-revenue-actual';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -104,6 +105,7 @@ export async function PUT(request: NextRequest) {
       replaceCustomer: customerId || customerName ? { customerId, customerName } : null,
       lines,
     });
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-revenue');
 
     const dataset = await loadRevenueDataset({
       companyId,

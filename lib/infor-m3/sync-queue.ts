@@ -2225,6 +2225,11 @@ async function processTask(
           runId: task.runId,
           customers: operationalTabsWarmup.customers,
           products: operationalTabsWarmup.products,
+          inventory: operationalTabsWarmup.inventory,
+          arAging: operationalTabsWarmup.arAging,
+          apAging: operationalTabsWarmup.apAging,
+          cash: operationalTabsWarmup.cash,
+          dailyFinancials: operationalTabsWarmup.dailyFinancials,
           groups: operationalTabsWarmup.groups,
         });
       }

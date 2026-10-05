@@ -17,9 +17,11 @@ import {
   serializeVendorForecastLine,
   upsertVendorForecastLines,
 } from '@/lib/operations/vendor-monthly-forecast-db';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Leaves room for the post-response operational cache rebuild.
+export const maxDuration = 300;
 
 function asText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -124,6 +126,7 @@ export async function PUT(request: NextRequest) {
       replaceVendor: { vendorId, vendorName },
       lines,
     });
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'vendor-forecast');
 
     const saved = await loadVendorForecastLines({
       companyId,

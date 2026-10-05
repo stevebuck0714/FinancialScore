@@ -15,9 +15,11 @@ import {
   normalizeVendorForecastLineInput,
   upsertVendorForecastLines,
 } from '@/lib/operations/vendor-monthly-forecast-db';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Leaves room for the post-response operational cache rebuild.
+export const maxDuration = 300;
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -110,6 +112,7 @@ export async function POST(request: NextRequest) {
         lines: group,
       });
     }
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'vendor-forecast-import');
 
     return NextResponse.json({
       ok: true,

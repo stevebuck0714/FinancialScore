@@ -8,9 +8,11 @@ import {
   workbookFromImportPayload,
 } from '@/lib/operations/product-revenue-actual-db';
 import { ensureProductRevenueForecastTables } from '@/lib/operations/product-revenue-forecast-db';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Leaves room for the post-response operational cache rebuild.
+export const maxDuration = 300;
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -62,6 +64,7 @@ export async function POST(request: NextRequest) {
 
     await Promise.all([ensureProductRevenueTables(), ensureProductRevenueForecastTables()]);
     const result = await persistParsedRevenueWorkbook({ companyId, parsed });
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-revenue-import');
 
     return NextResponse.json({
       ok: true,

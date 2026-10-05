@@ -6,9 +6,11 @@ import {
   acknowledgeInforNewIdentities,
   getInforNewIdentities,
 } from '@/lib/operations/infor-new-identities';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Leaves room for the post-response operational cache rebuild.
+export const maxDuration = 300;
 
 async function assertAccess(companyId: string): Promise<NextResponse | null> {
   let authContext;
@@ -81,6 +83,7 @@ export async function POST(request: NextRequest) {
     if (denied) return denied;
 
     const result = await acknowledgeInforNewIdentities(companyId);
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'infor-new-identities');
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     console.error('Infor new identities acknowledge failed:', error);

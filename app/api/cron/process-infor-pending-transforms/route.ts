@@ -56,7 +56,7 @@ async function fetchOperationalCacheWarmup(params: {
   origin: string;
   cronSecret: string;
   companyId: string;
-  type: 'customers' | 'products' | 'inventory';
+  type: 'customers' | 'products' | 'inventory' | 'ar-aging' | 'ap-aging' | 'cash' | 'daily-financials';
   startDate: string;
   endDate: string;
   limit: string;
@@ -194,6 +194,48 @@ async function warmReportCachesForCompany(params: {
     limit: '1000',
     sectorCategory,
   });
+  const [arAging, apAging, cash, dailyFinancials] = await Promise.all([
+    fetchOperationalCacheWarmup({
+      origin: params.origin,
+      cronSecret: params.cronSecret,
+      companyId: params.companyId,
+      type: 'ar-aging',
+      startDate: OPERATIONAL_REPORT_MIN_DATE,
+      endDate,
+      limit: '1000',
+      sectorCategory,
+    }),
+    fetchOperationalCacheWarmup({
+      origin: params.origin,
+      cronSecret: params.cronSecret,
+      companyId: params.companyId,
+      type: 'ap-aging',
+      startDate: OPERATIONAL_REPORT_MIN_DATE,
+      endDate,
+      limit: '1000',
+      sectorCategory,
+    }),
+    fetchOperationalCacheWarmup({
+      origin: params.origin,
+      cronSecret: params.cronSecret,
+      companyId: params.companyId,
+      type: 'cash',
+      startDate: OPERATIONAL_REPORT_MIN_DATE,
+      endDate,
+      limit: '1000',
+      sectorCategory,
+    }),
+    fetchOperationalCacheWarmup({
+      origin: params.origin,
+      cronSecret: params.cronSecret,
+      companyId: params.companyId,
+      type: 'daily-financials',
+      startDate: OPERATIONAL_REPORT_MIN_DATE,
+      endDate,
+      limit: '1000',
+      sectorCategory,
+    }),
+  ]);
   const wholesaleReport = sectorCategory === '42'
     ? Object.fromEntries(await Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
         reportMode,
@@ -234,6 +276,10 @@ async function warmReportCachesForCompany(params: {
       customers?.ok &&
       performanceProducts?.ok &&
       inventory?.ok &&
+      arAging?.ok &&
+      apAging?.ok &&
+      cash?.ok &&
+      dailyFinancials?.ok &&
       groups?.ok &&
       masterData?.ok &&
       executiveBriefing?.ok &&
@@ -246,6 +292,10 @@ async function warmReportCachesForCompany(params: {
     customers,
     performanceProducts,
     inventory,
+    arAging,
+    apAging,
+    cash,
+    dailyFinancials,
     wholesaleReport,
     groups,
     masterData,

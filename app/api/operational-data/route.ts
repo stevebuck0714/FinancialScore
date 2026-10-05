@@ -111,6 +111,15 @@ const OPERATIONAL_CACHEABLE_TYPES = new Set([
   'unit-economics',
   'summary',
 ]);
+const CRON_OPERATIONAL_CACHE_WARMUP_TYPES = new Set([
+  'customers',
+  'products',
+  'inventory',
+  'ar-aging',
+  'ap-aging',
+  'cash',
+  'daily-financials',
+]);
 
 async function companyHasAnyRealOperationalData(companyId: string): Promise<boolean> {
   const optionalFindFirst = async (delegate: any): Promise<{ id: string } | null> => {
@@ -3331,23 +3340,12 @@ export async function GET(request: NextRequest) {
       String(sectorCategoryParam || '').trim() === '42' &&
       hasWholesaleProductsReportModeParam &&
       boundedLimit >= 5000;
-    const isCronProductsPerformanceWarmup =
+    const isCronOperationalPageWarmup =
       hasCronCacheWarmupAuth &&
-      type === 'products' &&
+      CRON_OPERATIONAL_CACHE_WARMUP_TYPES.has(String(type || '').trim()) &&
       frequency === 'daily' &&
-      boundedLimit === 500;
-    const isCronCustomersWarmup =
-      hasCronCacheWarmupAuth &&
-      type === 'customers' &&
-      frequency === 'daily' &&
-      boundedLimit === 500;
-    const isCronInventoryWarmup =
-      hasCronCacheWarmupAuth &&
-      type === 'inventory' &&
-      frequency === 'daily' &&
-      boundedLimit === 1000;
-    const isCronProductsCacheWarmup = isCronWholesaleProductsWarmup || isCronProductsPerformanceWarmup;
-    const isCronOperationalCacheWarmup = isCronProductsCacheWarmup || isCronCustomersWarmup || isCronInventoryWarmup;
+      ((type === 'customers' || type === 'products') ? boundedLimit === 500 : boundedLimit === 1000);
+    const isCronOperationalCacheWarmup = isCronWholesaleProductsWarmup || isCronOperationalPageWarmup;
 
     // SECURITY: Require normal user auth unless this is the tightly scoped cron
     // warmup that rebuilds wholesale product caches after snapshot hydration.
@@ -3390,7 +3388,7 @@ export async function GET(request: NextRequest) {
     }
 
     // SECURITY: Validate access to company data. Cron warmups are authorized by
-    // CRON_SECRET above and limited to daily product/customer cache requests.
+    // CRON_SECRET above and limited to the dashboard's default daily cache keys.
     if (!isCronOperationalCacheWarmup) {
       const hasAccess = await validateCompanyAccess(companyId);
       if (!hasAccess) {

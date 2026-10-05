@@ -6,6 +6,7 @@ import {
   getCompanyProductMarginSettings,
   updateCompanyProductMarginSettings,
 } from '@/lib/operations/product-margin-settings';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -81,6 +82,7 @@ export async function PATCH(request: NextRequest) {
     if (denied) return denied;
 
     const settings = await updateCompanyProductMarginSettings(companyId, body.operatingExpensePct);
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-margin-settings');
     return NextResponse.json({ ok: true, ...settings });
   } catch (error) {
     console.error('Product margin settings save failed:', error);

@@ -12,6 +12,7 @@ import {
   type CompanyItemFreightPatch,
 } from '@/lib/operations/item-freight-overlay';
 import type { SgpFreightAssumptions } from '@/lib/operational/sgp-freight-calc';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -113,6 +114,7 @@ export async function PATCH(request: NextRequest) {
     await ensureCompanyItemFreightTable();
     if (assumptionsPatch) {
       await updateCompanyItemFreightSettings(companyId, assumptionsPatch);
+      scheduleOperationalCacheWarmupAfterSave(request, companyId, 'sgp-freight');
     }
     const items = patches.length
       ? await updateCompanyItemFreight(companyId, patches)

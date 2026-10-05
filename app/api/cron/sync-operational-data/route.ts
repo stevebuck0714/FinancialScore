@@ -7,6 +7,10 @@ import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutive
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { autoQueueDueQuickBooksDesktopFinancialJobs } from '@/lib/quickbooks-desktop/auto-queue';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
+import {
+  ATLANTIC_PRECISION_COMPANY_ID,
+  warmAtlanticOperationalTabsCaches,
+} from '@/lib/operations/product-group-report-warmup';
 import { APP_TIME_ZONE } from '@/lib/time/eastern';
 
 export const maxDuration = 300;
@@ -356,6 +360,8 @@ export async function GET(request: NextRequest) {
         let executiveBriefingError: string | null = null;
         let industryBriefWarmed = false;
         let industryBriefError: string | null = null;
+        let operationalPagesWarmed = false;
+        let operationalPagesWarmupError: string | null = null;
 
         if (!isQuickBooksDesktop && dailyRecords.length > 0) {
           const ingestResult = await ingestDailyFinancialSnapshots({
@@ -406,6 +412,28 @@ export async function GET(request: NextRequest) {
         });
 
         if (syncResult.success) {
+          if (connection.companyId === ATLANTIC_PRECISION_COMPANY_ID) {
+            const operationalPagesWarmup = await warmAtlanticOperationalTabsCaches({
+              baseUrl: request.nextUrl.origin,
+            });
+            operationalPagesWarmed = operationalPagesWarmup.ok;
+            operationalPagesWarmupError = operationalPagesWarmup.ok
+              ? null
+              : 'One or more Atlantic operational-page cache warmups failed.';
+            if (!operationalPagesWarmup.ok) {
+              console.warn('Atlantic operational-page cache warm-up failed after nightly data load:', {
+                companyId: connection.companyId,
+                customers: operationalPagesWarmup.customers,
+                products: operationalPagesWarmup.products,
+                inventory: operationalPagesWarmup.inventory,
+                arAging: operationalPagesWarmup.arAging,
+                apAging: operationalPagesWarmup.apAging,
+                cash: operationalPagesWarmup.cash,
+                dailyFinancials: operationalPagesWarmup.dailyFinancials,
+                groups: operationalPagesWarmup.groups,
+              });
+            }
+          }
           if (shouldWarmDailyExecutiveBriefingForAccountingSystem(connection.company?.accountingSystem)) {
             const briefingWarmup = await warmDailyExecutiveBriefingCache({
               companyId: connection.companyId,
@@ -444,6 +472,8 @@ export async function GET(request: NextRequest) {
           executiveBriefingError,
           industryBriefWarmed,
           industryBriefError,
+          operationalPagesWarmed,
+          operationalPagesWarmupError,
         });
         
       } catch (error: any) {

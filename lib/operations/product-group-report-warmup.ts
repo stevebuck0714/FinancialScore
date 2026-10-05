@@ -2,6 +2,7 @@ import { addEstCalendarDays, formatEstDate, previousEstCalendarDate } from '@/li
 
 export const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
 const WARMUP_TIMEOUT_MS = 90_000;
+const CUSTOMER_CONCENTRATION_WARMUP_TIMEOUT_MS = 180_000;
 
 export type ProductGroupReportWarmupResult = {
   ok: boolean;
@@ -18,10 +19,24 @@ type OperationalTabWarmupResult = {
   error?: string;
 };
 
+type AtlanticOperationalCacheType =
+  | 'customers'
+  | 'products'
+  | 'inventory'
+  | 'ar-aging'
+  | 'ap-aging'
+  | 'cash'
+  | 'daily-financials';
+
 export type AtlanticOperationalTabsWarmupResult = {
   ok: boolean;
   customers: OperationalTabWarmupResult;
   products: OperationalTabWarmupResult;
+  inventory: OperationalTabWarmupResult;
+  arAging: OperationalTabWarmupResult;
+  apAging: OperationalTabWarmupResult;
+  cash: OperationalTabWarmupResult;
+  dailyFinancials: OperationalTabWarmupResult;
   groups: ProductGroupReportWarmupResult;
 };
 
@@ -99,10 +114,12 @@ export async function warmAtlanticProductGroupReportCache(
 async function warmOperationalTab(params: {
   origin: string;
   cronSecret: string;
-  type: 'customers' | 'products';
+  type: AtlanticOperationalCacheType;
   startDate: string;
   endDate: string;
   limit: string;
+  refreshConcentration?: boolean;
+  timeoutMs?: number;
 }): Promise<OperationalTabWarmupResult> {
   const url = new URL('/api/operational-data', params.origin);
   url.search = new URLSearchParams({
@@ -114,9 +131,10 @@ async function warmOperationalTab(params: {
     limit: params.limit,
     sectorCategory: '42',
     cacheWarmup: '1',
+    ...(params.refreshConcentration ? { refreshConcentration: '1' } : {}),
   }).toString();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), WARMUP_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), params.timeoutMs ?? WARMUP_TIMEOUT_MS);
   const startedAt = Date.now();
   try {
     const response = await fetch(url, {
@@ -144,8 +162,8 @@ async function warmOperationalTab(params: {
 }
 
 /**
- * Builds Atlantic's default 90-day Customers, Products, and Groups tab caches
- * concurrently once the nightly import has completed.
+ * Builds Atlantic's default operational-page caches once the source import has
+ * completed, so the first user to open any operational page gets a ready payload.
  */
 export async function warmAtlanticOperationalTabsCaches(
   options: { baseUrl?: string } = {}
@@ -161,21 +179,73 @@ export async function warmAtlanticOperationalTabsCaches(
       ok: false,
       customers: unavailable,
       products: unavailable,
+      inventory: unavailable,
+      arAging: unavailable,
+      apAging: unavailable,
+      cash: unavailable,
+      dailyFinancials: unavailable,
       groups: { ...unavailable, year: Number(formatEstDate().slice(0, 4)) },
     };
   }
 
   const endDate = previousEstCalendarDate();
   const startDate = addEstCalendarDays(endDate, -90);
-  const [customers, products, groups] = await Promise.all([
-    warmOperationalTab({ origin, cronSecret, type: 'customers', startDate, endDate, limit: '500' }),
-    warmOperationalTab({ origin, cronSecret, type: 'products', startDate, endDate, limit: 'all' }),
+  const [
+    customers,
+    products,
+    inventory,
+    arAging,
+    apAging,
+    cash,
+    dailyFinancials,
+    groups,
+  ] = await Promise.all([
+    // Customer concentration has its own cache and is embedded into the
+    // Customers payload, so build it before the Customers page cache.
+    warmOperationalTab({
+      origin,
+      cronSecret,
+      type: 'customers',
+      startDate,
+      endDate,
+      limit: '500',
+      refreshConcentration: true,
+      timeoutMs: CUSTOMER_CONCENTRATION_WARMUP_TIMEOUT_MS,
+    }).then(async (concentration) => {
+      const customersPage = await warmOperationalTab({ origin, cronSecret, type: 'customers', startDate, endDate, limit: '500' });
+      return {
+        ...customersPage,
+        ok: concentration.ok && customersPage.ok,
+        error: [concentration.error && `concentration: ${concentration.error}`, customersPage.error]
+          .filter(Boolean)
+          .join(' | ') || undefined,
+      };
+    }),
+    warmOperationalTab({ origin, cronSecret, type: 'products', startDate, endDate, limit: '500' }),
+    warmOperationalTab({ origin, cronSecret, type: 'inventory', startDate, endDate, limit: '1000' }),
+    warmOperationalTab({ origin, cronSecret, type: 'ar-aging', startDate, endDate, limit: '1000' }),
+    warmOperationalTab({ origin, cronSecret, type: 'ap-aging', startDate, endDate, limit: '1000' }),
+    warmOperationalTab({ origin, cronSecret, type: 'cash', startDate, endDate, limit: '1000' }),
+    warmOperationalTab({ origin, cronSecret, type: 'daily-financials', startDate, endDate, limit: '1000' }),
     warmAtlanticProductGroupReportCache({ baseUrl: origin }),
   ]);
   return {
-    ok: customers.ok && products.ok && groups.ok,
+    ok:
+      customers.ok &&
+      products.ok &&
+      inventory.ok &&
+      arAging.ok &&
+      apAging.ok &&
+      cash.ok &&
+      dailyFinancials.ok &&
+      groups.ok,
     customers,
     products,
+    inventory,
+    arAging,
+    apAging,
+    cash,
+    dailyFinancials,
     groups,
   };
 }

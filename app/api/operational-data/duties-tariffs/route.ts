@@ -12,6 +12,7 @@ import {
   readDutiesTariffsCache,
   writeDutiesTariffsCache,
 } from '@/lib/hts/duties-tariffs-cache';
+import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -128,6 +129,7 @@ export async function PATCH(request: NextRequest) {
     });
     const payload = await buildDutiesTariffsPayload(companyId);
     await writeDutiesTariffsCache(companyId, payload);
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'duties-tariffs-save');
     return NextResponse.json({ ok: true, companyId, updated: patches.length, items: payload.items, applied, monthlyCogs: payload.monthlyCogs });
   } catch (error) {
     console.error('Duties & tariffs update failed:', error);
@@ -185,6 +187,7 @@ export async function POST(request: NextRequest) {
       });
       const payload = await buildDutiesTariffsPayload(companyId);
       await writeDutiesTariffsCache(companyId, payload);
+      scheduleOperationalCacheWarmupAfterSave(request, companyId, 'duties-tariffs-import');
       return NextResponse.json({
         ok: true,
         companyId,
@@ -214,6 +217,7 @@ export async function POST(request: NextRequest) {
       const overlaid = await overlayDutyIdentityFromInfor(companyId);
       const resetPayload = await buildDutiesTariffsPayload(companyId);
       await writeDutiesTariffsCache(companyId, resetPayload);
+      scheduleOperationalCacheWarmupAfterSave(request, companyId, 'duties-tariffs-reset');
       return NextResponse.json({
         ok: true,
         companyId,
@@ -235,6 +239,7 @@ export async function POST(request: NextRequest) {
     });
     const payload = await buildDutiesTariffsPayload(companyId);
     await writeDutiesTariffsCache(companyId, payload);
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'duties-tariffs-rate-refresh');
     return NextResponse.json({ ok: true, companyId, ...result, items: payload.items, applied, monthlyCogs: payload.monthlyCogs });
   } catch (error) {
     console.error('Duties & tariffs rate refresh failed:', error);

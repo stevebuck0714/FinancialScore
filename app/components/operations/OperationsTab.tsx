@@ -5666,7 +5666,7 @@ export default function OperationsTab({
           canReorder={canManageReportLayout}
           isSaving={savingReportLayout}
           onMove={moveStandardReport}
-          style={getReportPanelStyle('customersTop10MonthlyTrend', {})}
+          style={getReportPanelStyle('customersTop10MonthlyTrend', { gridColumn: '1 / -1', minWidth: 0 })}
         >
           <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
@@ -5757,10 +5757,6 @@ export default function OperationsTab({
                         topTrendCustomers.find((customer) => customer.key === String(name))?.customerName || String(name),
                       ]}
                       labelFormatter={(label) => String(label)}
-                    />
-                    <Legend
-                      formatter={(value) => topTrendCustomers.find((customer) => customer.key === String(value))?.customerName || String(value)}
-                      wrapperStyle={{ fontSize: '11px' }}
                     />
                     {visibleTopTrendCustomers.map((customer) => {
                       const customerIndex = topTrendCustomers.findIndex((row) => row.key === customer.key);
