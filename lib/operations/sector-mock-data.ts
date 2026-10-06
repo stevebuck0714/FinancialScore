@@ -433,7 +433,7 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
     { key: 'projects_engagements', label: 'Projects / Engagements (delivery, margin)' },
     { key: 'time_utilization', label: 'Workforce / Time (census, hours, PTO)' },
     { key: 'hiring', label: 'Hiring / Onboarding' },
-    { key: 'sales_pipeline', label: 'Sales / Pipeline (bookings, backlog)' },
+    { key: 'hubspot_sales', label: 'Sales / Pipeline' },
     { key: 'clients_customers', label: 'Clients / Customers (retention, expansion)' },
   ],
   '56': [
@@ -2245,10 +2245,43 @@ function buildApBalanceResponse(req: MockRequest, profile: SectorProfile) {
   };
 }
 
+function buildPayrollSalesPipelineMock(profile: SectorProfile) {
+  const stages = [
+    { stage: 'Discovery', deals: 18, conversionProbability: 0.2 },
+    { stage: 'Qualified', deals: 12, conversionProbability: 0.4 },
+    { stage: 'Proposal', deals: 7, conversionProbability: 0.65 },
+    { stage: 'Contract Review', deals: 4, conversionProbability: 0.85 },
+  ].map((row, index) => {
+    const pipelineValue = Math.round(metric(148000 - index * 19500, index + 1, profile.scale));
+    return {
+      ...row,
+      pipelineValue,
+      weightedPipelineValue: Math.round(pipelineValue * row.conversionProbability),
+    };
+  });
+
+  return {
+    source: 'force_operational_mock_data',
+    stages,
+    dealCount: stages.reduce((sum, row) => sum + row.deals, 0),
+    pipelineValue: stages.reduce((sum, row) => sum + row.pipelineValue, 0),
+    weightedPipelineValue: stages.reduce((sum, row) => sum + row.weightedPipelineValue, 0),
+  };
+}
+
 export function buildOperationalMockResponse(req: MockRequest) {
   const code = normalizeSectorCategory(req.sectorCategory);
   const profile = SECTOR_PROFILES[code] || SECTOR_PROFILES['01'];
-  if (req.type === 'customers') return withCompanyReportingProfile(req, buildCustomersResponse(req, profile));
+  if (req.type === 'customers') {
+    const response = buildCustomersResponse(req, profile);
+    return withCompanyReportingProfile(req, {
+      ...response,
+      summary: {
+        ...response.summary,
+        ...(code === '54' ? { salesPipeline: buildPayrollSalesPipelineMock(profile) } : {}),
+      },
+    });
+  }
   if (req.type === 'ar-aging') return withCompanyReportingProfile(req, buildArResponse(req, profile));
   if (req.type === 'ap-aging') return withCompanyReportingProfile(req, buildApResponse(req, profile));
   if (req.type === 'products') return withCompanyReportingProfile(req, buildProductResponse(req, profile));

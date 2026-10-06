@@ -156,7 +156,7 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', gridColumn: '1 / -1', order: 6 }}>
       <div style={{ padding: '16px', background: '#f8fafc', border: '1px solid #bae6fd', borderRadius: '8px' }}>
         <h4 style={{ margin: '0 0 6px', color: '#0c4a6e' }}>HubSpot</h4>
-        <div style={{ margin: '0 0 12px', color: '#475569', fontSize: '13px', fontWeight: 600 }}>HubSpot setup for Cogent Scientific</div>
+        <div style={{ margin: '0 0 12px', color: '#475569', fontSize: '13px', fontWeight: 600 }}>HubSpot operational connection setup</div>
         <p style={{ margin: '0 0 14px', color: '#475569', fontSize: '12px' }}>HubSpot operational connection</p>
         <div style={{ fontSize: '12px', color: status === 'ACTIVE' ? '#166534' : '#92400e', fontWeight: 700, marginBottom: '10px' }}>
           {status === 'ACTIVE' ? `Connected${lastSyncAt ? ` · Last synced ${formatEstDateTime(lastSyncAt)}` : ''}` : 'Not connected'}

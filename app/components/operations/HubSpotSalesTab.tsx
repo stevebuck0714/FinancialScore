@@ -6,6 +6,7 @@ import SortableReportCollection, { type SortableReportCollectionItem } from './S
 
 type Props = {
   selectedCompanyId: string;
+  useMockData?: boolean;
   operationalHubSections?: Record<string, boolean>;
   canReorderReports?: boolean;
   isSavingReportLayout?: boolean;
@@ -15,9 +16,90 @@ type Props = {
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat('en-US');
+const CTR_PAYROLL_SERVICES_COMPANY_ID = 'cmtu0xvr20000l204ooks14kn';
+
+function buildCtrPayrollMockHubSpotData() {
+  const asOf = new Date().toISOString();
+  const companies = [
+    { id: 'ctr-company-1', properties: { name: 'Northstar Benefits Group', industry: 'Professional Services', lifecyclestage: 'opportunity', type: 'Prospect', hs_last_sales_activity_timestamp: asOf } },
+    { id: 'ctr-company-2', properties: { name: 'Summit Workforce Solutions', industry: 'Staffing', lifecyclestage: 'marketingqualifiedlead', type: 'Prospect', hs_last_sales_activity_timestamp: asOf } },
+    { id: 'ctr-company-3', properties: { name: 'Harborview Medical Group', industry: 'Healthcare', lifecyclestage: 'salesqualifiedlead', type: 'Prospect', hs_last_sales_activity_timestamp: asOf } },
+    { id: 'ctr-company-4', properties: { name: 'Pinecrest Manufacturing', industry: 'Manufacturing', lifecyclestage: 'opportunity', type: 'Prospect', hs_last_sales_activity_timestamp: asOf } },
+    { id: 'ctr-company-5', properties: { name: 'Crescent Logistics', industry: 'Transportation', lifecyclestage: 'salesqualifiedlead', type: 'Prospect', hs_last_sales_activity_timestamp: asOf } },
+    { id: 'ctr-company-6', properties: { name: 'Evergreen Home Services', industry: 'Home Services', lifecyclestage: 'marketingqualifiedlead', type: 'Prospect', hs_last_sales_activity_timestamp: asOf } },
+    { id: 'ctr-company-7', properties: { name: 'Stonebridge Advisory', industry: 'Professional Services', lifecyclestage: 'subscriber', type: 'Prospect', hs_last_sales_activity_timestamp: asOf } },
+    { id: 'ctr-company-8', properties: { name: 'Blue Ridge Hospitality', industry: 'Hospitality', lifecyclestage: 'opportunity', type: 'Prospect', hs_last_sales_activity_timestamp: asOf } },
+  ];
+  const contacts = [
+    { id: 'ctr-contact-1', properties: { firstname: 'Avery', lastname: 'Morgan', email: 'avery.morgan@example.com', phone: '555-0101', jobtitle: 'Chief Financial Officer', city: 'Tampa', state: 'FL', country: 'US', lifecyclestage: 'opportunity', hs_analytics_source: 'Referral', createdate: asOf, hs_last_sales_activity_timestamp: asOf }, associations: { companies: { results: [{ id: 'ctr-company-1' }] } } },
+    { id: 'ctr-contact-2', properties: { firstname: 'Jordan', lastname: 'Lee', email: 'jordan.lee@example.com', phone: '555-0102', jobtitle: 'VP of Operations', city: 'Atlanta', state: 'GA', country: 'US', lifecyclestage: 'salesqualifiedlead', hs_analytics_source: 'Organic search', createdate: asOf, hs_last_sales_activity_timestamp: asOf }, associations: { companies: { results: [{ id: 'ctr-company-2' }] } } },
+    { id: 'ctr-contact-3', properties: { firstname: 'Casey', lastname: 'Rivera', email: 'casey.rivera@example.com', phone: '555-0103', jobtitle: 'Payroll Director', city: 'Charlotte', state: 'NC', country: 'US', lifecyclestage: 'marketingqualifiedlead', hs_analytics_source: 'Event', createdate: asOf, hs_last_sales_activity_timestamp: asOf }, associations: { companies: { results: [{ id: 'ctr-company-3' }] } } },
+    { id: 'ctr-contact-4', properties: { firstname: 'Riley', lastname: 'Chen', email: 'riley.chen@example.com', phone: '555-0104', jobtitle: 'Controller', city: 'Nashville', state: 'TN', country: 'US', lifecyclestage: 'opportunity', hs_analytics_source: 'Referral', createdate: asOf, hs_last_sales_activity_timestamp: asOf }, associations: { companies: { results: [{ id: 'ctr-company-4' }] } } },
+    { id: 'ctr-contact-5', properties: { firstname: 'Morgan', lastname: 'Patel', email: 'morgan.patel@example.com', phone: '555-0105', jobtitle: 'Human Resources Director', city: 'Jacksonville', state: 'FL', country: 'US', lifecyclestage: 'salesqualifiedlead', hs_analytics_source: 'Partner', createdate: asOf, hs_last_sales_activity_timestamp: asOf }, associations: { companies: { results: [{ id: 'ctr-company-5' }] } } },
+    { id: 'ctr-contact-6', properties: { firstname: 'Quinn', lastname: 'Baker', email: 'quinn.baker@example.com', phone: '555-0106', jobtitle: 'Owner', city: 'Orlando', state: 'FL', country: 'US', lifecyclestage: 'marketingqualifiedlead', hs_analytics_source: 'Paid search', createdate: asOf, hs_last_sales_activity_timestamp: asOf }, associations: { companies: { results: [{ id: 'ctr-company-6' }] } } },
+    { id: 'ctr-contact-7', properties: { firstname: 'Parker', lastname: 'Wright', email: 'parker.wright@example.com', phone: '555-0107', jobtitle: 'Managing Partner', city: 'Raleigh', state: 'NC', country: 'US', lifecyclestage: 'subscriber', hs_analytics_source: 'Organic search', createdate: asOf, hs_last_sales_activity_timestamp: asOf }, associations: { companies: { results: [{ id: 'ctr-company-7' }] } } },
+    { id: 'ctr-contact-8', properties: { firstname: 'Drew', lastname: 'Santos', email: 'drew.santos@example.com', phone: '555-0108', jobtitle: 'General Manager', city: 'Savannah', state: 'GA', country: 'US', lifecyclestage: 'opportunity', hs_analytics_source: 'Event', createdate: asOf, hs_last_sales_activity_timestamp: asOf }, associations: { companies: { results: [{ id: 'ctr-company-8' }] } } },
+  ];
+  const activityDetails = [
+    { id: 'ctr-activity-1', type: 'Call', subject: 'Discovery call — payroll requirements', status: 'Completed', owner: 'Morgan Smith', timestamp: asOf, durationSeconds: 1800 },
+    { id: 'ctr-activity-2', type: 'Meeting', subject: 'Demo — employer onboarding workflow', status: 'Completed', owner: 'Taylor Davis', timestamp: asOf, durationSeconds: 2700 },
+    { id: 'ctr-activity-3', type: 'Task', subject: 'Send pricing proposal', status: 'Open', owner: 'Morgan Smith', timestamp: asOf, durationSeconds: null },
+    { id: 'ctr-activity-4', type: 'Email', subject: 'Follow up on payroll tax questions', status: 'Completed', owner: 'Taylor Davis', timestamp: asOf, durationSeconds: null },
+    { id: 'ctr-activity-5', type: 'Call', subject: 'Review multi-state payroll requirements', status: 'Completed', owner: 'Morgan Smith', timestamp: asOf, durationSeconds: 2100 },
+    { id: 'ctr-activity-6', type: 'Meeting', subject: 'Proposal review with finance team', status: 'Scheduled', owner: 'Taylor Davis', timestamp: asOf, durationSeconds: 3600 },
+    { id: 'ctr-activity-7', type: 'Task', subject: 'Prepare implementation timeline', status: 'Open', owner: 'Morgan Smith', timestamp: asOf, durationSeconds: null },
+    { id: 'ctr-activity-8', type: 'Email', subject: 'Share client reference materials', status: 'Completed', owner: 'Taylor Davis', timestamp: asOf, durationSeconds: null },
+    { id: 'ctr-activity-9', type: 'Call', subject: 'Contract and renewal terms review', status: 'Completed', owner: 'Morgan Smith', timestamp: asOf, durationSeconds: 1500 },
+    { id: 'ctr-activity-10', type: 'Meeting', subject: 'Executive pricing discussion', status: 'Scheduled', owner: 'Taylor Davis', timestamp: asOf, durationSeconds: 2400 },
+  ];
+  const stages = [
+    { stage: 'Discovery', dealCount: 14, pipelineValue: 322000 },
+    { stage: 'Qualified', dealCount: 10, pipelineValue: 256000 },
+    { stage: 'Proposal', dealCount: 6, pipelineValue: 172000 },
+    { stage: 'Contract Review', dealCount: 4, pipelineValue: 92000 },
+  ];
+
+  return {
+    isMockData: true,
+    summary: { asOf, totalDeals: 34, pipelineValue: 842000, wonRevenue: 218000, activityCount: activityDetails.length },
+    stages,
+    reps: [
+      { owner: 'Morgan Smith', openPipeline: 464000, wonRevenue: 134000 },
+      { owner: 'Taylor Davis', openPipeline: 378000, wonRevenue: 84000 },
+    ],
+    activities: [
+      { type: 'call', count: 28 },
+      { type: 'meeting', count: 17 },
+      { type: 'email', count: 34 },
+      { type: 'task', count: 23 },
+    ],
+    companies: { records: companies },
+    contacts: { records: contacts },
+    activityDetails,
+    crmReports: {
+      candidateEmployerLinks: { employerLinks: contacts.length },
+      engagementCoverage: { contactsWithSalesActivity: contacts.length },
+      companyIndustry: [
+        { industry: 'Professional Services', count: 1 },
+        { industry: 'Staffing', count: 1 },
+        { industry: 'Healthcare', count: 1 },
+      ],
+      activityByOwner: [
+        { owner: 'Morgan Smith', count: 2 },
+        { owner: 'Taylor Davis', count: 1 },
+      ],
+      activityByStatus: [
+        { status: 'Completed', count: 2 },
+        { status: 'Open', count: 1 },
+      ],
+      activityByMonth: [{ period: formatEstDateLabel(asOf), count: activityDetails.length }],
+    },
+  };
+}
 
 export default function HubSpotSalesTab({
   selectedCompanyId,
+  useMockData = false,
   operationalHubSections = {},
   canReorderReports = false,
   isSavingReportLayout = false,
@@ -45,12 +127,15 @@ export default function HubSpotSalesTab({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError('');
-    fetch(`/api/operational-system-integrations/hubspot/sales?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload?.error || 'Failed to load HubSpot sales data.');
-        return payload;
-      })
+    const salesDataRequest = useMockData || selectedCompanyId === CTR_PAYROLL_SERVICES_COMPANY_ID
+      ? Promise.resolve(buildCtrPayrollMockHubSpotData())
+      : fetch(`/api/operational-system-integrations/hubspot/sales?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload?.error || 'Failed to load HubSpot sales data.');
+          return payload;
+        });
+    salesDataRequest
       .then((payload) => { if (!cancelled) setData(payload); })
       .catch((loadError: Error) => { if (!cancelled) setError(loadError.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -130,8 +215,8 @@ export default function HubSpotSalesTab({
   };
 
   return <div style={{ width: '100%', boxSizing: 'border-box', padding: '24px' }}>
-    <div style={{ marginBottom: '18px' }}><h2 style={{ margin: '0 0 6px', color: '#0f172a', fontSize: '22px' }}>Talent & Employer Intelligence</h2><div style={{ color: '#64748b', fontSize: '13px' }}>HubSpot sales CRM activity · As of {summary.asOf ? formatEstDateTime(summary.asOf) : '—'}</div></div>
-    {sectionEnabled('salesPipelineSummary') && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(150px, 1fr))', gap: '12px', marginBottom: '16px' }}>{[['Candidates', number.format(Number(data?.contacts?.records?.length || 0))], ['Employer Companies', number.format(Number(data?.companies?.records?.length || 0))], ['Candidate–Employer Links', number.format(Number(crmReports.candidateEmployerLinks?.employerLinks || 0))], ['Candidates Recently Touched', number.format(Number(crmReports.engagementCoverage?.contactsWithSalesActivity || 0))], ['Sales Activities', number.format(Number(summary.activityCount || 0))]].map(([label, value]) => <div key={label} style={{ ...reportStyle, marginBottom: 0 }}><div style={{ color: '#64748b', fontSize: '12px', fontWeight: 700 }}>{label}</div><div style={{ color: '#0f172a', fontSize: '22px', fontWeight: 800, marginTop: '5px' }}>{value}</div></div>)}</div>}
+    <div style={{ marginBottom: '18px' }}><h2 style={{ margin: '0 0 6px', color: '#0f172a', fontSize: '22px' }}>{data?.isMockData ? 'Sales & Pipeline' : 'Talent & Employer Intelligence'}</h2><div style={{ color: '#64748b', fontSize: '13px' }}>{data?.isMockData ? 'Sample HubSpot sales pipeline data for CTR Payroll Services' : 'HubSpot sales CRM activity'} · As of {summary.asOf ? formatEstDateTime(summary.asOf) : '—'}</div></div>
+    {sectionEnabled('salesPipelineSummary') && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(150px, 1fr))', gap: '12px', marginBottom: '16px' }}>{(data?.isMockData ? [['Open Deals', number.format(Number(summary.totalDeals || 0))], ['Pipeline Value', money.format(Number(summary.pipelineValue || 0))], ['Weighted Pipeline', money.format(Number(data?.stages?.reduce((sum: number, stage: any) => sum + Number(stage.pipelineValue || 0) * ({ Discovery: 0.2, Qualified: 0.4, Proposal: 0.65, 'Contract Review': 0.85 }[stage.stage] || 0), 0) || 0))], ['Won Revenue', money.format(Number(summary.wonRevenue || 0))], ['Sales Activities', number.format(Number(summary.activityCount || 0))]] : [['Candidates', number.format(Number(data?.contacts?.records?.length || 0))], ['Employer Companies', number.format(Number(data?.companies?.records?.length || 0))], ['Candidate–Employer Links', number.format(Number(crmReports.candidateEmployerLinks?.employerLinks || 0))], ['Candidates Recently Touched', number.format(Number(crmReports.engagementCoverage?.contactsWithSalesActivity || 0))], ['Sales Activities', number.format(Number(summary.activityCount || 0))]]).map(([label, value]) => <div key={label} style={{ ...reportStyle, marginBottom: 0 }}><div style={{ color: '#64748b', fontSize: '12px', fontWeight: 700 }}>{label}</div><div style={{ color: '#0f172a', fontSize: '22px', fontWeight: 800, marginTop: '5px' }}>{value}</div></div>)}</div>}
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}><input value={companySearch} onChange={(event) => { setCompanySearch(event.target.value); setCompanyPage(0); }} placeholder="Search employers" /><select value={selectedEmployer} onChange={(event) => { setSelectedEmployer(event.target.value); setContactPage(0); }}><option value="">All current employers</option>{employerOptions.map((employer) => <option key={employer} value={employer}>{employer}</option>)}</select><input value={contactSearch} onChange={(event) => { setContactSearch(event.target.value); setContactPage(0); }} placeholder="Search candidates" /><input value={activitySearch} onChange={(event) => { setActivitySearch(event.target.value); setActivityPage(0); }} placeholder="Search activities" /></div>
     <SortableReportCollection items={reportItems} persistedOrder={reportOrder} canReorder={canReorderReports} isSaving={isSavingReportLayout} onReorder={handleReportReorder} />
   </div>;

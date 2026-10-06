@@ -137,7 +137,7 @@ const SECTOR_BODY_TABS: Record<string, SectorMasterTab[]> = {
     { key: 'ap', label: 'AP' },
     { key: 'projects_engagements', label: 'Projects / Engagements' },
     { key: 'time_utilization', label: 'Time & Utilization' },
-    { key: 'sales_pipeline', label: 'Sales / Pipeline' },
+    { key: 'hubspot_sales', label: 'Sales / Pipeline' },
     { key: 'clients_customers', label: 'Clients / Customers' },
   ],
   '56': [

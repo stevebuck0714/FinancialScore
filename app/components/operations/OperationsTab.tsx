@@ -1519,7 +1519,11 @@ export default function OperationsTab({
     const raw = String(moduleKey || '').trim();
     const normalized = raw === 'overview' ? 'dashboard' : raw;
     if (!normalized) return true;
-    if (normalized === 'hubspot_sales' && !isCogentScientificCompany(selectedCompanyId, companyName)) return false;
+    if (
+      normalized === 'hubspot_sales' &&
+      String(industrySectorCategory || '').trim() !== '54' &&
+      !isCogentScientificCompany(selectedCompanyId, companyName)
+    ) return false;
     if (!hasOperationalModuleAccess(normalized)) return false;
     const value = operationalHubSections[`tab:${normalized}`];
     if (normalized === 'loans' && value === undefined) return isLoansDefaultEnabledForCompany(selectedCompanyId);
@@ -29943,6 +29947,7 @@ Strategies to Improve the CCC
       return (
         <HubSpotSalesTab
           selectedCompanyId={selectedCompanyId}
+          useMockData={String(industrySectorCategory || '').trim() === '54'}
           operationalHubSections={operationalHubSections}
           canReorderReports={canManageReportLayout}
           isSavingReportLayout={savingReportLayout}
