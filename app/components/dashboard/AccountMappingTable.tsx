@@ -215,6 +215,68 @@ export default function AccountMappingTable({
 
     const normalizedAccountName = (accountName || '').trim().toLowerCase();
     const compactAccountName = normalizedAccountName.replace(/[\s_-]+/g, '');
+    // Balance-sheet classifications are authoritative source metadata. Do not
+    // let a number embedded in an account name (for example, "x5290") or a
+    // 9xxxx account code override a liability, asset, or equity classification
+    // selected in Account Review.
+    if (
+      normalized === 'bank' ||
+      normalized === 'accountsreceivable' ||
+      normalized === 'accounts receivable' ||
+      normalized === 'othercurrentasset' ||
+      normalized === 'other current asset' ||
+      normalized === 'fixedasset' ||
+      normalized === 'fixed asset' ||
+      normalized === 'otherasset' ||
+      normalized === 'other asset' ||
+      compact === 'bank' ||
+      compact === 'accountsreceivable' ||
+      compact === 'othercurrentasset' ||
+      compact === 'fixedasset' ||
+      compact === 'otherasset' ||
+      normalized.includes('asset')
+    ) {
+      return 'asset';
+    }
+    if (
+      normalized === 'accountspayable' ||
+      normalized === 'accounts payable' ||
+      normalized === 'creditcard' ||
+      normalized === 'credit card' ||
+      normalized === 'othercurrentliability' ||
+      normalized === 'other current liability' ||
+      normalized === 'longtermliability' ||
+      normalized === 'long term liability' ||
+      compact === 'accountspayable' ||
+      compact === 'creditcard' ||
+      compact === 'othercurrentliability' ||
+      compact === 'longtermliability' ||
+      normalized.includes('liabil')
+    ) {
+      return 'liability';
+    }
+    if (
+      normalized === 'retained earnings' ||
+      normalized === 'retainedearnings' ||
+      normalized === 'opening balance equity' ||
+      normalized === 'openingbalanceequity' ||
+      normalized === "owner's capital" ||
+      normalized === 'owners capital' ||
+      normalized === 'ownerscapital' ||
+      normalized === "owner's draw" ||
+      normalized === 'owners draw' ||
+      normalized === 'ownersdraw' ||
+      normalized === 'net assets' ||
+      normalized === 'netassets' ||
+      compact.includes('retainedearnings') ||
+      compact.includes('openingbalanceequity') ||
+      compact.includes('ownerscapital') ||
+      compact.includes('ownersdraw') ||
+      compact.includes('netassets') ||
+      normalized.includes('equity')
+    ) {
+      return 'equity';
+    }
     if (normalized.includes('non-operating') || normalized.includes('non operating') || compact.includes('nonoperating')) {
       return 'nonOperating';
     }
