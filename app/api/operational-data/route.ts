@@ -87,7 +87,7 @@ const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v8-filtech-records-contract';
+const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v9-compact-margin-payload';
 // The server cache TTL must not become a browser max-age. A stored HTTP response is
 // keyed only by URL, so it carries no dataVersion and can outlive a corrected payload
 // for the whole TTL without ever revalidating. Serve from DerivedApiCache instead.
@@ -9259,6 +9259,83 @@ export async function GET(request: NextRequest) {
               wholesaleReportMode: 'vendor',
               wholesaleVendorPricingRows,
               wholesaleOrderLines: [],
+              topProducts: [],
+              realEstateReports: getRealEstateReportsForSummary(),
+            },
+          });
+        }
+        // Product Margin Analysis only needs the most recent snapshot for each
+        // customer/item combination. Loading every historical order line,
+        // enriching it in Node, and serializing it back to the browser can
+        // exceed the Vercel function memory limit for large wholesale tenants.
+        // Keep the full order-line contract exclusively for Raw Data.
+        if (isWholesaleProductsReportRequest && wholesaleProductsReportMode === 'margin') {
+          const marginSnapshotFrequency: 'daily' | 'weekly' | 'monthly' =
+            (normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI') &&
+            frequency !== 'daily'
+              ? 'daily'
+              : frequency;
+          const marginRows = await prisma.$queryRaw<Array<{
+            snapshotDate: Date;
+            customerId: string | null;
+            customerName: string;
+            itemId: string | null;
+            itemName: string | null;
+            sku: string | null;
+            quantitySold: number;
+            unitPrice: number;
+            revenue: number;
+            orderId: string | null;
+          }>>(Prisma.sql`
+            WITH latest_snapshot AS (
+              SELECT
+                COALESCE("customerId", '') AS "customerIdKey",
+                "customerName",
+                COALESCE(NULLIF("sku", ''), NULLIF("itemId", ''), NULLIF("itemName", ''), '') AS "itemKey",
+                MAX("snapshotDate") AS "snapshotDate"
+              FROM "CustomerOrderLineSnapshot"
+              WHERE "companyId" = ${companyId}
+                AND "frequency" = ${marginSnapshotFrequency}
+                AND "snapshotDate" >= ${startDate}
+                AND "snapshotDate" <= ${endDate}
+              GROUP BY 1, 2, 3
+            )
+            SELECT
+              MAX(o."snapshotDate") AS "snapshotDate",
+              NULLIF(MAX(o."customerId"), '') AS "customerId",
+              MAX(o."customerName") AS "customerName",
+              NULLIF(MAX(o."itemId"), '') AS "itemId",
+              NULLIF(MAX(o."itemName"), '') AS "itemName",
+              NULLIF(MAX(o."sku"), '') AS "sku",
+              SUM(COALESCE(o."qtyInvoiced", o."qtyOrdered", 0))::double precision AS "quantitySold",
+              MAX(COALESCE(o."unitPrice", 0))::double precision AS "unitPrice",
+              SUM(COALESCE(o."invoicedAmount", o."contractValue", 0))::double precision AS "revenue",
+              NULLIF(MIN(o."orderId"), '') AS "orderId"
+            FROM "CustomerOrderLineSnapshot" o
+            INNER JOIN latest_snapshot latest
+              ON latest."customerIdKey" = COALESCE(o."customerId", '')
+              AND latest."customerName" = o."customerName"
+              AND latest."itemKey" = COALESCE(NULLIF(o."sku", ''), NULLIF(o."itemId", ''), NULLIF(o."itemName", ''), '')
+              AND latest."snapshotDate" = o."snapshotDate"
+            WHERE o."companyId" = ${companyId}
+              AND o."frequency" = ${marginSnapshotFrequency}
+            GROUP BY latest."customerIdKey", latest."customerName", latest."itemKey"
+            ORDER BY "revenue" DESC
+            LIMIT 20000
+          `);
+          const normalizedMarginRows = marginRows.map((row) => ({
+            ...row,
+            customer: row.customerName,
+            quantitySold: Number(row.quantitySold || 0),
+            unitPrice: Number(row.unitPrice || 0),
+            revenue: Number(row.revenue || 0),
+          }));
+          return cacheOperationalPayload({
+            records: [],
+            summary: {
+              wholesaleReportMode: 'margin',
+              wholesaleOrderLines: normalizedMarginRows,
+              wholesaleVendorPricingRows: [],
               topProducts: [],
               realEstateReports: getRealEstateReportsForSummary(),
             },

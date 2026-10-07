@@ -626,7 +626,7 @@ const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
 const CUSTOMER_REVENUE_CLIENT_CACHE_VERSION = 'customer-revenue-source-v13-financial-gross-margin-fallback';
 const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v6';
-const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v8-filtech-records-contract';
+const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v9-compact-margin-payload';
 const REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION = 'real-estate-sector-53-reports-v1';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 // Infor re-syncs this report every night, so a stored payload must never outlive the
