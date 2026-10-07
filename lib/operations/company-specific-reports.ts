@@ -68,7 +68,7 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   },
   {
     key: 'productsWholesaleRawData',
-    label: 'Raw Data',
+    label: 'Customer Orders',
     tabKey: 'products_skus',
     group: 'Products',
     sectorCategories: ['42'],

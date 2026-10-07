@@ -1083,6 +1083,7 @@ export default function OperationsTab({
   const [residentialOfficeMonthlyGoals, setResidentialOfficeMonthlyGoals] = useState<Record<string, { salesVolumeGoal: string; unitsGoal: string }>>({});
   const [residentialAttachGoals, setResidentialAttachGoals] = useState({ mortgagePct: '49', titlePct: '58', insurancePct: '35' });
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('');
+  const [wholesaleRawItemSearch, setWholesaleRawItemSearch] = useState('');
   const [wholesaleRawCustomers, setWholesaleRawCustomers] = useState<WholesaleRawCustomerOption[]>([]);
   const [wholesaleRawCustomersLoading, setWholesaleRawCustomersLoading] = useState(false);
   const [wholesaleRawCustomerLines, setWholesaleRawCustomerLines] = useState<any[]>([]);
@@ -10651,7 +10652,12 @@ export default function OperationsTab({
     const wholesaleRawOldestDate = wholesaleRawBaseRows
       .map((row) => row.isoDate)
       .sort((a, b) => a.localeCompare(b))[0] || '';
-    const wholesaleRawFilteredRows = wholesaleRawBaseRows;
+    const wholesaleRawItemSearchTerm = wholesaleRawItemSearch.trim().toLowerCase();
+    const matchesWholesaleRawItemSearch = (row: { item: string }) =>
+      !wholesaleRawItemSearchTerm || row.item.toLowerCase().includes(wholesaleRawItemSearchTerm);
+    const wholesaleRawFilteredRows = wholesaleRawItemSearchTerm
+      ? wholesaleRawBaseRows.filter(matchesWholesaleRawItemSearch)
+      : wholesaleRawBaseRows;
     const wholesaleRawTextSortKeys = new Set<WholesaleRawSortKey>([
       'item',
       'order',
@@ -10729,7 +10735,10 @@ export default function OperationsTab({
         })
         .filter((row) => row.isoDate)
     );
-    const sortedWholesaleRawFilledRows = [...wholesaleRawFilledBaseRows].sort((a, b) => {
+    const wholesaleRawFilledFilteredRows = wholesaleRawItemSearchTerm
+      ? wholesaleRawFilledBaseRows.filter(matchesWholesaleRawItemSearch)
+      : wholesaleRawFilledBaseRows;
+    const sortedWholesaleRawFilledRows = [...wholesaleRawFilledFilteredRows].sort((a, b) => {
       const direction = wholesaleRawFilledSortDir === 'asc' ? 1 : -1;
       const left = a?.[wholesaleRawFilledSortKey];
       const right = b?.[wholesaleRawFilledSortKey];
@@ -11049,7 +11058,7 @@ export default function OperationsTab({
               fontSize: '12px',
             }}
           >
-            Raw Data
+            Customer Orders
           </button>
         )}
         {showWholesaleProjectionViews && isRevenueForecastEnabled && (
@@ -11647,7 +11656,6 @@ export default function OperationsTab({
       }> = [
         { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
         { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
-        { key: 'customerId', label: 'Customer ID', render: (row) => row.customerId || 'N/A' },
         { key: 'customerGroup', label: 'Customer Group', width: '108px', maxWidth: '126px', render: (row) => row.customerGroup || 'N/A' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
@@ -11685,6 +11693,8 @@ export default function OperationsTab({
         ? 'Loading open order lines...'
         : wholesaleRawLinesError
         ? wholesaleRawLinesError
+        : wholesaleRawItemSearchTerm
+        ? `No open order lines match item "${wholesaleRawItemSearch.trim()}".`
         : 'No open order lines match the selected customer.';
 
       const statusChip = (label: 'Open' | 'Filled') => (
@@ -11707,11 +11717,12 @@ export default function OperationsTab({
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Raw Data</h3>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Customer Orders</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
                 Open orders are CSI lines still open on the latest complete CSI day with remaining qty &gt; 0. Open Revenue is remaining qty × unit price. Filled orders are CSI closed/filled or remaining qty 0.
               </div>
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <select
               value={wholesaleRawCustomerFilter}
               onChange={(event) => setWholesaleRawCustomerFilter(event.target.value)}
@@ -11729,6 +11740,15 @@ export default function OperationsTab({
                 </option>
               ))}
             </select>
+            <input
+              type="search"
+              value={wholesaleRawItemSearch}
+              onChange={(event) => setWholesaleRawItemSearch(event.target.value)}
+              placeholder="Search Item ID"
+              aria-label="Search Item ID"
+              style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '200px', background: 'white' }}
+            />
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -11887,9 +11907,9 @@ export default function OperationsTab({
                     This window has more than 8,000 filled order lines. The table shows a capped set.
                   </div>
                 )}
-                {wholesaleRawFilledBaseRows.length > wholesaleRawVisibleRowLimit && (
+                {wholesaleRawFilledFilteredRows.length > wholesaleRawVisibleRowLimit && (
                   <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
-                    Showing the newest {wholesaleRawVisibleRowLimit.toLocaleString()} of {wholesaleRawFilledBaseRows.length.toLocaleString()} filled rows. Click a column header to sort.
+                    Showing the newest {wholesaleRawVisibleRowLimit.toLocaleString()} of {wholesaleRawFilledFilteredRows.length.toLocaleString()} filled rows. Click a column header to sort.
                   </div>
                 )}
                 <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
@@ -11943,6 +11963,8 @@ export default function OperationsTab({
                               ? 'Loading filled order lines...'
                               : wholesaleRawFilledError
                               ? wholesaleRawFilledError
+                              : wholesaleRawItemSearchTerm
+                              ? `No filled order lines match item "${wholesaleRawItemSearch.trim()}".`
                               : 'No filled order lines are stored for this customer in the loaded window.'}
                           </td>
                         </tr>

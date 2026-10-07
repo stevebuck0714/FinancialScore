@@ -113,7 +113,7 @@ const getAffiliateAddOnSummary = (code: any) => {
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsProductMarginAnalysis', label: 'Product Margin Analysis', group: 'Products' },
-  { key: 'productsWholesaleRawData', label: 'Raw Data', group: 'Products' },
+  { key: 'productsWholesaleRawData', label: 'Customer Orders', group: 'Products' },
   { key: 'productsRevenueForecast', label: 'Monthly Forecast', group: 'Projections' },
   { key: 'productsForecastRollup', label: 'Forecast Rollup', group: 'Projections' },
   { key: 'productsMonthlyRevenue', label: 'Monthly Revenue', group: 'Projections' },
