@@ -269,18 +269,16 @@ async function buildOperationalDataVersion(
       : Promise.resolve({ label: 'CustomerSalesSnapshot', skipped: true }),
     (includeAll || type === 'customers')
       ? safeOperationalVersionPart(
-          'InforRawRecordCustomerSales',
-          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("fetchedAt") AS "maxFetchedAt", MAX("businessDate") AS "maxBusinessDate"
-           FROM "InforRawRecord"
-           WHERE "companyId" = $1
-             AND "miProgram" IN ('SLArtrans', 'SLCoitems', 'SLCOITEMS', 'SLCos', 'SLCohdrs')
-             AND "businessDate" >= $2
-             AND "businessDate" <= $3`,
-          companyId,
-          startDate,
-          endDate
+          // Counting InforRawRecord here scanned 1.6M+ rows on every request
+          // (cache hits included). Raw rows only change when a sync run
+          // finishes, so the latest finished run is the freshness signal.
+          'InforSyncRunCustomerSales',
+          `SELECT COUNT(*)::text AS count, MAX("finishedAt") AS "maxFinishedAt", MAX("updatedAt") AS "maxUpdatedAt"
+           FROM "InforSyncRun"
+           WHERE "companyId" = $1 AND "status" = 'done'`,
+          companyId
         )
-      : Promise.resolve({ label: 'InforRawRecordCustomerSales', skipped: true }),
+      : Promise.resolve({ label: 'InforSyncRunCustomerSales', skipped: true }),
     (includeAll || type === 'ar-aging')
       ? safeOperationalVersionPart(
           'ARAgingSnapshot',
@@ -327,14 +325,13 @@ async function buildOperationalDataVersion(
       : Promise.resolve({ label: 'CustomerOrderLineSnapshot', skipped: true }),
     (includeAll || type === 'products') && !options?.skipVolatileInforRawProducts
       ? safeOperationalVersionPart(
-          'InforRawRecordProducts',
-          `SELECT COUNT(*)::text AS count, MAX("createdAt") AS "maxCreatedAt", MAX("fetchedAt") AS "maxFetchedAt", MAX("businessDate") AS "maxBusinessDate"
-           FROM "InforRawRecord"
-           WHERE "companyId" = $1
-             AND "miProgram" IN ('SLCoitems', 'SLCOITEMS', 'SLItemVends', 'SLItemVendPrices')`,
+          'InforSyncRunProducts',
+          `SELECT COUNT(*)::text AS count, MAX("finishedAt") AS "maxFinishedAt", MAX("updatedAt") AS "maxUpdatedAt"
+           FROM "InforSyncRun"
+           WHERE "companyId" = $1 AND "status" = 'done'`,
           companyId
         )
-      : Promise.resolve({ label: 'InforRawRecordProducts', skipped: true }),
+      : Promise.resolve({ label: 'InforSyncRunProducts', skipped: true }),
     (includeAll || type === 'products')
       ? safeOperationalVersionPart(
           'OperationalSystemConnectionProducts',
@@ -3311,9 +3308,42 @@ function scheduleWholesaleProductsReportRebuild(params: {
   });
 }
 
+const operationalPageCacheRebuilds = new Set<string>();
+
+function scheduleOperationalPageCacheRebuild(request: NextRequest, cacheKey: string): void {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  if (!cronSecret) return;
+  if (operationalPageCacheRebuilds.has(cacheKey)) return;
+  operationalPageCacheRebuilds.add(cacheKey);
+
+  after(async () => {
+    try {
+      const url = new URL('/api/operational-data', request.nextUrl.origin);
+      const params = new URLSearchParams(request.nextUrl.searchParams);
+      params.set('cacheWarmup', '1');
+      url.search = params.toString();
+      const response = await fetch(url, {
+        cache: 'no-store',
+        headers: { authorization: `Bearer ${cronSecret}` },
+      });
+      if (!response.ok) {
+        console.warn('Operational page cache background rebuild failed:', {
+          type: params.get('type'),
+          companyId: params.get('companyId'),
+          status: response.status,
+        });
+      }
+    } catch (error) {
+      console.warn('Operational page cache background rebuild failed:', error);
+    } finally {
+      operationalPageCacheRebuilds.delete(cacheKey);
+    }
+  });
+}
+
 /**
  * GET /api/operational-data
- * 
+ *
  * Query parameters:
  * - companyId: string (required)
  * - type: 'customers' | 'customers-sites' | 'ar-aging' | 'ap-aging' | 'products' | 'labor-scheduling' | 'hiring' | 'payroll' | 'inventory' | 'cash' | 'ap' | 'daily-financials' | 'cash-flow-map' | 'revenue-billables' | 'unit-economics'
@@ -3741,6 +3771,27 @@ export async function GET(request: NextRequest) {
                 reportMode: wholesaleProductsReportMode,
               });
             }
+            const presentedStale = await presentOperationalPayload(stalePayload);
+            return NextResponse.json(presentedStale, {
+              headers: OPERATIONAL_RESPONSE_HEADERS,
+            });
+          }
+        }
+        // A cold Customers build takes 30s+ for large Infor tenants. Serve the
+        // last complete payload for this exact window and rebuild it through
+        // the cron warmup path, which only accepts limit=500 customer requests.
+        const canRebuildCustomersInBackground =
+          cacheType === 'customers' &&
+          !isCronOperationalCacheWarmup &&
+          boundedLimit === 500 &&
+          (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly');
+        if (canRebuildCustomersInBackground) {
+          const stalePayload = await readLatestDerivedApiCache<any>({
+            namespace: operationalCache.namespace,
+            cacheKey: operationalCache.cacheKey,
+          });
+          if (stalePayload) {
+            scheduleOperationalPageCacheRebuild(request, operationalCache.cacheKey);
             const presentedStale = await presentOperationalPayload(stalePayload);
             return NextResponse.json(presentedStale, {
               headers: OPERATIONAL_RESPONSE_HEADERS,
