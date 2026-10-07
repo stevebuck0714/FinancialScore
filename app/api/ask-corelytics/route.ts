@@ -7,6 +7,8 @@ import type {
   LegacyAskResponse,
 } from '@/lib/ask-corelytics/types';
 
+export const maxDuration = 300;
+
 function getSourceName(url: string, fallback?: string): string {
   try {
     return new URL(url).hostname || fallback || 'Source';
@@ -58,7 +60,10 @@ function mapLegacyToCanonical(params: {
         : undefined,
     conclusionSection: {
       heading: 'Corelytics conclusion',
-      summary: String(legacy.howThisImpactsUs || legacy.shortAnswer || legacy.longAnswer || '').trim(),
+      summary: [legacy.shortAnswer, legacy.howThisImpactsUs]
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .join(' ') || String(legacy.longAnswer || '').trim(),
     },
     followUps: [],
     debug: {

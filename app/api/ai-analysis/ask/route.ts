@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { getOpenAiClient } from '@/lib/ai-gateway';
+import { getOpenAiClient, isUsingGateway } from '@/lib/ai-gateway';
+import { runAskDataAgent } from '@/lib/ask-corelytics/agent';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
@@ -18,6 +19,12 @@ import {
 } from '@/lib/pulse/exec-briefing-modules';
 import { buildOperationalMockResponse } from '@/lib/operations/sector-mock-data';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
+
+export const maxDuration = 300;
+
+const DEFAULT_ASK_AGENT_MODEL = 'anthropic/claude-opus-5.5';
+// Leaves room inside maxDuration for the single-prompt fallback if the agent runs long.
+const ASK_AGENT_BUDGET_MS = 200_000;
 
 type RatioSnapshot = {
   name: string;
@@ -871,10 +878,75 @@ type AskIntent =
   | 'expense_shift_start'
   | 'construction_ops'
   | 'competitor'
+  | 'period_comparison'
   | 'general';
+
+const MONTH_NAME_PATTERN =
+  'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
+const MONTH_INDEX: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+const PERIOD_METRICS: Array<{ key: string; label: string; pattern: RegExp; unit: 'USD' | 'percent' }> = [
+  { key: 'grossProfit', label: 'Gross profit', pattern: /\bgross\s*profit\b/, unit: 'USD' },
+  { key: 'grossMarginPct', label: 'Gross margin', pattern: /\bgross\s*margin\b|\bmargin\b/, unit: 'percent' },
+  { key: 'cogsTotal', label: 'COGS', pattern: /\bcogs\b|\bcost of (goods|sales)\b/, unit: 'USD' },
+  { key: 'expense', label: 'Operating expense', pattern: /\b(expenses?|opex|overhead)\b/, unit: 'USD' },
+  { key: 'cash', label: 'Cash', pattern: /\bcash\b/, unit: 'USD' },
+  { key: 'ar', label: 'Accounts receivable', pattern: /\b(ar|receivables?)\b/, unit: 'USD' },
+  { key: 'ap', label: 'Accounts payable', pattern: /\b(ap|payables?)\b/, unit: 'USD' },
+  { key: 'revenue', label: 'Revenue', pattern: /\b(revenue|sales|top line)\b/, unit: 'USD' },
+];
+
+function matchPeriodMetrics(question: string) {
+  const q = String(question || '').toLowerCase();
+  const withoutCogsPhrase = q.replace(/\bcost of (goods sold|goods|sales)\b/g, ' ');
+  return PERIOD_METRICS.filter((m) => m.pattern.test(m.key === 'revenue' ? withoutCogsPhrase : q));
+}
+
+function parseRequestedMonths(question: string): Array<{ year: number; month: number }> {
+  const q = String(question || '').toLowerCase();
+  const found: Array<{ year: number; month: number }> = [];
+  const push = (year: number, month: number) => {
+    if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12 && !found.some((p) => p.year === year && p.month === month)) {
+      found.push({ year, month });
+    }
+  };
+
+  const named = new RegExp(`\\b(${MONTH_NAME_PATTERN})\\.?\\s*,?\\s*((?:20\\d{2})(?:\\s*(?:,|and|vs\\.?|versus|to|or|&)\\s*20\\d{2})*)`, 'g');
+  for (const match of q.matchAll(named)) {
+    const month = MONTH_INDEX[match[1].slice(0, 3)];
+    for (const year of match[2].match(/20\d{2}/g) || []) push(Number(year), month);
+  }
+  for (const match of q.matchAll(/\b(20\d{2})-(0?[1-9]|1[0-2])\b/g)) push(Number(match[1]), Number(match[2]));
+  for (const match of q.matchAll(/\b(0?[1-9]|1[0-2])\/(20\d{2})\b/g)) push(Number(match[2]), Number(match[1]));
+
+  // "september revenue in 2026 vs 2025": one month name, several bare years.
+  if (found.length < 2) {
+    const monthNames = [...q.matchAll(new RegExp(`\\b(${MONTH_NAME_PATTERN})\\b`, 'g'))];
+    const years = [...new Set((q.match(/\b20\d{2}\b/g) || []).map(Number))];
+    if (monthNames.length === 1 && years.length >= 2) {
+      const month = MONTH_INDEX[monthNames[0][1].slice(0, 3)];
+      for (const year of years) push(year, month);
+    }
+  }
+  return found;
+}
+
+function isYearOverYearQuestion(q: string): boolean {
+  return /\b(yoy|year[-\s]over[-\s]year|same month last year|prior year|last year)\b/.test(q);
+}
+
+function isPeriodComparisonQuestion(question: string): boolean {
+  const q = String(question || '').toLowerCase();
+  if (matchPeriodMetrics(q).length === 0) return false;
+  if (parseRequestedMonths(q).length >= 2) return true;
+  return isYearOverYearQuestion(q) && /\b(compare|vs\.?|versus|change|grow|growth|up|down|differ)/.test(q);
+}
 
 function classifyAskIntent(question: string): AskIntent {
   const q = String(question || '').toLowerCase();
+  if (isPeriodComparisonQuestion(q)) return 'period_comparison';
   if (isMarginQuestion(q)) return 'margin';
   if (/\b(kpi|kpis|peer group|benchmark)\b/.test(q) && /\b(below|under|versus|vs|gap|peer|benchmark)\b/.test(q)) {
     return 'kpi_peers';
@@ -1458,6 +1530,134 @@ function buildConstructionOpsAnswer(params: {
   });
 }
 
+function monthKeyOf(value: unknown): string | null {
+  const d = value instanceof Date ? value : new Date(String(value || ''));
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthKeyLabel(key: string): string {
+  return monthLabel(new Date(`${key}-01T00:00:00Z`));
+}
+
+function formatPeriodValue(value: number | null, unit: 'USD' | 'percent'): string {
+  if (value === null || !Number.isFinite(value)) return 'n/a';
+  if (unit === 'percent') return `${value.toFixed(1)}%`;
+  return `$${Math.round(value).toLocaleString('en-US')}`;
+}
+
+function buildPeriodComparisonAnswer(params: {
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+  companyName: string;
+  question: string;
+  internalSummary?: Record<string, any>;
+}): AskOutput | null {
+  const citation = pickCitation(params.sources, 'financial');
+  const history = (params.internalSummary?.monthlyTotalsHistory || []) as any[];
+  if (!citation || history.length === 0) return null;
+
+  const rowsByKey = new Map<string, any>();
+  for (const row of history) {
+    const key = monthKeyOf(row?.monthDate);
+    if (key) rowsByKey.set(key, row);
+  }
+  const availableKeys = [...rowsByKey.keys()].sort();
+  const earliestKey = availableKeys[0];
+  const latestKey = availableKeys[availableKeys.length - 1];
+
+  const q = params.question.toLowerCase();
+  let periods = parseRequestedMonths(q).map((p) => `${p.year}-${String(p.month).padStart(2, '0')}`);
+  if (periods.length < 2 && isYearOverYearQuestion(q)) {
+    const anchor = periods[0] || latestKey;
+    const [y, m] = anchor.split('-');
+    periods = [anchor, `${Number(y) - 1}-${m}`];
+  }
+  if (periods.length < 2) return null;
+  periods = periods.slice(0, 4);
+
+  // Present newest first, compared against the oldest requested period.
+  const ordered = [...periods].sort().reverse();
+  const current = ordered[0];
+  const baseline = ordered[ordered.length - 1];
+  const metrics = matchPeriodMetrics(q);
+  if (metrics.length === 0) metrics.push(PERIOD_METRICS.find((m) => m.key === 'revenue')!);
+
+  const missing = ordered.filter((key) => !rowsByKey.has(key));
+  if (missing.length > 0) {
+    return makeAskOutput({
+      shortAnswer: `I can't compare ${ordered.map(monthKeyLabel).join(' and ')} because ${missing
+        .map(monthKeyLabel)
+        .join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not in the imported monthly financials.`,
+      bullets: [
+        `Monthly financials on file run from ${monthKeyLabel(earliestKey)} through ${monthKeyLabel(latestKey)}.`,
+        ...ordered
+          .filter((key) => rowsByKey.has(key))
+          .map((key) => {
+            const row = rowsByKey.get(key);
+            return `${monthKeyLabel(key)}: ${metrics
+              .map((m) => `${m.label} ${formatPeriodValue(Number(row?.[m.key]), m.unit)}`)
+              .join(', ')}.`;
+          }),
+        'Import the missing month(s) in Data Review, then ask again.',
+      ],
+      citation,
+      sources: params.sources,
+      howThisImpactsUs: 'A period comparison needs both months imported; otherwise the change cannot be measured.',
+    });
+  }
+
+  const bullets: string[] = [];
+  const headlineParts: string[] = [];
+  for (const metric of metrics) {
+    const values = ordered.map((key) => {
+      const raw = rowsByKey.get(key)?.[metric.key];
+      return raw === null || raw === undefined ? null : Number(raw);
+    });
+    const cur = values[0];
+    const base = values[values.length - 1];
+    bullets.push(
+      `${metric.label}: ${ordered.map((key, i) => `${monthKeyLabel(key)} ${formatPeriodValue(values[i], metric.unit)}`).join(' vs ')}.`
+    );
+    if (cur === null || base === null) continue;
+    if (metric.unit === 'percent') {
+      const delta = cur - base;
+      headlineParts.push(`${metric.label.toLowerCase()} ${delta >= 0 ? 'rose' : 'fell'} ${signedPctPoints(delta)}`);
+      bullets.push(`${metric.label} change: ${signedPctPoints(delta)} (${monthKeyLabel(baseline)} → ${monthKeyLabel(current)}).`);
+    } else {
+      const delta = cur - base;
+      const pct = base !== 0 ? (delta / Math.abs(base)) * 100 : null;
+      const pctText = pct === null ? '' : ` (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
+      headlineParts.push(`${metric.label.toLowerCase()} ${delta >= 0 ? 'increased' : 'decreased'} ${signedMoney(delta)}${pctText}`);
+      bullets.push(`${metric.label} change: ${signedMoney(delta)}${pctText} (${monthKeyLabel(baseline)} → ${monthKeyLabel(current)}).`);
+    }
+  }
+
+  const currentRow = rowsByKey.get(current);
+  const baselineRow = rowsByKey.get(baseline);
+  if (metrics.some((m) => m.key === 'revenue') && !metrics.some((m) => m.key === 'grossProfit' || m.key === 'grossMarginPct')) {
+    const curGm = currentRow?.grossMarginPct;
+    const baseGm = baselineRow?.grossMarginPct;
+    if (typeof curGm === 'number' && typeof baseGm === 'number') {
+      bullets.push(
+        `Context: gross margin was ${curGm.toFixed(1)}% in ${monthKeyLabel(current)} vs ${baseGm.toFixed(1)}% in ${monthKeyLabel(baseline)} (${signedPctPoints(curGm - baseGm)}).`
+      );
+    }
+  }
+
+  const headline = headlineParts.length
+    ? `${monthKeyLabel(current)} vs ${monthKeyLabel(baseline)}: ${headlineParts.join('; ')}.`
+    : `${monthKeyLabel(current)} vs ${monthKeyLabel(baseline)} comparison for ${params.companyName || 'the company'}.`;
+
+  return makeAskOutput({
+    shortAnswer: headline,
+    bullets,
+    citation,
+    sources: params.sources,
+    howThisImpactsUs:
+      'Figures come from the imported monthly financials for each month; confirm both months are fully closed before drawing conclusions.',
+  });
+}
+
 function buildInsufficientDataAnswer(params: {
   sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
   question: string;
@@ -1474,7 +1674,9 @@ function buildInsufficientDataAnswer(params: {
   return makeAskOutput({
     shortAnswer: strategyQuestion
       ? 'This question needs grounded market/external context, and the current internal-only dataset does not support a specific answer.'
-      : `I do not have enough specific internal data yet to answer this ${params.intent.replace(/_/g, ' ')} question with quantified results.`,
+      : params.intent === 'general'
+        ? 'I could not answer that question reliably. Could you restate it with the specific metric and time period (for example "September 2026 revenue vs September 2025")?'
+        : `I do not have enough specific internal data yet to answer this ${params.intent.replace(/_/g, ' ')} question with quantified results.`,
     bullets: strategyQuestion
       ? [
           `Question asked: ${params.question}`,
@@ -1503,6 +1705,9 @@ function buildQuestionSpecificAnswer(params: {
 }): AskOutput {
   const intent = classifyAskIntent(params.question);
 
+  if (intent === 'period_comparison') {
+    return buildPeriodComparisonAnswer(params) || buildInsufficientDataAnswer({ ...params, intent });
+  }
   if (intent === 'margin') {
     return (
       buildMarginDriversFallback(params) ||
@@ -1556,7 +1761,6 @@ function buildQuestionSpecificAnswer(params: {
     };
   }
 
-  // General internal questions: prefer margin/risks/trends synthesis over generic dumps.
   // Opportunity / strategy questions need grounded external context — do not invent from ops dumps.
   if (/\b(acquisition|m&a|capital deployment|reinvestment|debt paydown|distributions|industry trends|peers in our industry)\b/i.test(params.question)) {
     return buildInsufficientDataAnswer({
@@ -1564,12 +1768,8 @@ function buildQuestionSpecificAnswer(params: {
       intent,
     });
   }
-  return (
-    buildRisksAnswer(params) ||
-    buildDailyTrendsAnswer(params) ||
-    buildMarginDriversFallback(params) ||
-    buildInsufficientDataAnswer({ ...params, intent })
-  );
+  // Never substitute an answer to a different question; ask the user to restate instead.
+  return buildInsufficientDataAnswer({ ...params, intent });
 }
 
 function buildFallbackFromSources(params: {
@@ -1949,6 +2149,7 @@ async function generateAskJson(params: {
         'For KPI/peer questions: use kpiDefinitions.ratios and explicitly compare company value versus benchmark.',
         'For daily trend / cash-AR / concentration questions: use operationalTrends metrics with 14-day and 30-day changes.',
         'For COA/expense questions: use monthlySnapshot expense categories and monthlyHistory.',
+        'For questions comparing specific months or years (e.g. "September 2026 vs September 2025", year-over-year), use monthlyTotalsHistory (monthDate is YYYY-MM). State both values and the $ and % change. If a requested month is missing, say so and give the available range.',
         'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
         'Use conversation context for follow-up questions (for example: "that", "it", "compare this to last answer").',
         'When prior context conflicts with new grounded sources, prioritize current grounded sources and mention the change.',
@@ -2140,6 +2341,7 @@ async function generateAskJson(params: {
 }
 
 export async function runAskCorelyticsLegacy(request: NextRequest) {
+  const requestStartedAt = Date.now();
   try {
     await requireAuth();
 
@@ -2272,10 +2474,36 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       customerTopShareByDay.set(key, total > 0 && top ? (top.revenue / total) * 100 : 0);
     }
 
-    const monthlyHistory = await prisma.monthlyFinancial.findMany({
+    // 36 months for multi-year period comparisons; the detailed COA history stays at
+    // 8 months for the trend builders.
+    // Each import stores a full copy of history; read only the latest one, like the rest of the app.
+    const latestFinancialRecord = await prisma.financialRecord.findFirst({
       where: { companyId },
-      orderBy: { monthDate: 'desc' },
-      take: 8,
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    const monthlyHistoryLong = latestFinancialRecord
+      ? await prisma.monthlyFinancial.findMany({
+          where: { companyId, financialRecordId: latestFinancialRecord.id },
+          orderBy: { monthDate: 'desc' },
+          take: 36,
+        })
+      : [];
+    const monthlyHistory = monthlyHistoryLong.slice(0, 8);
+    const monthlyTotalsHistory = monthlyHistoryLong.map((month) => {
+      const revenue = Number(month.revenue || 0);
+      const cogsTotal = Number(month.cogsTotal || 0);
+      return {
+        monthDate: monthKeyOf(month.monthDate),
+        revenue,
+        cogsTotal,
+        grossProfit: revenue - cogsTotal,
+        grossMarginPct: revenue > 0 ? ((revenue - cogsTotal) / revenue) * 100 : null,
+        expense: Number(month.expense || 0),
+        cash: Number(month.cash || 0),
+        ar: Number(month.ar || 0),
+        ap: Number(month.ap || 0),
+      };
     });
     const latestMonth = monthlyHistory[0] || null;
     const prevMonth = monthlyHistory[1] || null;
@@ -2581,6 +2809,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
               previous: serializeMonthlyAskRow(prevMonth),
             },
             monthlyHistory: monthlyHistory.map((month) => serializeMonthlyAskRow(month)).filter(Boolean),
+            monthlyTotalsHistory,
             monthlyChanges,
             marginDrivers: buildMarginDriversFromSummary({
               monthlySnapshot: {
@@ -2686,7 +2915,43 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
     // Routes through Vercel AI Gateway with per-request ZDR when AI_GATEWAY_API_KEY is set.
     const openai = getOpenAiClient();
     const defaultModel = process.env.OPENAI_MODEL || 'gpt-4o';
-    const askModel = process.env.OPENAI_MODEL_ASK || defaultModel;
+    const askModel = process.env.OPENAI_MODEL_ASK || (isUsingGateway() ? DEFAULT_ASK_AGENT_MODEL : defaultModel);
+
+    // Internal questions: let the model query the company's financial and operational data
+    // directly. The single-prompt pipeline below is only a fallback if the agent fails.
+    if (uiMode === 'default' && !useExternalSources) {
+      try {
+        const agentAnswer = await runAskDataAgent({
+          openai,
+          model: askModel,
+          companyId,
+          companyName: companyName || company?.name || '',
+          question,
+          contextSummary: internalSummary,
+          conversationContext,
+          sources: sourcesWithDoc,
+          deadlineMs: requestStartedAt + ASK_AGENT_BUDGET_MS,
+        });
+        if (agentAnswer) {
+          console.log('AI Analysis ask: data agent answered', {
+            model: askModel,
+            toolCalls: agentAnswer.toolCalls,
+            needsClarification: agentAnswer.needsClarification,
+            ms: Date.now() - requestStartedAt,
+          });
+          return NextResponse.json({
+            shortAnswer: agentAnswer.shortAnswer,
+            longAnswer: agentAnswer.longAnswer,
+            citedBullets: agentAnswer.citedBullets,
+            howThisImpactsUs: agentAnswer.howThisImpactsUs,
+            sources: sourcesWithDoc,
+            needsClarification: agentAnswer.needsClarification,
+          });
+        }
+      } catch (agentError) {
+        console.error('AI Analysis ask: data agent failed, using single-prompt fallback', agentError);
+      }
+    }
     // If you don't explicitly set a docs model, default documents to the same
     // interactive model as Ask Corelytics (usually faster/more reliable than the global default).
     const docsModel = process.env.OPENAI_MODEL_DOCS || askModel;
@@ -2850,10 +3115,10 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
     // Prefer question-specific quantified answers for internal Ask (no generic dumps).
     if (uiMode !== 'document' && !externalResultsOnly) {
       const intent = classifyAskIntent(question);
+      // Exact period comparisons are computed from the monthly rows; everything else keeps the
+      // model's answer unless it failed to address the question.
       const preferDeterministic =
-        intent !== 'general' && intent !== 'competitor'
-          ? true
-          : isWeakAskAnswer({ ...parsed, citedBullets } as AskOutput, question);
+        intent === 'period_comparison' || isWeakAskAnswer({ ...parsed, citedBullets } as AskOutput, question);
       if (preferDeterministic) {
         const specific = buildQuestionSpecificAnswer({
           sources: sourcesWithDoc,

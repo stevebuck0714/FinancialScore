@@ -441,7 +441,8 @@ export default function AIAnalysisView(props: {
     abortInFlight(mode);
 
     const controller = new AbortController();
-    const timeoutMs = 45000;
+    // Internal questions run multi-step data queries server-side (route maxDuration is 300s).
+    const timeoutMs = mode === 'document' ? 45000 : 300000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     if (mode === 'document') {
