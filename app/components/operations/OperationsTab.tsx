@@ -11036,7 +11036,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'productMarginAnalysis' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Product Margin Analysis
@@ -11055,7 +11055,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'wholesaleRawData' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Customer Orders
@@ -11074,7 +11074,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'revenueForecast' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Monthly Forecast
@@ -11093,7 +11093,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'forecastRollup' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Forecast Rollup
@@ -11112,7 +11112,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'monthlyRevenue' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Monthly Revenue
@@ -11131,7 +11131,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'revenueRollup' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Revenue Rollup
@@ -11150,7 +11150,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'goalUpdate' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Goal Update
@@ -11169,7 +11169,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'performance' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Performance
@@ -11188,7 +11188,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'reports' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Reports
@@ -11207,7 +11207,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'ytdGap' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             YTD Gap Analysis
@@ -11225,7 +11225,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'merchandiseProfitability' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Merchandise Profitability
@@ -11243,7 +11243,7 @@ export default function OperationsTab({
               color: effectiveProductReportView === 'retailForecast' ? '#3730a3' : '#334155',
               fontWeight: 700,
               cursor: 'pointer',
-              fontSize: '12px',
+              fontSize: '14px',
             }}
           >
             Retail Forecasting
@@ -11287,8 +11287,13 @@ export default function OperationsTab({
     const productPageTitle = isHealthcareServicesProceduresPage
       ? 'Services / Procedures Performance'
       : isWholesaleProjectionsTab
-      ? 'Inventory Projections'
+      ? ''
       : 'Product Sales Performance';
+    const productPageHeading = productPageTitle ? (
+      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+        {productPageTitle}
+      </h2>
+    ) : null;
     const renderProductMarginAnalysisReport = () => {
       const formatMarginNumber = (value: number | null | undefined) =>
         value == null || !Number.isFinite(Number(value))
@@ -13330,9 +13335,7 @@ export default function OperationsTab({
     if (effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsProductMarginAnalysis', 'products_skus', renderProductMarginAnalysisReport())}
           {renderProductChartInfoModal()}
@@ -13343,9 +13346,7 @@ export default function OperationsTab({
     if (effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsWholesaleRawData', 'products_skus', renderWholesaleRawDataReport())}
           {renderProductChartInfoModal()}
@@ -13358,9 +13359,7 @@ export default function OperationsTab({
     if (shouldRenderRevenueForecast) {
       return (
         <div style={{ padding: '8px 12px 16px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsRevenueForecast', productReportLayoutModule, <ProductRevenueForecastReport
             selectedCompanyId={selectedCompanyId}
@@ -13374,9 +13373,7 @@ export default function OperationsTab({
     if (shouldRenderForecastRollup) {
       return (
         <div style={{ padding: '8px 12px 16px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsForecastRollup', productReportLayoutModule, <ProductForecastRollupReport
             selectedCompanyId={selectedCompanyId}
@@ -13390,9 +13387,7 @@ export default function OperationsTab({
     if (shouldRenderMonthlyRevenue) {
       return (
         <div style={{ padding: '8px 12px 16px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsMonthlyRevenue', productReportLayoutModule, <ProductMonthlyRevenueReport
             selectedCompanyId={selectedCompanyId}
@@ -13406,9 +13401,7 @@ export default function OperationsTab({
     if (shouldRenderRevenueRollup) {
       return (
         <div style={{ padding: '8px 12px 16px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsRevenueRollup', productReportLayoutModule, <ProductRevenueRollupReport
             selectedCompanyId={selectedCompanyId}
@@ -13422,9 +13415,7 @@ export default function OperationsTab({
     if (shouldRenderGoalUpdate) {
       return (
         <div style={{ padding: '8px 12px 16px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsGoalUpdate', productReportLayoutModule, <ProductGoalUpdateReport
             selectedCompanyId={selectedCompanyId}
@@ -13438,9 +13429,7 @@ export default function OperationsTab({
     if (shouldRenderProductReports) {
       return (
         <div style={{ padding: '8px 12px 16px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsReports', productReportLayoutModule, <ProductReportsChart
             selectedCompanyId={selectedCompanyId}
@@ -13454,9 +13443,7 @@ export default function OperationsTab({
     if (shouldRenderProductYtdGap) {
       return (
         <div style={{ padding: '8px 12px 16px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {renderReorderableCompanyReport('productsYtdGap', productReportLayoutModule, <ProductYtdGapReport
             selectedCompanyId={selectedCompanyId}
@@ -13470,9 +13457,7 @@ export default function OperationsTab({
     if (!hasAnyProductsReportEnabled) {
       return (
         <div style={{ padding: '8px 32px 32px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+          {productPageHeading}
           {productViewSwitcher}
           {healthcareProceduresRegionSelector}
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
@@ -13484,9 +13469,7 @@ export default function OperationsTab({
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-            {productPageTitle}
-          </h2>
+        {productPageHeading}
         {productViewSwitcher}
         {healthcareProceduresRegionSelector}
 
