@@ -483,6 +483,11 @@ export function buildQuickBooksDesktopOperationalPayload(
       });
     }
 
+    // Sales rows are saved as one snapshot dated asOfDate. A session can span many days
+    // (lookback windows, catch-up runs, history pulls), so only that day's invoices belong
+    // in it; other days come from the invoice-detail transform.
+    if (qbdDate(invoice.TxnDate) !== asOfDate) continue;
+
     const current = customerSalesById.get(customerId) || {
       customerId,
       customerName,

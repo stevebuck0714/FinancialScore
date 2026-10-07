@@ -9,6 +9,8 @@ export type QbdDetailTransformOptions = {
   months?: string[];
   includeNonDetailInvoicePages?: boolean;
   frequencies?: Array<'daily' | 'monthly'>;
+  /** Compute rows and per-month totals without deleting or writing anything. */
+  dryRun?: boolean;
 };
 
 type ItemMaster = {
@@ -52,6 +54,9 @@ export type QbdDetailTransformResult = {
   monthlyCustomerRowsCreated: number;
   monthsProcessed: string[];
   errors: string[];
+  dryRun?: boolean;
+  /** Customer revenue by month for each frequency written (or that would be written). */
+  customerRevenueByMonth?: Record<string, { daily?: number; monthly?: number }>;
 };
 
 type ProductSnapshotRow = {
@@ -446,23 +451,52 @@ export async function transformQuickBooksDesktopInvoiceDetail(
     errors.push('No invoice detail dates were found in saved QBD invoice pages.');
   }
 
+  const customerRevenueByMonth: Record<string, { daily?: number; monthly?: number }> = {};
+  for (const row of [...customerDailyByKey.values(), ...customerMonthlyByKey.values()]) {
+    const bucket = (customerRevenueByMonth[monthKey(row.snapshotDate)] ||= {});
+    bucket[row.frequency] = Math.round(((bucket[row.frequency] || 0) + row.revenue) * 100) / 100;
+  }
+
+  if (options.dryRun) {
+    return {
+      success: errors.length === 0,
+      invoiceRecordsRead,
+      invoiceLinesRead,
+      productRowsCreated: 0,
+      customerRowsCreated: 0,
+      dailyProductRowsCreated: productDailyByKey.size,
+      dailyCustomerRowsCreated: customerDailyByKey.size,
+      monthlyProductRowsCreated: productMonthlyByKey.size,
+      monthlyCustomerRowsCreated: customerMonthlyByKey.size,
+      monthsProcessed: Array.from(months.keys()).sort(),
+      errors,
+      dryRun: true,
+      customerRevenueByMonth,
+    };
+  }
+
   const dailyRange = writeDaily ? getDateRange(dayDates) : null;
 
   if (dailyRange) {
-    await prisma.productSalesSnapshot.deleteMany({
-      where: {
-        companyId,
-        frequency: 'daily',
-        snapshotDate: dailyRange,
-      },
-    });
-    await prisma.customerSalesSnapshot.deleteMany({
-      where: {
-        companyId,
-        frequency: 'daily',
-        snapshotDate: dailyRange,
-      },
-    });
+    // With a month filter, only clear days inside the selected months so a non-contiguous
+    // month list cannot wipe the months between them.
+    const dailyWhere = monthFilter
+      ? {
+          companyId,
+          frequency: 'daily',
+          OR: Array.from(new Set(Array.from(days.values()).map((day) => monthKey(day)))).map((key) => {
+            const [year, month] = key.split('-').map(Number);
+            return {
+              snapshotDate: {
+                gte: new Date(Date.UTC(year, month - 1, 1)),
+                lt: new Date(Date.UTC(year, month, 1)),
+              },
+            };
+          }),
+        }
+      : { companyId, frequency: 'daily', snapshotDate: dailyRange };
+    await prisma.productSalesSnapshot.deleteMany({ where: dailyWhere });
+    await prisma.customerSalesSnapshot.deleteMany({ where: dailyWhere });
   }
   if (writeMonthly && monthlyDates.length > 0) {
     const monthlyWhere = monthFilter
@@ -565,6 +599,7 @@ export async function transformQuickBooksDesktopInvoiceDetail(
     monthlyCustomerRowsCreated: customerMonthlyByKey.size,
     monthsProcessed: Array.from(months.keys()).sort(),
     errors,
+    customerRevenueByMonth,
   };
 }
 

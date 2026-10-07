@@ -1452,7 +1452,7 @@ async function completeDetailBackfillJob(
         scheduleQuickBooksDesktopInvoiceDetailTransform(companyId, {
           months,
           includeNonDetailInvoicePages: true,
-          frequencies: ['monthly'],
+          frequencies: ['daily', 'monthly'],
         });
       }
     }
