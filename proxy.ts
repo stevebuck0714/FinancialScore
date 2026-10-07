@@ -186,6 +186,13 @@ export async function proxy(request: NextRequest) {
     !!cronSecret &&
     (authHeader === `Bearer ${cronSecret}` ||
       (!!adminCronHeader && adminCronHeader === cronSecret))
+  // Operational page cache warmups (cron + stale-cache background rebuilds)
+  // call these routes with Bearer CRON_SECRET and no session. The routes
+  // re-check the secret and scope; without this bypass every warmup was a 401.
+  const isTrustedOperationalCacheWarmup =
+    (pathname === '/api/operational-data' || pathname === '/api/operational-data/product-groups') &&
+    !!cronSecret &&
+    authHeader === `Bearer ${cronSecret}`
   const isDevBambooHrPayloadProbe =
     process.env.NODE_ENV === 'development' &&
     (pathname === '/api/operational-system-integrations/bamboohr/payload-sample' ||
@@ -318,6 +325,7 @@ export async function proxy(request: NextRequest) {
     !isTrustedQbdPostSyncWorker &&
     !isTrustedAdminCronCall &&
     !isTrustedPulseCronCall &&
+    !isTrustedOperationalCacheWarmup &&
     !isDevBambooHrPayloadProbe &&
     !DISABLE_AUTH_SIGNIN
   ) {
