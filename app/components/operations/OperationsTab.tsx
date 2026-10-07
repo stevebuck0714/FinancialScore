@@ -11286,7 +11286,7 @@ export default function OperationsTab({
     ) : null;
     const productPageTitle = isHealthcareServicesProceduresPage
       ? 'Services / Procedures Performance'
-      : isWholesaleProjectionsTab
+      : isWholesaleProductSector
       ? ''
       : 'Product Sales Performance';
     const productPageHeading = productPageTitle ? (
