@@ -5,6 +5,7 @@ import {
   warmAtlanticProductGroupReportCache,
 } from '@/lib/operations/product-group-report-warmup';
 import { resolveWholesaleProductsReportWindow } from '@/lib/operations/wholesale-products-report-warmup';
+import { addEstCalendarDays } from '@/lib/time/eastern';
 
 // Atlantic Precision auto-pull is 2:00 AM EST.
 // Vercel cron is UTC only. 09:15 UTC = 4:15 AM EST (5:15 AM EDT).
@@ -128,12 +129,16 @@ export async function GET(request: NextRequest) {
     limit: '500',
     sectorCategory,
   });
+  // The Inventory page always requests the 90 days ending endDate (see
+  // fetchOperationalType). Warming the saved range built a key no page reads
+  // and ran past this cron's 300s budget.
+  const inventoryWarmStartDate = addEstCalendarDays(endDate, -90);
   const inventory = await warmupOperationalRequest({
     origin: request.nextUrl.origin,
     cronSecret,
     companyId,
     type: 'inventory',
-    startDate,
+    startDate: startDate < inventoryWarmStartDate ? inventoryWarmStartDate : startDate,
     endDate,
     limit: '1000',
     sectorCategory,
