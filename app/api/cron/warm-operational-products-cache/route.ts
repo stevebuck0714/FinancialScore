@@ -96,14 +96,10 @@ export async function GET(request: NextRequest) {
   const companyId =
     String(request.nextUrl.searchParams.get('companyId') || '').trim() || ATLANTIC_PRECISION_COMPANY_ID;
 
-  if (await hasPendingInforTransforms(companyId)) {
-    return NextResponse.json({
-      ok: true,
-      skipped: true,
-      reason: 'pending_transforms_remaining',
-      companyId,
-    });
-  }
+  // Do not skip on pending transforms: permanently failed days never clear, so
+  // skipping left every page cold every morning. The later run rebuilds any
+  // payload whose source fingerprint changed after this one.
+  const pendingTransforms = await hasPendingInforTransforms(companyId);
 
   const company = await prisma.company.findUnique({
     where: { id: companyId },
@@ -172,6 +168,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: Boolean(customers?.ok && performanceProducts?.ok && inventory?.ok && wholesaleOk && groups?.ok),
     companyId,
+    pendingTransforms,
     startDate,
     endDate,
     customers,

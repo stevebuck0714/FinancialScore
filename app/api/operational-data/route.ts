@@ -3686,7 +3686,6 @@ export async function GET(request: NextRequest) {
               cacheType === 'ap-aging' || cacheType === 'ap'
                 ? 'ap-books-anchor-v4-qbd-1to30-kpi'
                 : null,
-              isWholesaleVendorPricingRequest ? null : shouldApplyHydratedDateFilter ? hydratedInforDates : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_WIP_SOURCE_VERSION : null,
@@ -3698,11 +3697,17 @@ export async function GET(request: NextRequest) {
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-apr-cpn-v4' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
             ]),
+            // Hydrated Infor days belong in the version, not the key: when a
+            // late transform completes, the key must stay stable so the last
+            // complete payload can still be served while it rebuilds.
             dataVersion: isWholesaleVendorPricingRequest
               ? await buildWholesaleVendorPricingDataVersion(companyId)
-              : await buildOperationalDataVersion(companyId, cacheType, startDate, endDate, {
-                  skipVolatileInforRawProducts: isWholesaleProductsReportRequest,
-                }),
+              : hashCacheParts([
+                  await buildOperationalDataVersion(companyId, cacheType, startDate, endDate, {
+                    skipVolatileInforRawProducts: isWholesaleProductsReportRequest,
+                  }),
+                  shouldApplyHydratedDateFilter ? hydratedInforDates : null,
+                ]),
           }
         : null;
 
@@ -3777,15 +3782,16 @@ export async function GET(request: NextRequest) {
             });
           }
         }
-        // A cold Customers build takes 30s+ for large Infor tenants. Serve the
+        // A cold page build takes 30-60s for large Infor tenants. Serve the
         // last complete payload for this exact window and rebuild it through
-        // the cron warmup path, which only accepts limit=500 customer requests.
-        const canRebuildCustomersInBackground =
-          cacheType === 'customers' &&
+        // the cron warmup path, so the request must match that path's limits.
+        const canRebuildPageInBackground =
           !isCronOperationalCacheWarmup &&
-          boundedLimit === 500 &&
-          (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly');
-        if (canRebuildCustomersInBackground) {
+          !isWholesaleProductsReportRequest &&
+          CRON_OPERATIONAL_CACHE_WARMUP_TYPES.has(cacheType) &&
+          (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') &&
+          ((cacheType === 'customers' || cacheType === 'products') ? boundedLimit === 500 : boundedLimit === 1000);
+        if (canRebuildPageInBackground) {
           const stalePayload = await readLatestDerivedApiCache<any>({
             namespace: operationalCache.namespace,
             cacheKey: operationalCache.cacheKey,
