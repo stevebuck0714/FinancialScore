@@ -125,7 +125,6 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
   const [error, setError] = useState<string | null>(null);
   const [salesHistoryStartDate, setSalesHistoryStartDate] = useState('');
   const [salesHistoryEndDate, setSalesHistoryEndDate] = useState('');
-
   useEffect(() => {
     if (!availableViews.some((item) => item.key === view) && availableViews[0]) {
       setView(availableViews[0].key);
@@ -163,6 +162,9 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
     const all = dataset?.rows || [];
     return groupKey ? all.filter((row) => row.key === groupKey) : all;
   }, [dataset, groupKey]);
+
+  const sharedTableFilter = useGroupTableFilter(rows);
+  const { filteredGroups, tableRows } = sharedTableFilter;
 
   const dataThru = dataset?.dataThru || '';
   const closed = closedMonths(dataThru || null);
@@ -417,20 +419,24 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
         <div style={{ color: '#64748b', fontSize: 13 }}>No group rows yet. Save Products Monthly Forecast and Monthly Revenue, then return here.</div>
       ) : null}
 
-      {!loading && rows.length && view === 'marginAnalysis' ? (
-        <MarginTables rows={flattenGroupRows(rows)} year={year} th={th} td={td} sticky={sticky} />
+      {!loading && rows.length > 0 && view !== 'marginAnalysis' ? (
+        <GroupTableToolbar title={copy[view].title} filter={sharedTableFilter} showItemSearch />
       ) : null}
-      {!loading && rows.length && view === 'monthlyForecast' ? (
-        <MonthlyForecastTable rows={flattenGroupRows(rows)} month={month} th={th} td={td} sticky={sticky} />
+
+      {!loading && rows.length > 0 && view === 'marginAnalysis' ? (
+        <MarginTables groups={rows} year={year} th={th} td={td} sticky={sticky} />
       ) : null}
-      {!loading && rows.length && view === 'forecastRollup' ? (
-        <ForecastRollupTable rows={flattenGroupRows(rows)} year={year} th={th} td={td} sticky={sticky} quarterHeader={quarterHeader} quarterMetric={quarterMetric} quarterCell={quarterCell} />
+      {!loading && tableRows.length > 0 && view === 'monthlyForecast' ? (
+        <MonthlyForecastTable rows={tableRows} month={month} th={th} td={td} sticky={sticky} />
       ) : null}
-      {!loading && rows.length && view === 'monthlyRevenue' ? (
-        <MonthlyRevenueTable rows={flattenGroupRows(rows)} month={month} shippingDays={shippingDays} year={year} dataThru={dataThru} th={th} td={td} sticky={sticky} />
+      {!loading && tableRows.length > 0 && view === 'forecastRollup' ? (
+        <ForecastRollupTable rows={tableRows} year={year} th={th} td={td} sticky={sticky} quarterHeader={quarterHeader} quarterMetric={quarterMetric} quarterCell={quarterCell} />
       ) : null}
-      {!loading && rows.length && view === 'revenueRollup' ? (
-        <RevenueRollupTable groups={rows} rows={flattenGroupRows(rows)} year={year} shippingDays={shippingDays} dataThru={dataThru} th={th} td={td} sticky={sticky} quarterHeader={quarterHeader} quarterMetric={quarterMetric} quarterCell={quarterCell} />
+      {!loading && tableRows.length > 0 && view === 'monthlyRevenue' ? (
+        <MonthlyRevenueTable rows={tableRows} month={month} shippingDays={shippingDays} year={year} dataThru={dataThru} th={th} td={td} sticky={sticky} />
+      ) : null}
+      {!loading && tableRows.length > 0 && view === 'revenueRollup' ? (
+        <RevenueRollupTable groups={filteredGroups} rows={tableRows} year={year} shippingDays={shippingDays} dataThru={dataThru} th={th} td={td} sticky={sticky} quarterHeader={quarterHeader} quarterMetric={quarterMetric} quarterCell={quarterCell} />
       ) : null}
     </div>
   );
@@ -438,6 +444,106 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
 
 function flattenGroupRows(groups: ProductGroupRow[]): ProductGroupRow[] {
   return groups.flatMap((group) => [group, ...(group.lines || [])]);
+}
+
+type GroupTableFilter = ReturnType<typeof useGroupTableFilter>;
+
+function useGroupTableFilter(groups: ProductGroupRow[]) {
+  const [groupSearch, setGroupSearch] = useState('');
+  const [itemSearch, setItemSearch] = useState('');
+  const [itemsCollapsed, setItemsCollapsed] = useState(false);
+  const groupSearchTerm = groupSearch.trim().toLowerCase();
+  const itemSearchTerm = itemSearch.trim().toLowerCase();
+  const filteredGroups = useMemo(() => {
+    return groups
+      .filter((group) => !groupSearchTerm || String(group.customerGroup || '').toLowerCase().includes(groupSearchTerm))
+      .map((group) => {
+        if (!itemSearchTerm) return group;
+        const lines = (group.lines || []).filter((line) =>
+          [line.itemSku, line.customerPartNumber].some((value) => String(value || '').toLowerCase().includes(itemSearchTerm))
+        );
+        return { ...group, lines };
+      })
+      .filter((group) => !itemSearchTerm || (group.lines || []).length > 0);
+  }, [groups, groupSearchTerm, itemSearchTerm]);
+  // An item search must show the matching items, so it overrides collapse.
+  const showItems = !itemsCollapsed || Boolean(itemSearchTerm);
+  const tableRows = useMemo(
+    () => (showItems ? flattenGroupRows(filteredGroups) : filteredGroups),
+    [filteredGroups, showItems]
+  );
+  return {
+    groupSearch,
+    setGroupSearch,
+    itemSearch,
+    setItemSearch,
+    itemSearchTerm,
+    showItems,
+    toggleItems: () => setItemsCollapsed((current) => !current),
+    filteredGroups,
+    tableRows,
+  };
+}
+
+function GroupTableToolbar({
+  title,
+  filter,
+  showItemSearch = false,
+}: {
+  title: string;
+  filter: GroupTableFilter;
+  showItemSearch?: boolean;
+}) {
+  const searchLocked = Boolean(filter.itemSearchTerm);
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{title}</h3>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            type="search"
+            value={filter.groupSearch}
+            onChange={(event) => filter.setGroupSearch(event.target.value)}
+            placeholder="Search group"
+            aria-label={`Search group in ${title}`}
+            style={{ ...inputStyle, width: 200, padding: '7px 9px' }}
+          />
+          {showItemSearch ? (
+            <input
+              type="search"
+              value={filter.itemSearch}
+              onChange={(event) => filter.setItemSearch(event.target.value)}
+              placeholder="Search item or customer PN"
+              aria-label={`Search item or customer PN in ${title}`}
+              style={{ ...inputStyle, width: 220, padding: '7px 9px' }}
+            />
+          ) : null}
+          <button
+            type="button"
+            onClick={filter.toggleItems}
+            disabled={searchLocked}
+            title={searchLocked ? 'Clear the item search to collapse items' : undefined}
+            style={{
+              border: '1px solid #cbd5e1',
+              borderRadius: 6,
+              padding: '7px 12px',
+              background: '#ffffff',
+              color: '#334155',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: searchLocked ? 'not-allowed' : 'pointer',
+              opacity: searchLocked ? 0.6 : 1,
+            }}
+          >
+            {filter.showItems ? 'Collapse items' : 'Expand items'}
+          </button>
+        </div>
+      </div>
+      {filter.tableRows.length === 0 ? (
+        <div style={{ color: '#64748b', fontSize: 13, marginBottom: 12 }}>No groups or items match the search.</div>
+      ) : null}
+    </>
+  );
 }
 
 function IdentityHeaders({
@@ -490,22 +596,29 @@ function IdentityCells({
 }
 
 function MarginTables({
-  rows,
+  groups,
   year,
   th,
   td,
   sticky,
 }: {
-  rows: ProductGroupRow[];
+  groups: ProductGroupRow[];
   year: number;
   th: React.CSSProperties;
   td: React.CSSProperties;
   sticky: React.CSSProperties;
 }) {
+  const volumeFilter = useGroupTableFilter(groups);
+  const revenueFilter = useGroupTableFilter(groups);
+  const rows = volumeFilter.tableRows;
+  const revenueRows = revenueFilter.tableRows;
   const sgpCos = (row: ProductGroupRow) => (row.sgpCostOfSales != null ? row.sgpCostOfSales * row.sgpUsage : null);
   const projCos = (row: ProductGroupRow) => (row.projectedCostOfSales != null ? row.projectedCostOfSales * row.projectedUsageAdj : null);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+      <GroupTableToolbar title="Item List by Group - Volume" filter={volumeFilter} showItemSearch />
+      {rows.length > 0 ? (
       <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff' }}>
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
           <thead>
@@ -558,6 +671,11 @@ function MarginTables({
           </tbody>
         </table>
       </div>
+      ) : null}
+      </div>
+      <div>
+      <GroupTableToolbar title="Group - Revenue" filter={revenueFilter} />
+      {revenueRows.length > 0 ? (
       <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff' }}>
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 12 }}>
           <thead>
@@ -580,7 +698,7 @@ function MarginTables({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {revenueRows.map((row) => {
               const sgpCost = sgpCos(row);
               const projCost = projCos(row);
               return (
@@ -603,6 +721,8 @@ function MarginTables({
             })}
           </tbody>
         </table>
+      </div>
+      ) : null}
       </div>
     </div>
   );
