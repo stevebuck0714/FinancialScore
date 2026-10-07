@@ -87,7 +87,7 @@ const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v9-compact-margin-payload';
+const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v10-compact-margin-cost-enrichment';
 // The server cache TTL must not become a browser max-age. A stored HTTP response is
 // keyed only by URL, so it carries no dataVersion and can outlive a corrected payload
 // for the whole TTL without ever revalidating. Serve from DerivedApiCache instead.
@@ -9282,6 +9282,7 @@ export async function GET(request: NextRequest) {
             itemId: string | null;
             itemName: string | null;
             sku: string | null;
+            customerPartNumber: string | null;
             quantitySold: number;
             unitPrice: number;
             revenue: number;
@@ -9292,13 +9293,14 @@ export async function GET(request: NextRequest) {
                 COALESCE("customerId", '') AS "customerIdKey",
                 "customerName",
                 COALESCE(NULLIF("sku", ''), NULLIF("itemId", ''), NULLIF("itemName", ''), '') AS "itemKey",
+                COALESCE("customerPn", '') AS "customerPartNumber",
                 MAX("snapshotDate") AS "snapshotDate"
               FROM "CustomerOrderLineSnapshot"
               WHERE "companyId" = ${companyId}
                 AND "frequency" = ${marginSnapshotFrequency}
                 AND "snapshotDate" >= ${startDate}
                 AND "snapshotDate" <= ${endDate}
-              GROUP BY 1, 2, 3
+              GROUP BY 1, 2, 3, 4
             )
             SELECT
               MAX(o."snapshotDate") AS "snapshotDate",
@@ -9307,6 +9309,7 @@ export async function GET(request: NextRequest) {
               NULLIF(MAX(o."itemId"), '') AS "itemId",
               NULLIF(MAX(o."itemName"), '') AS "itemName",
               NULLIF(MAX(o."sku"), '') AS "sku",
+              NULLIF(MAX(o."customerPn"), '') AS "customerPartNumber",
               SUM(COALESCE(o."qtyInvoiced", o."qtyOrdered", 0))::double precision AS "quantitySold",
               MAX(COALESCE(o."unitPrice", 0))::double precision AS "unitPrice",
               SUM(COALESCE(o."invoicedAmount", o."contractValue", 0))::double precision AS "revenue",
@@ -9316,20 +9319,69 @@ export async function GET(request: NextRequest) {
               ON latest."customerIdKey" = COALESCE(o."customerId", '')
               AND latest."customerName" = o."customerName"
               AND latest."itemKey" = COALESCE(NULLIF(o."sku", ''), NULLIF(o."itemId", ''), NULLIF(o."itemName", ''), '')
+              AND latest."customerPartNumber" = COALESCE(o."customerPn", '')
               AND latest."snapshotDate" = o."snapshotDate"
             WHERE o."companyId" = ${companyId}
               AND o."frequency" = ${marginSnapshotFrequency}
-            GROUP BY latest."customerIdKey", latest."customerName", latest."itemKey"
+            GROUP BY latest."customerIdKey", latest."customerName", latest."itemKey", latest."customerPartNumber"
             ORDER BY "revenue" DESC
             LIMIT 20000
           `);
-          const normalizedMarginRows = marginRows.map((row) => ({
-            ...row,
-            customer: row.customerName,
-            quantitySold: Number(row.quantitySold || 0),
-            unitPrice: Number(row.unitPrice || 0),
-            revenue: Number(row.revenue || 0),
-          }));
+          const aprSgpWorkbook = await readAprSgpGmpaWorkbook(companyId).catch(() => null);
+          const workbookRowsByItemCustomerPart = new Map<string, any>();
+          const workbookRowsByCustomerItem = new Map<string, any>();
+          for (const workbookRow of aprSgpWorkbook?.rows || []) {
+            for (const key of buildAprSgpItemCustomerPartKeys(workbookRow)) {
+              if (key && !workbookRowsByItemCustomerPart.has(key)) {
+                workbookRowsByItemCustomerPart.set(key, workbookRow);
+              }
+            }
+            for (const key of buildAprSgpMatchKeys({
+              customerId: workbookRow.customerId,
+              customerName: workbookRow.customerName,
+              itemId: workbookRow.itemId,
+            })) {
+              if (key && !workbookRowsByCustomerItem.has(key)) {
+                workbookRowsByCustomerItem.set(key, workbookRow);
+              }
+            }
+          }
+          let normalizedMarginRows = marginRows.map((row) => {
+            const workbookRow =
+              buildAprSgpItemCustomerPartKeys(row)
+                .map((key) => workbookRowsByItemCustomerPart.get(key))
+                .find(Boolean) ??
+              buildAprSgpMatchKeys({
+                customerId: row.customerId,
+                customerName: row.customerName,
+                itemId: row.sku || row.itemId || row.itemName,
+              })
+                .map((key) => workbookRowsByCustomerItem.get(key))
+                .find(Boolean);
+            return {
+              ...row,
+              customer: row.customerName,
+              quantitySold: Number(row.quantitySold || 0),
+              unitPrice: Number(row.unitPrice || 0),
+              revenue: Number(row.revenue || 0),
+              customerPartNumber: row.customerPartNumber || workbookRow?.customerPartNumber || null,
+              materialCost: workbookRow?.updatedMaterialCost ?? workbookRow?.sgpMaterialCost ?? null,
+              tariffPerPiece: workbookRow?.projectedTariffPerPiece ?? workbookRow?.sgpTariffPerPiece ?? null,
+              dutiesPerPiece: workbookRow?.projectedDutiesPerPiece ?? workbookRow?.sgpDutiesPerPiece ?? null,
+              freightPerPiece: workbookRow?.projectedFreightPerPiece ?? workbookRow?.sgpFreightPerPiece ?? null,
+            };
+          });
+          try {
+            const { createHtsDutyApplicator } = await import('@/lib/hts/apply-duty-cogs');
+            const applicator = await createHtsDutyApplicator(companyId);
+            normalizedMarginRows = applicator.attach(normalizedMarginRows).map((row: any) => ({
+              ...row,
+              tariffPerPiece: row.tariffPerPiece ?? row.htsTariffPerPiece ?? null,
+              dutiesPerPiece: row.dutiesPerPiece ?? row.htsDutyPerPiece ?? null,
+            }));
+          } catch (error) {
+            console.warn('Compact wholesale margin HTS enrichment skipped:', error);
+          }
           return cacheOperationalPayload({
             records: [],
             summary: {
