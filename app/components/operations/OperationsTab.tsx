@@ -5846,12 +5846,14 @@ export default function OperationsTab({
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-          {isRetailSalesLanguage || isSalesAnalyticsTab ? 'Sales Analytics' : 'Customer Sales Analytics'}
-        </h2>
+        {(isRetailSalesLanguage || isSalesAnalyticsTab) && (
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
+            Sales Analytics
+          </h2>
+        )}
         <div style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column' }}>
             {isSectionEnabled('customersPlatoSalesMetricCards') && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '16px', order: -1 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '12px', marginBottom: '8px', order: -1 }}>
               {[
                 {
                   title: 'Sales MTD',
