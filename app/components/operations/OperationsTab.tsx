@@ -624,9 +624,9 @@ const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const PRODUCT_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CUSTOMER_CONCENTRATION_CLIENT_CACHE_VERSION = 'customer-concentration-exposure-v10';
-const CUSTOMER_REVENUE_CLIENT_CACHE_VERSION = 'customer-revenue-source-v11-monthly-customer-history';
+const CUSTOMER_REVENUE_CLIENT_CACHE_VERSION = 'customer-revenue-source-v13-financial-gross-margin-fallback';
 const CUSTOMER_WIP_CLIENT_CACHE_VERSION = 'customer-backlog-source-v6';
-const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v7-filtech-records-contract';
+const WHOLESALE_PRODUCTS_REPORT_CLIENT_CACHE_VERSION = 'wholesale-products-report-90-day-v8-filtech-records-contract';
 const REAL_ESTATE_REPORT_CLIENT_CACHE_VERSION = 'real-estate-sector-53-reports-v1';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 // Infor re-syncs this report every night, so a stored payload must never outlive the
@@ -1489,12 +1489,16 @@ export default function OperationsTab({
     String(industrySectorCategory || '').trim() === '42' &&
     (mapModuleToDataType(activeTab) === 'products' || activeTab === 'products') &&
     !isVendorsTab &&
-    !isGroupsTab;
+    !isGroupsTab &&
+    resolveModuleKey(activeTab) !== 'projections';
+  const isWholesaleProjectionsTab =
+    String(industrySectorCategory || '').trim() === '42' &&
+    resolveModuleKey(activeTab) === 'projections';
   const isWholesaleVendorsTab =
     String(industrySectorCategory || '').trim() === '42' &&
     isVendorsTab;
   const usesWholesaleDedicatedProductView =
-    (isWholesaleProductsTab &&
+    ((isWholesaleProductsTab || isWholesaleProjectionsTab) &&
     (productReportView === 'productMarginAnalysis' ||
       productReportView === 'wholesaleRawData' ||
       productReportView === 'revenueForecast' ||
@@ -1642,9 +1646,23 @@ export default function OperationsTab({
           return [...resolvedModulesWithVendors.slice(0, productsIdx + 1), 'groups', ...resolvedModulesWithVendors.slice(productsIdx + 1)];
         })()
       : resolvedModulesWithVendors;
+  const resolvedModulesWithProjections =
+    isAtlanticCompany &&
+    String(industrySectorCategory || '').trim() === '42' &&
+    !resolvedModulesWithGroups.includes('projections')
+      ? (() => {
+          const inventoryIdx = resolvedModulesWithGroups.findIndex((module) => module === 'inventory');
+          if (inventoryIdx < 0) return [...resolvedModulesWithGroups, 'projections'];
+          return [
+            ...resolvedModulesWithGroups.slice(0, inventoryIdx + 1),
+            'projections',
+            ...resolvedModulesWithGroups.slice(inventoryIdx + 1),
+          ];
+        })()
+      : resolvedModulesWithGroups;
   const resolvedModules = Array.from(
     new Set([
-      ...resolvedModulesWithGroups,
+      ...resolvedModulesWithProjections,
       ...companyCustomTabKeys.map((key) => resolveModuleKey(key)).filter(Boolean),
     ])
   ).filter((module) => module !== 'groups' || isAtlanticCompany);
@@ -2009,23 +2027,23 @@ export default function OperationsTab({
       let loadedRange: ReturnType<typeof normalizeRange> = null;
       let loadedEmployeeInputs: ReturnType<typeof normalizeEmployeeInputs> = null;
       let loadedResidentialRateTrends: ReturnType<typeof normalizeResidentialRateTrends> = null;
-      let latestEndDateKey = effectiveMaxSelectableEndDate;
-      try {
-        const params = new URLSearchParams({
-          companyId: selectedCompanyId,
-          ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
-        });
-        const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
-        if (response.ok) {
+      const latestEndDateKey = effectiveMaxSelectableEndDate;
+      // The summary request can be slow for large tenants; the saved date
+      // range must not wait on it or the picker shows the default range.
+      void (async () => {
+        try {
+          const params = new URLSearchParams({
+            companyId: selectedCompanyId,
+            ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+          });
+          const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
+          if (!response.ok || cancelled) return;
           const data = await response.json();
-          const latestImportDate = String(data?.summary?.latestImportDate || '').slice(0, 10);
-          if (/^\d{4}-\d{2}-\d{2}$/.test(latestImportDate) && latestImportDate <= maxSelectableEndDate) {
-          }
-          if (data?.summary) setSummary(data.summary);
+          if (!cancelled && data?.summary) setSummary(data.summary);
+        } catch {
+          // Summary loading is best-effort here; the normal summary loader also runs.
         }
-      } catch {
-        // Summary loading is best-effort here; the normal summary loader also runs.
-      }
+      })();
       try {
         const response = await fetch(`/api/ops-dashboard-prefs?companyId=${encodeURIComponent(selectedCompanyId)}`);
         if (response.ok) {
@@ -2408,7 +2426,7 @@ export default function OperationsTab({
     const controller = new AbortController();
     // Must outlast a cold server-side build, otherwise the first request after a
     // deploy aborts here and the rebuilt payload is never shown.
-    const timeoutId = window.setTimeout(() => controller.abort(), 280000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 295000);
     const request = fetch(`/api/operational-data?${params}`, {
       // This report is cached server-side and again in the versioned client store
       // below. An HTTP-cached copy is keyed only by the URL, so it would pin a stale
@@ -2441,7 +2459,7 @@ export default function OperationsTab({
     productReportView === 'wholesaleRawData';
   const isWholesaleRevenueForecastViewActive =
     String(industrySectorCategory || '').trim() === '42' &&
-    mapModuleToDataType(activeTab) === 'products' &&
+    isWholesaleProjectionsTab &&
     (productReportView === 'revenueForecast' ||
       productReportView === 'forecastRollup' ||
       productReportView === 'monthlyRevenue' ||
@@ -2813,10 +2831,10 @@ export default function OperationsTab({
     Boolean(selectedCompanyId) &&
     industrySectorCategory === '42' &&
     (
-      activeWholesaleModuleDataType === 'customers' ||
       (activeWholesaleModuleDataType === 'products' &&
         productReportView === 'productMarginAnalysis' &&
-        resolveModuleKey(activeTab) !== 'groups') ||
+        resolveModuleKey(activeTab) !== 'groups' &&
+        resolveModuleKey(activeTab) !== 'projections') ||
       resolveModuleKey(activeTab) === 'vendors' ||
       ((activeTab === 'overview' || activeTab === 'dashboard') && activeOverviewSubTab === 'execution-velocity')
     );
@@ -3120,7 +3138,8 @@ export default function OperationsTab({
           productReportView === 'reports' ||
           productReportView === 'ytdGap' ||
           resolveModuleKey(tab) === 'vendors' ||
-          resolveModuleKey(tab) === 'groups')
+          resolveModuleKey(tab) === 'groups' ||
+          resolveModuleKey(tab) === 'projections')
       ) {
         setLoading(false);
         setError(null);
@@ -3972,7 +3991,10 @@ export default function OperationsTab({
             </span>
           )}
           <button
+            disabled={!dateRangeReady}
+            title={dateRangeReady ? undefined : 'Loading saved date range...'}
             onClick={async () => {
+              if (!dateRangeReady) return;
               const payload = {
                 frequency,
                 startDate,
@@ -3985,7 +4007,7 @@ export default function OperationsTab({
                   clearTimeout(dateRangeSaveTimerRef.current);
                 }
                 window.localStorage.setItem(`ops:date-range:${selectedCompanyId}`, JSON.stringify(payload));
-                await fetch('/api/ops-dashboard-prefs', {
+                const response = await fetch('/api/ops-dashboard-prefs', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -3993,7 +4015,7 @@ export default function OperationsTab({
                     preferences: { dateRange: payload },
                   }),
                 });
-                setCustomerDateRangeSaveStatus('Saved');
+                setCustomerDateRangeSaveStatus(response.ok ? 'Saved' : 'Save failed');
               } catch {
                 setCustomerDateRangeSaveStatus('Save failed');
               }
@@ -4007,7 +4029,8 @@ export default function OperationsTab({
               fontSize: '13px',
               fontWeight: 600,
               color: 'white',
-              cursor: 'pointer'
+              cursor: dateRangeReady ? 'pointer' : 'not-allowed',
+              opacity: dateRangeReady ? 1 : 0.6
             }}
           >
             Save
@@ -9430,6 +9453,17 @@ export default function OperationsTab({
     const isSgpFreightEnabled = isSectionEnabled('vendorsSgpFreight');
     const isRetailForecastingEnabled = isRetailProductSector && isSectionEnabled('productsRetailForecasting');
     const isMerchandiseProfitabilityEnabled = isRetailProductSector && isSectionEnabled('productsMerchandiseProfitability');
+    const showWholesaleProductViews = !isWholesaleProductSector || isWholesaleProductsTab;
+    const showWholesaleProjectionViews = !isWholesaleProductSector || isWholesaleProjectionsTab;
+    const isWholesaleProjectionView = [
+      'revenueForecast',
+      'forecastRollup',
+      'monthlyRevenue',
+      'revenueRollup',
+      'goalUpdate',
+      'reports',
+      'ytdGap',
+    ].includes(productReportView);
     const hasAnyProductsReportEnabled =
       isProductPerformanceEnabled ||
       isProductReportsEnabled ||
@@ -9451,7 +9485,29 @@ export default function OperationsTab({
       isSectionEnabled('productsBottomLossMakers') ||
       isSectionEnabled('productsFreightOtherTracker');
     const fallbackProductReportView: ProductReportView =
-      isProductPerformanceEnabled
+      isWholesaleProductSector && isWholesaleProductsTab
+        ? isProductMarginAnalysisEnabled
+          ? 'productMarginAnalysis'
+          : isWholesaleRawDataEnabled
+          ? 'wholesaleRawData'
+          : 'productMarginAnalysis'
+        : isWholesaleProductSector && isWholesaleProjectionsTab
+        ? isRevenueForecastEnabled
+          ? 'revenueForecast'
+          : isForecastRollupEnabled
+          ? 'forecastRollup'
+          : isMonthlyRevenueEnabled
+          ? 'monthlyRevenue'
+          : isRevenueRollupEnabled
+          ? 'revenueRollup'
+          : isGoalUpdateEnabled
+          ? 'goalUpdate'
+          : isProductReportsEnabled
+          ? 'reports'
+          : isProductYtdGapEnabled
+          ? 'ytdGap'
+          : 'revenueForecast'
+        : isProductPerformanceEnabled
         ? 'performance'
         : isProductMarginAnalysisEnabled
         ? 'productMarginAnalysis'
@@ -9477,7 +9533,12 @@ export default function OperationsTab({
         ? 'retailForecast'
         : 'performance';
     const effectiveProductReportView =
-      productReportView === 'productMarginAnalysis' && !isProductMarginAnalysisEnabled
+      isWholesaleProductSector && isWholesaleProductsTab && isWholesaleProjectionView
+        ? fallbackProductReportView
+        : isWholesaleProductSector && isWholesaleProjectionsTab &&
+            (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData')
+        ? fallbackProductReportView
+        : productReportView === 'productMarginAnalysis' && !isProductMarginAnalysisEnabled
         ? fallbackProductReportView
         : productReportView === 'wholesaleRawData' && !isWholesaleRawDataEnabled
         ? fallbackProductReportView
@@ -10953,7 +11014,7 @@ export default function OperationsTab({
     const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isRevenueForecastEnabled || isForecastRollupEnabled || isMonthlyRevenueEnabled || isRevenueRollupEnabled || isGoalUpdateEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
       <>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-        {isProductMarginAnalysisEnabled && (
+        {showWholesaleProductViews && isProductMarginAnalysisEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('productMarginAnalysis')}
@@ -10972,7 +11033,7 @@ export default function OperationsTab({
             Product Margin Analysis
           </button>
         )}
-        {isWholesaleRawDataEnabled && (
+        {showWholesaleProductViews && isWholesaleRawDataEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('wholesaleRawData')}
@@ -10991,7 +11052,7 @@ export default function OperationsTab({
             Raw Data
           </button>
         )}
-        {isRevenueForecastEnabled && (
+        {showWholesaleProjectionViews && isRevenueForecastEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('revenueForecast')}
@@ -11010,7 +11071,7 @@ export default function OperationsTab({
             Monthly Forecast
           </button>
         )}
-        {isForecastRollupEnabled && (
+        {showWholesaleProjectionViews && isForecastRollupEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('forecastRollup')}
@@ -11029,7 +11090,7 @@ export default function OperationsTab({
             Forecast Rollup
           </button>
         )}
-        {isMonthlyRevenueEnabled && (
+        {showWholesaleProjectionViews && isMonthlyRevenueEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('monthlyRevenue')}
@@ -11048,7 +11109,7 @@ export default function OperationsTab({
             Monthly Revenue
           </button>
         )}
-        {isRevenueRollupEnabled && (
+        {showWholesaleProjectionViews && isRevenueRollupEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('revenueRollup')}
@@ -11067,7 +11128,7 @@ export default function OperationsTab({
             Revenue Rollup
           </button>
         )}
-        {isGoalUpdateEnabled && (
+        {showWholesaleProjectionViews && isGoalUpdateEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('goalUpdate')}
@@ -11086,7 +11147,7 @@ export default function OperationsTab({
             Goal Update
           </button>
         )}
-        {isProductPerformanceEnabled && (
+        {showWholesaleProductViews && isProductPerformanceEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('performance')}
@@ -11105,7 +11166,7 @@ export default function OperationsTab({
             Performance
           </button>
         )}
-        {isProductReportsEnabled && (
+        {showWholesaleProjectionViews && isProductReportsEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('reports')}
@@ -11124,7 +11185,7 @@ export default function OperationsTab({
             Reports
           </button>
         )}
-        {isProductYtdGapEnabled && (
+        {showWholesaleProjectionViews && isProductYtdGapEnabled && (
           <button
             type="button"
             onClick={() => setProductReportView('ytdGap')}
@@ -11216,6 +11277,8 @@ export default function OperationsTab({
     ) : null;
     const productPageTitle = isHealthcareServicesProceduresPage
       ? 'Services / Procedures Performance'
+      : isWholesaleProjectionsTab
+      ? 'Inventory Projections'
       : 'Product Sales Performance';
     const renderProductMarginAnalysisReport = () => {
       const formatMarginNumber = (value: number | null | undefined) =>
@@ -11246,6 +11309,13 @@ export default function OperationsTab({
         { key: 'netProfitPct', label: ['SGP Net', 'Profit', '(%)'], compact: true },
         { key: 'grossMarginPct', label: ['SGP Gross', 'Margin %'], compact: true },
       ];
+      // A single customer and an item search always render expanded.
+      const canToggleVisibleProductMarginCustomers =
+        productMarginCustomerFilter === 'all' && !productMarginItemSearchTerm;
+      const productMarginToggleDisabledReason =
+        productMarginCustomerFilter === 'all'
+          ? 'Clear the Item # search to expand or collapse customers'
+          : 'Available when All customers is selected';
       const setVisibleCustomersExpanded = (expanded: boolean) => {
         setExpandedProductMarginCustomers((prev) => {
           const next = { ...prev };
@@ -11371,20 +11441,27 @@ export default function OperationsTab({
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => setVisibleCustomersExpanded(true)}
-                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-              >
-                Expand Visible
-              </button>
-              <button
-                type="button"
-                onClick={() => setVisibleCustomersExpanded(false)}
-                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-              >
-                Collapse Visible
-              </button>
+              {(['Expand Visible', 'Collapse Visible'] as const).map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  disabled={!canToggleVisibleProductMarginCustomers}
+                  title={canToggleVisibleProductMarginCustomers ? undefined : productMarginToggleDisabledReason}
+                  onClick={() => setVisibleCustomersExpanded(label === 'Expand Visible')}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    background: canToggleVisibleProductMarginCustomers ? '#fff' : '#f1f5f9',
+                    color: canToggleVisibleProductMarginCustomers ? '#334155' : '#94a3b8',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: canToggleVisibleProductMarginCustomers ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
               <input
                 type="search"
                 value={productMarginItemSearch}
@@ -13254,6 +13331,8 @@ export default function OperationsTab({
       );
     }
 
+    const productReportLayoutModule = isWholesaleProjectionsTab ? 'inventory' : 'products_skus';
+
     if (shouldRenderRevenueForecast) {
       return (
         <div style={{ padding: '8px 12px 16px' }}>
@@ -13261,7 +13340,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderReorderableCompanyReport('productsRevenueForecast', 'products_skus', <ProductRevenueForecastReport
+          {renderReorderableCompanyReport('productsRevenueForecast', productReportLayoutModule, <ProductRevenueForecastReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsRevenueForecast')}
           />)}
@@ -13277,7 +13356,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderReorderableCompanyReport('productsForecastRollup', 'products_skus', <ProductForecastRollupReport
+          {renderReorderableCompanyReport('productsForecastRollup', productReportLayoutModule, <ProductForecastRollupReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsForecastRollup')}
           />)}
@@ -13293,7 +13372,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderReorderableCompanyReport('productsMonthlyRevenue', 'products_skus', <ProductMonthlyRevenueReport
+          {renderReorderableCompanyReport('productsMonthlyRevenue', productReportLayoutModule, <ProductMonthlyRevenueReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsMonthlyRevenue')}
           />)}
@@ -13309,7 +13388,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderReorderableCompanyReport('productsRevenueRollup', 'products_skus', <ProductRevenueRollupReport
+          {renderReorderableCompanyReport('productsRevenueRollup', productReportLayoutModule, <ProductRevenueRollupReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsRevenueRollup')}
           />)}
@@ -13325,7 +13404,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderReorderableCompanyReport('productsGoalUpdate', 'products_skus', <ProductGoalUpdateReport
+          {renderReorderableCompanyReport('productsGoalUpdate', productReportLayoutModule, <ProductGoalUpdateReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsGoalUpdate')}
           />)}
@@ -13341,7 +13420,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderReorderableCompanyReport('productsReports', 'products_skus', <ProductReportsChart
+          {renderReorderableCompanyReport('productsReports', productReportLayoutModule, <ProductReportsChart
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsReports')}
           />)}
@@ -13357,7 +13436,7 @@ export default function OperationsTab({
             {productPageTitle}
           </h2>
           {productViewSwitcher}
-          {renderReorderableCompanyReport('productsYtdGap', 'products_skus', <ProductYtdGapReport
+          {renderReorderableCompanyReport('productsYtdGap', productReportLayoutModule, <ProductYtdGapReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsYtdGap')}
           />)}
@@ -30910,6 +30989,28 @@ Strategies to Improve the CCC
             key={tab}
             onClick={() => {
               setActiveTab(tab as any);
+              if (tab === 'projections' && ![
+                'revenueForecast',
+                'forecastRollup',
+                'monthlyRevenue',
+                'revenueRollup',
+                'goalUpdate',
+                'reports',
+                'ytdGap',
+              ].includes(productReportView)) {
+                setProductReportView('revenueForecast');
+              }
+              if (['products', 'products_skus'].includes(resolveModuleKey(tab)) && [
+                'revenueForecast',
+                'forecastRollup',
+                'monthlyRevenue',
+                'revenueRollup',
+                'goalUpdate',
+                'reports',
+                'ytdGap',
+              ].includes(productReportView)) {
+                setProductReportView('productMarginAnalysis');
+              }
               if (mapModuleToDataType(tab)) {
                 void loadTabData(tab);
               }

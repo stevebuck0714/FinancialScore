@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
@@ -93,6 +93,7 @@ const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-d
 // for the whole TTL without ever revalidating. Serve from DerivedApiCache instead.
 const OPERATIONAL_RESPONSE_HEADERS = { 'Cache-Control': 'private, no-store' };
 type WholesaleProductsReportMode = 'all' | 'margin' | 'raw' | 'vendor';
+const wholesaleProductsReportRebuilds = new Set<string>();
 const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
 const GENE_SOLUTIONS_MOCK_FINANCIAL_SOURCE = 'GENE_SOLUTIONS_MOCK';
 const OPERATIONAL_CACHEABLE_TYPES = new Set([
@@ -3258,6 +3259,58 @@ function aggregateApSeriesByFrequency(
   return aggregated;
 }
 
+function scheduleWholesaleProductsReportRebuild(params: {
+  request: NextRequest;
+  companyId: string;
+  startDate: string;
+  endDate: string;
+  reportMode: WholesaleProductsReportMode;
+}): void {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  if (!cronSecret) return;
+
+  const key = [params.companyId, params.startDate, params.endDate, params.reportMode].join('|');
+  if (wholesaleProductsReportRebuilds.has(key)) return;
+  wholesaleProductsReportRebuilds.add(key);
+
+  after(async () => {
+    try {
+      const url = new URL('/api/operational-data', params.request.nextUrl.origin);
+      url.search = new URLSearchParams({
+        companyId: params.companyId,
+        type: 'products',
+        frequency: 'daily',
+        startDate: params.startDate,
+        endDate: params.endDate,
+        limit: 'all',
+        sectorCategory: '42',
+        reportMode: params.reportMode,
+        refreshWholesaleProducts: '1',
+        cacheWarmup: '1',
+      }).toString();
+      const response = await fetch(url, {
+        cache: 'no-store',
+        headers: { authorization: `Bearer ${cronSecret}` },
+      });
+      if (!response.ok) {
+        console.warn('Wholesale product report background rebuild failed:', {
+          companyId: params.companyId,
+          reportMode: params.reportMode,
+          status: response.status,
+        });
+      }
+    } catch (error) {
+      console.warn('Wholesale product report background rebuild failed:', {
+        companyId: params.companyId,
+        reportMode: params.reportMode,
+        error,
+      });
+    } finally {
+      wholesaleProductsReportRebuilds.delete(key);
+    }
+  });
+}
+
 /**
  * GET /api/operational-data
  * 
@@ -3654,27 +3707,45 @@ export async function GET(request: NextRequest) {
       });
     };
 
-    if (operationalCache && !(isWholesaleProductsReportRequest && refreshWholesaleProducts)) {
-      const cachedPayload = await readDerivedApiCache<any>(operationalCache);
-      if (cachedPayload) {
-        const presentedCached = await presentOperationalPayload(cachedPayload);
-        return NextResponse.json(presentedCached, {
-          headers: OPERATIONAL_RESPONSE_HEADERS,
-        });
-      }
-      // A vendor-price rebuild scans the raw CSI history and can take minutes.
-      // While a post-import warmup is producing the new version, preserve the
-      // last complete vendor payload rather than blocking the operational UI.
-      if (isWholesaleProductsReportRequest) {
-        const stalePayload = await readLatestDerivedApiCache<any>({
-          namespace: operationalCache.namespace,
-          cacheKey: operationalCache.cacheKey,
-        });
-        if (stalePayload) {
-          const presentedStale = await presentOperationalPayload(stalePayload);
-          return NextResponse.json(presentedStale, {
+    if (operationalCache) {
+      // A privileged cache warmup deliberately bypasses both fresh and stale
+      // cache reads so it can rebuild the payload after a user is served the
+      // last complete version.
+      const isForcedWholesaleCacheRebuild =
+        isCronWholesaleProductsWarmup && isWholesaleProductsReportRequest && refreshWholesaleProducts;
+      if (!isForcedWholesaleCacheRebuild) {
+        const cachedPayload = !refreshWholesaleProducts
+          ? await readDerivedApiCache<any>(operationalCache)
+          : null;
+        if (cachedPayload) {
+          const presentedCached = await presentOperationalPayload(cachedPayload);
+          return NextResponse.json(presentedCached, {
             headers: OPERATIONAL_RESPONSE_HEADERS,
           });
+        }
+        // A wholesale rebuild can take minutes. Never make an interactive
+        // request wait for it: return the last complete payload and rebuild
+        // this exact window after the response has been sent.
+        if (isWholesaleProductsReportRequest) {
+          const stalePayload = await readLatestDerivedApiCache<any>({
+            namespace: operationalCache.namespace,
+            cacheKey: operationalCache.cacheKey,
+          });
+          if (stalePayload) {
+            if (!isCronWholesaleProductsWarmup) {
+              scheduleWholesaleProductsReportRebuild({
+                request,
+                companyId,
+                startDate: dateKeyUtc(startDate),
+                endDate: dateKeyUtc(endDate),
+                reportMode: wholesaleProductsReportMode,
+              });
+            }
+            const presentedStale = await presentOperationalPayload(stalePayload);
+            return NextResponse.json(presentedStale, {
+              headers: OPERATIONAL_RESPONSE_HEADERS,
+            });
+          }
         }
       }
     }

@@ -38,7 +38,9 @@ const isDateKey = (value: unknown): boolean => /^\d{4}-\d{2}-\d{2}$/.test(String
 // dashboard loads the company's saved range and always pins the end date to
 // yesterday EST, so anchoring the warmup to the latest snapshot date missed by
 // a day or more and every user request landed on a cold cache.
-async function resolveReportWindow(companyId: string): Promise<{ startDate: string; endDate: string }> {
+export async function resolveWholesaleProductsReportWindow(
+  companyId: string
+): Promise<{ startDate: string; endDate: string }> {
   const endDate = previousEstCalendarDate();
   const rows = await prisma.$queryRaw<Array<{ preferences: unknown }>>`
     SELECT preferences FROM "OpsDashboardPreference" WHERE "companyId" = ${companyId}
@@ -117,7 +119,7 @@ export async function warmWholesaleProductsReportCache(companyId: string): Promi
     return { ok: true, skipped: true };
   }
 
-  const reportWindow = await resolveReportWindow(companyId);
+  const reportWindow = await resolveWholesaleProductsReportWindow(companyId);
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   const modes: Array<{ mode: WholesaleReportMode; ok: boolean; ms: number; error?: string }> = [];
   for (const mode of WHOLESALE_REPORT_MODES) {

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { addEstCalendarDays, formatEstDate, previousEstCalendarDate } from '@/lib/time/eastern';
 import prisma from '@/lib/prisma';
 import {
   ATLANTIC_PRECISION_COMPANY_ID,
   warmAtlanticProductGroupReportCache,
 } from '@/lib/operations/product-group-report-warmup';
+import { resolveWholesaleProductsReportWindow } from '@/lib/operations/wholesale-products-report-warmup';
 
 // Atlantic Precision auto-pull is 2:00 AM EST.
 // Vercel cron is UTC only. 09:15 UTC = 4:15 AM EST (5:15 AM EDT).
@@ -13,7 +13,6 @@ import {
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const PRODUCTS_LOOKBACK_DAYS = 90;
 type WholesaleReportMode = 'margin' | 'raw' | 'vendor';
 
 function isAuthorized(request: NextRequest): boolean {
@@ -22,28 +21,6 @@ function isAuthorized(request: NextRequest): boolean {
   if (isVercelCron) return true;
   if (!cronSecret) return process.env.NODE_ENV === 'development';
   return request.headers.get('authorization') === `Bearer ${cronSecret}`;
-}
-
-function yesterdayEstIso(): string {
-  return previousEstCalendarDate();
-}
-
-function startIsoFromEndDate(endDateIso: string): string {
-  const end = /^\d{4}-\d{2}-\d{2}$/.test(endDateIso) ? endDateIso : yesterdayEstIso();
-  return addEstCalendarDays(end, -PRODUCTS_LOOKBACK_DAYS);
-}
-
-async function latestDailyProductsEndIso(companyId: string): Promise<string> {
-  const fallback = yesterdayEstIso();
-  const latest = await prisma.productSalesSnapshot.findFirst({
-    where: { companyId, frequency: 'daily' },
-    orderBy: { snapshotDate: 'desc' },
-    select: { snapshotDate: true },
-  }).catch(() => null);
-  const snapshotDate = latest?.snapshotDate instanceof Date
-    ? formatEstDate(latest.snapshotDate)
-    : '';
-  return snapshotDate && snapshotDate <= fallback ? snapshotDate : fallback;
 }
 
 async function hasPendingInforTransforms(companyId: string): Promise<boolean> {
@@ -133,8 +110,7 @@ export async function GET(request: NextRequest) {
     select: { industrySectorCategory: true },
   });
   const sectorCategory = String(company?.industrySectorCategory || '').trim() || null;
-  const endDate = await latestDailyProductsEndIso(companyId);
-  const startDate = startIsoFromEndDate(endDate);
+  const { startDate, endDate } = await resolveWholesaleProductsReportWindow(companyId);
 
   const customers = await warmupOperationalRequest({
     origin: request.nextUrl.origin,
