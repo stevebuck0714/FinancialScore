@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { APP_TIME_ZONE } from '@/lib/time/eastern';
+import { isAccountManagerUser } from '@/lib/auth/company-switch';
 
 interface User {
   name: string | null;
@@ -9,6 +10,7 @@ interface User {
   userType?: string;
   companyRole?: string | null;
   sidebarAccess?: string[] | null;
+  isAccountManager?: boolean;
 }
 
 interface HeaderProps {
@@ -47,6 +49,8 @@ export default function Header({
     currentUser?.role === 'siteadmin'
       ? currentUser.name
       : (previewAdminName && previewAdminName.trim() ? previewAdminName : currentUser?.name);
+
+  const showMyAccountsLink = isAccountManagerUser(currentUser) && !(previewAdminName && previewAdminName.trim());
 
   const allowedSections = (isCompanyUser && !isCompanyAdmin && Array.isArray(currentUser?.sidebarAccess))
     ? currentUser.sidebarAccess
@@ -241,6 +245,24 @@ export default function Header({
           </a>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
           <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>{displayedUserName}</span>
+          {showMyAccountsLink && (
+            <button
+              type="button"
+              onClick={() => setCurrentView('my-accounts')}
+              style={{
+                padding: 0,
+                background: 'none',
+                border: 'none',
+                color: currentView === 'my-accounts' ? '#1e293b' : '#1F70C1',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                textDecoration: currentView === 'my-accounts' ? 'none' : 'underline',
+              }}
+            >
+              My Accounts
+            </button>
+          )}
           <button
             onClick={handleLogout}
             style={{

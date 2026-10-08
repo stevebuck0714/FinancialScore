@@ -335,6 +335,7 @@ export interface User {
   consultantId?: string;
   consultantType?: string;
   consultantCompanyName?: string;
+  isAccountManager?: boolean;
   demoCompany?: boolean;
   demoExpired?: boolean;
   demoExpiresAt?: string | null;

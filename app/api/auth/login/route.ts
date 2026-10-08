@@ -252,6 +252,7 @@ export async function POST(request: NextRequest) {
         companyId: activeCompanyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,
+        isAccountManager: user.role === 'USER' && user.isAccountManager,
         consultantType: consultant?.type,
         consultantCompanyName: consultant?.companyName,
         demoCompany,
@@ -264,7 +265,7 @@ export async function POST(request: NextRequest) {
 
     if (activeCompanyId) {
       response.cookies.set('fs_active_company', activeCompanyId, {
-        httpOnly: false,
+        httpOnly: true,
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
         path: '/',

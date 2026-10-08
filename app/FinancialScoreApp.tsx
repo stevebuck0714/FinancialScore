@@ -3,6 +3,12 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useLayoutEffect, ChangeEvent, useRef } from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
+import {
+  clearBrowserCompanyData,
+  isAccountManagerUser,
+  shouldLandOnMyAccounts,
+  subscribeToCompanySwitches,
+} from '@/lib/auth/company-switch';
 import dynamic from 'next/dynamic';
 import { upload } from '@vercel/blob/client';
 import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, CreditCard, MapPin, Lock } from 'lucide-react';
@@ -81,6 +87,7 @@ const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' |
 const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
 const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlertsView'), { ssr: false });
 const DataRoomView = dynamic(() => import('./components/dataroom/DataRoomView'), { ssr: false });
+const MyAccountsPage = dynamic(() => import('./components/accounts/MyAccountsPage'), { ssr: false });
 const CustomReportsView = dynamic(() => import('./components/reports/CustomReportsView'), { ssr: false });
 
 function formatErrorText(value: any, fallback = 'Unknown error') {
@@ -191,7 +198,8 @@ const formatDollar = (value: number, currency: string = 'USD'): string => {
   return formatMoney(Math.round(Math.abs(value)), { currency, decimals: 0 });
 };
 
-const resolveCompanyLandingView = (user: any, company?: any): 'operations' | 'daily-alerts' => {
+const resolveCompanyLandingView = (user: any, company?: any): 'operations' | 'daily-alerts' | 'my-accounts' => {
+  if (shouldLandOnMyAccounts(user)) return 'my-accounts';
   const userIsDemo = Boolean(user?.demoCompany || user?.isDemoSignup);
   const companyStatus = String(company?.subscriptionStatus || '').trim().toLowerCase();
   const companyAffiliateCode = String(company?.affiliateCode || '').trim().toUpperCase();
@@ -292,6 +300,7 @@ const NAVIGABLE_VIEWS = new Set([
   'pa-opportunity-workspace',
   'dataroom',
   'custom-reports',
+  'my-accounts',
 ]);
 
 type InforOperationalSyncStatus = {
@@ -1655,7 +1664,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
   const [valuationBuilderSelections, setValuationBuilderSelections] = useState<Record<string, boolean>>({
     es_enterpriseValueRange: true,
     es_primaryValuationMethod: true,
@@ -4642,6 +4651,17 @@ function FinancialScorePage() {
         }
       })();
     const isAssessmentUser = savedUser?.userType === 'assessment';
+    // Account Managers move between companies; these caches carry no company
+    // label, so they are never restored for them and always come from the API.
+    if (isAccountManagerUser(savedUser)) {
+      saved.users = null;
+      saved.records = null;
+      saved.assessmentResponses = null;
+      saved.assessmentNotes = null;
+      saved.assessmentRecords = null;
+      saved.companyProfiles = null;
+      saved.consultants = null;
+    }
     
     if (saved.consultants) setConsultants(JSON.parse(saved.consultants));
     // Company lists are server-authoritative. Do not restore fs_companies from
@@ -4756,6 +4776,13 @@ function FinancialScorePage() {
   useEffect(() => { if (typeof window !== 'undefined' && Object.keys(assessmentNotes).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentNotes', JSON.stringify(assessmentNotes)); }, [assessmentNotes, currentUser]);
   useEffect(() => { if (typeof window !== 'undefined' && assessmentRecords.length > 0) localStorage.setItem('fs_assessmentRecords', JSON.stringify(assessmentRecords)); }, [assessmentRecords]);
   useEffect(() => { if (typeof window !== 'undefined' && companyProfiles.length > 0) localStorage.setItem('fs_companyProfiles', JSON.stringify(companyProfiles)); }, [companyProfiles]);
+
+  const activeCompanyIdRef = useRef<string>('');
+  activeCompanyIdRef.current = selectedCompanyId;
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    return subscribeToCompanySwitches(() => activeCompanyIdRef.current);
+  }, [isLoggedIn]);
   
   // Fetch team members when viewing team management tab
   useEffect(() => {
@@ -7567,6 +7594,7 @@ function FinancialScorePage() {
     localStorage.removeItem('fs_siteAdminSessionUser');
     localStorage.removeItem('fs_siteAdminPreview');
     localStorage.removeItem('fs_selectedCompanyId');
+    clearBrowserCompanyData();
     setSiteAdminViewingAs(null);
     setSiteAdminSessionUser(null);
     if (typeof window !== 'undefined') {
@@ -8402,13 +8430,6 @@ function FinancialScorePage() {
     if (typeof window !== 'undefined') {
       const storedCompanyId = String(localStorage.getItem('fs_selectedCompanyId') || '').trim();
       if (storedCompanyId) return storedCompanyId;
-
-      const activeCompanyCookie = document.cookie
-        .split('; ')
-        .find((entry) => entry.startsWith('fs_active_company='))
-        ?.split('=')[1];
-      const cookieCompanyId = String(activeCompanyCookie || '').trim();
-      if (cookieCompanyId) return decodeURIComponent(cookieCompanyId);
     }
 
     const firstCompanyId = String((Array.isArray(companies) && companies[0]?.id) || '').trim();
@@ -9639,40 +9660,6 @@ function FinancialScorePage() {
 
       return replaced ? nextUsers : [...nextUsers, normalizedUser];
     });
-  };
-
-  const applyActiveCompany = async (companyId: string) => {
-    await authApi.selectCompany(companyId);
-    setSelectedCompanyId(companyId);
-    setExpandedCompanyInfoId(companyId);
-    setCurrentUser((prev) => {
-      if (!prev) return prev;
-      const membership = Array.isArray(prev.accessibleCompanies)
-        ? prev.accessibleCompanies.find((c) => c.companyId === companyId)
-        : undefined;
-      return {
-        ...prev,
-        companyId,
-        activeCompanyId: companyId,
-        companyRole: (membership?.companyRole as any) ?? prev.companyRole,
-        sidebarAccess: (membership?.sidebarAccess as any) ?? prev.sidebarAccess,
-        operationalDashboardAccess:
-          (membership?.operationalDashboardAccess as any) ?? prev.operationalDashboardAccess,
-      };
-    });
-  };
-
-  const handleSelectCompany = async (companyId: string) => {
-    const company = Array.isArray(companies) ? companies.find(c => c.id === companyId) : undefined;
-    if (!company) return;
-    try {
-      await applyActiveCompany(companyId);
-      // Navigate to Company Management for the selected company.
-      setCurrentView('admin');
-    } catch (error) {
-      const message = error instanceof ApiError ? error.message : 'Failed to switch company';
-      alert(message);
-    }
   };
 
   const saveCompanyDetails = async () => {
@@ -17197,6 +17184,14 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view daily alerts.</p>
+        </div>
+      )}
+
+      {currentView === 'my-accounts' && isAccountManagerUser(currentUser) && <MyAccountsPage />}
+      {currentView === 'my-accounts' && !isAccountManagerUser(currentUser) && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Not Available</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>My Accounts is only available to Account Managers.</p>
         </div>
       )}
 

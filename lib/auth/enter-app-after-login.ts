@@ -1,3 +1,5 @@
+import { clearBrowserCompanyData, markAccountManagerLanding } from './company-switch';
+
 export function normalizeSessionUser(user: any) {
   return {
     ...user,
@@ -16,6 +18,10 @@ export function normalizeSessionUser(user: any) {
 export function persistLoggedInUser(user: any) {
   const normalizedUser = normalizeSessionUser(user);
   if (typeof window === 'undefined') return normalizedUser;
+  if (normalizedUser.isAccountManager) {
+    clearBrowserCompanyData();
+  }
+  markAccountManagerLanding(normalizedUser);
   localStorage.setItem('fs_currentUser', JSON.stringify(normalizedUser));
   sessionStorage.setItem(
     'pendingLogin',

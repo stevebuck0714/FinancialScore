@@ -673,7 +673,10 @@ export default function SiteAdminDashboard(props: any) {
   const [newEmployeeTitle, setNewEmployeeTitle] = React.useState('Account Manager');
   const [newEmployeePhone, setNewEmployeePhone] = React.useState('');
   const [newEmployeeInitialCompanyId, setNewEmployeeInitialCompanyId] = React.useState('');
-  const [newEmployeeInitialRole, setNewEmployeeInitialRole] = React.useState<'user' | 'admin'>('admin');
+  const [newEmployeeIsAccountManager, setNewEmployeeIsAccountManager] = React.useState(true);
+  const [savingAccountManagerUserId, setSavingAccountManagerUserId] = React.useState<string | null>(null);
+  const [userAccessSearch, setUserAccessSearch] = React.useState('');
+  const [userAccessAccountManagersOnly, setUserAccessAccountManagersOnly] = React.useState(false);
   const [creatingEmployeeUser, setCreatingEmployeeUser] = React.useState(false);
 
   const getAccountingSystemLabel = (value: unknown): string => {
@@ -1093,6 +1096,14 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  React.useEffect(() => {
+    if (siteAdminTab !== 'user-access') return;
+    refreshSiteAdminUsers().catch((error) => {
+      console.error('Failed to load users for User Access', error);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteAdminTab]);
+
   const getCompanyOwnerLabel = (company: any) => {
     if (!company?.consultantId) return 'Standalone business';
     const consultant = Array.isArray(consultants)
@@ -1165,6 +1176,14 @@ export default function SiteAdminDashboard(props: any) {
     return getAssignedCompaniesForUser(user).some((company: any) => isCorelyticsCompany(company));
   };
 
+  const corelyticsHomeCompanies = (Array.isArray(companies) ? companies : [])
+    .filter((company: any) => isCorelyticsCompany(company))
+    .slice()
+    .sort((a: any, b: any) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
+  const employeeHomeCompanyId =
+    newEmployeeInitialCompanyId ||
+    (corelyticsHomeCompanies.length === 1 ? String(corelyticsHomeCompanies[0]?.id || '') : '');
+
   const assignCompanyToUser = async () => {
     if (!userAccessSelectedUserId) {
       alert('Select a user.');
@@ -1205,10 +1224,18 @@ export default function SiteAdminDashboard(props: any) {
     const name = newEmployeeName.trim();
     const email = newEmployeeEmail.trim();
     const password = newEmployeePassword;
-    const companyId = newEmployeeInitialCompanyId;
+    const companyId = employeeHomeCompanyId;
 
-    if (!name || !email || !password || !companyId) {
-      alert('Name, email, password, and initial company are required.');
+    if (!name || !email || !password) {
+      alert('Name, email, and password are required.');
+      return;
+    }
+    if (!companyId) {
+      alert(
+        corelyticsHomeCompanies.length === 0
+          ? 'No Corelytics or FinancialScore company exists to hold internal employee logins. Create one first.'
+          : 'Choose the Corelytics home workspace for this employee.'
+      );
       return;
     }
     setCreatingEmployeeUser(true);
@@ -1239,14 +1266,26 @@ export default function SiteAdminDashboard(props: any) {
           body: JSON.stringify({
             userId: createdUserId,
             companyId,
-            companyRole: newEmployeeInitialRole,
+            companyRole: 'user',
             sidebarAccess: DEFAULT_ALLOWED_SECTIONS,
             operationalDashboardAccess: null,
           }),
         });
         const permissionData = await permissionResponse.json();
         if (!permissionResponse.ok) {
-          throw new Error(permissionData?.error || 'Employee created, but failed to set company admin access');
+          throw new Error(permissionData?.error || 'Employee created, but failed to set home workspace access');
+        }
+
+        if (newEmployeeIsAccountManager) {
+          const accountManagerResponse = await fetch('/api/siteadmin/account-managers', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: createdUserId, isAccountManager: true }),
+          });
+          const accountManagerData = await accountManagerResponse.json().catch(() => ({}));
+          if (!accountManagerResponse.ok) {
+            throw new Error(accountManagerData?.error || 'Employee created, but failed to mark as Account Manager');
+          }
         }
       }
 
@@ -1258,18 +1297,38 @@ export default function SiteAdminDashboard(props: any) {
       setNewEmployeeTitle('Account Manager');
       setNewEmployeePhone('');
       setNewEmployeeInitialCompanyId('');
-      setNewEmployeeInitialRole('admin');
+      setNewEmployeeIsAccountManager(true);
 
       const emailNote = createData?.welcomeEmailSent
         ? ' Welcome email sent.'
         : createData?.welcomeEmailError
           ? ` Welcome email failed: ${createData.welcomeEmailError}`
           : '';
-      alert(`Employee user created.${emailNote}`);
+      alert(`Employee user created.${emailNote} Assign their companies in "Assign company access" below.`);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to create employee user');
     } finally {
       setCreatingEmployeeUser(false);
+    }
+  };
+
+  const setUserAccountManager = async (userId: string, isAccountManager: boolean) => {
+    setSavingAccountManagerUserId(userId);
+    try {
+      const response = await fetch('/api/siteadmin/account-managers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, isAccountManager }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to update Account Manager setting');
+      }
+      await refreshSiteAdminUsers();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to update Account Manager setting');
+    } finally {
+      setSavingAccountManagerUserId(null);
     }
   };
 
@@ -10276,8 +10335,6 @@ export default function SiteAdminDashboard(props: any) {
                         })
                       )
                   : [];
-                const corelyticsCompanies = allCompanies.filter((company: any) => isCorelyticsCompany(company));
-                const employeeHomeCompanyOptions = corelyticsCompanies.length > 0 ? corelyticsCompanies : allCompanies;
                 const manageableUsers = Array.isArray(users)
                   ? users
                       .filter((user: any) => {
@@ -10293,265 +10350,354 @@ export default function SiteAdminDashboard(props: any) {
                         })
                       )
                   : [];
+                const corelyticsHomeCompanyIds = new Set(corelyticsHomeCompanies.map((company: any) => company.id));
+                const userAccessQuery = userAccessSearch.trim().toLowerCase();
+                const visibleUsers = manageableUsers.filter((user: any) => {
+                  if (userAccessAccountManagersOnly && !user.isAccountManager) return false;
+                  if (!userAccessQuery) return true;
+                  if (String(user.name || '').toLowerCase().includes(userAccessQuery)) return true;
+                  if (String(user.email || '').toLowerCase().includes(userAccessQuery)) return true;
+                  return getAssignedCompaniesForUser(user).some((company: any) =>
+                    String(company.name || '').toLowerCase().includes(userAccessQuery)
+                  );
+                });
                 const selectedUser = manageableUsers.find((user: any) => user.id === userAccessSelectedUserId);
-                const selectedUserAssignments = selectedUser ? getAssignedCompaniesForUser(selectedUser) : [];
+                const selectedUserCompanyIds = new Set(
+                  selectedUser ? getAssignedCompaniesForUser(selectedUser).map((company: any) => company.id) : []
+                );
+                const selectedUserClientCount = Array.from(selectedUserCompanyIds).filter(
+                  (companyId) => !corelyticsHomeCompanyIds.has(companyId)
+                ).length;
+                const assignableCompanies = allCompanies.filter(
+                  (company: any) => !corelyticsHomeCompanyIds.has(company.id) && !selectedUserCompanyIds.has(company.id)
+                );
+                const panelStyle: React.CSSProperties = {
+                  background: 'white',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                  border: '1px solid #e2e8f0',
+                };
+                const fieldStyle: React.CSSProperties = {
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '13px',
+                  minWidth: 0,
+                };
+                const panelTitleStyle: React.CSSProperties = { fontSize: '14px', fontWeight: 600, color: '#1e293b', margin: 0 };
+                const panelHintStyle: React.CSSProperties = { fontSize: '11px', color: '#64748b', margin: '2px 0 10px 0' };
+                const primaryButtonStyle = (disabled: boolean): React.CSSProperties => ({
+                  padding: '6px 14px',
+                  background: disabled ? '#94a3b8' : '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                });
+                const assignDisabled = savingUserAccess || !userAccessSelectedUserId || !userAccessSelectedCompanyId;
 
                 return (
-                  <div>
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '8px',
-                        padding: '12px 16px',
-                        marginBottom: '16px',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                        border: '1px solid #e2e8f0',
-                      }}
-                    >
-                      <h2 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', margin: '0 0 8px 0' }}>
-                        Add Corelytics employee
-                      </h2>
-                      <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 10px 0', lineHeight: 1.45 }}>
-                        Creates an internal employee login and sends the existing welcome email. The access level selected here applies only to the initial company, not site admin access.
-                      </p>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(180px, 1fr))', gap: '8px', marginBottom: '8px' }}>
-                        <input
-                          type="text"
-                          placeholder="Employee name *"
-                          value={newEmployeeName}
-                          onChange={(event) => setNewEmployeeName(event.target.value)}
-                          disabled={creatingEmployeeUser}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="email"
-                          placeholder="Employee email *"
-                          value={newEmployeeEmail}
-                          onChange={(event) => setNewEmployeeEmail(event.target.value)}
-                          disabled={creatingEmployeeUser}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <PasswordInput
-                          placeholder="Initial password *"
-                          value={newEmployeePassword}
-                          onChange={setNewEmployeePassword}
-                          disabled={creatingEmployeeUser}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Title"
-                          value={newEmployeeTitle}
-                          onChange={(event) => setNewEmployeeTitle(event.target.value)}
-                          disabled={creatingEmployeeUser}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <input
-                          type="tel"
-                          placeholder="Phone"
-                          value={newEmployeePhone}
-                          onChange={(event) => setNewEmployeePhone(formatPhoneNumber(event.target.value))}
-                          disabled={creatingEmployeeUser}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                        <select
-                          value={newEmployeeInitialCompanyId}
-                          onChange={(event) => setNewEmployeeInitialCompanyId(event.target.value)}
-                          disabled={creatingEmployeeUser}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        >
-                          <option value="">FinancialScore/Corelytics company *</option>
-                          {employeeHomeCompanyOptions.map((company: any) => (
-                            <option key={company.id} value={company.id}>
-                              {company.name} - {getCompanyOwnerLabel(company)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <select
-                          value={newEmployeeInitialRole}
-                          onChange={(event) => setNewEmployeeInitialRole(event.target.value === 'admin' ? 'admin' : 'user')}
-                          disabled={creatingEmployeeUser}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        >
-                          <option value="admin">Company Admin</option>
-                          <option value="user">Company User</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={createEmployeeUser}
-                          disabled={creatingEmployeeUser}
-                          style={{
-                            padding: '8px 16px',
-                            background: creatingEmployeeUser ? '#94a3b8' : '#10b981',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '13px',
-                            fontWeight: '600',
-                            cursor: creatingEmployeeUser ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {creatingEmployeeUser ? 'Creating...' : 'Create employee'}
-                        </button>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>
-                          Password must meet the standard app password policy.
-                        </span>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '8px',
-                        padding: '12px 16px',
-                        marginBottom: '16px',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                        border: '1px solid #e2e8f0',
-                      }}
-                    >
-                      <h2 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', margin: '0 0 8px 0' }}>
-                        Assign company access
-                      </h2>
-                      <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 10px 0', lineHeight: 1.45 }}>
-                        Select any consultant portfolio company or standalone business for a user. Assigned companies appear in the user&apos;s company switcher.
-                      </p>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) minmax(260px, 1.2fr) 140px auto', gap: '8px', alignItems: 'center' }}>
-                        <select
-                          value={userAccessSelectedUserId}
-                          onChange={(event) => setUserAccessSelectedUserId(event.target.value)}
-                          disabled={savingUserAccess}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        >
-                          <option value="">Select user</option>
-                          {manageableUsers.map((user: any) => (
-                            <option key={user.id} value={user.id}>
-                              {user.name || user.email} ({user.email})
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={userAccessSelectedCompanyId}
-                          onChange={(event) => setUserAccessSelectedCompanyId(event.target.value)}
-                          disabled={savingUserAccess}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        >
-                          <option value="">Select company or business</option>
-                          {allCompanies.map((company: any) => (
-                            <option key={company.id} value={company.id}>
-                              {company.name} - {getCompanyOwnerLabel(company)}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={userAccessSelectedRole}
-                          onChange={(event) => setUserAccessSelectedRole(event.target.value === 'admin' ? 'admin' : 'user')}
-                          disabled={savingUserAccess}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        >
-                          <option value="user">User</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={assignCompanyToUser}
-                          disabled={savingUserAccess || !userAccessSelectedUserId || !userAccessSelectedCompanyId}
-                          style={{
-                            padding: '8px 16px',
-                            background: savingUserAccess || !userAccessSelectedUserId || !userAccessSelectedCompanyId ? '#94a3b8' : '#10b981',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '13px',
-                            fontWeight: '600',
-                            cursor: savingUserAccess || !userAccessSelectedUserId || !userAccessSelectedCompanyId ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {savingUserAccess ? 'Saving...' : 'Assign'}
-                        </button>
-                      </div>
-                      {selectedUser && (
-                        <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
-                          Selected user currently has {selectedUserAssignments.length} assigned compan{selectedUserAssignments.length === 1 ? 'y' : 'ies'}.
+                  <div style={{ display: 'grid', gap: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '12px' }}>
+                      <div style={panelStyle}>
+                        <h2 style={panelTitleStyle}>Add Corelytics employee</h2>
+                        <p style={panelHintStyle}>Creates the login and sends the welcome email. Assign companies on the right afterward.</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
+                          <input
+                            type="text"
+                            placeholder="Name *"
+                            value={newEmployeeName}
+                            onChange={(event) => setNewEmployeeName(event.target.value)}
+                            disabled={creatingEmployeeUser}
+                            style={fieldStyle}
+                          />
+                          <input
+                            type="email"
+                            placeholder="Email *"
+                            value={newEmployeeEmail}
+                            onChange={(event) => setNewEmployeeEmail(event.target.value)}
+                            disabled={creatingEmployeeUser}
+                            style={fieldStyle}
+                          />
+                          <PasswordInput
+                            placeholder="Initial password *"
+                            value={newEmployeePassword}
+                            onChange={setNewEmployeePassword}
+                            disabled={creatingEmployeeUser}
+                            style={fieldStyle}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Title"
+                            value={newEmployeeTitle}
+                            onChange={(event) => setNewEmployeeTitle(event.target.value)}
+                            disabled={creatingEmployeeUser}
+                            style={fieldStyle}
+                          />
+                          <input
+                            type="tel"
+                            placeholder="Phone"
+                            value={newEmployeePhone}
+                            onChange={(event) => setNewEmployeePhone(formatPhoneNumber(event.target.value))}
+                            disabled={creatingEmployeeUser}
+                            style={fieldStyle}
+                          />
+                          {corelyticsHomeCompanies.length > 1 && (
+                            <select
+                              value={newEmployeeInitialCompanyId}
+                              onChange={(event) => setNewEmployeeInitialCompanyId(event.target.value)}
+                              disabled={creatingEmployeeUser}
+                              style={fieldStyle}
+                            >
+                              <option value="">Home workspace *</option>
+                              {corelyticsHomeCompanies.map((company: any) => (
+                                <option key={company.id} value={company.id}>
+                                  {company.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </div>
-                      )}
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#1e293b' }}>
+                            <input
+                              type="checkbox"
+                              checked={newEmployeeIsAccountManager}
+                              onChange={(event) => setNewEmployeeIsAccountManager(event.target.checked)}
+                              disabled={creatingEmployeeUser}
+                            />
+                            Account Manager
+                          </label>
+                          <span style={{ fontSize: '11px', color: '#94a3b8', flex: 1 }}>Standard password policy applies.</span>
+                          <button
+                            type="button"
+                            onClick={createEmployeeUser}
+                            disabled={creatingEmployeeUser}
+                            style={primaryButtonStyle(creatingEmployeeUser)}
+                          >
+                            {creatingEmployeeUser ? 'Creating...' : 'Create employee'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={panelStyle}>
+                        <h2 style={panelTitleStyle}>Assign company access</h2>
+                        <p style={panelHintStyle}>Account Managers see assigned companies on their My Accounts page.</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '6px', marginBottom: '6px' }}>
+                          <select
+                            value={userAccessSelectedUserId}
+                            onChange={(event) => {
+                              setUserAccessSelectedUserId(event.target.value);
+                              setUserAccessSelectedCompanyId('');
+                            }}
+                            disabled={savingUserAccess}
+                            style={fieldStyle}
+                          >
+                            <option value="">Select employee</option>
+                            {manageableUsers.map((user: any) => (
+                              <option key={user.id} value={user.id}>
+                                {user.name || user.email} ({user.email}){user.isAccountManager ? ' - Account Manager' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={userAccessSelectedCompanyId}
+                            onChange={(event) => setUserAccessSelectedCompanyId(event.target.value)}
+                            disabled={savingUserAccess || !userAccessSelectedUserId}
+                            style={fieldStyle}
+                          >
+                            <option value="">{userAccessSelectedUserId ? 'Select company or business' : 'Select an employee first'}</option>
+                            {assignableCompanies.map((company: any) => (
+                              <option key={company.id} value={company.id}>
+                                {company.name} - {getCompanyOwnerLabel(company)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          <select
+                            value={userAccessSelectedRole}
+                            onChange={(event) => setUserAccessSelectedRole(event.target.value === 'admin' ? 'admin' : 'user')}
+                            disabled={savingUserAccess}
+                            style={fieldStyle}
+                          >
+                            <option value="user">Company User</option>
+                            <option value="admin">Company Admin</option>
+                          </select>
+                          <span style={{ fontSize: '11px', color: '#94a3b8', flex: 1 }}>
+                            {selectedUser
+                              ? `${selectedUserClientCount} client compan${selectedUserClientCount === 1 ? 'y' : 'ies'} assigned`
+                              : ''}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={assignCompanyToUser}
+                            disabled={assignDisabled}
+                            style={primaryButtonStyle(assignDisabled)}
+                          >
+                            {savingUserAccess ? 'Saving...' : 'Assign'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
-                    <div style={{ display: 'grid', gap: '8px' }}>
+                    <div style={{ ...panelStyle, padding: 0, overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+                        <h2 style={{ ...panelTitleStyle, flex: '0 0 auto' }}>
+                          Employees ({visibleUsers.length}{visibleUsers.length !== manageableUsers.length ? ` of ${manageableUsers.length}` : ''})
+                        </h2>
+                        <input
+                          type="search"
+                          placeholder="Search name, email, or company"
+                          value={userAccessSearch}
+                          onChange={(event) => setUserAccessSearch(event.target.value)}
+                          style={{ ...fieldStyle, flex: '1 1 220px', maxWidth: '320px' }}
+                        />
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#1e293b' }}>
+                          <input
+                            type="checkbox"
+                            checked={userAccessAccountManagersOnly}
+                            onChange={(event) => setUserAccessAccountManagersOnly(event.target.checked)}
+                          />
+                          Account Managers only
+                        </label>
+                      </div>
+
                       {manageableUsers.length === 0 ? (
-                        <div style={{ background: 'white', borderRadius: '8px', padding: '32px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No Corelytics users available</h3>
-                          <p style={{ fontSize: '13px', color: '#94a3b8' }}>Create a Corelytics or FinancialScore employee user before assigning company access.</p>
+                        <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
+                          No Corelytics employees yet. Create one above.
+                        </div>
+                      ) : visibleUsers.length === 0 ? (
+                        <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
+                          No employees match the current filter.
                         </div>
                       ) : (
-                        manageableUsers.map((user: any) => {
-                          const assignedCompanies = getAssignedCompaniesForUser(user);
-                          return (
-                            <div key={user.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', marginBottom: '10px' }}>
-                                <div>
-                                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>
-                                    {user.name || 'Unnamed user'}
-                                  </div>
-                                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                    {user.email} | {String(user.role || 'USER').toUpperCase()}
-                                  </div>
-                                </div>
-                                <div style={{ fontSize: '12px', fontWeight: '700', color: '#667eea' }}>
-                                  {assignedCompanies.length} assigned
-                                </div>
-                              </div>
-
-                              {assignedCompanies.length === 0 ? (
-                                <div style={{ fontSize: '12px', color: '#94a3b8' }}>No companies assigned.</div>
-                              ) : (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                  {assignedCompanies.map((company: any) => (
-                                    <div
-                                      key={`${user.id}-${company.id}`}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc', textAlign: 'left', color: '#475569', fontSize: '12px' }}>
+                              <th style={{ padding: '6px 14px', fontWeight: 600, width: '24%' }}>Employee</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, width: '110px' }}>Account Mgr</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600 }}>Assigned companies</th>
+                              <th style={{ padding: '6px 14px', width: '90px' }} />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleUsers.map((user: any) => {
+                              const assignedCompanies = getAssignedCompaniesForUser(user);
+                              const homeCompanies = assignedCompanies.filter((company: any) => corelyticsHomeCompanyIds.has(company.id));
+                              const clientCompanies = assignedCompanies.filter((company: any) => !corelyticsHomeCompanyIds.has(company.id));
+                              const isSelected = user.id === userAccessSelectedUserId;
+                              return (
+                                <tr
+                                  key={user.id}
+                                  style={{ borderTop: '1px solid #e2e8f0', background: isSelected ? '#f0f9ff' : 'white', verticalAlign: 'top' }}
+                                >
+                                  <td style={{ padding: '8px 14px' }}>
+                                    <div style={{ fontWeight: 600, color: '#1e293b' }}>{user.name || 'Unnamed user'}</div>
+                                    <div style={{ fontSize: '11px', color: '#64748b' }}>{user.email}</div>
+                                    {homeCompanies.length > 0 && (
+                                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                        Home: {homeCompanies.map((company: any) => company.name).join(', ')}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '8px' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#1e293b' }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(user.isAccountManager)}
+                                        onChange={(event) => setUserAccountManager(user.id, event.target.checked)}
+                                        disabled={savingAccountManagerUserId === user.id || String(user.role || '').toUpperCase() !== 'USER'}
+                                      />
+                                      {user.isAccountManager ? 'Yes' : 'No'}
+                                    </label>
+                                  </td>
+                                  <td style={{ padding: '8px' }}>
+                                    {clientCompanies.length === 0 ? (
+                                      <span style={{ fontSize: '12px', color: '#94a3b8' }}>No companies assigned</span>
+                                    ) : (
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                        {clientCompanies.map((company: any) => (
+                                          <span
+                                            key={`${user.id}-${company.id}`}
+                                            title={`${company.name} - ${getCompanyOwnerLabel(company)}`}
+                                            style={{
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                              padding: '2px 4px 2px 8px',
+                                              background: '#f1f5f9',
+                                              border: '1px solid #e2e8f0',
+                                              borderRadius: '999px',
+                                              fontSize: '12px',
+                                              color: '#1e293b',
+                                            }}
+                                          >
+                                            {company.name}
+                                            {company.companyRole === 'admin' && (
+                                              <span style={{ fontSize: '10px', fontWeight: 700, color: '#667eea' }}>ADMIN</span>
+                                            )}
+                                            <button
+                                              type="button"
+                                              aria-label={`Remove ${company.name} from ${user.name || user.email}`}
+                                              title="Remove access"
+                                              onClick={() => revokeCompanyFromUser(user.id, company.id, company.name)}
+                                              disabled={savingUserAccess}
+                                              style={{
+                                                width: '18px',
+                                                height: '18px',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                padding: 0,
+                                                border: 'none',
+                                                borderRadius: '999px',
+                                                background: savingUserAccess ? '#cbd5e1' : '#fee2e2',
+                                                color: '#b91c1c',
+                                                fontSize: '13px',
+                                                lineHeight: 1,
+                                                cursor: savingUserAccess ? 'not-allowed' : 'pointer',
+                                              }}
+                                            >
+                                              ×
+                                            </button>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '8px 14px', textAlign: 'right' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setUserAccessSelectedUserId(user.id);
+                                        setUserAccessSelectedCompanyId('');
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                      }}
                                       style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        padding: '6px 8px',
-                                        background: '#f8fafc',
-                                        border: '1px solid #e2e8f0',
+                                        padding: '4px 10px',
+                                        background: 'white',
+                                        color: '#1F70C1',
+                                        border: '1px solid #bfdbfe',
                                         borderRadius: '6px',
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
                                       }}
                                     >
-                                      <div>
-                                        <div style={{ fontSize: '12px', fontWeight: '700', color: '#1e293b' }}>
-                                          {company.name}
-                                        </div>
-                                        <div style={{ fontSize: '11px', color: '#64748b' }}>
-                                          {getCompanyOwnerLabel(company)} | {company.companyRole === 'admin' ? 'Admin' : 'User'}
-                                        </div>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => revokeCompanyFromUser(user.id, company.id, company.name)}
-                                        disabled={savingUserAccess}
-                                        style={{
-                                          padding: '4px 8px',
-                                          background: savingUserAccess ? '#94a3b8' : '#ef4444',
-                                          color: 'white',
-                                          border: 'none',
-                                          borderRadius: '4px',
-                                          fontSize: '11px',
-                                          fontWeight: '600',
-                                          cursor: savingUserAccess ? 'not-allowed' : 'pointer',
-                                        }}
-                                      >
-                                        Remove
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
+                                      + Assign
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       )}
                     </div>
                   </div>

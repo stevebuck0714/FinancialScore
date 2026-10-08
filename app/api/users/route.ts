@@ -138,6 +138,7 @@ export async function GET(request: NextRequest) {
       operationalDashboardAccess: any;
       companyId: string | null;
       createdAt: Date;
+      isAccountManager?: boolean;
       homeCompanyId?: string | null;
       isExternalCompanyUser?: boolean;
       invitePending?: boolean;
@@ -344,6 +345,23 @@ export async function GET(request: NextRequest) {
             operationalDashboardAccess: true,
           companyId: true,
           createdAt: true,
+          isAccountManager: true,
+          companyAccess: {
+            select: {
+              companyId: true,
+              companyRole: true,
+              sidebarAccess: true,
+              operationalDashboardAccess: true,
+              company: {
+                select: {
+                  id: true,
+                  name: true,
+                  consultantId: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
         },
         orderBy: { name: 'asc' },
       });

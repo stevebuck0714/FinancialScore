@@ -212,6 +212,7 @@ model User {
   companyId            String?
   consultantId         String?
   isPrimaryContact     Boolean            @default(false)
+  isAccountManager     Boolean            @default(false)
   companyRole          String?            @default("user") // 'user' or 'admin' - for company users only
   sidebarAccess        Json?              // Array of accessible sidebar sections
   operationalDashboardAccess Json?        // Array of accessible Operational Dashboard module/page keys

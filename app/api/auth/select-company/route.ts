@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import prisma from '@/lib/prisma';
 import { ensureLegacyCompanyAccess } from '@/lib/user-company-access';
+import { auditLog } from '@/lib/audit-logger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -77,9 +78,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = NextResponse.json({ ok: true, activeCompanyId: companyId });
+    const previousCompanyId = request.cookies.get('fs_active_company')?.value || null;
+    if (previousCompanyId !== companyId) {
+      await auditLog({
+        action: 'ACTIVE_COMPANY_SWITCHED',
+        entityType: 'Company',
+        entityId: companyId,
+        changes: { activeCompanyId: { from: previousCompanyId, to: companyId } },
+        success: true,
+      });
+    }
+
+    const response = NextResponse.json(
+      { ok: true, activeCompanyId: companyId },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
     response.cookies.set('fs_active_company', companyId, {
-      httpOnly: false,
+      httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',

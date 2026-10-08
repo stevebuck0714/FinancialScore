@@ -389,6 +389,7 @@ export async function proxy(request: NextRequest) {
     requestHeaders.set('x-consultant-id', token.consultantId as string || '')
     const activeCompanyCookie = request.cookies.get('fs_active_company')?.value || ''
     requestHeaders.set('x-active-company-id', activeCompanyCookie)
+    requestHeaders.set('x-request-method', request.method.toUpperCase())
     
     // Session fingerprinting for security
     const userAgent = request.headers.get('user-agent') || ''
@@ -400,6 +401,10 @@ export async function proxy(request: NextRequest) {
         headers: requestHeaders,
       },
     })
+    // Responses depend on the active company cookie, so a browser-cached copy
+    // could surface another company's data after a switch. Route handlers that
+    // set their own Cache-Control (company-keyed URLs) override this default.
+    response.headers.set('Cache-Control', 'private, no-store, max-age=0')
     if (!DISABLE_IDLE_TIMEOUT) {
       applyIdleActivityCookie(response)
     }

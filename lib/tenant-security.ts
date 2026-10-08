@@ -47,6 +47,61 @@ function getUserCompanyAccessDelegate():
   }
 }
 
+/**
+ * The fs_active_company cookie is client-controlled, so it is only honored
+ * when the user is actually allowed into that company. Otherwise the user's
+ * home company (from the signed session) is used.
+ */
+async function resolveVerifiedCompanyId(params: {
+  userId: string
+  role: UserContext['role']
+  consultantId: string | null
+  isPrimaryContact: boolean
+  activeCompanyId: string | null
+  homeCompanyId: string | null
+}): Promise<string | null> {
+  const activeCompanyId = String(params.activeCompanyId || '').trim()
+  const homeCompanyId = String(params.homeCompanyId || '').trim() || null
+  if (!activeCompanyId || activeCompanyId === homeCompanyId) return homeCompanyId
+
+  if (params.role === 'SITEADMIN') return activeCompanyId
+
+  const userCompanyAccess = getUserCompanyAccessDelegate()
+  if (userCompanyAccess) {
+    const membership = await userCompanyAccess.findUnique({
+      where: {
+        userId_companyId: {
+          userId: params.userId,
+          companyId: activeCompanyId,
+        },
+      },
+      select: { id: true },
+    })
+    if (membership) return activeCompanyId
+  }
+
+  if (params.role === 'CONSULTANT' && params.isPrimaryContact && params.consultantId) {
+    const company = await prisma.company.findUnique({
+      where: { id: activeCompanyId },
+      select: { consultantId: true },
+    })
+    if (company?.consultantId === params.consultantId) return activeCompanyId
+  }
+
+  return homeCompanyId
+}
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+async function isMutatingRequest(): Promise<boolean> {
+  try {
+    const method = (await headers()).get('x-request-method')
+    return MUTATING_METHODS.has(String(method || '').toUpperCase())
+  } catch {
+    return false
+  }
+}
+
 function membershipCompanyIds(rows: unknown[]): string[] {
   return rows
     .map((row) => {
@@ -84,7 +139,7 @@ export async function getUserContext(): Promise<UserContext | null> {
   let userId = userIdHeader
   let email = emailHeader
   let role = roleFromHeader
-  let companyId = activeCompanyId || companyIdFromHeader
+  let companyId = companyIdFromHeader
   let consultantId = consultantIdFromHeader
 
   // Older JWTs can omit id and/or role. Hydrate from DB so site admins are
@@ -124,11 +179,21 @@ export async function getUserContext(): Promise<UserContext | null> {
     companyId = companyId || user.companyId || null
     consultantId = consultantId || user.consultantId || null
     const isPrimaryContact = user.isPrimaryContact
+    if (!role) {
+      return null
+    }
     return {
       userId,
       email,
       role,
-      companyId: companyId || null,
+      companyId: await resolveVerifiedCompanyId({
+        userId,
+        role,
+        consultantId: consultantId || null,
+        isPrimaryContact: Boolean(isPrimaryContact),
+        activeCompanyId,
+        homeCompanyId: companyId || null,
+      }),
       consultantId: consultantId || null,
       isPrimaryContact,
     }
@@ -150,7 +215,14 @@ export async function getUserContext(): Promise<UserContext | null> {
     userId,
     email,
     role,
-    companyId: companyId || null,
+    companyId: await resolveVerifiedCompanyId({
+      userId,
+      role,
+      consultantId: consultantId || null,
+      isPrimaryContact,
+      activeCompanyId,
+      homeCompanyId: companyId || null,
+    }),
     consultantId: consultantId || null,
     isPrimaryContact,
   }
@@ -200,6 +272,9 @@ export async function validateCompanyAccess(targetCompanyId: string): Promise<bo
   // Users can only access their own company
   if (context.role === 'USER') {
     if (context.companyId === targetCompanyId) return true
+    // Writes must target the active company, so a stale tab still showing a
+    // previously opened company cannot save into it after a switch.
+    if (await isMutatingRequest()) return false
     await ensureLegacyCompanyAccess(context.userId)
     const userCompanyAccess = getUserCompanyAccessDelegate()
     if (!userCompanyAccess) return false
