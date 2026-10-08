@@ -5,10 +5,14 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
 import { presentCompanyJson } from '@/lib/currency/api-response';
+import { readLatestDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const LATEST_VALUES_CACHE_TTL_MS = 60 * 1000;
+const LAST_GOOD_VALUES_NAMESPACE = 'account-review-latest-values';
+const LAST_GOOD_VALUES_TTL_SECONDS = 90 * 24 * 60 * 60;
 const latestValuesResponseCache = new Map<string, { cachedAt: number; payload: Record<string, unknown> }>();
 
 function normalizeNumber(value: unknown): number {
@@ -220,6 +224,97 @@ async function loadQbdPageRecords(companyId: string, requestName: string): Promi
       ? row.payload.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
       : [],
   );
+}
+
+function parseQbdAsOfSubtitle(subtitle: unknown): string | null {
+  const match = /^As of\s+(.+)$/i.exec(String(subtitle ?? '').trim());
+  if (!match) return null;
+  const parsed = new Date(`${match[1]} UTC`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(parsed.getUTCDate()).padStart(2, '0')}`;
+}
+
+// Daily syncs store a full Balance Sheet snapshot per day, so only the rows of
+// the single snapshot Account Review will use are pulled from the database.
+async function loadQbdBalanceSheetSnapshotRecords(
+  companyId: string,
+  targetMonthEnd: Date | null,
+): Promise<Record<string, unknown>[]> {
+  const subtitleRows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ subtitle: string | null }>>`
+      SELECT DISTINCT x->>'reportSubtitle' AS subtitle
+      FROM "QuickBooksDesktopBackfillPage" p
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(p."payload") = 'array' THEN p."payload" ELSE '[]'::jsonb END
+      ) x
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = 'BalanceSheetStandardReportQuery'
+    `,
+    'account-review.latest-values.loadQbdBalanceSheetSnapshotRecords.subtitles',
+  );
+  let selected: { subtitle: string; dateKey: string } | null = null;
+  for (const row of subtitleRows) {
+    const subtitle = String(row.subtitle || '').trim();
+    const dateKey = parseQbdAsOfSubtitle(subtitle);
+    if (!dateKey) continue;
+    if (targetMonthEnd && new Date(`${dateKey}T23:59:59.999Z`) > targetMonthEnd) continue;
+    if (!selected || dateKey > selected.dateKey) selected = { subtitle, dateKey };
+  }
+  if (!selected) return [];
+  const selectedSubtitle = selected.subtitle;
+
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ item: unknown }>>`
+      SELECT x AS item
+      FROM "QuickBooksDesktopBackfillPage" p
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(p."payload") = 'array' THEN p."payload" ELSE '[]'::jsonb END
+      ) WITH ORDINALITY AS e(x, ord)
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = 'BalanceSheetStandardReportQuery'
+        AND x->>'reportSubtitle' = ${selectedSubtitle}
+      ORDER BY p."jobId", p."pageNumber", e.ord
+    `,
+    'account-review.latest-values.loadQbdBalanceSheetSnapshotRecords.rows',
+  );
+  return rows
+    .map((row) => row.item)
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)));
+}
+
+// The General Ledger history is hundreds of MB for long-lived QBD companies;
+// loading it whole times out the request, so filter to the target month in SQL.
+async function loadQbdGeneralLedgerRecordsForMonth(
+  companyId: string,
+  targetMonth: string | null,
+): Promise<Record<string, unknown>[]> {
+  if (!targetMonth) return loadQbdPageRecords(companyId, 'GeneralDetailReportQuery');
+  const monthPrefix = `${targetMonth}%`;
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ item: unknown }>>`
+      SELECT x AS item
+      FROM "QuickBooksDesktopBackfillPage" p
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(p."payload") = 'array' THEN p."payload" ELSE '[]'::jsonb END
+      ) WITH ORDINALITY AS e(x, ord)
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = 'GeneralDetailReportQuery'
+        AND x->>'rowKind' = 'DataRow'
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(
+            CASE WHEN jsonb_typeof(x->'colData') = 'array' THEN x->'colData' ELSE '[]'::jsonb END
+          ) c
+          WHERE (c->>'colID' = '3' OR lower(regexp_replace(COALESCE(c->>'colTitle', ''), '[^a-zA-Z]', '', 'g')) IN ('txndate', 'date'))
+            AND c->>'value' LIKE ${monthPrefix}
+        )
+      ORDER BY p."jobId", p."pageNumber", e.ord
+    `,
+    'account-review.latest-values.loadQbdGeneralLedgerRecordsForMonth',
+  );
+  return rows
+    .map((row) => row.item)
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)));
 }
 
 function buildAccountIdAliases(value: unknown): string[] {
@@ -803,8 +898,8 @@ async function collectValuesFromQuickBooksDesktopReports(
     if (mapping.accountName) valueByKey.set(`name:${qbdLookupKey(mapping.accountName)}`, signedAmount);
   };
 
-  const balanceRows = await loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery');
   const targetMonthEnd = resolveMonthEndUtc(targetMonth);
+  const balanceRows = await loadQbdBalanceSheetSnapshotRecords(companyId, targetMonthEnd);
   const balanceRowsByReportDate = new Map<string, Record<string, unknown>[]>();
   for (const row of balanceRows) {
     const reportDateKey = qbdBalanceSheetReportDateKey([row]);
@@ -828,7 +923,7 @@ async function collectValuesFromQuickBooksDesktopReports(
     setMappedAccountValue(accountName, qbdReportAmount(row));
   }
 
-  const generalLedgerRows = await loadQbdPageRecords(companyId, 'GeneralDetailReportQuery');
+  const generalLedgerRows = await loadQbdGeneralLedgerRecordsForMonth(companyId, targetMonth);
   const pnlMovementsByAccount = new Map<string, number>();
   for (const row of generalLedgerRows) {
     if (String(row.rowKind || '').trim() !== 'DataRow') continue;
@@ -857,6 +952,16 @@ export async function GET(request: NextRequest) {
     const forceRefreshRaw = String(searchParams.get('forceRefresh') || '').trim().toLowerCase();
     const forceRefresh = forceRefreshRaw === '1' || forceRefreshRaw === 'true' || forceRefreshRaw === 'yes';
     const cacheKey = `${companyId}|${targetMonth || ''}`;
+
+    if (!companyId) {
+      return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
+    }
+    const hasAccess = await validateCompanyAccess(companyId);
+    if (!hasAccess) {
+      await auditForbiddenAccess('AccountReviewLatestValues', companyId, 'READ');
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     if (forceRefresh) {
       latestValuesResponseCache.delete(cacheKey);
     }
@@ -865,219 +970,47 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(await presentCompanyJson(request, companyId, cached.payload));
     }
 
-    if (!companyId) {
-      return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
+    let payload: Record<string, unknown> | null = null;
+    let computeError: string | null = null;
+    try {
+      payload = await buildLatestValuesPayload(companyId, targetMonth);
+    } catch (error) {
+      computeError = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[account-review/latest-values] compute failed; falling back to last saved values', error);
     }
-    const company = await withPrismaReconnectRetry(
-      () =>
-        prisma.company.findUnique({
-          where: { id: companyId },
-          select: { accountingSystem: true },
-        }),
-      'account-review.latest-values.get.company',
+
+    const hasValues = Number(payload?.count || 0) > 0;
+    if (payload && hasValues) {
+      latestValuesResponseCache.set(cacheKey, { cachedAt: Date.now(), payload });
+      await writeDerivedApiCache({
+        namespace: LAST_GOOD_VALUES_NAMESPACE,
+        cacheKey,
+        dataVersion: 'v1',
+        payload: { ...payload, savedAt: new Date().toISOString() },
+        ttlSeconds: LAST_GOOD_VALUES_TTL_SECONDS,
+      }).catch((error) => {
+        console.warn('[account-review/latest-values] failed to save last good values', error);
+      });
+      return NextResponse.json(await presentCompanyJson(request, companyId, payload));
+    }
+
+    const lastGood = await readLatestDerivedApiCache<Record<string, unknown>>({
+      namespace: LAST_GOOD_VALUES_NAMESPACE,
+      cacheKey,
+    }).catch(() => null);
+    if (lastGood && Number(lastGood.count || 0) > 0) {
+      return NextResponse.json(
+        await presentCompanyJson(request, companyId, { ...lastGood, stale: true, staleReason: computeError || 'no-values' }),
+      );
+    }
+
+    if (payload) {
+      return NextResponse.json(await presentCompanyJson(request, companyId, payload));
+    }
+    return NextResponse.json(
+      { ok: false, error: 'Failed to load account review latest values', details: computeError },
+      { status: 500 },
     );
-    const accountingSystem = String(company?.accountingSystem || '').trim().toUpperCase();
-    const isGroupB = GROUP_B_ACCOUNTING_SYSTEMS.has(accountingSystem);
-
-    const hasAccess = await validateCompanyAccess(companyId);
-    if (!hasAccess) {
-      await auditForbiddenAccess('AccountReviewLatestValues', companyId, 'READ');
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    // Account Review displays every seeded account, including accounts that are
-    // not yet mapped to a financial-statement target. QBD report values must
-    // therefore receive the complete account list for ID/code/name aliasing.
-    const mappings = await withPrismaReconnectRetry(
-      () =>
-        prisma.accountMapping.findMany({
-          where: {
-            companyId,
-          },
-          select: {
-            accountId: true,
-            accountCode: true,
-            accountName: true,
-            targetField: true,
-          },
-        }),
-      'account-review.latest-values.get.mappings',
-    );
-    const bsAccountKeySet = new Set<string>();
-    for (const mapping of mappings) {
-      const normalizedTarget = normalizeTargetField(mapping.targetField);
-      if (!BS_TARGET_FIELDS.has(normalizedTarget)) continue;
-      const id = String(mapping.accountId || '').trim();
-      const code = String(mapping.accountCode || '').trim();
-      if (id) {
-        addAccountLookupAliases(bsAccountKeySet, id);
-      }
-      if (code) {
-        addAccountLookupAliases(bsAccountKeySet, code);
-      }
-      const name = String(mapping.accountName || '').trim().toLowerCase();
-      if (name) bsAccountKeySet.add(`name:${name}`);
-    }
-
-    const valueByKey = new Map<string, number>();
-    let perAccountAnchorResult: {
-      values: Map<string, number>;
-      anchorDate: Date | null;
-      accountCount: number;
-    } = { values: new Map(), anchorDate: null, accountCount: 0 };
-
-    if (isGroupB) {
-      // Group B (QuickBooks / Xero / Sage on-prem): P&L values come from the
-      // safe 1:1 MonthlyFinancial[targetField] collector. Multi-mapped targets
-      // stay N/A instead of fanning out one rollup amount to many accounts.
-      const monthlyAll = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
-      for (const [key, value] of monthlyAll.entries()) {
-        valueByKey.set(key, value);
-      }
-
-      // QuickBooks Desktop / Enterprise reprocess can also persist trusted
-      // per-account balance-sheet anchors from BalanceSheetStandardReportQuery.
-      // Use those for BS account rows so Account Review can show actual
-      // account-level current values without fanning out MonthlyFinancial
-      // rollups like fixedAssets or loc.
-      const isQuickBooksDesktopAccountReview =
-        accountingSystem === 'QUICKBOOKS_DESKTOP' ||
-        accountingSystem === 'QUICKBOOKS_ENTERPRISE' ||
-        (accountingSystem === 'QUICKBOOKS' && await hasQuickBooksDesktopBackfillPages(companyId));
-      if (isQuickBooksDesktopAccountReview) {
-        const qbdReportValues = await collectValuesFromQuickBooksDesktopReports(companyId, targetMonth, mappings);
-        for (const [key, value] of qbdReportValues.entries()) {
-          valueByKey.set(key, value);
-        }
-
-        perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
-        for (const [key, value] of perAccountAnchorResult.values.entries()) {
-          if (!bsAccountKeySet.has(key)) continue;
-          valueByKey.set(key, value);
-        }
-      }
-    } else {
-      // Group A ("Big ERP" pattern): Infor M3/CSI, Sage Intacct, Vista Cloud,
-      // NetSuite, Acumatica, Odoo, Dynamics 365.
-      //
-      // Resolution order (lowest -> highest priority; later writes win):
-      //   1. MonthlyFinancial 1:1 baseline (last-resort for both BS and P&L)
-      //   2. Infor connection-metadata snapshot + SLGLTRANS logs (P&L only)
-      //   3. GLACCTPERIODBALANCES (BS only, M3-native EOM)
-      //   4. Cumulative GLTransactionFact through monthEnd (BS only)
-      //   5. Monthly GLTransactionFact movement (P&L only) – primary P&L source
-      //   6. BalanceSheetAccountAnchor + GL delta (BS only) – authoritative
-      //
-      // The bsAccountKeySet guard is applied to every fallback so movement /
-      // snapshot values can never be written into a BS account row, and EOM
-      // balance sources can never be written into a P&L row.
-
-      // 1. MonthlyFinancial 1:1 baseline.
-      const monthlyBaseline = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
-      for (const [key, value] of monthlyBaseline.entries()) {
-        valueByKey.set(key, value);
-      }
-
-      // 2. Tertiary P&L fallbacks – Infor connection-metadata snapshot and
-      // SLGLTRANS log items. Only relevant when the company is Infor; for
-      // other Group A systems the AccountingConnection row will not carry
-      // these payloads and the collectors return empty maps.
-      const isInfor = accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI';
-      if (isInfor) {
-        const rows = await withPrismaReconnectRetry(
-          () => prisma.$queryRaw<Array<{ csiFinancial: unknown; m3Financial: unknown; csiCoa: unknown; m3Coa: unknown }>>`
-          SELECT
-            "connectionMetadata"->'inforCsiFinancialPayload' AS "csiFinancial",
-            "connectionMetadata"->'inforM3FinancialPayload' AS "m3Financial",
-            "connectionMetadata"->'inforCsiCoaPayload' AS "csiCoa",
-            "connectionMetadata"->'inforM3CoaPayload' AS "m3Coa"
-          FROM "AccountingConnection"
-          WHERE "companyId" = ${companyId}
-            AND platform = 'INFOR_M3'
-          LIMIT 1
-        `,
-          'account-review.latest-values.get.accounting-connection',
-        );
-        const payloadRow = rows[0] || null;
-        const metadataPayload = hasGlResponsesPayload(payloadRow?.csiFinancial)
-          ? asObjectPayload(payloadRow?.csiFinancial)
-          : hasGlResponsesPayload(payloadRow?.csiCoa)
-            ? asObjectPayload(payloadRow?.csiCoa)
-            : hasGlResponsesPayload(payloadRow?.m3Financial)
-              ? asObjectPayload(payloadRow?.m3Financial)
-              : hasGlResponsesPayload(payloadRow?.m3Coa)
-                ? asObjectPayload(payloadRow?.m3Coa)
-                : asObjectPayload(payloadRow?.csiFinancial) ||
-                  asObjectPayload(payloadRow?.csiCoa) ||
-                  asObjectPayload(payloadRow?.m3Financial) ||
-                  asObjectPayload(payloadRow?.m3Coa) ||
-                  null;
-        const inforSnapshot = collectValuesFromInforPayload(metadataPayload, targetMonth);
-        for (const [key, value] of inforSnapshot.entries()) {
-          if (bsAccountKeySet.has(key)) continue;
-          valueByKey.set(key, value);
-        }
-        const apiSyncValues = await collectValuesFromApiSyncLogs(companyId, targetMonth);
-        for (const [key, value] of apiSyncValues.entries()) {
-          if (bsAccountKeySet.has(key)) continue;
-          valueByKey.set(key, value);
-        }
-      }
-
-      // 3. GLACCTPERIODBALANCES – Infor M3 native period-end balances.
-      // BS-only. Acts as a fallback when no anchor exists for an account.
-      if (accountingSystem === 'INFOR_M3') {
-        const periodValues = await collectValuesFromPeriodBalanceLogs(companyId, targetMonth);
-        for (const [key, value] of periodValues.entries()) {
-          if (!bsAccountKeySet.has(key)) continue;
-          valueByKey.set(key, value);
-        }
-      }
-
-      // 4. Cumulative GLTransactionFact through monthEnd. BS-only.
-      const factValues = await collectValuesFromGlTransactionFacts(companyId, targetMonth);
-      for (const [key, value] of factValues.entries()) {
-        if (!bsAccountKeySet.has(key)) continue;
-        valueByKey.set(key, value);
-      }
-
-      // 5. Monthly GLTransactionFact movement. P&L-only, primary source.
-      const monthMovementValues = await collectMonthlyMovementFromGlTransactionFacts(companyId, targetMonth);
-      for (const [key, value] of monthMovementValues.entries()) {
-        if (bsAccountKeySet.has(key)) continue;
-        valueByKey.set(key, value);
-      }
-
-      // 6. Per-account BalanceSheetAccountAnchor + GL delta. BS-only,
-      // authoritative – mirrors lib/financial/daily-bs-from-gl.ts so EOM
-      // balances include pre-ingest activity (cash, fixed assets,
-      // accumulated depreciation, etc. with non-zero opening balances).
-      perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
-      for (const [key, value] of perAccountAnchorResult.values.entries()) {
-        valueByKey.set(key, value);
-      }
-    }
-
-    const payload = {
-      ok: true,
-      companyId,
-      targetMonth,
-      accountingSystem,
-      resolutionGroup: isGroupB ? 'B_QUICKBOOKS_PATTERN' : 'A_BIG_ERP_PATTERN',
-      count: valueByKey.size,
-      values: Object.fromEntries(valueByKey.entries()),
-      perAccountAnchor: perAccountAnchorResult.anchorDate
-        ? {
-            anchorDate: perAccountAnchorResult.anchorDate.toISOString().slice(0, 10),
-            accountsWithAnchor: perAccountAnchorResult.accountCount,
-          }
-        : null,
-    };
-    latestValuesResponseCache.set(cacheKey, {
-      cachedAt: Date.now(),
-      payload,
-    });
-    return NextResponse.json(await presentCompanyJson(request, companyId, payload));
   } catch (error) {
     const details = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
@@ -1089,4 +1022,209 @@ export async function GET(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+async function buildLatestValuesPayload(
+  companyId: string,
+  targetMonth: string | null,
+): Promise<Record<string, unknown>> {
+  const company = await withPrismaReconnectRetry(
+    () =>
+      prisma.company.findUnique({
+        where: { id: companyId },
+        select: { accountingSystem: true },
+      }),
+    'account-review.latest-values.get.company',
+  );
+  const accountingSystem = String(company?.accountingSystem || '').trim().toUpperCase();
+  const isGroupB = GROUP_B_ACCOUNTING_SYSTEMS.has(accountingSystem);
+
+  // Account Review displays every seeded account, including accounts that are
+  // not yet mapped to a financial-statement target. QBD report values must
+  // therefore receive the complete account list for ID/code/name aliasing.
+  const mappings = await withPrismaReconnectRetry(
+    () =>
+      prisma.accountMapping.findMany({
+        where: {
+          companyId,
+        },
+        select: {
+          accountId: true,
+          accountCode: true,
+          accountName: true,
+          targetField: true,
+        },
+      }),
+    'account-review.latest-values.get.mappings',
+  );
+  const bsAccountKeySet = new Set<string>();
+  for (const mapping of mappings) {
+    const normalizedTarget = normalizeTargetField(mapping.targetField);
+    if (!BS_TARGET_FIELDS.has(normalizedTarget)) continue;
+    const id = String(mapping.accountId || '').trim();
+    const code = String(mapping.accountCode || '').trim();
+    if (id) {
+      addAccountLookupAliases(bsAccountKeySet, id);
+    }
+    if (code) {
+      addAccountLookupAliases(bsAccountKeySet, code);
+    }
+    const name = String(mapping.accountName || '').trim().toLowerCase();
+    if (name) bsAccountKeySet.add(`name:${name}`);
+  }
+
+  const valueByKey = new Map<string, number>();
+  let perAccountAnchorResult: {
+    values: Map<string, number>;
+    anchorDate: Date | null;
+    accountCount: number;
+  } = { values: new Map(), anchorDate: null, accountCount: 0 };
+
+  if (isGroupB) {
+    // Group B (QuickBooks / Xero / Sage on-prem): P&L values come from the
+    // safe 1:1 MonthlyFinancial[targetField] collector. Multi-mapped targets
+    // stay N/A instead of fanning out one rollup amount to many accounts.
+    const monthlyAll = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
+    for (const [key, value] of monthlyAll.entries()) {
+      valueByKey.set(key, value);
+    }
+
+    // QuickBooks Desktop / Enterprise reprocess can also persist trusted
+    // per-account balance-sheet anchors from BalanceSheetStandardReportQuery.
+    // Use those for BS account rows so Account Review can show actual
+    // account-level current values without fanning out MonthlyFinancial
+    // rollups like fixedAssets or loc.
+    const isQuickBooksDesktopAccountReview =
+      accountingSystem === 'QUICKBOOKS_DESKTOP' ||
+      accountingSystem === 'QUICKBOOKS_ENTERPRISE' ||
+      (accountingSystem === 'QUICKBOOKS' && await hasQuickBooksDesktopBackfillPages(companyId));
+    if (isQuickBooksDesktopAccountReview) {
+      const qbdReportValues = await collectValuesFromQuickBooksDesktopReports(companyId, targetMonth, mappings);
+      for (const [key, value] of qbdReportValues.entries()) {
+        valueByKey.set(key, value);
+      }
+
+      perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
+      for (const [key, value] of perAccountAnchorResult.values.entries()) {
+        if (!bsAccountKeySet.has(key)) continue;
+        valueByKey.set(key, value);
+      }
+    }
+  } else {
+    // Group A ("Big ERP" pattern): Infor M3/CSI, Sage Intacct, Vista Cloud,
+    // NetSuite, Acumatica, Odoo, Dynamics 365.
+    //
+    // Resolution order (lowest -> highest priority; later writes win):
+    //   1. MonthlyFinancial 1:1 baseline (last-resort for both BS and P&L)
+    //   2. Infor connection-metadata snapshot + SLGLTRANS logs (P&L only)
+    //   3. GLACCTPERIODBALANCES (BS only, M3-native EOM)
+    //   4. Cumulative GLTransactionFact through monthEnd (BS only)
+    //   5. Monthly GLTransactionFact movement (P&L only) – primary P&L source
+    //   6. BalanceSheetAccountAnchor + GL delta (BS only) – authoritative
+    //
+    // The bsAccountKeySet guard is applied to every fallback so movement /
+    // snapshot values can never be written into a BS account row, and EOM
+    // balance sources can never be written into a P&L row.
+
+    // 1. MonthlyFinancial 1:1 baseline.
+    const monthlyBaseline = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
+    for (const [key, value] of monthlyBaseline.entries()) {
+      valueByKey.set(key, value);
+    }
+
+    // 2. Tertiary P&L fallbacks – Infor connection-metadata snapshot and
+    // SLGLTRANS log items. Only relevant when the company is Infor; for
+    // other Group A systems the AccountingConnection row will not carry
+    // these payloads and the collectors return empty maps.
+    const isInfor = accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI';
+    if (isInfor) {
+      const rows = await withPrismaReconnectRetry(
+        () => prisma.$queryRaw<Array<{ csiFinancial: unknown; m3Financial: unknown; csiCoa: unknown; m3Coa: unknown }>>`
+        SELECT
+          "connectionMetadata"->'inforCsiFinancialPayload' AS "csiFinancial",
+          "connectionMetadata"->'inforM3FinancialPayload' AS "m3Financial",
+          "connectionMetadata"->'inforCsiCoaPayload' AS "csiCoa",
+          "connectionMetadata"->'inforM3CoaPayload' AS "m3Coa"
+        FROM "AccountingConnection"
+        WHERE "companyId" = ${companyId}
+          AND platform = 'INFOR_M3'
+        LIMIT 1
+      `,
+        'account-review.latest-values.get.accounting-connection',
+      );
+      const payloadRow = rows[0] || null;
+      const metadataPayload = hasGlResponsesPayload(payloadRow?.csiFinancial)
+        ? asObjectPayload(payloadRow?.csiFinancial)
+        : hasGlResponsesPayload(payloadRow?.csiCoa)
+          ? asObjectPayload(payloadRow?.csiCoa)
+          : hasGlResponsesPayload(payloadRow?.m3Financial)
+            ? asObjectPayload(payloadRow?.m3Financial)
+            : hasGlResponsesPayload(payloadRow?.m3Coa)
+              ? asObjectPayload(payloadRow?.m3Coa)
+              : asObjectPayload(payloadRow?.csiFinancial) ||
+                asObjectPayload(payloadRow?.csiCoa) ||
+                asObjectPayload(payloadRow?.m3Financial) ||
+                asObjectPayload(payloadRow?.m3Coa) ||
+                null;
+      const inforSnapshot = collectValuesFromInforPayload(metadataPayload, targetMonth);
+      for (const [key, value] of inforSnapshot.entries()) {
+        if (bsAccountKeySet.has(key)) continue;
+        valueByKey.set(key, value);
+      }
+      const apiSyncValues = await collectValuesFromApiSyncLogs(companyId, targetMonth);
+      for (const [key, value] of apiSyncValues.entries()) {
+        if (bsAccountKeySet.has(key)) continue;
+        valueByKey.set(key, value);
+      }
+    }
+
+    // 3. GLACCTPERIODBALANCES – Infor M3 native period-end balances.
+    // BS-only. Acts as a fallback when no anchor exists for an account.
+    if (accountingSystem === 'INFOR_M3') {
+      const periodValues = await collectValuesFromPeriodBalanceLogs(companyId, targetMonth);
+      for (const [key, value] of periodValues.entries()) {
+        if (!bsAccountKeySet.has(key)) continue;
+        valueByKey.set(key, value);
+      }
+    }
+
+    // 4. Cumulative GLTransactionFact through monthEnd. BS-only.
+    const factValues = await collectValuesFromGlTransactionFacts(companyId, targetMonth);
+    for (const [key, value] of factValues.entries()) {
+      if (!bsAccountKeySet.has(key)) continue;
+      valueByKey.set(key, value);
+    }
+
+    // 5. Monthly GLTransactionFact movement. P&L-only, primary source.
+    const monthMovementValues = await collectMonthlyMovementFromGlTransactionFacts(companyId, targetMonth);
+    for (const [key, value] of monthMovementValues.entries()) {
+      if (bsAccountKeySet.has(key)) continue;
+      valueByKey.set(key, value);
+    }
+
+    // 6. Per-account BalanceSheetAccountAnchor + GL delta. BS-only,
+    // authoritative – mirrors lib/financial/daily-bs-from-gl.ts so EOM
+    // balances include pre-ingest activity (cash, fixed assets,
+    // accumulated depreciation, etc. with non-zero opening balances).
+    perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
+    for (const [key, value] of perAccountAnchorResult.values.entries()) {
+      valueByKey.set(key, value);
+    }
+  }
+
+  return {
+    ok: true,
+    companyId,
+    targetMonth,
+    accountingSystem,
+    resolutionGroup: isGroupB ? 'B_QUICKBOOKS_PATTERN' : 'A_BIG_ERP_PATTERN',
+    count: valueByKey.size,
+    values: Object.fromEntries(valueByKey.entries()),
+    perAccountAnchor: perAccountAnchorResult.anchorDate
+      ? {
+          anchorDate: perAccountAnchorResult.anchorDate.toISOString().slice(0, 10),
+          accountsWithAnchor: perAccountAnchorResult.accountCount,
+        }
+      : null,
+  };
 }

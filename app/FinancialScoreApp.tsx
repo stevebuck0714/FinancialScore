@@ -257,6 +257,34 @@ type AccountReviewApiValueCacheEntry = {
 
 const ACCOUNT_REVIEW_VALUES_CACHE_TTL_MS = 2 * 60 * 1000;
 const accountReviewValuesCache = new Map<string, AccountReviewApiValueCacheEntry>();
+const ACCOUNT_REVIEW_VALUES_STORAGE_PREFIX = 'account-review:last-values:';
+
+function readPersistedAccountReviewValues(cacheKey: string): Record<string, number> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(`${ACCOUNT_REVIEW_VALUES_STORAGE_PREFIX}${cacheKey}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<AccountReviewApiValueCacheEntry> | null;
+    const values = parsed?.values;
+    if (!values || typeof values !== 'object' || Array.isArray(values)) return null;
+    return Object.keys(values).length > 0 ? values : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistAccountReviewValues(cacheKey: string, values: Record<string, number>): void {
+  if (typeof window === 'undefined' || Object.keys(values).length === 0) return;
+  try {
+    window.localStorage.setItem(
+      `${ACCOUNT_REVIEW_VALUES_STORAGE_PREFIX}${cacheKey}`,
+      JSON.stringify({ cachedAt: Date.now(), values }),
+    );
+  } catch {
+    // Storage quota exceeded or disabled; the in-memory cache still applies.
+  }
+}
+
 const PERFORMANCE_AUTO_RUN_ENABLED = false;
 const PERFORMANCE_AUTO_RUN_INTERVAL_MS = 60 * 60 * 1000;
 const NAVIGABLE_VIEWS = new Set([
@@ -3018,6 +3046,7 @@ function FinancialScorePage() {
         cachedAt: Date.now(),
         values: normalized,
       });
+      persistAccountReviewValues(cacheKey, normalized);
       setAccountReviewApiValues((current) => ({ ...current, ...normalized }));
       return normalized;
     } catch (error) {
@@ -6416,6 +6445,11 @@ function FinancialScorePage() {
       setAccountReviewApiValues(cached.values);
       return;
     }
+    const persisted = readPersistedAccountReviewValues(cacheKey);
+    if (persisted) {
+      accountReviewValuesCompanyIdRef.current = selectedCompanyId;
+      setAccountReviewApiValues(persisted);
+    }
     let cancelled = false;
     const load = async () => {
       try {
@@ -6449,6 +6483,7 @@ function FinancialScorePage() {
           cachedAt: Date.now(),
           values: normalized,
         });
+        persistAccountReviewValues(cacheKey, normalized);
         accountReviewValuesCompanyIdRef.current = selectedCompanyId;
         setAccountReviewApiValues((current) => ({ ...current, ...normalized }));
       } catch (error) {
