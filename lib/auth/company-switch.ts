@@ -20,7 +20,7 @@ export function isAccountManagerUser(user: any): boolean {
 export function markAccountManagerLanding(user: any) {
   if (typeof window === 'undefined') return;
   const accountCount = Array.isArray(user?.accessibleCompanies) ? user.accessibleCompanies.length : 0;
-  if (isAccountManagerUser(user) && accountCount > 1) {
+  if (isAccountManagerUser(user) && (accountCount > 1 || !user?.companyId)) {
     sessionStorage.setItem(ACCOUNT_MANAGER_LANDING_KEY, '1');
   } else {
     sessionStorage.removeItem(ACCOUNT_MANAGER_LANDING_KEY);
@@ -29,7 +29,11 @@ export function markAccountManagerLanding(user: any) {
 
 export function shouldLandOnMyAccounts(user: any): boolean {
   if (typeof window === 'undefined') return false;
-  return isAccountManagerUser(user) && sessionStorage.getItem(ACCOUNT_MANAGER_LANDING_KEY) === '1';
+  if (!isAccountManagerUser(user)) return false;
+  // Account Managers have no Corelytics client company of their own, so with
+  // nothing opened yet the only page they can use is My Accounts.
+  if (!user?.companyId) return true;
+  return sessionStorage.getItem(ACCOUNT_MANAGER_LANDING_KEY) === '1';
 }
 
 export function clearBrowserCompanyData() {

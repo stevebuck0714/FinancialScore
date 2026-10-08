@@ -115,7 +115,7 @@ export default function MyAccountsPage() {
       ) : accounts.length === 0 ? (
         <div style={{ padding: '48px', textAlign: 'center', background: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
           <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#64748b', margin: '0 0 6px 0' }}>No accounts assigned</h2>
-          <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>Ask a site administrator to assign companies to you in User Access.</p>
+          <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>Ask a site administrator to assign companies to you under Site Administration → Account Managers.</p>
         </div>
       ) : (
         <div style={{ background: 'white', borderRadius: '8px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>

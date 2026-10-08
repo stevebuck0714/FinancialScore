@@ -672,11 +672,8 @@ export default function SiteAdminDashboard(props: any) {
   const [newEmployeePassword, setNewEmployeePassword] = React.useState('');
   const [newEmployeeTitle, setNewEmployeeTitle] = React.useState('Account Manager');
   const [newEmployeePhone, setNewEmployeePhone] = React.useState('');
-  const [newEmployeeInitialCompanyId, setNewEmployeeInitialCompanyId] = React.useState('');
-  const [newEmployeeIsAccountManager, setNewEmployeeIsAccountManager] = React.useState(true);
   const [savingAccountManagerUserId, setSavingAccountManagerUserId] = React.useState<string | null>(null);
   const [userAccessSearch, setUserAccessSearch] = React.useState('');
-  const [userAccessAccountManagersOnly, setUserAccessAccountManagersOnly] = React.useState(false);
   const [creatingEmployeeUser, setCreatingEmployeeUser] = React.useState(false);
 
   const getAccountingSystemLabel = (value: unknown): string => {
@@ -1180,9 +1177,6 @@ export default function SiteAdminDashboard(props: any) {
     .filter((company: any) => isCorelyticsCompany(company))
     .slice()
     .sort((a: any, b: any) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
-  const employeeHomeCompanyId =
-    newEmployeeInitialCompanyId ||
-    (corelyticsHomeCompanies.length === 1 ? String(corelyticsHomeCompanies[0]?.id || '') : '');
 
   const assignCompanyToUser = async () => {
     if (!userAccessSelectedUserId) {
@@ -1224,23 +1218,14 @@ export default function SiteAdminDashboard(props: any) {
     const name = newEmployeeName.trim();
     const email = newEmployeeEmail.trim();
     const password = newEmployeePassword;
-    const companyId = employeeHomeCompanyId;
 
     if (!name || !email || !password) {
       alert('Name, email, and password are required.');
       return;
     }
-    if (!companyId) {
-      alert(
-        corelyticsHomeCompanies.length === 0
-          ? 'No Corelytics or FinancialScore company exists to hold internal employee logins. Create one first.'
-          : 'Choose the Corelytics home workspace for this employee.'
-      );
-      return;
-    }
     setCreatingEmployeeUser(true);
     try {
-      const createResponse = await fetch('/api/users', {
+      const createResponse = await fetch('/api/siteadmin/account-managers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1249,64 +1234,32 @@ export default function SiteAdminDashboard(props: any) {
           phone: newEmployeePhone.trim(),
           email,
           password,
-          companyId,
-          userType: 'COMPANY',
         }),
       });
-      const createData = await createResponse.json();
+      const createData = await createResponse.json().catch(() => ({}));
       if (!createResponse.ok) {
-        throw new Error(createData?.error || 'Failed to create employee user');
+        const details = Array.isArray(createData?.details) ? `\n${createData.details.join('\n')}` : '';
+        throw new Error(`${createData?.error || 'Failed to create Account Manager'}${details}`);
       }
 
       const createdUserId = createData?.user?.id;
-      if (createdUserId) {
-        const permissionResponse = await fetch('/api/users/permissions', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: createdUserId,
-            companyId,
-            companyRole: 'user',
-            sidebarAccess: DEFAULT_ALLOWED_SECTIONS,
-            operationalDashboardAccess: null,
-          }),
-        });
-        const permissionData = await permissionResponse.json();
-        if (!permissionResponse.ok) {
-          throw new Error(permissionData?.error || 'Employee created, but failed to set home workspace access');
-        }
-
-        if (newEmployeeIsAccountManager) {
-          const accountManagerResponse = await fetch('/api/siteadmin/account-managers', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: createdUserId, isAccountManager: true }),
-          });
-          const accountManagerData = await accountManagerResponse.json().catch(() => ({}));
-          if (!accountManagerResponse.ok) {
-            throw new Error(accountManagerData?.error || 'Employee created, but failed to mark as Account Manager');
-          }
-        }
-      }
-
       await refreshSiteAdminUsers();
       setUserAccessSelectedUserId(createdUserId || '');
+      setUserAccessSelectedCompanyId('');
       setNewEmployeeName('');
       setNewEmployeeEmail('');
       setNewEmployeePassword('');
       setNewEmployeeTitle('Account Manager');
       setNewEmployeePhone('');
-      setNewEmployeeInitialCompanyId('');
-      setNewEmployeeIsAccountManager(true);
 
       const emailNote = createData?.welcomeEmailSent
         ? ' Welcome email sent.'
         : createData?.welcomeEmailError
           ? ` Welcome email failed: ${createData.welcomeEmailError}`
           : '';
-      alert(`Employee user created.${emailNote} Assign their companies in "Assign company access" below.`);
+      alert(`Account Manager created.${emailNote} They are selected in "Assign company access" so you can add their companies now.`);
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to create employee user');
+      alert(error instanceof Error ? error.message : 'Failed to create Account Manager');
     } finally {
       setCreatingEmployeeUser(false);
     }
@@ -6978,7 +6931,7 @@ export default function SiteAdminDashboard(props: any) {
                     transition: 'all 0.2s'
                   }}
                 >
-                  User Access
+                  Account Managers
                 </button>
                 <button
                   onClick={() => setSiteAdminTab('affiliates')}
@@ -10323,7 +10276,7 @@ export default function SiteAdminDashboard(props: any) {
                 </>
               )}
 
-              {/* User Access Tab */}
+              {/* Account Managers Tab */}
               {siteAdminTab === 'user-access' && (() => {
                 const allCompanies = Array.isArray(companies)
                   ? companies
@@ -10340,7 +10293,10 @@ export default function SiteAdminDashboard(props: any) {
                       .filter((user: any) => {
                         const role = String(user?.role || '').toUpperCase();
                         const userType = String(user?.userType || '').toUpperCase();
-                        return role !== 'SITEADMIN' && userType !== 'ASSESSMENT' && isCorelyticsEmployeeUser(user);
+                        if (role !== 'USER' || userType === 'ASSESSMENT') return false;
+                        // Older internal logins were parked in a "FinancialScore"/"Corelytics"
+                        // company before the Account Manager flag existed; list them so they can be converted.
+                        return Boolean(user.isAccountManager) || isCorelyticsEmployeeUser(user);
                       })
                       .slice()
                       .sort((a: any, b: any) =>
@@ -10353,7 +10309,6 @@ export default function SiteAdminDashboard(props: any) {
                 const corelyticsHomeCompanyIds = new Set(corelyticsHomeCompanies.map((company: any) => company.id));
                 const userAccessQuery = userAccessSearch.trim().toLowerCase();
                 const visibleUsers = manageableUsers.filter((user: any) => {
-                  if (userAccessAccountManagersOnly && !user.isAccountManager) return false;
                   if (!userAccessQuery) return true;
                   if (String(user.name || '').toLowerCase().includes(userAccessQuery)) return true;
                   if (String(user.email || '').toLowerCase().includes(userAccessQuery)) return true;
@@ -10404,8 +10359,8 @@ export default function SiteAdminDashboard(props: any) {
                   <div style={{ display: 'grid', gap: '12px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '12px' }}>
                       <div style={panelStyle}>
-                        <h2 style={panelTitleStyle}>Add Corelytics employee</h2>
-                        <p style={panelHintStyle}>Creates the login and sends the welcome email. Assign companies on the right afterward.</p>
+                        <h2 style={panelTitleStyle}>Add Account Manager</h2>
+                        <p style={panelHintStyle}>Creates a Corelytics employee login and sends the welcome email. Assign their client companies on the right afterward.</p>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                           <input
                             type="text"
@@ -10446,32 +10401,8 @@ export default function SiteAdminDashboard(props: any) {
                             disabled={creatingEmployeeUser}
                             style={fieldStyle}
                           />
-                          {corelyticsHomeCompanies.length > 1 && (
-                            <select
-                              value={newEmployeeInitialCompanyId}
-                              onChange={(event) => setNewEmployeeInitialCompanyId(event.target.value)}
-                              disabled={creatingEmployeeUser}
-                              style={fieldStyle}
-                            >
-                              <option value="">Home workspace *</option>
-                              {corelyticsHomeCompanies.map((company: any) => (
-                                <option key={company.id} value={company.id}>
-                                  {company.name}
-                                </option>
-                              ))}
-                            </select>
-                          )}
                         </div>
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#1e293b' }}>
-                            <input
-                              type="checkbox"
-                              checked={newEmployeeIsAccountManager}
-                              onChange={(event) => setNewEmployeeIsAccountManager(event.target.checked)}
-                              disabled={creatingEmployeeUser}
-                            />
-                            Account Manager
-                          </label>
                           <span style={{ fontSize: '11px', color: '#94a3b8', flex: 1 }}>Standard password policy applies.</span>
                           <button
                             type="button"
@@ -10479,7 +10410,7 @@ export default function SiteAdminDashboard(props: any) {
                             disabled={creatingEmployeeUser}
                             style={primaryButtonStyle(creatingEmployeeUser)}
                           >
-                            {creatingEmployeeUser ? 'Creating...' : 'Create employee'}
+                            {creatingEmployeeUser ? 'Creating...' : 'Create Account Manager'}
                           </button>
                         </div>
                       </div>
@@ -10497,10 +10428,10 @@ export default function SiteAdminDashboard(props: any) {
                             disabled={savingUserAccess}
                             style={fieldStyle}
                           >
-                            <option value="">Select employee</option>
+                            <option value="">Select Account Manager</option>
                             {manageableUsers.map((user: any) => (
                               <option key={user.id} value={user.id}>
-                                {user.name || user.email} ({user.email}){user.isAccountManager ? ' - Account Manager' : ''}
+                                {user.name || user.email} ({user.email}){user.isAccountManager ? '' : ' - not yet an Account Manager'}
                               </option>
                             ))}
                           </select>
@@ -10510,7 +10441,7 @@ export default function SiteAdminDashboard(props: any) {
                             disabled={savingUserAccess || !userAccessSelectedUserId}
                             style={fieldStyle}
                           >
-                            <option value="">{userAccessSelectedUserId ? 'Select company or business' : 'Select an employee first'}</option>
+                            <option value="">{userAccessSelectedUserId ? 'Select client company' : 'Select an Account Manager first'}</option>
                             {assignableCompanies.map((company: any) => (
                               <option key={company.id} value={company.id}>
                                 {company.name} - {getCompanyOwnerLabel(company)}
@@ -10548,7 +10479,7 @@ export default function SiteAdminDashboard(props: any) {
                     <div style={{ ...panelStyle, padding: 0, overflow: 'hidden' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
                         <h2 style={{ ...panelTitleStyle, flex: '0 0 auto' }}>
-                          Employees ({visibleUsers.length}{visibleUsers.length !== manageableUsers.length ? ` of ${manageableUsers.length}` : ''})
+                          Account Managers ({visibleUsers.length}{visibleUsers.length !== manageableUsers.length ? ` of ${manageableUsers.length}` : ''})
                         </h2>
                         <input
                           type="search"
@@ -10557,32 +10488,22 @@ export default function SiteAdminDashboard(props: any) {
                           onChange={(event) => setUserAccessSearch(event.target.value)}
                           style={{ ...fieldStyle, flex: '1 1 220px', maxWidth: '320px' }}
                         />
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#1e293b' }}>
-                          <input
-                            type="checkbox"
-                            checked={userAccessAccountManagersOnly}
-                            onChange={(event) => setUserAccessAccountManagersOnly(event.target.checked)}
-                          />
-                          Account Managers only
-                        </label>
                       </div>
 
                       {manageableUsers.length === 0 ? (
                         <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
-                          No Corelytics employees yet. Create one above.
+                          No Account Managers yet. Create one above.
                         </div>
                       ) : visibleUsers.length === 0 ? (
                         <div style={{ padding: '24px', textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
-                          No employees match the current filter.
+                          No Account Managers match your search.
                         </div>
                       ) : (
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                           <thead>
                             <tr style={{ background: '#f8fafc', textAlign: 'left', color: '#475569', fontSize: '12px' }}>
-                              <th style={{ padding: '6px 14px', fontWeight: 600, width: '24%' }}>Employee</th>
-                              <th style={{ padding: '6px 8px', fontWeight: 600, width: '110px' }}>Account Mgr</th>
-                              <th style={{ padding: '6px 8px', fontWeight: 600 }}>Assigned companies</th>
-                              <th style={{ padding: '6px 14px', width: '90px' }} />
+                              <th style={{ padding: '6px 14px', fontWeight: 600, width: '26%' }}>Account Manager</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600 }}>Assigned client companies</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -10601,20 +10522,29 @@ export default function SiteAdminDashboard(props: any) {
                                     <div style={{ fontSize: '11px', color: '#64748b' }}>{user.email}</div>
                                     {homeCompanies.length > 0 && (
                                       <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                                        Home: {homeCompanies.map((company: any) => company.name).join(', ')}
+                                        Legacy workspace: {homeCompanies.map((company: any) => company.name).join(', ')}
                                       </div>
                                     )}
-                                  </td>
-                                  <td style={{ padding: '8px' }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#1e293b' }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={Boolean(user.isAccountManager)}
-                                        onChange={(event) => setUserAccountManager(user.id, event.target.checked)}
-                                        disabled={savingAccountManagerUserId === user.id || String(user.role || '').toUpperCase() !== 'USER'}
-                                      />
-                                      {user.isAccountManager ? 'Yes' : 'No'}
-                                    </label>
+                                    {!user.isAccountManager && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setUserAccountManager(user.id, true)}
+                                        disabled={savingAccountManagerUserId === user.id}
+                                        style={{
+                                          marginTop: '4px',
+                                          padding: '2px 8px',
+                                          background: '#fff7ed',
+                                          color: '#c2410c',
+                                          border: '1px solid #fed7aa',
+                                          borderRadius: '6px',
+                                          fontSize: '11px',
+                                          fontWeight: 600,
+                                          cursor: savingAccountManagerUserId === user.id ? 'not-allowed' : 'pointer',
+                                        }}
+                                      >
+                                        {savingAccountManagerUserId === user.id ? 'Saving...' : 'Make Account Manager'}
+                                      </button>
+                                    )}
                                   </td>
                                   <td style={{ padding: '8px' }}>
                                     {clientCompanies.length === 0 ? (
@@ -10669,29 +10599,6 @@ export default function SiteAdminDashboard(props: any) {
                                         ))}
                                       </div>
                                     )}
-                                  </td>
-                                  <td style={{ padding: '8px 14px', textAlign: 'right' }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setUserAccessSelectedUserId(user.id);
-                                        setUserAccessSelectedCompanyId('');
-                                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                                      }}
-                                      style={{
-                                        padding: '4px 10px',
-                                        background: 'white',
-                                        color: '#1F70C1',
-                                        border: '1px solid #bfdbfe',
-                                        borderRadius: '6px',
-                                        fontSize: '12px',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                        whiteSpace: 'nowrap',
-                                      }}
-                                    >
-                                      + Assign
-                                    </button>
                                   </td>
                                 </tr>
                               );

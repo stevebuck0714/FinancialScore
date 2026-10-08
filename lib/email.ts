@@ -102,6 +102,7 @@ interface WelcomeUserEmailProps {
   addedByNameOrEmail: string;
   loginLink: string;
   userType: 'COMPANY' | 'ASSESSMENT';
+  roleLabel?: string;
 }
 
 export async function sendPasswordResetEmail({ 
@@ -1088,6 +1089,7 @@ export async function sendWelcomeUserEmail({
   addedByNameOrEmail,
   loginLink,
   userType,
+  roleLabel,
 }: WelcomeUserEmailProps) {
   const client = getResendClient();
   if (!client) {
@@ -1100,7 +1102,9 @@ export async function sendWelcomeUserEmail({
   const safeUser = escapeHtml(userName || to);
   const safeEmail = escapeHtml(to);
   const safeLoginLink = escapeHtml(loginLink);
-  const safeRole = userType === 'ASSESSMENT' ? 'Team Assessment User' : 'Company User';
+  const safeRole = escapeHtml(
+    roleLabel || (userType === 'ASSESSMENT' ? 'Team Assessment User' : 'Company User'),
+  );
 
   try {
     const { data, error } = await client.emails.send({
