@@ -915,6 +915,7 @@ export default function CovenantsTab({
     const revenue = m.revenue || 0;
     const cogs = m.cogsTotal || m.totalCogs || 0;
     const expense = m.expense || 0;
+    const ebit = m.ebit || (revenue - cogs - expense);
     const ebitda = calculateEbitda({ ...m, revenue, cogsTotal: cogs, expense });
     const netProfit = m.netProfit || m.netIncome || (revenue - cogs - expense);
 
