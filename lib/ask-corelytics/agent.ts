@@ -60,6 +60,33 @@ function buildSystemPrompt(params: { companyName: string; todayEst: string }) {
   ].join('\n');
 }
 
+const MAX_THREAD_TURNS = 6;
+const MAX_THREAD_ANSWER_CHARS = 4_000;
+
+function toThreadMessages(conversationContext: unknown): {
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+  runningSummary: string;
+} {
+  const ctx = (conversationContext || {}) as { recentTurns?: unknown; runningSummary?: unknown };
+  const turns = Array.isArray(ctx.recentTurns) ? ctx.recentTurns.slice(-MAX_THREAD_TURNS) : [];
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+  for (const turn of turns as Array<Record<string, unknown>>) {
+    const priorQuestion = String(turn?.question || '').trim();
+    const shortAnswer = String(turn?.shortAnswer || '').trim();
+    if (!priorQuestion || !shortAnswer) continue;
+    messages.push({ role: 'user', content: `Question: ${priorQuestion}` });
+    messages.push({
+      role: 'assistant',
+      content: JSON.stringify({
+        shortAnswer,
+        longAnswer: String(turn?.longAnswer || '').slice(0, MAX_THREAD_ANSWER_CHARS),
+        howThisImpactsUs: String(turn?.howThisImpactsUs || ''),
+      }),
+    });
+  }
+  return { messages, runningSummary: String(ctx.runningSummary || '').trim() };
+}
+
 export async function runAskDataAgent(params: {
   openai: OpenAI;
   model: string;
@@ -76,20 +103,29 @@ export async function runAskDataAgent(params: {
   const operationsSource = sources.find((s) => /operations/i.test(String(s.title || ''))) || financialSource;
   if (!financialSource) return null;
 
-  const contextJson = JSON.stringify(params.contextSummary).slice(0, MAX_CONTEXT_CHARS);
+  const summaryWithoutThread: Record<string, unknown> = { ...params.contextSummary };
+  delete summaryWithoutThread.conversationContext;
+  const contextJson = JSON.stringify(summaryWithoutThread).slice(0, MAX_CONTEXT_CHARS);
+  const thread = toThreadMessages(params.conversationContext);
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: buildSystemPrompt({ companyName: params.companyName, todayEst: formatEstDate() }) },
     {
-      role: 'user',
+      role: 'system',
       content: [
-        `Question: ${question}`,
+        buildSystemPrompt({ companyName: params.companyName, todayEst: formatEstDate() }),
         '',
         'Background context (pre-computed summary: company profile, sector context, KPI ratios vs industry benchmarks, recent trends). Use the tools for anything beyond this:',
         contextJson,
-        ...(params.conversationContext
-          ? ['', 'Earlier turns in this thread (for follow-up references):', JSON.stringify(params.conversationContext)]
+        ...(thread.runningSummary
+          ? ['', 'Summary of older turns in this thread:', thread.runningSummary]
           : []),
       ].join('\n'),
+    },
+    ...thread.messages,
+    {
+      role: 'user',
+      content: thread.messages.length > 0
+        ? `Follow-up question: ${question}\n\nResolve references like "that", "it", "those", "same period", or "why" against the earlier turns in this conversation. Re-query data as needed rather than repeating earlier numbers unverified.`
+        : `Question: ${question}`,
     },
   ];
 

@@ -10,6 +10,7 @@ import {
   Paragraph,
   TextRun,
 } from 'docx';
+import { AskThreadsSidebar, ShareThreadDialog } from '@/app/components/ask-corelytics/AskThreadsPanel';
 
 type AskResponse = {
   shortAnswer: string;
@@ -64,6 +65,28 @@ type AskThreadTurn = {
   response: AskResponse;
 };
 
+type SavedThreadTurn = {
+  id: string;
+  askedAt: string;
+  question: string;
+  useExternalSources: boolean;
+  response: AskResponse;
+};
+type SavedThreadPayload = {
+  id: string;
+  title: string;
+  access: 'owner' | 'recipient';
+  share?: { sharedAt: string; sharedBy: { name: string; email: string } };
+  turns: SavedThreadTurn[];
+};
+type SharedThreadView = {
+  threadId: string;
+  title: string;
+  sharedAt: string;
+  sharedBy: { name: string; email: string };
+  turns: AskThreadTurn[];
+};
+
 type WebResearchScope = 'local' | 'state' | 'regional' | 'national' | 'global';
 type WebResearchDepth = 'standard' | 'deep';
 type WebResearchTurn = {
@@ -105,8 +128,13 @@ export default function AIAnalysisView(props: {
   const [askLoading, setAskLoading] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [askResponse, setAskResponse] = useState<AskResponse | null>(null);
-  const [askThreadId, setAskThreadId] = useState<string>(() => `thread-${Date.now()}`);
+  const [savedThreadId, setSavedThreadId] = useState<string | null>(null);
   const [askThreadTurns, setAskThreadTurns] = useState<AskThreadTurn[]>([]);
+  const [threadsRefreshKey, setThreadsRefreshKey] = useState(0);
+  const [sharedView, setSharedView] = useState<SharedThreadView | null>(null);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [threadNotice, setThreadNotice] = useState<string | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
   const askInputRef = useRef<HTMLInputElement | null>(null);
 
   // Document search (separate state so it doesn't leak from Ask Corelytics)
@@ -140,7 +168,7 @@ export default function AIAnalysisView(props: {
   const defaultPresetQuestions = useMemo(() => {
     const name = companyName?.trim() || 'the company';
     return {
-      Company: [
+      'Financial Data': [
         `What are the top drivers of margin change this period for ${name}?`,
         `Which KPIs are below our peer group KPIs for ${name}, and what are the likely causes?`,
         `What are the top 3 risks to performance over the next 90 days for ${name}?`,
@@ -177,6 +205,13 @@ export default function AIAnalysisView(props: {
     return Object.values(value).every((list) => Array.isArray(list) && list.every((q) => typeof q === 'string'));
   }
 
+  function renameLegacyCategories(saved: QuestionsByCategory): QuestionsByCategory {
+    if (!('Company' in saved) || 'Financial Data' in saved) return saved;
+    return Object.fromEntries(
+      Object.entries(saved).map(([category, questions]) => [category === 'Company' ? 'Financial Data' : category, questions]),
+    );
+  }
+
   useEffect(() => {
     setQuestionsError(null);
     try {
@@ -184,7 +219,7 @@ export default function AIAnalysisView(props: {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (isValidQuestions(parsed)) {
-          setPresetQuestions(parsed);
+          setPresetQuestions(renameLegacyCategories(parsed));
           setQuestionsDirty(false);
           setQuestionsSavedAt(null);
           return;
@@ -310,10 +345,82 @@ export default function AIAnalysisView(props: {
 
   function startNewAskThread() {
     abortInFlight('default');
-    setAskThreadId(`thread-${Date.now()}`);
+    setSavedThreadId(null);
+    setSharedView(null);
     setAskThreadTurns([]);
     setAskResponse(null);
     setAskError(null);
+    setThreadNotice(null);
+  }
+
+  function toAskTurns(turns: SavedThreadTurn[]): AskThreadTurn[] {
+    return turns.map((turn) => ({
+      id: turn.id,
+      askedAt: turn.askedAt,
+      question: turn.question,
+      useExternalSources: turn.useExternalSources,
+      response: turn.response,
+    }));
+  }
+
+  function showOwnedThread(thread: SavedThreadPayload) {
+    setSharedView(null);
+    setSavedThreadId(thread.id);
+    setAskThreadTurns(toAskTurns(thread.turns));
+    setAskResponse(null);
+    setAskError(null);
+    setAskQuestion('');
+  }
+
+  async function openSavedThread(threadId: string) {
+    abortInFlight('default');
+    setThreadLoading(true);
+    setThreadNotice(null);
+    try {
+      const res = await fetch(`/api/ask-threads/${encodeURIComponent(threadId)}`);
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Failed to open thread.');
+      const thread = data as SavedThreadPayload;
+      if (thread.access === 'owner') {
+        showOwnedThread(thread);
+      } else {
+        setSharedView({
+          threadId: thread.id,
+          title: thread.title,
+          sharedAt: thread.share?.sharedAt || '',
+          sharedBy: thread.share?.sharedBy || { name: '', email: '' },
+          turns: toAskTurns(thread.turns),
+        });
+        setThreadsRefreshKey((k) => k + 1);
+      }
+    } catch (e: any) {
+      setThreadNotice(e?.message || 'Failed to open thread.');
+    } finally {
+      setThreadLoading(false);
+    }
+  }
+
+  async function continueSharedThread() {
+    if (!sharedView) return;
+    setThreadLoading(true);
+    setThreadNotice(null);
+    try {
+      const res = await fetch(`/api/ask-threads/${encodeURIComponent(sharedView.threadId)}/continue`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Failed to continue thread.');
+      showOwnedThread(data as SavedThreadPayload);
+      setThreadsRefreshKey((k) => k + 1);
+      setTimeout(() => askInputRef.current?.focus(), 0);
+    } catch (e: any) {
+      setThreadNotice(e?.message || 'Failed to continue thread.');
+    } finally {
+      setThreadLoading(false);
+    }
+  }
+
+  function handleThreadRemoved(threadId: string) {
+    if (threadId === savedThreadId) startNewAskThread();
+    if (threadId === sharedView?.threadId) setSharedView(null);
   }
 
   function startNewWebResearchThread() {
@@ -337,7 +444,7 @@ export default function AIAnalysisView(props: {
         ],
       }),
       new Paragraph({
-        text: `Thread ID: ${askThreadId}`,
+        text: `Thread ID: ${savedThreadId || 'Not saved'}`,
       }),
       new Paragraph({
         text: `Exported: ${formatEstDateTime(new Date())}`,
@@ -468,8 +575,10 @@ export default function AIAnalysisView(props: {
           useExternalSources,
           documentId: mode === 'document' ? (selectedDocumentId || null) : null,
           mode,
-          threadId: mode === 'default' ? askThreadId : undefined,
+          threadId: mode === 'default' ? (savedThreadId || undefined) : undefined,
           conversationContext: mode === 'default' ? buildConversationContext(askThreadTurns) : undefined,
+          saveToThread: mode === 'default',
+          savedThreadId: mode === 'default' ? savedThreadId : undefined,
         }),
         signal: controller.signal,
       });
@@ -480,7 +589,15 @@ export default function AIAnalysisView(props: {
       if (mode === 'document') {
         setDocResponse(data as AskResponse);
       } else {
-        const response = data as AskResponse;
+        const { savedThreadId: savedId, saveError, ...response } = data as AskResponse & {
+          savedThreadId?: string;
+          saveError?: string;
+        };
+        if (savedId) {
+          setSavedThreadId(savedId);
+          setThreadsRefreshKey((k) => k + 1);
+        }
+        setThreadNotice(saveError || null);
         setAskResponse(response);
         setAskThreadTurns((prev) => [
           ...prev,
@@ -492,6 +609,11 @@ export default function AIAnalysisView(props: {
             response,
           },
         ]);
+        setAskQuestion('');
+        setTimeout(() => {
+          askInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          askInputRef.current?.focus();
+        }, 0);
       }
     } catch (e: any) {
       const msg =
@@ -522,7 +644,7 @@ export default function AIAnalysisView(props: {
 
     abortInFlight('web-research');
     const controller = new AbortController();
-    const timeoutMs = webResearchDepth === 'deep' ? 90000 : 60000;
+    const timeoutMs = webResearchDepth === 'deep' ? 120000 : 90000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     setWebResearchLoading(true);
@@ -649,7 +771,10 @@ export default function AIAnalysisView(props: {
 
   useEffect(() => {
     // Company switch starts a fresh Ask thread context.
-    setAskThreadId(`thread-${Date.now()}`);
+    setSavedThreadId(null);
+    setSharedView(null);
+    setShareDialogOpen(false);
+    setThreadNotice(null);
     setAskThreadTurns([]);
     setAskResponse(null);
     setAskError(null);
@@ -722,6 +847,61 @@ export default function AIAnalysisView(props: {
     return documents.find((d) => d.id === selectedDocumentId) || null;
   }, [documents, selectedDocumentId]);
 
+  const displayTurns = sharedView ? sharedView.turns : askThreadTurns;
+  const isFollowUp = askThreadTurns.length > 0;
+  const askComposer = (
+    <div style={{ display: 'grid', gap: '6px' }}>
+      {isFollowUp && (
+        <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Ask a follow-up
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
+        <input
+          ref={askInputRef}
+          value={askQuestion}
+          onChange={(e) => setAskQuestion(e.target.value)}
+          placeholder={isFollowUp ? 'Ask a follow-up about this thread… (e.g. "Why did that change?")' : 'Ask a question…'}
+          style={{
+            flex: 1,
+            padding: '12px 14px',
+            borderRadius: '10px',
+            border: '1px solid #cbd5e1',
+            outline: 'none',
+            fontSize: '15px',
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !askLoading) {
+              runAsk(askQuestion, { mode: 'default' });
+            }
+          }}
+        />
+        <button
+          onClick={() => runAsk(askQuestion, { mode: 'default' })}
+          disabled={askLoading || !askQuestion.trim()}
+          style={{
+            padding: '12px 16px',
+            borderRadius: '10px',
+            border: 'none',
+            background: askLoading ? '#94a3b8' : '#0ea5e9',
+            color: 'white',
+            fontWeight: '800',
+            cursor: askLoading ? 'not-allowed' : 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+          title="Run (Enter)"
+        >
+          {askLoading ? 'Searching…' : isFollowUp ? 'Ask Follow-up' : 'Search & Answer'}
+        </button>
+      </div>
+      {isFollowUp && (
+        <div style={{ fontSize: '12px', color: '#64748b' }}>
+          Follow-ups use the earlier questions and answers in this thread. Click New Thread to start fresh.
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
       {/* Tab Navigation */}
@@ -785,6 +965,14 @@ export default function AIAnalysisView(props: {
       <div style={{ display: 'grid', gridTemplateColumns: tab === 'ask' ? '380px 1fr' : '1fr', gap: '16px' }}>
         {/* Presets (Ask only) */}
         {tab === 'ask' && (
+          <div style={{ display: 'grid', gap: '16px', alignContent: 'start' }}>
+          <AskThreadsSidebar
+            companyId={selectedCompanyId}
+            refreshKey={threadsRefreshKey}
+            activeThreadId={sharedView?.threadId || savedThreadId}
+            onOpenThread={openSavedThread}
+            onThreadRemoved={handleThreadRemoved}
+          />
           <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', height: 'fit-content' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>Suggested questions</div>
@@ -861,6 +1049,7 @@ export default function AIAnalysisView(props: {
                       <div key={`${category}-${idx}`} style={{ display: 'flex', gap: '6px', alignItems: 'stretch' }}>
                         <button
                           onClick={() => {
+                            if (sharedView) startNewAskThread();
                             setAskQuestion(q);
                             setTab('ask');
                             // Make "suggested question" feel like a picker: focus the input so users can tweak it.
@@ -937,51 +1126,49 @@ export default function AIAnalysisView(props: {
               ))}
             </div>
           </div>
+          </div>
         )}
 
         {/* Main */}
         <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
           {tab === 'ask' && (
             <div>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
-                <input
-                  ref={askInputRef}
-                  value={askQuestion}
-                  onChange={(e) => setAskQuestion(e.target.value)}
-                  placeholder="Ask a question…"
-                  style={{
-                    flex: 1,
-                    padding: '12px 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #cbd5e1',
-                    outline: 'none',
-                    fontSize: '15px',
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      runAsk(askQuestion, { mode: 'default' });
-                    }
-                  }}
-                />
-                <button
-                  onClick={() => runAsk(askQuestion, { mode: 'default' })}
-                  disabled={askLoading || !askQuestion.trim()}
-                  style={{
-                    padding: '12px 16px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: askLoading ? '#94a3b8' : '#0ea5e9',
-                    color: 'white',
-                    fontWeight: '800',
-                    cursor: askLoading ? 'not-allowed' : 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title="Run (Ctrl/Cmd+Enter)"
-                >
-                  {askLoading ? 'Searching…' : 'Search & Answer'}
-                </button>
-              </div>
-              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {threadNotice && (
+                <div style={{ marginBottom: '12px', padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '10px', fontSize: '13px' }}>
+                  {threadNotice}
+                </div>
+              )}
+              {threadLoading && <div style={{ marginBottom: '12px', fontSize: '13px', color: '#64748b' }}>Loading thread…</div>}
+              {sharedView ? (
+                <div style={{ padding: '14px', border: '1px solid #c7d2fe', background: '#eef2ff', borderRadius: '12px', display: 'grid', gap: '6px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#4338ca', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Shared with you · Read only
+                  </div>
+                  <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>{sharedView.title}</div>
+                  <div style={{ fontSize: '12px', color: '#475569' }}>
+                    Shared by {sharedView.sharedBy.name || sharedView.sharedBy.email} on {formatEstDateTime(sharedView.sharedAt)}. Answers were generated
+                    when each question was asked; the company&apos;s data may have changed since.
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={continueSharedThread}
+                      disabled={threadLoading}
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontSize: '12px', fontWeight: 800, cursor: threadLoading ? 'not-allowed' : 'pointer' }}
+                    >
+                      Continue this thread
+                    </button>
+                    <button
+                      onClick={startNewAskThread}
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', color: '#1e293b', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              ) : (
+              <>
+              {askThreadTurns.length === 0 && askComposer}
+              <div style={{ marginTop: askThreadTurns.length === 0 ? '10px' : 0, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
@@ -1028,19 +1215,38 @@ export default function AIAnalysisView(props: {
                 >
                   Export Thread (.docx)
                 </button>
+                <button
+                  onClick={() => setShareDialogOpen(true)}
+                  disabled={!savedThreadId || askThreadTurns.length === 0 || askLoading}
+                  title={savedThreadId ? 'Share this thread with people in your company' : 'Ask a question first; threads are saved automatically'}
+                  style={{
+                    padding: '7px 10px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: savedThreadId && askThreadTurns.length > 0 ? '#16a34a' : '#94a3b8',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: savedThreadId && askThreadTurns.length > 0 ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Share Thread
+                </button>
               </div>
 
-              {askError && (
+              {askError && askThreadTurns.length === 0 && (
                 <div style={{ marginTop: '12px', padding: '12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '10px' }}>
                   {askError}
                 </div>
               )}
+              </>
+              )}
 
-              {askThreadTurns.length > 0 && (
+              {displayTurns.length > 0 && (
                 <div style={{ marginTop: '16px', display: 'grid', gap: '14px' }}>
-                  {askThreadTurns.map((turn, turnIdx) => (
+                  {displayTurns.map((turn, turnIdx) => (
                     <div key={turn.id} style={{ display: 'grid', gap: '10px' }}>
-                      <Section title={`Turn ${turnIdx + 1} · ${formatEstDateTime(turn.askedAt)}`}>
+                      <Section title={`${turnIdx === 0 ? 'Question' : `Follow-up ${turnIdx}`} · ${formatEstDateTime(turn.askedAt)}`}>
                         <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>
                           <strong>Question:</strong> {turn.question}
                         </div>
@@ -1106,9 +1312,39 @@ export default function AIAnalysisView(props: {
                       </Section>
                     </div>
                   ))}
+                  {sharedView ? (
+                    <div style={{ padding: '14px', border: '1px solid #c7d2fe', background: '#eef2ff', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '13px', color: '#334155', flex: 1 }}>
+                        Want to ask your own follow-up? Continue this thread to get a copy you can keep asking questions in.
+                      </div>
+                      <button
+                        onClick={continueSharedThread}
+                        disabled={threadLoading}
+                        style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontSize: '12px', fontWeight: 800, cursor: threadLoading ? 'not-allowed' : 'pointer' }}
+                      >
+                        Continue this thread
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '14px', border: '1px solid #bae6fd', background: '#f0f9ff', borderRadius: '12px' }}>
+                      {askComposer}
+                      {askError && (
+                        <div style={{ marginTop: '10px', padding: '12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '10px' }}>
+                          {askError}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
-              {askResponse && askThreadTurns.length === 0 && (
+              {shareDialogOpen && savedThreadId && (
+                <ShareThreadDialog
+                  threadId={savedThreadId}
+                  onClose={() => setShareDialogOpen(false)}
+                  onShared={() => setThreadsRefreshKey((k) => k + 1)}
+                />
+              )}
+              {askResponse && askThreadTurns.length === 0 && !sharedView && (
                 <div style={{ marginTop: '16px', display: 'grid', gap: '14px' }}>
                   <Section title="Short answer">
                     <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>{askResponse.shortAnswer}</div>

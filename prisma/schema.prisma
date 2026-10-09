@@ -166,6 +166,7 @@ model Company {
   financialForecastInputSettings FinancialForecastInputSettings?
   financialForecastBudgetArchives FinancialForecastBudgetArchive[]
   customReports              CustomReport[]
+  askThreads                 AskThread[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
@@ -233,6 +234,9 @@ model User {
   uploadedDocuments    CompanyDocument[]  @relation("CompanyDocumentUploadedBy")
   uploadedDataRoomDocuments DataRoomDocument[] @relation("DataRoomDocumentUploadedBy")
   customReportsCreated CustomReport[]     @relation("CustomReportCreatedBy")
+  askThreadsOwned      AskThread[]        @relation("AskThreadOwner")
+  askThreadSharesReceived AskThreadShare[] @relation("AskThreadShareRecipient")
+  askThreadSharesSent  AskThreadShare[]   @relation("AskThreadShareSender")
 
   @@index([email])
   @@index([companyId])
@@ -257,6 +261,61 @@ model CustomReport {
 
   @@index([companyId, updatedAt(sort: Desc)])
   @@index([createdByUserId])
+}
+
+// Ask Corelytics conversation thread. Auto-saved per user and company.
+model AskThread {
+  id                 String           @id @default(cuid())
+  companyId          String
+  ownerUserId        String
+  title              String
+  // Set when a recipient continues a thread that was shared with them.
+  forkedFromThreadId String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  company            Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  owner              User             @relation("AskThreadOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  forkedFrom         AskThread?       @relation("AskThreadForks", fields: [forkedFromThreadId], references: [id], onDelete: SetNull)
+  forks              AskThread[]      @relation("AskThreadForks")
+  turns              AskThreadTurn[]
+  shares             AskThreadShare[]
+
+  @@index([companyId, ownerUserId, updatedAt(sort: Desc)])
+  @@index([forkedFromThreadId])
+}
+
+model AskThreadTurn {
+  id                 String    @id @default(cuid())
+  threadId           String
+  position           Int
+  question           String
+  useExternalSources Boolean   @default(false)
+  response           Json
+  askedAt            DateTime  @default(now())
+
+  thread             AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, position])
+}
+
+// Read-only share of an AskThread. Recipients see only the first sharedTurnCount turns.
+model AskThreadShare {
+  id               String    @id @default(cuid())
+  threadId         String
+  sharedWithUserId String
+  sharedByUserId   String
+  sharedTurnCount  Int
+  sharedAt         DateTime  @default(now())
+  viewedAt         DateTime?
+
+  thread           AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sharedWith       User      @relation("AskThreadShareRecipient", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  sharedBy         User      @relation("AskThreadShareSender", fields: [sharedByUserId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, sharedWithUserId])
+  @@index([sharedWithUserId, sharedAt(sort: Desc)])
+  @@index([sharedByUserId])
 }
 
 model UserCompanyAccess {

@@ -72,6 +72,14 @@ export type AuditAction =
   | 'ASSESSMENT_UPDATED'
   | 'ASSESSMENT_DELETED'
 
+  // Ask Corelytics threads
+  | 'ASK_THREAD_DELETED'
+  | 'ASK_THREAD_SHARED'
+  | 'ASK_THREAD_UNSHARED'
+  | 'ASK_THREAD_SHARE_VIEWED'
+  | 'ASK_THREAD_SHARE_REMOVED_BY_RECIPIENT'
+  | 'ASK_THREAD_CONTINUED'
+
 export interface AuditLogEntry {
   action: AuditAction
   entityType: string

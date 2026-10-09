@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { getOpenAiClient, isUsingGateway } from '@/lib/ai-gateway';
 import { runAskDataAgent } from '@/lib/ask-corelytics/agent';
+import { appendTurnToThread } from '@/lib/ask-corelytics/threads';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
@@ -470,6 +471,49 @@ function normalizeConversationContext(input: unknown): ConversationContext | nul
   const runningSummary = String(raw.runningSummary || '').slice(0, 4000);
   if (recentTurns.length === 0 && !runningSummary) return null;
   return { recentTurns, runningSummary };
+}
+
+async function resolveStandaloneQuestion(params: {
+  openai: OpenAI;
+  model: string;
+  question: string;
+  conversationContext: ConversationContext | null;
+}): Promise<string> {
+  const { openai, model, question, conversationContext } = params;
+  if (!conversationContext || conversationContext.recentTurns.length === 0) return question;
+  const priorTurns = conversationContext.recentTurns
+    .slice(-4)
+    .map((turn) => `Q: ${turn.question}\nA: ${turn.shortAnswer}`)
+    .join('\n\n');
+  try {
+    const resp = await createModelText({
+      openai,
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: [
+            'Rewrite the user\'s latest question so it is fully self-contained, using the earlier conversation to resolve references (it, that, those, same period, why, what about X).',
+            'Keep the user\'s intent, entities, places, and time periods. Do not answer the question.',
+            'If the latest question is already self-contained, return it unchanged.',
+            'Return only the rewritten question as plain text.',
+          ].join('\n'),
+        },
+        {
+          role: 'user',
+          content: `${conversationContext.runningSummary ? `Older context:\n${conversationContext.runningSummary}\n\n` : ''}Earlier conversation:\n${priorTurns}\n\nLatest question: ${question}`,
+        },
+      ],
+      temperature: 0,
+      maxTokens: 200,
+      timeoutMs: 20_000,
+    });
+    const rewritten = String(resp.text || '').replace(/^["'\s]+|["'\s]+$/g, '').trim();
+    return rewritten && rewritten.length <= 600 ? rewritten : question;
+  } catch (error) {
+    console.error('AI Analysis ask: follow-up rewrite failed, using raw question', error);
+    return question;
+  }
 }
 
 function extractCompanyCandidates(
@@ -2870,9 +2914,19 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       },
     ];
 
+    // Routes through Vercel AI Gateway with per-request ZDR when AI_GATEWAY_API_KEY is set.
+    const openai = getOpenAiClient();
+    const defaultModel = process.env.OPENAI_MODEL || 'gpt-4o';
+    const askModel = process.env.OPENAI_MODEL_ASK || (isUsingGateway() ? DEFAULT_ASK_AGENT_MODEL : defaultModel);
+
+    const searchQuestion =
+      useExternalSources && uiMode === 'default'
+        ? await resolveStandaloneQuestion({ openai, model: askModel, question, conversationContext })
+        : question;
+
     const externalQueryPlan = useExternalSources
       ? buildExternalQueryPlan({
-          question,
+          question: searchQuestion,
           industryGroupName,
           industrySectorCategory: sectorCategory,
           companyName: companyName || company?.name || null,
@@ -2893,6 +2947,9 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       (internalSummary as any).queryContext.externalSearchIntent = externalQueryPlan.searchIntent;
       (internalSummary as any).queryContext.externalTopic = externalQueryPlan.topic;
       (internalSummary as any).queryContext.externalRequiredTerms = externalQueryPlan.requiredTerms;
+      if (searchQuestion !== question) {
+        (internalSummary as any).queryContext.followUpResolvedAs = searchQuestion;
+      }
     }
     internalSummary.queryContext.externalSourcesAvailable = externalSources.length > 0;
     const sources =
@@ -2912,11 +2969,6 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
     }
 
     // 2) Ask the model to synthesize an answer with REQUIRED structure.
-    // Routes through Vercel AI Gateway with per-request ZDR when AI_GATEWAY_API_KEY is set.
-    const openai = getOpenAiClient();
-    const defaultModel = process.env.OPENAI_MODEL || 'gpt-4o';
-    const askModel = process.env.OPENAI_MODEL_ASK || (isUsingGateway() ? DEFAULT_ASK_AGENT_MODEL : defaultModel);
-
     // Internal questions: let the model query the company's financial and operational data
     // directly. The single-prompt pipeline below is only a fallback if the agent fails.
     if (uiMode === 'default' && !useExternalSources) {
@@ -3167,6 +3219,29 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  return runAskCorelyticsLegacy(request);
+  const body = await request.clone().json().catch(() => null);
+  const response = await runAskCorelyticsLegacy(request);
+  const shouldSave = body?.saveToThread === true && String(body?.mode || '').toLowerCase() !== 'document';
+  if (!shouldSave || !response.ok) return response;
+
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== 'object') {
+    return NextResponse.json({ error: 'Failed to read Ask Corelytics answer' }, { status: 500 });
+  }
+  try {
+    const context = await requireAuth();
+    const saved = await appendTurnToThread({
+      companyId: String(body.companyId || '').trim(),
+      ownerUserId: context.userId,
+      threadId: body?.savedThreadId ? String(body.savedThreadId) : null,
+      question: String(body.question || '').trim(),
+      useExternalSources: body?.useExternalSources === true,
+      response: payload,
+    });
+    return NextResponse.json({ ...payload, savedThreadId: saved.threadId });
+  } catch (error) {
+    console.error('AI Analysis ask: failed to save thread turn', error);
+    return NextResponse.json({ ...payload, saveError: 'This answer could not be saved to your thread history.' });
+  }
 }
 

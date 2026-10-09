@@ -4,6 +4,14 @@ import { createModelText } from '@/lib/openai-helpers';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 
+export const maxDuration = 120;
+
+// The client aborts deep research at 120s; keep the server inside that window.
+const REQUEST_BUDGET_MS = 110_000;
+const RESEARCH_CALL_TIMEOUT_MS = 40_000;
+const FIRECRAWL_TIMEOUT_MS = 8_000;
+const MIN_SYNTHESIS_MS = 15_000;
+
 type ResearchDepth = 'standard' | 'deep';
 type ResearchScope = 'local' | 'state' | 'regional' | 'national' | 'global';
 
@@ -57,9 +65,11 @@ async function callPerplexity(params: {
   system: string;
   prompt: string;
   maxTokens?: number;
+  timeoutMs: number;
 }): Promise<{ content: string; citations: string[] }> {
   const response = await fetch('https://api.perplexity.ai/chat/completions', {
     method: 'POST',
+    signal: AbortSignal.timeout(params.timeoutMs),
     headers: {
       Authorization: `Bearer ${params.apiKey}`,
       'Content-Type': 'application/json',
@@ -98,6 +108,7 @@ async function scrapeWithFirecrawl(params: { apiKey: string; url: string }): Pro
   try {
     const response = await fetch('https://api.firecrawl.dev/v2/scrape', {
       method: 'POST',
+      signal: AbortSignal.timeout(FIRECRAWL_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${params.apiKey}`,
         'Content-Type': 'application/json',
@@ -122,7 +133,7 @@ async function scrapeWithFirecrawl(params: { apiKey: string; url: string }): Pro
     return {
       url: params.url,
       title: String(data?.metadata?.title || data?.title || params.url).trim(),
-      markdown: markdown.slice(0, 5000),
+      markdown: markdown.slice(0, 4000),
     };
   } catch (error) {
     console.warn('Web Research Firecrawl scrape error:', params.url, error);
@@ -158,6 +169,9 @@ function normalizeSources(value: unknown): Array<{ url: string; title?: string; 
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+  const deadline = startedAt + REQUEST_BUDGET_MS;
+  const timings: Record<string, number> = {};
   try {
     await requireAuth();
 
@@ -254,24 +268,36 @@ Run a deep follow-up search using alternate terms, aliases, identity anchors, of
         : []),
     ];
 
-    const researchResults = await Promise.all(
+    // Research notes feed the synthesis step, so they can be shorter than a final answer.
+    const settledResearch = await Promise.allSettled(
       researchPrompts.map(async (item) => ({
         label: item.label,
         ...(await callPerplexity({
           apiKey,
           system: researchSystem,
           prompt: item.prompt,
-          maxTokens: researchDepth === 'deep' ? 3500 : 2500,
+          maxTokens: researchDepth === 'deep' ? 2000 : 1500,
+          timeoutMs: RESEARCH_CALL_TIMEOUT_MS,
         })),
       })),
     );
+    const researchResults = settledResearch.flatMap((result, index) => {
+      if (result.status === 'fulfilled') return [result.value];
+      console.warn('Web Research Perplexity call failed:', researchPrompts[index].label, result.reason);
+      return [];
+    });
+    timings.researchMs = Date.now() - startedAt;
+    if (researchResults.length === 0) {
+      return NextResponse.json({ error: 'Web research sources did not respond. Please try again.' }, { status: 502 });
+    }
 
     const citations = uniqueStrings(researchResults.flatMap((item) => item.citations));
     const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim();
     const firecrawlUrls = uniqueStrings([...identityAnchors, ...citations])
       .map(normalizeFirecrawlUrl)
       .filter(Boolean)
-      .slice(0, researchDepth === 'deep' ? 8 : 0);
+      .slice(0, researchDepth === 'deep' ? 6 : 0);
+    const firecrawlStartedAt = Date.now();
     const firecrawlDocs =
       researchDepth === 'deep' && firecrawlApiKey
         ? (
@@ -280,6 +306,7 @@ Run a deep follow-up search using alternate terms, aliases, identity anchors, of
             )
           ).filter((doc): doc is { url: string; title: string; markdown: string } => Boolean(doc))
         : [];
+    timings.firecrawlMs = Date.now() - firecrawlStartedAt;
 
     const researchNotes = researchResults
       .map((item) => `## ${item.label}\n${item.content}\nCitations: ${item.citations.join(', ') || 'None returned'}`)
@@ -338,11 +365,15 @@ Requirements:
 `;
 
     let parsed: any;
+    const synthesisStartedAt = Date.now();
+    const synthesisModel = process.env.OPENAI_MODEL_WEB_RESEARCH || process.env.OPENAI_MODEL || 'gpt-4o';
+    let synthesizedBy = synthesisModel;
     if (getAiTransport() !== 'unconfigured') {
       try {
         const synthesis = await createModelText({
           openai: getOpenAiClient(),
-          model: process.env.OPENAI_MODEL_WEB_RESEARCH || process.env.OPENAI_MODEL || 'gpt-4o',
+          model: synthesisModel,
+          timeoutMs: Math.max(MIN_SYNTHESIS_MS, deadline - Date.now()),
           messages: [
             {
               role: 'system',
@@ -352,7 +383,7 @@ Requirements:
             { role: 'user', content: synthesisPrompt },
           ],
           temperature: 0.2,
-          maxTokens: researchDepth === 'deep' ? 6500 : 4500,
+          maxTokens: researchDepth === 'deep' ? 4500 : 3500,
         });
         parsed = extractJsonObject(synthesis.text);
       } catch (error) {
@@ -361,15 +392,24 @@ Requirements:
     }
 
     if (!parsed) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs < MIN_SYNTHESIS_MS) {
+        return NextResponse.json({ error: 'Web research took too long to summarize. Please try again.' }, { status: 504 });
+      }
+      synthesizedBy = process.env.PERPLEXITY_MODEL || 'sonar-pro';
       const fallback = await callPerplexity({
         apiKey,
         system: 'You are a senior research analyst. Return only valid JSON.',
         prompt: synthesisPrompt,
-        maxTokens: researchDepth === 'deep' ? 6500 : 4500,
+        maxTokens: researchDepth === 'deep' ? 4500 : 3500,
+        timeoutMs: remainingMs,
       });
       parsed = extractJsonObject(fallback.content);
       citations.push(...fallback.citations);
     }
+    timings.synthesisMs = Date.now() - synthesisStartedAt;
+    timings.totalMs = Date.now() - startedAt;
+    console.log('Web Research timings', { researchDepth, synthesizedBy, firecrawlDocs: firecrawlDocs.length, ...timings });
 
     const sources = normalizeSources(parsed?.sources);
     const fallbackSources = uniqueStrings([...firecrawlDocs.map((doc) => doc.url), ...citations]).map((url) => ({ url }));
