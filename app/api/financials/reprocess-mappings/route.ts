@@ -766,6 +766,18 @@ function qbdReportAccountName(record: Record<string, unknown>): string {
     qbdReportColValue(record, '1');
 }
 
+// QBD Balance Sheet reports carry current-year earnings as a computed
+// "Net Income" DataRow with no rowType. It is not a chart-of-accounts entry,
+// so it never resolves through account mappings and must land in equity.
+function qbdBalanceSheetReportRowTarget(
+  record: Record<string, unknown>,
+  getTarget: (identity: { name: string }) => string,
+): string {
+  const accountName = qbdReportAccountName(record);
+  if (!qbdString(record.rowType) && /^net income$/i.test(accountName.trim())) return 'retainedEarnings';
+  return getTarget({ name: accountName });
+}
+
 function qbdGeneralLedgerPnlAmount(targetField: string, rawAmount: number): number {
   if (targetField === 'revenue' || targetField.startsWith('rev_') || targetField === 'nonOperatingIncome') {
     return rawAmount * -1;
@@ -1561,7 +1573,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       if (rowType && rowType !== 'account') continue;
       if (!rowType && rowKind !== 'DataRow') continue;
       const accountName = qbdReportAccountName(reportRow);
-      const target = getTarget({ name: accountName });
+      const target = qbdBalanceSheetReportRowTarget(reportRow, getTarget);
       const amount = qbdReportAmount(reportRow);
       qbdApplyBalance(balanceSheetAnchor, target, amount);
       const mapping = getMapping({ name: accountName });
@@ -1841,7 +1853,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       if (!rowType && rowKind !== 'DataRow') continue;
       qbdApplyBalance(
         dailyRow,
-        getTarget({ name: qbdReportAccountName(reportRow) }),
+        qbdBalanceSheetReportRowTarget(reportRow, getTarget),
         qbdReportAmount(reportRow),
       );
     }
@@ -2261,7 +2273,7 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
       if (!rowType && rowKind !== 'DataRow') continue;
       qbdApplyBalance(
         reportSnap,
-        getTarget({ name: qbdReportAccountName(reportRow) }),
+        qbdBalanceSheetReportRowTarget(reportRow, getTarget),
         qbdReportAmount(reportRow),
       );
     }
@@ -2411,7 +2423,7 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
       if (!rowType && rowKind !== 'DataRow') continue;
       qbdApplyBalance(
         row,
-        getTarget({ name: qbdReportAccountName(reportRow) }),
+        qbdBalanceSheetReportRowTarget(reportRow, getTarget),
         qbdReportAmount(reportRow),
       );
     }
