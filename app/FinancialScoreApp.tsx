@@ -3755,6 +3755,7 @@ function FinancialScorePage() {
   });
   const [accountReviewTypeOverrides, setAccountReviewTypeOverrides] = useState<Record<string, string>>({});
   const companyLoadRequestRef = useRef(0);
+  const companyScopedStateOwnerRef = useRef<string | null>(null);
   const sdeRecommendationsRequestRef = useRef(0);
   const performanceAutoRunInFlightRef = useRef<Set<string>>(new Set());
   const suppressHistorySyncRef = useRef(false);
@@ -5825,18 +5826,26 @@ function FinancialScorePage() {
       // Prevent execution during server-side rendering
       if (typeof window === 'undefined') return;
 
-      if (!selectedCompanyId || !currentUser) return;
+      if (!selectedCompanyId || !currentUser) {
+        companyScopedStateOwnerRef.current = null;
+        return;
+      }
       const requestId = Date.now();
       companyLoadRequestRef.current = requestId;
       const isStaleRequest = () => companyLoadRequestRef.current !== requestId;
-      
+      const isCompanySwitch = companyScopedStateOwnerRef.current !== selectedCompanyId;
+      companyScopedStateOwnerRef.current = selectedCompanyId;
+
       try {
-        // ALWAYS clear state at the start to prevent stale data
+        // Clear company-scoped state only when switching companies. Same-company
+        // reloads (currentUser/qbLastSync changes) overwrite in place: clearing
+        // empties Data Mapping mid-edit, drops saved targets, and resets scroll.
         // NOTE: do NOT clear loadedMonthlyData here. The publish-gated
         // /api/master-data?scope=published effect below is the sole owner
         // of loadedMonthlyData. Clearing here on currentUser/qbLastSync
         // changes (whose deps don't match that effect) leaves reports stuck
         // on an empty state until the user reloads or changes company.
+        if (isCompanySwitch) {
         console.log('?? Clearing company-scoped state before loading new company data');
         setLatestFinancialSource(null);
         setQbRawData(null);
@@ -5858,7 +5867,8 @@ function FinancialScorePage() {
         setMapping({ date: '' });
         setFile(null);
         setColumns([]);
-        
+        }
+
         // Load users for this company
         console.log('Loading users for company:', selectedCompanyId);
         const { users: companyUsers } = await usersApi.getByCompany(selectedCompanyId);
@@ -8006,19 +8016,21 @@ function FinancialScorePage() {
       if (data.connected) {
         setQbConnected(true);
         setQbStatus(data.status);
-        // Only update qbLastSync if the timestamp actually changed (prevent infinite loop)
+        // Keep the same Date instance when the sync time is unchanged. A new instance
+        // re-runs every qbLastSync effect, which reloads company data and resets pages.
+        // Compare against the latest state: this function is also called from a
+        // long-lived polling closure where the captured qbLastSync is stale.
         const newSyncTime = data.lastSyncAt ? new Date(data.lastSyncAt).getTime() : null;
-        const currentSyncTime = qbLastSync ? qbLastSync.getTime() : null;
-        if (newSyncTime !== currentSyncTime) {
-          setQbLastSync(data.lastSyncAt ? new Date(data.lastSyncAt) : null);
-        }
+        setQbLastSync((prev) => {
+          const prevTime = prev ? prev.getTime() : null;
+          if (prevTime === newSyncTime) return prev;
+          return newSyncTime === null ? null : new Date(newSyncTime);
+        });
         setQbError(data.errorMessage);
       } else {
         setQbConnected(false);
         setQbStatus('NOT_CONNECTED');
-        if (qbLastSync !== null) {
-          setQbLastSync(null);
-        }
+        setQbLastSync((prev) => (prev === null ? prev : null));
         setQbError(null);
       }
     } catch (error) {
