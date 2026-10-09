@@ -245,6 +245,7 @@ export default function Header({
           </a>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
           <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>{displayedUserName}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {showMyAccountsLink && (
             <button
               type="button"
@@ -258,6 +259,7 @@ export default function Header({
                 fontWeight: '700',
                 cursor: 'pointer',
                 textDecoration: currentView === 'my-accounts' ? 'none' : 'underline',
+                whiteSpace: 'nowrap',
               }}
             >
               My Accounts
@@ -289,6 +291,7 @@ export default function Header({
           >
             Log out
           </button>
+          </div>
         </div>
       </div>
       </div>

@@ -306,6 +306,8 @@ model AskThreadShare {
   sharedWithUserId String
   sharedByUserId   String
   sharedTurnCount  Int
+  // Optional note from the sender, shown to the recipient. Not sent to the AI.
+  message          String?
   sharedAt         DateTime  @default(now())
   viewedAt         DateTime?
 

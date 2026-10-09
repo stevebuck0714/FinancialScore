@@ -76,7 +76,7 @@ type SavedThreadPayload = {
   id: string;
   title: string;
   access: 'owner' | 'recipient';
-  share?: { sharedAt: string; sharedBy: { name: string; email: string } };
+  share?: { sharedAt: string; sharedBy: { name: string; email: string }; message?: string | null };
   turns: SavedThreadTurn[];
 };
 type SharedThreadView = {
@@ -84,6 +84,7 @@ type SharedThreadView = {
   title: string;
   sharedAt: string;
   sharedBy: { name: string; email: string };
+  message: string | null;
   turns: AskThreadTurn[];
 };
 
@@ -389,6 +390,7 @@ export default function AIAnalysisView(props: {
           title: thread.title,
           sharedAt: thread.share?.sharedAt || '',
           sharedBy: thread.share?.sharedBy || { name: '', email: '' },
+          message: thread.share?.message || null,
           turns: toAskTurns(thread.turns),
         });
         setThreadsRefreshKey((k) => k + 1);
@@ -1149,6 +1151,14 @@ export default function AIAnalysisView(props: {
                     Shared by {sharedView.sharedBy.name || sharedView.sharedBy.email} on {formatEstDateTime(sharedView.sharedAt)}. Answers were generated
                     when each question was asked; the company&apos;s data may have changed since.
                   </div>
+                  {sharedView.message && (
+                    <div style={{ marginTop: '4px', padding: '10px 12px', background: '#fff', border: '1px solid #c7d2fe', borderRadius: '10px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 800, color: '#4338ca', marginBottom: '4px' }}>
+                        Message from {sharedView.sharedBy.name || sharedView.sharedBy.email}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#0f172a', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>{sharedView.message}</div>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
                     <button
                       onClick={continueSharedThread}

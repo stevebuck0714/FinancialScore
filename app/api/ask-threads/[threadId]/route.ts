@@ -31,6 +31,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext) {
             sharedAt: true,
             viewedAt: true,
             sharedTurnCount: true,
+            message: true,
             sharedBy: { select: { name: true, email: true } },
           },
         },
@@ -72,6 +73,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext) {
       share: {
         sharedAt: share.sharedAt.toISOString(),
         sharedBy: share.sharedBy,
+        message: share.message,
       },
       turns: thread.turns.slice(0, share.sharedTurnCount).map(serializeTurn),
     });

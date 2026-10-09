@@ -8,7 +8,7 @@ type MyThreadSummary = {
   title: string;
   updatedAt: string;
   turnCount: number;
-  shareCount: number;
+  sharedWith: Array<{ userId: string; name: string; viewed: boolean }>;
 };
 
 type SharedThreadSummary = {
@@ -18,6 +18,7 @@ type SharedThreadSummary = {
   sharedAt: string;
   viewedAt: string | null;
   turnCount: number;
+  message: string | null;
   sharedBy: { name: string; email: string };
 };
 
@@ -69,6 +70,30 @@ function threadButtonStyle(active: boolean): CSSProperties {
     flex: 1,
     minWidth: 0,
   };
+}
+
+const MAX_NAMES_SHOWN = 3;
+
+function SharedWithLine(props: { recipients: MyThreadSummary['sharedWith'] }) {
+  const shown = props.recipients.slice(0, MAX_NAMES_SHOWN);
+  const hidden = props.recipients.slice(MAX_NAMES_SHOWN);
+  return (
+    <div style={{ fontSize: '11px', color: '#0369a1', marginTop: '3px', lineHeight: '1.4' }}>
+      Shared with{' '}
+      {shown.map((recipient, idx) => (
+        <span key={recipient.userId} title={recipient.viewed ? 'Viewed' : 'Not viewed yet'}>
+          {idx > 0 ? ', ' : ''}
+          {recipient.name}
+          <span style={{ color: recipient.viewed ? '#15803d' : '#94a3b8' }}>{recipient.viewed ? ' (viewed)' : ' (not viewed)'}</span>
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <span title={hidden.map((r) => `${r.name} (${r.viewed ? 'viewed' : 'not viewed'})`).join('\n')}>
+          {` +${hidden.length} more`}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function AskThreadsSidebar(props: {
@@ -135,8 +160,8 @@ export function AskThreadsSidebar(props: {
                   <div style={{ fontSize: '13px', fontWeight: 700, lineHeight: '1.35', overflowWrap: 'anywhere' }}>{thread.title}</div>
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
                     {questionCount(thread.turnCount)} · {formatEstDateTime(thread.updatedAt)}
-                    {thread.shareCount > 0 ? ` · Shared with ${thread.shareCount}` : ''}
                   </div>
+                  {thread.sharedWith.length > 0 && <SharedWithLine recipients={thread.sharedWith} />}
                 </button>
                 <button
                   title="Delete thread"
@@ -144,8 +169,8 @@ export function AskThreadsSidebar(props: {
                   onClick={() =>
                     removeThread(
                       thread.id,
-                      thread.shareCount > 0
-                        ? `Delete "${thread.title}"? The ${thread.shareCount} people you shared it with will lose access.`
+                      thread.sharedWith.length > 0
+                        ? `Delete "${thread.title}"? ${thread.sharedWith.map((r) => r.name).join(', ')} will lose access.`
                         : `Delete "${thread.title}"?`,
                     )
                   }
@@ -183,6 +208,22 @@ export function AskThreadsSidebar(props: {
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
                     From {share.sharedBy.name || share.sharedBy.email} · {questionCount(share.turnCount)} · {formatEstDateTime(share.sharedAt)}
                   </div>
+                  {share.message && (
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: '#334155',
+                        fontStyle: 'italic',
+                        marginTop: '4px',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      &ldquo;{share.message}&rdquo;
+                    </div>
+                  )}
                 </button>
                 <button
                   title="Remove from my list"
@@ -207,6 +248,7 @@ export function ShareThreadDialog(props: { threadId: string; onClose: () => void
   const [turnCount, setTurnCount] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState('');
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -275,13 +317,14 @@ export function ShareThreadDialog(props: { threadId: string; onClose: () => void
       const res = await fetch(`/api/ask-threads/${encodeURIComponent(threadId)}/shares`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userIds: Array.from(selected) }),
+        body: JSON.stringify({ userIds: Array.from(selected), message }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || 'Failed to share.');
       setShares(Array.isArray(data?.shares) ? data.shares : []);
       setNotice(`Shared with ${selected.size} ${selected.size === 1 ? 'person' : 'people'}.`);
       setSelected(new Set());
+      setMessage('');
       onShared();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to share.');
@@ -315,7 +358,7 @@ export function ShareThreadDialog(props: { threadId: string; onClose: () => void
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ ...cardStyle, width: '100%', maxWidth: '540px', maxHeight: '85vh', display: 'grid', gridTemplateRows: 'auto auto 1fr auto', gap: '12px' }}
+        style={{ ...cardStyle, width: '100%', maxWidth: '540px', maxHeight: '85vh', display: 'grid', gridTemplateRows: 'auto auto 1fr auto auto', gap: '12px' }}
       >
         <div>
           <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>Share thread</div>
@@ -376,6 +419,19 @@ export function ShareThreadDialog(props: { threadId: string; onClose: () => void
             );
           })}
         </div>
+
+        <label style={{ display: 'grid', gap: '4px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>Message (optional)</span>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            maxLength={1000}
+            rows={3}
+            placeholder='e.g. "Take a look at the AR trend in follow-up 2."'
+            style={{ padding: '8px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical' }}
+          />
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Shown to the people you select. It is not sent to the AI.</span>
+        </label>
 
         <div style={{ display: 'grid', gap: '8px' }}>
           {error && <div style={{ fontSize: '12px', color: '#b91c1c' }}>{error}</div>}

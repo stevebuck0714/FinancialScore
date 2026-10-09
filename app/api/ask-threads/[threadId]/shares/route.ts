@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 type RouteContext = { params: Promise<{ threadId: string }> };
 
 const MAX_RECIPIENTS_PER_REQUEST = 50;
+const MAX_MESSAGE_CHARS = 1000;
 
 async function loadOwnedThread(threadId: string, userId: string) {
   const thread = await prisma.askThread.findUnique({
@@ -28,6 +29,7 @@ async function listShares(threadId: string) {
       sharedAt: true,
       viewedAt: true,
       sharedTurnCount: true,
+      message: true,
       sharedWith: { select: { id: true, name: true, email: true } },
     },
   });
@@ -38,6 +40,7 @@ async function listShares(threadId: string) {
     sharedAt: share.sharedAt.toISOString(),
     viewedAt: share.viewedAt ? share.viewedAt.toISOString() : null,
     sharedTurnCount: share.sharedTurnCount,
+    message: share.message,
   }));
 }
 
@@ -79,6 +82,11 @@ export async function POST(request: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: `Share with at most ${MAX_RECIPIENTS_PER_REQUEST} people at a time.` }, { status: 400 });
     }
 
+    const message = String(body?.message || '').trim();
+    if (message.length > MAX_MESSAGE_CHARS) {
+      return NextResponse.json({ error: `Keep the message under ${MAX_MESSAGE_CHARS} characters.` }, { status: 400 });
+    }
+
     const eligibleIds = new Set((await listShareCandidates(thread.companyId, context.userId)).map((c) => c.id));
     const ineligible = requested.filter((id) => !eligibleIds.has(id));
     if (ineligible.length > 0) {
@@ -98,11 +106,13 @@ export async function POST(request: NextRequest, ctx: RouteContext) {
             sharedWithUserId,
             sharedByUserId: context.userId,
             sharedTurnCount: thread._count.turns,
+            message: message || null,
             sharedAt: now,
           },
           update: {
             sharedByUserId: context.userId,
             sharedTurnCount: thread._count.turns,
+            message: message || null,
             sharedAt: now,
             viewedAt: null,
           },
@@ -113,7 +123,12 @@ export async function POST(request: NextRequest, ctx: RouteContext) {
       action: 'ASK_THREAD_SHARED',
       entityType: 'AskThread',
       entityId: thread.id,
-      metadata: { companyId: thread.companyId, recipientUserIds: requested, sharedTurnCount: thread._count.turns },
+      metadata: {
+        companyId: thread.companyId,
+        recipientUserIds: requested,
+        sharedTurnCount: thread._count.turns,
+        messageLength: message.length,
+      },
     });
 
     return NextResponse.json({ turnCount: thread._count.turns, shares: await listShares(thread.id) });

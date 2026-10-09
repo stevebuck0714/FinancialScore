@@ -26,7 +26,11 @@ export async function GET(request: NextRequest) {
           title: true,
           createdAt: true,
           updatedAt: true,
-          _count: { select: { turns: true, shares: true } },
+          _count: { select: { turns: true } },
+          shares: {
+            orderBy: { sharedAt: 'asc' },
+            select: { viewedAt: true, sharedWith: { select: { id: true, name: true, email: true } } },
+          },
         },
       }),
       prisma.askThreadShare.findMany({
@@ -39,6 +43,7 @@ export async function GET(request: NextRequest) {
           sharedAt: true,
           viewedAt: true,
           sharedTurnCount: true,
+          message: true,
           thread: { select: { title: true } },
           sharedBy: { select: { name: true, email: true } },
         },
@@ -52,7 +57,11 @@ export async function GET(request: NextRequest) {
         createdAt: thread.createdAt.toISOString(),
         updatedAt: thread.updatedAt.toISOString(),
         turnCount: thread._count.turns,
-        shareCount: thread._count.shares,
+        sharedWith: thread.shares.map((share) => ({
+          userId: share.sharedWith.id,
+          name: share.sharedWith.name || share.sharedWith.email,
+          viewed: Boolean(share.viewedAt),
+        })),
       })),
       sharedWithMe: sharedWithMe.map((share) => ({
         shareId: share.id,
@@ -61,6 +70,7 @@ export async function GET(request: NextRequest) {
         sharedAt: share.sharedAt.toISOString(),
         viewedAt: share.viewedAt ? share.viewedAt.toISOString() : null,
         turnCount: share.sharedTurnCount,
+        message: share.message,
         sharedBy: { name: share.sharedBy.name, email: share.sharedBy.email },
       })),
     });
