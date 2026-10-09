@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   BAMBOOHR_SOURCE_CODE,
   type BambooHrSettings,
@@ -1584,11 +1585,131 @@ export async function refreshBambooHrWorkforceSnapshotRates(
   return rematched;
 }
 
+/**
+ * Dated BambooHR history with employee identities removed (`employeeKey` is a one-way hash).
+ * Lifecycle covers every employee BambooHR reports, including terminated ones; job, status and
+ * pay changes only cover current employees because the directory excludes people who left.
+ */
+export type BambooHrHistory = {
+  lifecycle: Array<{
+    employeeKey: string;
+    hireDate: string | null;
+    terminationDate: string | null;
+    terminationReason: string | null;
+    terminationType: string | null;
+  }>;
+  jobChanges: Array<{ employeeKey: string; date: string; jobTitle: string; department: string; division: string; location: string }>;
+  statusChanges: Array<{ employeeKey: string; date: string; employmentStatus: string }>;
+  payChanges: Array<{ employeeKey: string; date: string; jobTitle: string; department: string; payType: string; paidPer: string; annualizedRate: number | null; reason: string }>;
+  timeOff: Array<{ requestKey: string; startDate: string; endDate: string | null; type: string; status: string; amount: number | null; unit: string }> | null;
+};
+
+const historyDate = (value: unknown): string | null => {
+  const text = normalizedTerminationDate(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+};
+
+function annualizeRate(rate: number | null, paidPer: string): number | null {
+  if (rate == null) return null;
+  const per = paidPer.toLowerCase();
+  if (per === 'hour') return round2(rate * 2080);
+  if (per === 'week') return round2(rate * 52);
+  if (per === 'month') return round2(rate * 12);
+  return rate;
+}
+
+function buildBambooHrHistory(
+  companyId: string,
+  tablesByEmployee: Array<{ employeeId: string; tables: Record<string, TableRow[]> }>,
+  benefitRows: TableRow[] | null,
+  timeOffRows: TableRow[] | null,
+): BambooHrHistory {
+  const employeeKey = (employeeId: string) => createHash('sha256').update(`${companyId}:${employeeId}`).digest('hex').slice(0, 16);
+  const history: BambooHrHistory = {
+    lifecycle: (benefitRows || []).map((row) => ({
+      employeeKey: employeeKey(asString(row.id)),
+      hireDate: historyDate(row.hireDate),
+      terminationDate: historyDate(row.terminationDate),
+      terminationReason: asString(row['4314']) || null,
+      terminationType: asString(row['4313']) || null,
+    })),
+    jobChanges: [],
+    statusChanges: [],
+    payChanges: [],
+    timeOff: timeOffRows
+      ? timeOffRows.flatMap((row) => {
+          const startDate = historyDate(row.start);
+          if (!startDate) return [];
+          const amount = asRecord(row.amount);
+          return [{
+            requestKey: employeeKey(`time-off:${asString(row.id) || `${asString(row.employeeId)}:${startDate}`}`),
+            startDate,
+            endDate: historyDate(row.end),
+            type: asString(asRecord(row.type).name) || asString(row.type) || 'Unspecified',
+            status: asString(asRecord(row.status).status) || asString(row.status) || 'Unspecified',
+            amount: asNumber(amount.amount),
+            unit: asString(amount.unit) || 'days',
+          }];
+        })
+      : null,
+  };
+  for (const { employeeId, tables } of tablesByEmployee) {
+    const key = employeeKey(employeeId);
+    const jobRows = sortByDateDesc(tables.jobInfo || [], 'date');
+    const jobOn = (date: string) => jobRows.find((row) => (historyDate(row.date) || '') <= date) || jobRows[jobRows.length - 1] || {};
+    for (const row of jobRows) {
+      const date = historyDate(row.date);
+      if (!date) continue;
+      history.jobChanges.push({
+        employeeKey: key,
+        date,
+        jobTitle: asString(row.jobTitle) || 'Unassigned',
+        department: asString(row.department) || 'Unassigned',
+        division: asString(row.division) || 'Unassigned',
+        location: asString(row.location) || 'Unassigned',
+      });
+    }
+    for (const row of tables.employmentStatus || []) {
+      const date = historyDate(row.date);
+      if (date) history.statusChanges.push({ employeeKey: key, date, employmentStatus: asString(row.employmentStatus) || 'Unspecified' });
+    }
+    for (const row of tables.compensation || []) {
+      const date = historyDate(row.startDate);
+      if (!date) continue;
+      const job = jobOn(date);
+      const paidPer = asString(row.paidPer);
+      history.payChanges.push({
+        employeeKey: key,
+        date,
+        jobTitle: asString(job.jobTitle) || 'Unassigned',
+        department: asString(job.department) || 'Unassigned',
+        payType: asString(row.type) || 'Unassigned',
+        paidPer: paidPer || 'Unassigned',
+        annualizedRate: annualizeRate(asNumber(row.rate), paidPer),
+        reason: asString(row.reason) || 'Unspecified',
+      });
+    }
+  }
+  return history;
+}
+
 export async function buildAndSaveBambooHrWorkforceReportSnapshot(companyId: string): Promise<BambooHrWorkforceReportSnapshot> {
+  return (await buildAndSaveBambooHrWorkforceReportSnapshotWithHistory(companyId)).snapshot;
+}
+
+/**
+ * Same as buildAndSaveBambooHrWorkforceReportSnapshot, and also returns the dated history the
+ * snapshot is built from. Time off is only fetched when `timeOffWindow` is given.
+ */
+export async function buildAndSaveBambooHrWorkforceReportSnapshotWithHistory(
+  companyId: string,
+  timeOffWindow?: { startDate: string; endDate: string },
+): Promise<{ snapshot: BambooHrWorkforceReportSnapshot; history: BambooHrHistory }> {
   const { settings, metadata, connection } = await readBambooHrSettings(companyId);
   const directory = await fetchBambooHrJson(settings, 'employees/directory');
   const employees = readEmployees(directory.json).filter((employee) => asString(employee.id));
 
+  const tablesByEmployee: Array<{ employeeId: string; tables: Record<string, TableRow[]> }> = [];
   const currentEmployees = await mapWithConcurrency(employees, MAX_CONCURRENCY, async (employee) => {
     const employeeId = asString(employee.id);
     const [detail, jobInfo, employmentStatus, compensation] = await Promise.all([
@@ -1597,12 +1718,18 @@ export async function buildAndSaveBambooHrWorkforceReportSnapshot(companyId: str
       fetchEmployeeTable(settings, employeeId, 'employmentStatus').catch(() => []),
       fetchEmployeeTable(settings, employeeId, 'compensation').catch(() => []),
     ]);
+    tablesByEmployee.push({ employeeId, tables: { jobInfo, employmentStatus, compensation } });
     return normalizeCurrentEmployee(employee, detail, { jobInfo, employmentStatus, compensation });
   });
 
   const generatedAt = new Date().toISOString();
   const rateCard = await readCogentRateCard(companyId).catch(() => null);
   const benefitRows = await fetchBambooHrBenefitReport(settings).catch(() => null);
+  const timeOffRows = timeOffWindow
+    ? await fetchBambooHrJson(settings, 'time_off/requests', { start: timeOffWindow.startDate, end: timeOffWindow.endDate })
+        .then((response) => readCollection(response.json, ['requests', 'data']))
+        .catch(() => null)
+    : null;
   const snapshot = buildPayload(
     companyId,
     currentEmployees,
@@ -1627,7 +1754,7 @@ export async function buildAndSaveBambooHrWorkforceReportSnapshot(companyId: str
     },
     errorMessage: null,
   });
-  return snapshot;
+  return { snapshot, history: buildBambooHrHistory(companyId, tablesByEmployee, benefitRows, timeOffRows) };
 }
 
 export async function readBambooHrWorkforceReportSnapshot(companyId: string): Promise<BambooHrWorkforceReportSnapshot | null> {

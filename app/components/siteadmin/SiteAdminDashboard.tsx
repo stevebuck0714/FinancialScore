@@ -3,6 +3,8 @@
 
 import React from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
+import OperationalDataCoveragePanel from './OperationalDataCoveragePanel';
+import OperationalDateRangeSync from './OperationalDateRangeSync';
 import { US_STATES } from '@/app/constants';
 import { INDUSTRY_SECTORS } from '@/data/industrySectors';
 import { formatPhoneNumber } from '@/app/utils/phone';
@@ -1475,6 +1477,7 @@ export default function SiteAdminDashboard(props: any) {
           </button>
         </div>
       </div>
+      <OperationalDataCoveragePanel companyId={company.id} />
     </div>
   );
 
@@ -6053,6 +6056,12 @@ export default function SiteAdminDashboard(props: any) {
             Configure the BambooHR connection and sync schedule here. Connect checks the employee directory and enables scheduled syncs; sync test reads enabled domains and reports counts without importing employee records.
           </div>
         </div>
+
+        {isConnected ? (
+          <div style={{ marginBottom: '8px' }}>
+            <OperationalDateRangeSync companyId={companyId} sourceCode="BAMBOOHR_STANDARD" />
+          </div>
+        ) : null}
 
         {probeResults ? (
           <div style={{ marginBottom: '8px', padding: '8px', background: '#faf5ff', border: '1px solid #d8b4fe', borderRadius: '6px' }}>

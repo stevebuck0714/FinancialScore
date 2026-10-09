@@ -3,6 +3,13 @@ import prisma from '@/lib/prisma';
 import { buildAndSaveBambooHrWorkforceReportSnapshot } from '@/lib/operations/bamboohr-workforce-reports';
 import { sendSyncFailureNotification } from '@/lib/email';
 import { APP_TIME_ZONE } from '@/lib/time/eastern';
+import { getOperationalAdapter } from '@/lib/operational-data/registry';
+import {
+  isLiveApiConnection,
+  reconcileOperationalMockStates,
+  runDueOperationalMockRefreshes,
+  runOperationalSource as runStoreSource,
+} from '@/lib/operational-data/runner';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -20,6 +27,7 @@ type OperationalConnectionRow = {
   syncFrequency: string;
   lastSyncAt: Date | null;
   createdAt: Date;
+  accessToken: string | null;
   connectionMetadata: unknown;
   company?: { name?: string | null } | null;
 };
@@ -150,8 +158,14 @@ function latestExpectedRunAt(frequency: string, pullTime: string, now = new Date
   return expected;
 }
 
+/** Live API connections run every night regardless of the connection's frequency setting. */
+function isNightlyStoreSource(connection: OperationalConnectionRow): boolean {
+  return isLiveApiConnection(connection);
+}
+
 function isConnectionDue(connection: OperationalConnectionRow, now = new Date()): boolean {
-  const expected = latestExpectedRunAt(connection.syncFrequency || 'daily', readSourcePullTime(connection), now);
+  const nightly = isNightlyStoreSource(connection);
+  const expected = latestExpectedRunAt(nightly ? 'daily' : connection.syncFrequency || 'daily', readSourcePullTime(connection, nightly ? '02:00' : '08:00'), now);
   if (!expected) return false;
   if (now.getTime() - expected.getTime() > DUE_LOOKBACK_HOURS * 60 * 60 * 1000) return false;
   if (!connection.lastSyncAt) {
@@ -160,21 +174,19 @@ function isConnectionDue(connection: OperationalConnectionRow, now = new Date())
   return connection.lastSyncAt.getTime() < expected.getTime();
 }
 
-function readSourcePullTime(row: OperationalConnectionRow): string {
-  const metadata = asRecord(row.connectionMetadata);
-  const direct = normalizePullTime(metadata.operationalPullTime);
-  if (direct !== '08:00' || metadata.operationalPullTime === '08:00') return direct;
+const PULL_TIME = /^\d{2}:\d{2}$/;
 
-  const sourceSettingsKeys = [
-    'bambooHrSettings',
-    'platosClosetSettings',
+/** EST wall-clock pull time: metadata.operationalPullTime, else any source settings object's syncTime. */
+function readSourcePullTime(row: OperationalConnectionRow, fallback = '08:00'): string {
+  const metadata = asRecord(row.connectionMetadata);
+  const candidates = [
+    metadata.operationalPullTime,
+    ...Object.entries(metadata)
+      .filter(([key]) => /settings$/i.test(key))
+      .map(([, value]) => asRecord(value).syncTime),
   ];
-  for (const key of sourceSettingsKeys) {
-    const settings = asRecord(metadata[key]);
-    const time = normalizePullTime(settings.syncTime);
-    if (time !== '08:00' || settings.syncTime === '08:00') return time;
-  }
-  return '08:00';
+  const found = candidates.map((value) => (typeof value === 'string' ? value.trim() : '')).find((value) => PULL_TIME.test(value));
+  return found || fallback;
 }
 
 async function notifyOperationalSourceFailure(row: OperationalConnectionRow, errorSummary: string, errorDetails: string): Promise<void> {
@@ -207,6 +219,13 @@ async function runOperationalSource(row: OperationalConnectionRow): Promise<{
   recordsCreated: number;
   message: string;
 }> {
+  if (getOperationalAdapter(row.sourceCode)?.sync) {
+    const result = await runStoreSource({ companyId: row.companyId, sourceCode: row.sourceCode, mode: 'LIVE' });
+    if (!result.ok) throw new Error(result.error || result.skipped || `Store sync failed for ${row.sourceCode}`);
+    const written = (result.datasets || []).reduce((sum, dataset) => sum + dataset.written, 0);
+    return { ok: true, recordsCreated: written, message: `Stored ${written} row(s) across ${(result.datasets || []).length} dataset(s).` };
+  }
+
   if (row.provider === 'BAMBOOHR' && row.sourceCode === 'BAMBOOHR_STANDARD') {
     const snapshot = await buildAndSaveBambooHrWorkforceReportSnapshot(row.companyId);
     return {
@@ -240,13 +259,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const connections = (await delegate.findMany({
-      where: {
-        status: 'ACTIVE',
-        autoSync: true,
-        provider: 'BAMBOOHR',
-        syncFrequency: { not: 'manual' },
-      },
+    const activeConnections = (await delegate.findMany({
+      where: { status: 'ACTIVE' },
       select: {
         id: true,
         companyId: true,
@@ -257,11 +271,17 @@ export async function GET(request: NextRequest) {
         syncFrequency: true,
         lastSyncAt: true,
         createdAt: true,
+        accessToken: true,
         connectionMetadata: true,
         company: { select: { name: true } },
       },
       orderBy: { companyId: 'asc' },
     })) as OperationalConnectionRow[];
+    const connections = activeConnections.filter((connection) => {
+      if (isNightlyStoreSource(connection)) return true;
+      const scheduled = connection.autoSync && connection.syncFrequency !== 'manual';
+      return scheduled && (connection.provider === 'BAMBOOHR' || Boolean(getOperationalAdapter(connection.sourceCode)?.sync));
+    });
 
     const now = new Date();
     const runnableConnections = connections.filter((connection) => isConnectionDue(connection, now));
@@ -352,9 +372,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const mockStates = await reconcileOperationalMockStates();
+    const mockRefreshes = await runDueOperationalMockRefreshes(15);
+    const mockFailures = mockRefreshes.filter((result) => !result.ok);
+
     return NextResponse.json({
-      success: errorCount === 0,
-      message: `Synced ${successCount} of ${runnableConnections.length} due operational source connection(s)`,
+      success: errorCount === 0 && mockFailures.length === 0,
+      message: `Synced ${successCount} of ${runnableConnections.length} due operational source connection(s); refreshed mock data for ${mockRefreshes.length - mockFailures.length} source(s)`,
+      mockStates,
+      mockRefreshes,
       totalConnections: connections.length,
       runnableConnections: runnableConnections.length,
       sourcesSynced: successCount,

@@ -23,6 +23,9 @@ type DatasetDef = {
    * the company's latest FinancialRecord.
    */
   latestFinancialRecordOnly?: boolean;
+  /** Pre-built FROM source (operational store datasets); may reference $2 = OperationalDataset.id. */
+  fromSql?: string;
+  dataMode?: string;
 };
 
 const MONTHLY_FINANCIAL_MEASURES = [
@@ -331,7 +334,110 @@ async function run(sql: string, params: unknown[]): Promise<Record<string, unkno
   return rows.map((r) => toJsonSafe(r) as Record<string, unknown>);
 }
 
+const STORE_COLUMN = /^[A-Za-z][A-Za-z0-9_]{0,62}$/;
+const STORE_RESERVED = new Set(['date', 'companyId', 'dataMode']);
+const MOCK_DATA_NOTE =
+  'MOCK DATA: this dataset is sample data generated until the live connection is synced. Say so in the answer and do not present it as the company\'s actual results.';
+
+type StoreSchemaColumn = { name?: unknown; description?: unknown };
+
+function storeColumns(value: unknown): string[] {
+  return (Array.isArray(value) ? (value as StoreSchemaColumn[]) : [])
+    .map((column) => String(column?.name || ''))
+    .filter((name) => STORE_COLUMN.test(name) && !STORE_RESERVED.has(name));
+}
+
+function storeColumnNotes(schema: Record<string, unknown>): string {
+  const notes = ['dimensions', 'measures', 'attributes'].flatMap((group) =>
+    (Array.isArray(schema[group]) ? (schema[group] as StoreSchemaColumn[]) : [])
+      .filter((column) => column?.description && STORE_COLUMN.test(String(column?.name || '')))
+      .map((column) => `${String(column.name)}: ${String(column.description)}`),
+  );
+  return notes.length ? ` Columns — ${notes.join('; ')}.` : '';
+}
+
+/** Operational store dataset → DatasetDef whose JSON fields are projected as plain columns. */
+function operationalStoreDatasetDef(row: {
+  id: string;
+  description: string;
+  grain: string;
+  schema: unknown;
+  dataMode: string;
+}): DatasetDef {
+  const schema = (row.schema && typeof row.schema === 'object' ? row.schema : {}) as Record<string, unknown>;
+  const dimensions = storeColumns(schema.dimensions);
+  const measures = storeColumns(schema.measures).filter((name) => !dimensions.includes(name));
+  const attributes = storeColumns(schema.attributes).filter((name) => !dimensions.includes(name) && !measures.includes(name));
+  const projections = [
+    ...dimensions.map((name) => `("dimensions"->>'${name}') AS ${q(name)}`),
+    ...measures.map((name) => `NULLIF("measures"->>'${name}', '')::float8 AS ${q(name)}`),
+    ...attributes.map((name) => `("attributes"->>'${name}') AS ${q(name)}`),
+  ];
+  return {
+    table: 'OperationalRecord',
+    description: `${row.description}${storeColumnNotes(schema)}`,
+    kind: row.grain === 'point_in_time' ? 'point_in_time' : 'flow',
+    dateColumn: 'date',
+    dimensions,
+    measures,
+    rowColumns: ['date', ...dimensions, ...measures, ...attributes],
+    fromSql: `(SELECT "companyId", "recordDate" AS "date"${projections.length ? `, ${projections.join(', ')}` : ''}
+      FROM "OperationalRecord" WHERE "companyId" = $1 AND "datasetId" = $2) t`,
+    dataMode: row.dataMode,
+  };
+}
+
+async function listOperationalStoreDatasets(companyId: string) {
+  const rows = await prisma.operationalDataset
+    .findMany({
+      where: { companyId, rowCount: { gt: 0 } },
+      orderBy: { datasetKey: 'asc' },
+    })
+    .catch(() => []);
+  return rows.map((row) => {
+    const def = operationalStoreDatasetDef(row);
+    return {
+      dataset: row.datasetKey,
+      label: row.label,
+      source: row.sourceCode,
+      dataMode: row.dataMode,
+      ...(row.dataMode === 'MOCK' ? { note: MOCK_DATA_NOTE } : {}),
+      description: def.description,
+      kind: def.kind,
+      dateColumn: def.dateColumn,
+      dimensions: def.dimensions,
+      measures: def.measures,
+      rowColumns: def.rowColumns,
+      rowCount: row.rowCount,
+      minDate: row.minDate ? row.minDate.toISOString().slice(0, 10) : null,
+      maxDate: row.maxDate ? row.maxDate.toISOString().slice(0, 10) : null,
+      lastSyncedAt: row.lastSyncedAt ? row.lastSyncedAt.toISOString() : null,
+    };
+  });
+}
+
+async function resolveAskDataset(companyId: string, name: string): Promise<{ def: DatasetDef; baseParams: unknown[] } | null> {
+  const builtIn = ASK_DATASETS[name];
+  if (builtIn) return { def: builtIn, baseParams: [companyId] };
+  if (!name) return null;
+  const row = await prisma.operationalDataset
+    .findUnique({ where: { companyId_datasetKey: { companyId, datasetKey: name } } })
+    .catch(() => null);
+  if (!row) return null;
+  return { def: operationalStoreDatasetDef(row), baseParams: [companyId, row.id] };
+}
+
+function datasetFromSql(def: DatasetDef): string {
+  if (def.fromSql) return def.fromSql;
+  return def.latestFinancialRecordOnly ? latestFinancialRecordFromSql(def.table) : q(def.table);
+}
+
 export async function listAskDatasets(companyId: string) {
+  const [builtIn, operational] = await Promise.all([listBuiltInAskDatasets(companyId), listOperationalStoreDatasets(companyId)]);
+  return [...builtIn, ...operational];
+}
+
+async function listBuiltInAskDatasets(companyId: string) {
   const entries = await Promise.all(
     Object.entries(ASK_DATASETS).map(async ([name, def]) => {
       const freqSelect = def.frequencyColumn
@@ -382,10 +488,13 @@ export type QueryDatasetArgs = {
 };
 
 export async function queryAskDataset(companyId: string, args: QueryDatasetArgs) {
-  const def = ASK_DATASETS[String(args?.dataset || '')];
-  if (!def) return { error: `Unknown dataset "${args?.dataset}". Call list_datasets first.` };
+  const resolved = await resolveAskDataset(companyId, String(args?.dataset || ''));
+  if (!resolved) return { error: `Unknown dataset "${args?.dataset}". Call list_datasets first.` };
+  const { def, baseParams } = resolved;
+  const fromSql = datasetFromSql(def);
+  const dataNote = def.dataMode === 'MOCK' ? MOCK_DATA_NOTE : undefined;
 
-  const params: unknown[] = [companyId];
+  const params: unknown[] = [...baseParams];
   const bind = (value: unknown) => {
     params.push(value);
     return `$${params.length}`;
@@ -400,8 +509,8 @@ export async function queryAskDataset(companyId: string, args: QueryDatasetArgs)
       frequency = String(args.frequency);
     } else {
       const freqs = await run(
-        `SELECT ${q(def.frequencyColumn)} AS f, COUNT(*)::int AS n FROM ${q(def.table)} WHERE "companyId" = $1 GROUP BY 1 ORDER BY 2 DESC`,
-        [companyId],
+        `SELECT ${q(def.frequencyColumn)} AS f, COUNT(*)::int AS n FROM ${fromSql} WHERE "companyId" = $1 GROUP BY 1 ORDER BY 2 DESC`,
+        baseParams,
       );
       const available = freqs.map((r) => String(r.f));
       // Monthly rows are the reconciled period totals; daily rows are only needed for
@@ -449,7 +558,7 @@ export async function queryAskDataset(companyId: string, args: QueryDatasetArgs)
     const baseWhere = where.join(' AND ');
     if (period) {
       where.push(
-        `${q(def.dateColumn)} IN (SELECT MAX(${q(def.dateColumn)}) FROM ${q(def.table)} WHERE ${baseWhere} GROUP BY date_trunc('${period}', ${q(def.dateColumn)}))`,
+        `${q(def.dateColumn)} IN (SELECT MAX(${q(def.dateColumn)}) FROM ${fromSql} WHERE ${baseWhere} GROUP BY date_trunc('${period}', ${q(def.dateColumn)}))`,
       );
       snapshotNote = `Point-in-time dataset: used the latest snapshot within each ${period}.`;
     } else {
@@ -457,16 +566,15 @@ export async function queryAskDataset(companyId: string, args: QueryDatasetArgs)
       const latestParams = asOf ? [...params, asOf] : params;
       const asOfClause = asOf ? ` AND ${q(def.dateColumn)} < ($${latestParams.length}::date + interval '1 day')` : '';
       const [latest] = await run(
-        `SELECT MAX(${q(def.dateColumn)}) AS d FROM ${q(def.table)} WHERE ${baseWhere}${asOfClause}`,
+        `SELECT MAX(${q(def.dateColumn)}) AS d FROM ${fromSql} WHERE ${baseWhere}${asOfClause}`,
         latestParams,
       );
-      if (!latest?.d) return { dataset: args.dataset, frequency, rows: [], note: 'No snapshot found for the requested date/filters.' };
+      if (!latest?.d) return { dataset: args.dataset, frequency, rows: [], note: 'No snapshot found for the requested date/filters.', dataNote };
       where.push(`${q(def.dateColumn)}::date = ${bind(latest.d)}::date`);
       snapshotNote = `Point-in-time dataset: used snapshot dated ${latest.d}.`;
     }
   }
 
-  const fromSql = def.latestFinancialRecordOnly ? latestFinancialRecordFromSql(def.table) : q(def.table);
   const whereSql = where.join(' AND ');
   const limit = Math.max(1, Math.min(MAX_LIMIT, Math.floor(Number(args.limit) || 50)));
 
@@ -478,7 +586,7 @@ export async function queryAskDataset(companyId: string, args: QueryDatasetArgs)
       `SELECT ${def.rowColumns.map(q).join(', ')} FROM ${fromSql} WHERE ${whereSql} ORDER BY ${q(orderCol)} ${dir} NULLS LAST LIMIT ${limit}`,
       params,
     );
-    return { dataset: args.dataset, frequency, totalMatchingRows: total, returnedRows: rows.length, note: snapshotNote, rows };
+    return { dataset: args.dataset, frequency, totalMatchingRows: total, returnedRows: rows.length, note: snapshotNote, dataNote, rows };
   }
 
   const measures = (Array.isArray(args.measures) && args.measures.length ? args.measures : def.measures.slice(0, 4)).filter(
@@ -519,6 +627,7 @@ export async function queryAskDataset(companyId: string, args: QueryDatasetArgs)
     dataset: args.dataset,
     frequency,
     note: snapshotNote,
+    dataNote,
     totals,
     groupCount,
     returnedGroups: groups.length,
@@ -583,7 +692,7 @@ export const ASK_DATA_TOOL_DEFINITIONS = [
       parameters: {
         type: 'object',
         properties: {
-          dataset: { type: 'string', enum: Object.keys(ASK_DATASETS) },
+          dataset: { type: 'string', description: 'Dataset name exactly as returned by list_datasets' },
           operation: { type: 'string', enum: ['aggregate', 'rows'] },
           startDate: { type: 'string', description: 'YYYY-MM-DD inclusive' },
           endDate: { type: 'string', description: 'YYYY-MM-DD inclusive' },

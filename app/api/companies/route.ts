@@ -1896,6 +1896,15 @@ export async function PATCH(request: NextRequest) {
     // AUDIT: Log company update
     await auditCompanyOperation('COMPANY_UPDATED', targetCompanyId);
 
+    if (updateData.forceOperationalMockData !== undefined) {
+      try {
+        const { reconcileOperationalMockStates } = await import('@/lib/operational-data/runner');
+        await reconcileOperationalMockStates([targetCompanyId]);
+      } catch (storeError: any) {
+        console.warn('Operational mock data update after demo-mode change failed:', storeError?.message || storeError);
+      }
+    }
+
     let fxBackfill: Record<string, unknown> | null = null;
     if (updateData.reportingCurrency) {
       try {

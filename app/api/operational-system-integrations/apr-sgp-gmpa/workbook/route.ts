@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getOperationalSystemConnection, saveOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
+import { runOperationalSource } from '@/lib/operational-data/runner';
 import {
   APR_SGP_GMPA_LABEL,
   APR_SGP_GMPA_SOURCE_CODE,
@@ -129,6 +130,8 @@ export async function POST(request: NextRequest) {
       console.error('SGP duties overlay seed failed:', error);
       return { spreadsheetItems: 0, discovered: 0 };
     });
+    const stored = await runOperationalSource({ companyId, sourceCode: APR_SGP_GMPA_SOURCE_CODE, mode: 'LIVE' });
+    if (!stored.ok) console.error('SGP/GMPA store write failed:', stored.error || stored.skipped);
 
     return NextResponse.json({
       ok: true,

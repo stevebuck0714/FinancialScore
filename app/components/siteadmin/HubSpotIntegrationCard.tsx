@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
+import OperationalDateRangeSync from './OperationalDateRangeSync';
 
 type DataDomain = { dataDomain: string; sourceObject: string; enabled: boolean };
 
@@ -179,6 +180,7 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
           <button onClick={probeDomains} disabled={saving} style={{ padding: '8px 12px', background: 'white', color: '#0369a1', border: '1px solid #7dd3fc', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>Probe Domains</button>
           {status === 'ACTIVE' ? <button onClick={() => void disconnect()} disabled={saving} style={{ padding: '8px 12px', background: 'white', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>Disconnect</button> : null}
         </div>
+        {status === 'ACTIVE' ? <div style={{ marginTop: '12px', maxWidth: '760px' }}><OperationalDateRangeSync companyId={companyId} sourceCode="HUBSPOT_STANDARD" /></div> : null}
       </div>
       <div style={{ padding: '16px', background: '#f8fafc', border: '1px solid #bae6fd', borderRadius: '8px' }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}><h4 style={{ margin: 0, color: '#0c4a6e' }}>Data Domains</h4><button onClick={() => setDomains((current) => [...current, { dataDomain: '', sourceObject: '', enabled: true }])} disabled={saving} style={{ padding: '4px 8px', background: 'white', color: '#0369a1', border: '1px solid #7dd3fc', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>+ Add</button><button onClick={() => void saveDomains()} disabled={saving} style={{ padding: '4px 8px', background: saving ? '#94a3b8' : '#334155', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>Save</button></div>

@@ -44,6 +44,8 @@ function buildSystemPrompt(params: { companyName: string; todayEst: string }) {
     '- Call list_datasets first to see what data exists and its date coverage.',
     '- Then query exactly the data needed to answer the question. Make as many queries as needed (comparisons, breakdowns, drill-downs) before answering.',
     '- Prefer monthly_financials for month/year P&L and balance sheet questions; use operational datasets for customers, products, orders, inventory, AR/AP, vendors, GL detail.',
+    '- Datasets named "<source>.<dataset>" come from connected operational systems (HR/payroll, CRM, field ops, spreadsheets); use them for headcount, payroll, pipeline, activity and other operational questions.',
+    '- If a dataset has dataMode MOCK (or a result has dataNote), it is sample data: say the figures are sample data pending the live connection.',
     '- Cross-check when two sources overlap (e.g. monthly_financials revenue vs customer_sales) and say which you used.',
     '',
     'Answer rules:',

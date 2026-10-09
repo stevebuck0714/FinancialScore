@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getOperationalSystemConnection, saveOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
+import { runOperationalSource } from '@/lib/operational-data/runner';
 import {
   COGENT_RATE_CARD_LABEL,
   COGENT_RATE_CARD_SOURCE_CODE,
@@ -100,6 +101,8 @@ export async function POST(request: NextRequest) {
       },
       errorMessage: null,
     });
+    const stored = await runOperationalSource({ companyId, sourceCode: COGENT_RATE_CARD_SOURCE_CODE, mode: 'LIVE' });
+    if (!stored.ok) console.error('Cogent rate card store write failed:', stored.error || stored.skipped);
 
     return NextResponse.json({
       ok: true,

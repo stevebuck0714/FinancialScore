@@ -137,6 +137,9 @@ model Company {
   accountingConnections      AccountingConnection[]
   quickBooksDesktopBackfillPages QuickBooksDesktopBackfillPage[]
   operationalSystemConnections OperationalSystemConnection[]
+  operationalSourceStates    OperationalSourceState[]
+  operationalDatasets        OperationalDataset[]
+  operationalRecords         OperationalRecord[]
   platosClosetWorkbookSnapshots PlatosClosetWorkbookSnapshot[]
   platosClosetMonthlyFacts   PlatosClosetMonthlyFact[]
   bakersCogsFacts            BakersCogsFact[]
@@ -710,6 +713,74 @@ model OperationalSystemConnection {
   @@index([companyId])
   @@index([status])
   @@index([lastSyncAt])
+}
+
+// Per company + source: whether mock data is materialized, and when live data replaced it.
+model OperationalSourceState {
+  id               String    @id @default(cuid())
+  companyId        String
+  sourceCode       String
+  mockEnabled      Boolean   @default(false)
+  liveSince        DateTime?
+  lastMockRunAt    DateTime?
+  lastLiveRunAt    DateTime?
+  lastRunStatus    String?
+  lastRunMessage   String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceCode])
+  @@index([mockEnabled])
+}
+
+// Registry of every operational dataset stored for a company (any source, live or mock).
+model OperationalDataset {
+  id           String              @id @default(cuid())
+  companyId    String
+  sourceCode   String
+  datasetKey   String
+  label        String
+  description  String
+  grain        String
+  schema       Json
+  dataMode     String              @default("MOCK")
+  rowCount     Int                 @default(0)
+  minDate      DateTime?           @db.Date
+  maxDate      DateTime?           @db.Date
+  lastSyncedAt DateTime?
+  lastRunId    String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  records      OperationalRecord[]
+
+  @@unique([companyId, datasetKey])
+  @@unique([id, companyId])
+  @@index([companyId, sourceCode])
+}
+
+// One normalized fact row. Keys inside dimensions/measures/attributes are declared by the dataset schema.
+model OperationalRecord {
+  id          String             @id @default(cuid())
+  companyId   String
+  datasetId   String
+  recordDate  DateTime           @db.Date
+  externalId  String
+  dimensions  Json               @default("{}")
+  measures    Json               @default("{}")
+  attributes  Json               @default("{}")
+  dataMode    String
+  sourceRunId String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Composite key: a record can only point at a dataset owned by the same company.
+  dataset     OperationalDataset @relation(fields: [datasetId, companyId], references: [id, companyId], onDelete: Cascade)
+
+  @@unique([datasetId, externalId])
+  @@index([companyId, datasetId, recordDate])
+  @@index([datasetId, dataMode])
 }
 
 model PlatosClosetWorkbookSnapshot {

@@ -29,6 +29,7 @@
     "import:benchmarks": "tsx scripts/import-benchmarks.ts",
     "cleanup:devices": "tsx scripts/cleanup-expired-devices.ts",
     "test:infor-security": "tsx scripts/test-infor-security.ts",
+    "test:operational-data": "tsx scripts/test-operational-data-store.ts",
     "ops:chart-readiness": "tsx scripts/check-operational-chart-readiness.ts",
     "worker:sync": "tsx lib/workers/sync-drain.ts"
   },
