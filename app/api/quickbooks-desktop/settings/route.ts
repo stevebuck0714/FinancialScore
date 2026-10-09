@@ -30,8 +30,17 @@ type QuickBooksDesktopSettings = {
   syncDirection: 'QB_TO_PLATFORM' | 'TWO_WAY' | '';
   syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
   syncTime: string;
+  overlapDays: string;
   initialSyncStartDate: string;
 };
+
+const MAX_QBD_OVERLAP_DAYS = 31;
+
+function sanitizeOverlapDays(value: unknown): string {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return '1';
+  return String(Math.min(parsed, MAX_QBD_OVERLAP_DAYS));
+}
 
 type QuickBooksDesktopProgram = {
   dataDomain: string;
@@ -69,6 +78,7 @@ const defaultSettings: QuickBooksDesktopSettings = {
   syncDirection: 'QB_TO_PLATFORM',
   syncFrequency: 'daily',
   syncTime: '08:00',
+  overlapDays: '1',
   initialSyncStartDate: '',
 };
 
@@ -271,6 +281,7 @@ function sanitizeSettings(value: unknown): QuickBooksDesktopSettings {
             ? 'daily'
             : '',
     syncTime: asString(src.syncTime) || '08:00',
+    overlapDays: sanitizeOverlapDays(src.overlapDays),
     initialSyncStartDate: asString(src.initialSyncStartDate),
   };
 }

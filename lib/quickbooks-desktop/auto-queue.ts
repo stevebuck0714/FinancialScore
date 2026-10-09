@@ -6,9 +6,15 @@ import { APP_TIME_ZONE, isEstBusinessDay } from '@/lib/time/eastern';
 const QBD_AUTO_QUEUE_TIME_ZONE = APP_TIME_ZONE;
 const QBD_AUTO_QUEUE_DUE_LOOKBACK_HOURS = 4;
 
+const QBD_MAX_OVERLAP_DAYS = 31;
+
 const QBD_AGING_SNAPSHOT_REQUESTS = new Set([
   'ARAgingSummaryReportQuery',
   'APAgingSummaryReportQuery',
+]);
+
+const QBD_BALANCE_SHEET_SNAPSHOT_REQUESTS = new Set([
+  'BalanceSheetStandardReportQuery',
 ]);
 
 const DEFAULT_STATIC_REQUESTS = [
@@ -116,6 +122,24 @@ function readQuickBooksDesktopPullTime(metadata: Record<string, unknown>): strin
   if (settingsTime !== '08:00' || settings.syncTime === '08:00') return settingsTime;
 
   return '08:00';
+}
+
+function readQuickBooksDesktopOverlapDays(metadata: Record<string, unknown>): number {
+  const settings = asRecord(metadata.quickbooksDesktopSettings);
+  const parsed = Number.parseInt(String(settings.overlapDays ?? '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.min(parsed, QBD_MAX_OVERLAP_DAYS);
+}
+
+/** Start of a window that covers `businessDays` business days ending on `endDate`. */
+function overlapWindowStartDate(endDate: string, businessDays: number): string {
+  const cursor = new Date(`${endDate}T00:00:00.000Z`);
+  let counted = isEstBusinessDay(endDate) ? 1 : 0;
+  while (counted < businessDays) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    if (isEstBusinessDay(dateKey(cursor))) counted += 1;
+  }
+  return dateKey(cursor);
 }
 
 function localDateToUtc(parts: { year: number; month: number; day: number }): Date {
@@ -267,9 +291,11 @@ function buildAutoFinancialJobSpecs(startDate: string, endDate: string, requestN
   const unique = Array.from(new Set(requestNames));
   const monthlyRequests = unique.filter((requestName) => requestName === 'GeneralDetailReportQuery');
   const agingSnapshotRequests = unique.filter((requestName) => QBD_AGING_SNAPSHOT_REQUESTS.has(requestName));
+  const balanceSheetSnapshotRequests = unique.filter((requestName) => QBD_BALANCE_SHEET_SNAPSHOT_REQUESTS.has(requestName));
   const staticRequests = unique.filter((requestName) =>
     requestName !== 'GeneralDetailReportQuery' &&
-    !QBD_AGING_SNAPSHOT_REQUESTS.has(requestName)
+    !QBD_AGING_SNAPSHOT_REQUESTS.has(requestName) &&
+    !QBD_BALANCE_SHEET_SNAPSHOT_REQUESTS.has(requestName)
   );
   const queuedDateRange = {
     mode: 'MANUAL',
@@ -277,19 +303,30 @@ function buildAutoFinancialJobSpecs(startDate: string, endDate: string, requestN
     endDate,
     requestedAt: new Date().toISOString(),
   };
-  const agingSnapshotDateRanges = buildBusinessDayDateRanges(startDate, endDate);
+  const businessDayDateRanges = buildBusinessDayDateRanges(startDate, endDate);
   const jobSpecs: AutoFinancialJobSpec[] = [
     ...staticRequests.map((requestName) => ({
       requestName,
       dateRange: queuedDateRange,
       windowIndex: 0,
     })),
+    ...businessDayDateRanges.flatMap((range) =>
+      balanceSheetSnapshotRequests.map((requestName) => ({
+        requestName,
+        dateRange: {
+          ...queuedDateRange,
+          startDate: range.startDate,
+          endDate: range.endDate,
+        },
+        windowIndex: range.windowIndex,
+      }))
+    ),
     ...monthlyRequests.map((requestName) => ({
       requestName,
       dateRange: queuedDateRange,
       windowIndex: 0,
     })),
-    ...agingSnapshotDateRanges.flatMap((range) =>
+    ...businessDayDateRanges.flatMap((range) =>
       agingSnapshotRequests.map((requestName) => ({
         requestName,
         processingMode: 'aging_snapshot' as const,
@@ -338,8 +375,9 @@ async function queueCompanyQbdFinancialJobs(params: {
 
   const batchId = randomUUID();
   const now = new Date().toISOString();
+  const startDate = overlapWindowStartDate(params.targetDate, readQuickBooksDesktopOverlapDays(params.metadata));
   const { queuedDateRange, enabledRequests, jobSpecs } = buildAutoFinancialJobSpecs(
-    params.targetDate,
+    startDate,
     params.targetDate,
     requestNames,
   );
@@ -400,7 +438,7 @@ async function queueCompanyQbdFinancialJobs(params: {
     companyId: params.companyId,
     companyName: params.companyName,
     queued: true,
-    startDate: params.targetDate,
+    startDate,
     endDate: params.targetDate,
     batchId,
     jobCount: jobSpecs.length,
@@ -489,7 +527,7 @@ export async function autoQueueDueQuickBooksDesktopFinancialJobs(now = new Date(
   }
 
   return {
-    targetDate: results.find((result) => result.startDate)?.startDate || fallbackTargetDate,
+    targetDate: results.find((result) => result.endDate)?.endDate || fallbackTargetDate,
     scanned: connections.length,
     queued: results.filter((result) => result.queued).length,
     skipped: results.filter((result) => !result.queued).length,

@@ -3273,6 +3273,7 @@ export default function SiteAdminDashboard(props: any) {
         syncDirection: 'QB_TO_PLATFORM' | 'TWO_WAY' | '';
         syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
         syncTime: string;
+        overlapDays: string;
         initialSyncStartDate: string;
       }
     >
@@ -3507,6 +3508,7 @@ export default function SiteAdminDashboard(props: any) {
     syncDirection: 'QB_TO_PLATFORM' as 'QB_TO_PLATFORM' | 'TWO_WAY' | '',
     syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
     syncTime: '08:00',
+    overlapDays: '1',
     initialSyncStartDate: '',
   };
 
@@ -8819,6 +8821,19 @@ export default function SiteAdminDashboard(props: any) {
                                                         })}
                                                       </select>
                                                     </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Overlap Days</span>
+                                                      <input
+                                                        type="number"
+                                                        min={1}
+                                                        max={31}
+                                                        step={1}
+                                                        value={getQbDesktopSettings(company.id).overlapDays || '1'}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'overlapDays', e.target.value)}
+                                                        title="Business days re-pulled on each scheduled sync, ending with the prior business day. Catches late QuickBooks edits."
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
+                                                    </label>
                                                   </div>
                                                   {renderQbDesktopDateRangeControls(company.id)}
                                                 </>
@@ -12524,6 +12539,19 @@ export default function SiteAdminDashboard(props: any) {
                                               );
                                             })}
                                           </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Overlap Days</span>
+                                          <input
+                                            type="number"
+                                            min={1}
+                                            max={31}
+                                            step={1}
+                                            value={qbDesktopSettings.overlapDays || '1'}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'overlapDays', e.target.value)}
+                                            title="Business days re-pulled on each scheduled sync, ending with the prior business day. Catches late QuickBooks edits."
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          />
                                         </label>
                                       </div>
                                       {renderQbDesktopDateRangeControls(businessCompany.id)}
