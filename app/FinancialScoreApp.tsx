@@ -2942,7 +2942,7 @@ function FinancialScorePage() {
     };
   };
 
-  const toggleAccountReviewSort = (key: 'type' | 'account' | 'description' | 'value') => {
+  const toggleAccountReviewSort = (key: 'type' | 'target' | 'account' | 'description' | 'value') => {
     setAccountReviewSort((prev) => ({
       key,
       direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
@@ -3749,7 +3749,7 @@ function FinancialScorePage() {
   const accountReviewValuesCompanyIdRef = useRef<string | null>(null);
   const accountReviewScrollRef = useRef<HTMLDivElement | null>(null);
   const accountReviewScrollTopRef = useRef(0);
-  const [accountReviewSort, setAccountReviewSort] = useState<{ key: 'type' | 'account' | 'description' | 'value'; direction: 'asc' | 'desc' }>({
+  const [accountReviewSort, setAccountReviewSort] = useState<{ key: 'type' | 'target' | 'account' | 'description' | 'value'; direction: 'asc' | 'desc' }>({
     key: 'account',
     direction: 'asc',
   });
@@ -19740,6 +19740,7 @@ function FinancialScorePage() {
                       <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                           <th onClick={() => toggleAccountReviewSort('type')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px', cursor: 'pointer', userSelect: 'none' }}>Type</th>
+                          <th onClick={() => toggleAccountReviewSort('target')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '150px', cursor: 'pointer', userSelect: 'none' }}>Target Field</th>
                           <th onClick={() => toggleAccountReviewSort('account')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px', cursor: 'pointer', userSelect: 'none' }}>Acct #</th>
                           <th onClick={() => toggleAccountReviewSort('description')} style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px', cursor: 'pointer', userSelect: 'none' }}>Description</th>
                           <th onClick={() => toggleAccountReviewSort('value')} style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px', cursor: 'pointer', userSelect: 'none' }}>
@@ -19782,14 +19783,14 @@ function FinancialScorePage() {
                             if (bNum === null) return -1;
                             return aNum - bNum;
                           };
-                          const compareAccountReviewRows = (
-                            a: { type: string; account: string; description: string; value: number | null; originalIndex: number },
-                            b: { type: string; account: string; description: string; value: number | null; originalIndex: number }
-                          ): number => {
+                          type AccountReviewSortRow = { type: string; target: string; account: string; description: string; value: number | null; originalIndex: number };
+                          const compareAccountReviewRows = (a: AccountReviewSortRow, b: AccountReviewSortRow): number => {
                             const direction = accountReviewSort.direction === 'desc' ? -1 : 1;
                             let result = 0;
                             if (accountReviewSort.key === 'type') {
                               result = compareText(a.type, b.type) || compareByIdThenName(a.account, b.account, a.description, b.description);
+                            } else if (accountReviewSort.key === 'target') {
+                              result = compareText(a.target, b.target) || compareByIdThenName(a.account, b.account, a.description, b.description);
                             } else if (accountReviewSort.key === 'account') {
                               result = compareByIdThenName(a.account, b.account, a.description, b.description);
                             } else if (accountReviewSort.key === 'description') {
@@ -20082,6 +20083,40 @@ function FinancialScorePage() {
                             ...Array.from(apiInforValues.entries()),
                           ]);
 
+                          const accountReviewTargetLabels = new Map<string, string>(
+                            Object.values(
+                              getTargetFieldOptions(
+                                resolveCompanyIndustrySectorCategory(
+                                  companies.find((c) => c.id === selectedCompanyId),
+                                  industrySectorCategory,
+                                ),
+                              ),
+                            )
+                              .flat()
+                              .map((option) => [option.value, option.label] as [string, string]),
+                          );
+                          accountReviewTargetLabels.set('nonOperatingIncome', 'Non-Operating Income');
+                          accountReviewTargetLabels.set('nonOperatingExpense', 'Non-Operating Expense');
+                          accountReviewTargetLabels.set('ignored', 'Ignore / Do Not Process');
+                          const getAccountReviewTarget = (targetField: unknown): { label: string; isMapped: boolean } => {
+                            const value = normalizeMappingTargetField(targetField);
+                            if (!value || value.toLowerCase() === 'unmapped') return { label: 'Unmapped', isMapped: false };
+                            return { label: accountReviewTargetLabels.get(value) || value, isMapped: value !== 'ignored' };
+                          };
+                          const renderAccountReviewTargetCell = (target: { label: string; isMapped: boolean }) => (
+                            <td
+                              style={{
+                                padding: '6px 8px',
+                                fontSize: '11px',
+                                color: target.isMapped ? '#1e293b' : '#b45309',
+                                fontWeight: target.isMapped ? 500 : 600,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {target.label}
+                            </td>
+                          );
+
                           return (hasCsvData && csvTrialBalanceData
                           ? (() => {
                               // Index aiMappings by accountId / accountCode / accountName
@@ -20178,6 +20213,7 @@ function FinancialScorePage() {
                                       )
                                     : getAccountReviewClassificationOptionValue(account, csvAcctTypeRaw)
                                 );
+                                const target = getAccountReviewTarget(matchedMapping?.targetField);
                                 return {
                                   account,
                                   originalRowIndex,
@@ -20187,8 +20223,10 @@ function FinancialScorePage() {
                                   idColumnDisplay,
                                   selectedTypeOption,
                                   typeOverrideValues,
+                                  target,
                                   sortRow: {
                                     type: selectedTypeOption,
+                                    target: target.label,
                                     account: idColumnDisplay || csvAcctId || '',
                                     description: String(account.description || ''),
                                     value: latestValue,
@@ -20197,7 +20235,7 @@ function FinancialScorePage() {
                                 };
                               })
                                 .sort((a: any, b: any) => compareAccountReviewRows(a.sortRow, b.sortRow))
-                                .map(({ account, originalRowIndex, latestValue, matchedMappingIndex, csvAcctTypeRaw, idColumnDisplay, selectedTypeOption, typeOverrideValues }: any) => {
+                                .map(({ account, originalRowIndex, latestValue, matchedMappingIndex, csvAcctTypeRaw, idColumnDisplay, selectedTypeOption, typeOverrideValues, target }: any) => {
                                 return (
                                   <tr key={`csv-${originalRowIndex}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                     <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
@@ -20271,6 +20309,7 @@ function FinancialScorePage() {
                                         <option value="Other">Other</option>
                                       </select>
                                     </td>
+                                    {renderAccountReviewTargetCell(target)}
                                     <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{idColumnDisplay || '—'}</td>
                                     <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
                                     <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
@@ -20326,6 +20365,7 @@ function FinancialScorePage() {
                                 ];
                                 const selectedTypeOption = getAccountReviewTypeOverrideValue(...typeOverrideValues) ||
                                   getAccountReviewClassificationOptionValue(mapping, mapping.accountClassification || mapping.sourceStatus || '');
+                                const target = getAccountReviewTarget(mapping.targetField);
                                 return {
                                   mapping,
                                   originalIndex,
@@ -20334,8 +20374,10 @@ function FinancialScorePage() {
                                   resolvedQboClassId,
                                   selectedTypeOption,
                                   typeOverrideValues,
+                                  target,
                                   sortRow: {
                                     type: selectedTypeOption,
+                                    target: target.label,
                                     account: displayAccountCode || '',
                                     description: String(mapping.accountName || ''),
                                     value: latestValue,
@@ -20344,7 +20386,7 @@ function FinancialScorePage() {
                                 };
                               })
                               .sort((a: any, b: any) => compareAccountReviewRows(a.sortRow, b.sortRow))
-                              .map(({ mapping, originalIndex, latestValue, displayAccountCode, resolvedQboClassId, selectedTypeOption, typeOverrideValues }: any) => {
+                              .map(({ mapping, originalIndex, latestValue, displayAccountCode, resolvedQboClassId, selectedTypeOption, typeOverrideValues, target }: any) => {
                               return (
                               <tr key={`api-${originalIndex}-${mapping.accountId || mapping.accountCode || mapping.accountName || 'account'}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
@@ -20384,6 +20426,7 @@ function FinancialScorePage() {
                                     <option value="Other">Other</option>
                                   </select>
                                 </td>
+                                {renderAccountReviewTargetCell(target)}
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>
                                   <span title={resolvedQboClassId && resolvedQboClassId !== displayAccountCode ? `QBO internal ID: ${resolvedQboClassId}` : undefined}>
                                     {displayAccountCode}
