@@ -4943,7 +4943,7 @@ export default function SiteAdminDashboard(props: any) {
               <>
                 <div>
                   Active range: {activeSessionRange?.startDate || '—'} to {activeSessionRange?.endDate || '—'}
-                  {activeSession.updatedAt ? ` (last update ${new Date(String(activeSession.updatedAt)).toLocaleString()})` : ''}
+                  {activeSession.updatedAt ? ` (last update ${formatEstDateTime(String(activeSession.updatedAt))})` : ''}
                 </div>
                 {activeSessionLooksStale ? (
                   <div style={{ fontWeight: 600 }}>
@@ -4969,7 +4969,7 @@ export default function SiteAdminDashboard(props: any) {
               </>
             ) : queuedRange ? (
               <div>
-                <div>Queued range: {queuedRange.startDate || '—'} to {queuedRange.endDate || '—'}{queuedRange.requestedAt ? ` (queued ${new Date(String(queuedRange.requestedAt)).toLocaleString()})` : ''}</div>
+                <div>Queued range: {queuedRange.startDate || '—'} to {queuedRange.endDate || '—'}{queuedRange.requestedAt ? ` (queued ${formatEstDateTime(String(queuedRange.requestedAt))})` : ''}</div>
                 {orphanedRunningJobCount > 0 ? (
                   <div style={{ marginTop: '8px', fontWeight: 600 }}>
                     {orphanedRunningJobCount.toLocaleString('en-US')} job(s) are still marked running without an active Web Connector session.
@@ -5022,7 +5022,7 @@ export default function SiteAdminDashboard(props: any) {
                     {String(job.requestName || '').replace(/Query$/, '') || 'Unknown'}: {String(job.status || 'unknown')}
                     {Number(job.recordCount || 0) > 0 ? `, records ${Number(job.recordCount || 0).toLocaleString('en-US')}` : ''}
                     {Number(job.pageCount || 0) > 0 ? `, pages ${Number(job.pageCount || 0).toLocaleString('en-US')}` : ''}
-                    {job.updatedAt ? `, updated ${new Date(String(job.updatedAt)).toLocaleString()}` : ''}
+                    {job.updatedAt ? `, updated ${formatEstDateTime(String(job.updatedAt))}` : ''}
                     {job.lastError ? `, error: ${String(job.lastError)}` : ''}
                   </div>
                 ))}
@@ -5043,7 +5043,7 @@ export default function SiteAdminDashboard(props: any) {
                     {job.dateRange?.startDate || job.dateRange?.endDate ? ` (${job.dateRange?.startDate || '—'} to ${job.dateRange?.endDate || '—'})` : ''}
                     {Number(job.recordCount || 0) > 0 ? `, records ${Number(job.recordCount || 0).toLocaleString('en-US')}` : ''}
                     {Number(job.pageCount || 0) > 0 ? `, pages ${Number(job.pageCount || 0).toLocaleString('en-US')}` : ''}
-                    {job.updatedAt ? `, updated ${new Date(String(job.updatedAt)).toLocaleString()}` : ''}
+                    {job.updatedAt ? `, updated ${formatEstDateTime(String(job.updatedAt))}` : ''}
                     {job.lastError ? `, error: ${String(job.lastError)}` : ''}
                   </div>
                 ))}
