@@ -1,5 +1,5 @@
 import type OpenAI from 'openai';
-import { getAiProviderOptions, resolveModelName } from '@/lib/ai-gateway';
+import { getAiProviderOptions, isUsingGateway, resolveModelName } from '@/lib/ai-gateway';
 import { formatEstDate } from '@/lib/time/eastern';
 import { ASK_DATA_TOOL_DEFINITIONS, executeAskDataTool } from '@/lib/ask-corelytics/data-tools';
 
@@ -18,6 +18,17 @@ export type AskAgentOutput = {
 const MAX_ROUNDS = 12;
 const MAX_TOOL_RESULT_CHARS = 60_000;
 const MAX_CONTEXT_CHARS = 150_000;
+const MAX_ANSWER_TOKENS = 4000;
+/** Thinking tokens count against max_tokens, so leave room for the answer when reasoning is on. */
+const MAX_TOKENS_WITH_REASONING = 32_000;
+const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+/** ASK_REASONING_EFFORT (gateway only); unset or invalid leaves the provider default. */
+function askReasoningEffort(): (typeof REASONING_EFFORTS)[number] | null {
+  if (!isUsingGateway()) return null;
+  const value = String(process.env.ASK_REASONING_EFFORT || '').trim().toLowerCase();
+  return (REASONING_EFFORTS as readonly string[]).includes(value) ? (value as (typeof REASONING_EFFORTS)[number]) : null;
+}
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
@@ -132,6 +143,7 @@ export async function runAskDataAgent(params: {
   ];
 
   const providerOptions = getAiProviderOptions();
+  const reasoningEffort = askReasoningEffort();
   let toolCalls = 0;
 
   for (let round = 0; round < MAX_ROUNDS; round += 1) {
@@ -145,7 +157,8 @@ export async function runAskDataAgent(params: {
         messages,
         tools: ASK_DATA_TOOL_DEFINITIONS,
         tool_choice: isLastRound ? 'none' : 'auto',
-        max_tokens: 4000,
+        max_tokens: reasoningEffort && reasoningEffort !== 'none' ? MAX_TOKENS_WITH_REASONING : MAX_ANSWER_TOKENS,
+        ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
         ...(providerOptions ? ({ providerOptions } as Record<string, unknown>) : {}),
       } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
       { timeout: Math.max(10_000, remaining - 5_000) },
@@ -156,7 +169,16 @@ export async function runAskDataAgent(params: {
     const calls = (message.tool_calls || []).filter((c) => c.type === 'function');
 
     if (calls.length > 0) {
-      messages.push({ role: 'assistant', content: message.content || null, tool_calls: calls });
+      // The gateway's reasoning fields must go back with the tool-call turn so thinking models
+      // can continue their reasoning after the tool results.
+      const { reasoning, reasoning_details: reasoningDetails } = message as typeof message & { reasoning?: unknown; reasoning_details?: unknown };
+      messages.push({
+        role: 'assistant',
+        content: message.content || null,
+        tool_calls: calls,
+        ...(reasoning !== undefined ? { reasoning } : {}),
+        ...(reasoningDetails !== undefined ? { reasoning_details: reasoningDetails } : {}),
+      } as OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam);
       const results = await Promise.all(
         calls.map(async (call) => {
           toolCalls += 1;
