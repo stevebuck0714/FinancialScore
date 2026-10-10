@@ -5,6 +5,7 @@ import {
   QUARTER_MONTHS,
   adjustedMonthQty,
   emptyMonthQtyMap,
+  monthIsClosed,
   monthQty,
   monthQtyTotal,
   normalizeAdjustedQtyMap,
@@ -469,14 +470,20 @@ export function estimatedMonths(forecastQty: MonthQtyMap, contractPrice: number 
   return next;
 }
 
+/**
+ * Forecast-ADJ dollars. Once a month is closed, actual revenue replaces the
+ * adjusted plan when it is supplied; otherwise actual units are priced.
+ */
 export function adjustedEstimatedMonthDollars(
   forecastQty: MonthQtyMap,
   actualQty: MonthQtyMap,
   month: ForecastMonth,
   dataThru: string | Date | null | undefined,
   contractPrice: number | null | undefined,
-  adjustedQty?: MonthQtyMap | null
+  adjustedQty?: MonthQtyMap | null,
+  actualRevenue?: MonthQtyMap | null
 ): number {
+  if (actualRevenue && monthIsClosed(month, dataThru)) return monthQty(actualRevenue, month);
   const price = Number(contractPrice);
   if (!Number.isFinite(price)) return 0;
   return adjustedMonthQty(forecastQty, actualQty, month, dataThru, adjustedQty) * price;
@@ -487,7 +494,8 @@ export function adjustedEstimatedMonths(
   actualQty: MonthQtyMap,
   dataThru: string | Date | null | undefined,
   contractPrice: number | null | undefined,
-  adjustedQty?: MonthQtyMap | null
+  adjustedQty?: MonthQtyMap | null,
+  actualRevenue?: MonthQtyMap | null
 ): MonthQtyMap {
   const next = emptyMonthQtyMap();
   for (const month of FORECAST_MONTHS) {
@@ -497,7 +505,8 @@ export function adjustedEstimatedMonths(
       month,
       dataThru,
       contractPrice,
-      adjustedQty
+      adjustedQty,
+      actualRevenue
     );
   }
   return next;
@@ -522,9 +531,12 @@ export function annualAdjustedEstimatedDollars(
   actualQty: MonthQtyMap,
   dataThru: string | Date | null | undefined,
   contractPrice: number | null | undefined,
-  adjustedQty?: MonthQtyMap | null
+  adjustedQty?: MonthQtyMap | null,
+  actualRevenue?: MonthQtyMap | null
 ): number {
-  return monthQtyTotal(adjustedEstimatedMonths(forecastQty, actualQty, dataThru, contractPrice, adjustedQty));
+  return monthQtyTotal(
+    adjustedEstimatedMonths(forecastQty, actualQty, dataThru, contractPrice, adjustedQty, actualRevenue)
+  );
 }
 
 export function quarterEstimatedDollars(
@@ -541,10 +553,11 @@ export function quarterAdjustedEstimatedDollars(
   dataThru: string | Date | null | undefined,
   contractPrice: number | null | undefined,
   quarter: ForecastQuarter,
-  adjustedQty?: MonthQtyMap | null
+  adjustedQty?: MonthQtyMap | null,
+  actualRevenue?: MonthQtyMap | null
 ): number {
   return monthQtyTotal(
-    adjustedEstimatedMonths(forecastQty, actualQty, dataThru, contractPrice, adjustedQty),
+    adjustedEstimatedMonths(forecastQty, actualQty, dataThru, contractPrice, adjustedQty, actualRevenue),
     QUARTER_MONTHS[quarter]
   );
 }
@@ -723,7 +736,8 @@ export function summarizeRevenueLines(
       actualQty,
       dataThru,
       line.contractPrice,
-      adjustedQty
+      adjustedQty,
+      line.actualRevenue
     );
     acc.annualEstimated += monthQtyTotal(estimated);
     acc.annualAdjusted += monthQtyTotal(adjusted);

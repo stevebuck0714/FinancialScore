@@ -184,6 +184,40 @@ export function monthIsClosed(month: ForecastMonth, dataThru: string | Date | nu
   return through > 0 && month <= through;
 }
 
+/**
+ * Month-end date through which actuals replace Forecast-ADJ: the month must have
+ * ended (EST) and the actuals source must have data in that month. Null when no
+ * month of `year` is closed yet.
+ */
+export function actualsClosedThrough(year: number, actualsAsOf: string | null | undefined, now: Date = new Date()): string | null {
+  const asOf = String(actualsAsOf || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return null;
+  const currentYear = estYear(now);
+  if (year > currentYear) return null;
+  const calendarMonth = year < currentYear ? 12 : estMonthIndex(now);
+  const asOfYear = Number(asOf.slice(0, 4));
+  const dataMonth = asOfYear > year ? 12 : asOfYear === year ? Number(asOf.slice(5, 7)) : 0;
+  const month = Math.min(calendarMonth, dataMonth);
+  if (month < 1) return null;
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
+/** Forecast-ADJ units with closed months replaced by actual units. */
+export function withClosedMonthActualAdjusted<T extends {
+  forecastQty: MonthQtyMap;
+  adjustedQty?: MonthQtyMap | null;
+  actualQty: MonthQtyMap;
+}>(lines: T[], closedThrough: string | null): T[] {
+  if (!closedThrough) return lines;
+  return lines.map((line) => {
+    const adjusted = normalizeAdjustedQtyMap(line.adjustedQty, line.forecastQty);
+    for (const month of FORECAST_MONTHS) {
+      if (monthIsClosed(month, closedThrough)) adjusted[String(month)] = monthQty(line.actualQty, month);
+    }
+    return { ...line, adjustedQty: adjusted };
+  });
+}
+
 export function forecastMonthIsEditable(year: number, month: ForecastMonth, now: Date = new Date()): boolean {
   const currentYear = estYear(now);
   const currentMonth = (estMonthIndex(now) + 1) as ForecastMonth;

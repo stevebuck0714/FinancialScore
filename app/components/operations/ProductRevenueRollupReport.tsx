@@ -719,7 +719,8 @@ export default function ProductRevenueRollupReport({
                       dataThru || null,
                       line.contractPrice,
                       quarter,
-                      line.adjustedQty || {}
+                      line.adjustedQty || {},
+                      line.actualRevenue
                     );
                     const ytd = quarterActualRevenue(line.actualRevenue, quarter);
                     return (

@@ -9,7 +9,7 @@ import {
   monthQty,
   type ForecastMonth,
 } from '@/lib/operations/product-revenue-forecast';
-import { estMonthIndex, estYear } from '@/lib/time/eastern';
+import { estMonthIndex, estMonthKey, estYear } from '@/lib/time/eastern';
 
 export type YtdGapLine = {
   key: string;
@@ -108,8 +108,9 @@ export async function buildProductYtdGapDataVersion(companyId: string): Promise<
     `,
   ]);
   return hashCacheParts([
-    'product-ytd-gap-v1',
+    'product-ytd-gap-v2',
     companyId,
+    estMonthKey(),
     forecast._max.updatedAt?.toISOString() ?? null,
     revenue._max.updatedAt?.toISOString() ?? null,
     prices._max.updatedAt?.toISOString() ?? null,

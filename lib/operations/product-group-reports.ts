@@ -291,7 +291,8 @@ export async function loadProductGroupDataset(params: {
         month,
         dataThru,
         raw.contractPrice,
-        adjustedQty
+        adjustedQty,
+        actualRevenue
       );
     }
 
@@ -306,7 +307,8 @@ export async function loadProductGroupDataset(params: {
         dataThru,
         raw.contractPrice,
         quarter,
-        adjustedQty
+        adjustedQty,
+        actualRevenue
       );
       bucket.quarters[quarter].ytd += quarterActualRevenue(actualRevenue, quarter);
     }
@@ -329,7 +331,8 @@ export async function loadProductGroupDataset(params: {
         month,
         dataThru,
         raw.contractPrice,
-        adjustedQty
+        adjustedQty,
+        actualRevenue
       );
     }
     for (const quarter of FORECAST_QUARTERS) {
@@ -343,7 +346,8 @@ export async function loadProductGroupDataset(params: {
         dataThru,
         raw.contractPrice,
         quarter,
-        adjustedQty
+        adjustedQty,
+        actualRevenue
       );
       skuQuarters[quarter].ytd = quarterActualRevenue(actualRevenue, quarter);
     }

@@ -355,7 +355,7 @@ export default function ProductForecastRollupReport({
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Forecast Rollup</h3>
+        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Volume Forecast Rollup</h3>
         {onOpenInfo ? (
           <button
             type="button"

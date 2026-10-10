@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import {
+  actualsClosedThrough,
   emptyMonthQtyMap,
   normalizeMonthQtyMap,
   overlayInvoicedRevenueActuals,
@@ -176,18 +177,6 @@ export async function ensureProductRevenueTables(): Promise<void> {
 
 function asText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
-}
-
-function lastCompleteMonthFromSnapshot(asOf: string): string | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(asOf);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (!Number.isInteger(year) || month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  if (day >= lastDay) return asOf;
-  return new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
 }
 
 function newId(): string {
@@ -611,10 +600,8 @@ export async function loadInforGoalActuals(params: {
   ]);
   const latest = latestRows[0]?.latest ? new Date(latestRows[0].latest).toISOString().slice(0, 10) : null;
   if (!latest || monthRows.length === 0) return null;
-  const latestYear = Number(latest.slice(0, 4));
-  if (latestYear < params.year) return null;
-  const dataThru = latestYear > params.year ? `${params.year}-12-31` : lastCompleteMonthFromSnapshot(latest);
-  if (!dataThru || Number(dataThru.slice(0, 4)) !== params.year) return null;
+  const dataThru = actualsClosedThrough(params.year, latest);
+  if (!dataThru) return null;
 
   const revenueByMonth = Array.from({ length: 12 }, () => 0);
   const quantityByMonth = Array.from({ length: 12 }, () => 0);
@@ -832,7 +819,8 @@ export function serializeJoinedRevenueLine(
     line.actualQty,
     dataThru,
     line.contractPrice,
-    line.adjustedQty
+    line.adjustedQty,
+    line.actualRevenue
   );
   return {
     ...line,
@@ -847,7 +835,8 @@ export function serializeJoinedRevenueLine(
       line.actualQty,
       dataThru,
       line.contractPrice,
-      line.adjustedQty
+      line.adjustedQty,
+      line.actualRevenue
     ),
     annualYtd: annualActualRevenue(line.actualRevenue),
   };
@@ -1058,7 +1047,7 @@ export async function loadRevenueDataset(params: {
       ? forecastSettings.dataThru.toISOString().slice(0, 10)
       : null;
   const dataThru = useInforActualRevenue && invoicedRevenue?.ok && invoicedRevenue.asOf
-    ? lastCompleteMonthFromSnapshot(invoicedRevenue.asOf) || workbookDataThru
+    ? actualsClosedThrough(year, invoicedRevenue.asOf) || workbookDataThru
     : workbookDataThru;
   return {
     year,

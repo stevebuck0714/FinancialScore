@@ -284,9 +284,14 @@ export async function upsertForecastLines(params: {
   dataThru?: Date | null;
   replaceCustomer?: { customerId: string; customerName: string } | null;
   preserveLockedMonthQtys?: boolean;
+  /** Signed-off SGP budget: keep stored SGP volume and base qty, new lines get none. */
+  sgpLocked?: boolean;
   lines: ReturnType<typeof normalizeForecastLineInput>[];
 }) {
-  const { companyId, year, dataThru, replaceCustomer, preserveLockedMonthQtys, lines } = params;
+  const { companyId, year, dataThru, replaceCustomer, preserveLockedMonthQtys, sgpLocked, lines } = params;
+  if (sgpLocked && !replaceCustomer) {
+    throw new Error(`SGP budget for ${year} is locked — unlock it before importing.`);
+  }
   const now = new Date();
 
   await prisma.productRevenueForecastSettings.upsert({
@@ -296,20 +301,25 @@ export async function upsertForecastLines(params: {
   });
 
   const existingByKey = new Map<string, {
+    id: string;
+    annualBaseQty: number | null;
     forecastQty: Prisma.JsonValue;
     sgpForecastQty: Prisma.JsonValue | null;
     adjustedQty: Prisma.JsonValue | null;
   }>();
-  if (preserveLockedMonthQtys && replaceCustomer) {
+  if ((preserveLockedMonthQtys || sgpLocked) && replaceCustomer) {
     const existingRows = await prisma.$queryRaw<Array<{
+      id: string;
       customerId: string;
       itemSku: string;
       customerPartNumber: string;
+      annualBaseQty: number | null;
       forecastQty: Prisma.JsonValue;
       sgpForecastQty: Prisma.JsonValue | null;
       adjustedQty: Prisma.JsonValue | null;
     }>>`
-      SELECT "customerId", "itemSku", "customerPartNumber", "forecastQty", "sgpForecastQty", "adjustedQty"
+      SELECT "id", "customerId", "itemSku", "customerPartNumber", "annualBaseQty",
+             "forecastQty", "sgpForecastQty", "adjustedQty"
       FROM "ProductRevenueForecastLine"
       WHERE "companyId" = ${companyId}
         AND "year" = ${year}
@@ -323,11 +333,30 @@ export async function upsertForecastLines(params: {
       existingByKey.set(
         `${row.customerId}||${row.itemSku}||${row.customerPartNumber}`,
         {
+          id: row.id,
+          annualBaseQty: row.annualBaseQty,
           forecastQty: row.forecastQty,
           sgpForecastQty: row.sgpForecastQty,
           adjustedQty: row.adjustedQty,
         }
       );
+    }
+  }
+
+  if (sgpLocked) {
+    const incomingKeys = new Set(lines.map((line) => `${line.customerId}||${line.itemSku}||${line.customerPartNumber}`));
+    const keepIdSet = new Set(lines.map((line) => line.id).filter(Boolean));
+    for (const [key, row] of existingByKey) {
+      if (incomingKeys.has(key) || keepIdSet.has(row.id)) continue;
+      const sgpUnits = FORECAST_MONTHS.reduce(
+        (sum, month) => sum + monthQty(normalizeMonthQtyMap(row.sgpForecastQty), month),
+        0
+      );
+      if (sgpUnits !== 0 || (Number(row.annualBaseQty) || 0) !== 0) {
+        throw new Error(
+          `SGP budget for ${year} is locked — lines in the signed-off budget cannot be removed.`
+        );
+      }
     }
   }
 
@@ -350,8 +379,7 @@ export async function upsertForecastLines(params: {
     if (!line.itemSku) continue;
     const key = `${line.customerId}||${line.itemSku}||${line.customerPartNumber}`;
     const existing = existingByKey.get(key);
-    unique.set(
-      key,
+    const merged =
       existing && preserveLockedMonthQtys
         ? {
             ...line,
@@ -359,7 +387,16 @@ export async function upsertForecastLines(params: {
             sgpForecastQty: mergeLockedMonthQty(line.sgpForecastQty, existing.sgpForecastQty, year),
             adjustedQty: mergeLockedMonthQty(line.adjustedQty, existing.adjustedQty, year),
           }
-        : line
+        : line;
+    unique.set(
+      key,
+      sgpLocked
+        ? {
+            ...merged,
+            sgpForecastQty: existing ? normalizeMonthQtyMap(existing.sgpForecastQty) : emptyMonthQtyMap(),
+            annualBaseQty: existing ? existing.annualBaseQty : null,
+          }
+        : merged
     );
   }
   const rows = Array.from(unique.values());

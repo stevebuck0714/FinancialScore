@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
+import { estMonthKey } from '@/lib/time/eastern';
 
 // Product report payloads only change when an import, a save, or a nightly sync
 // touches one of the tables below, so they can be cached for a long time and
@@ -7,7 +8,7 @@ import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib
 const PRODUCT_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 // Bump when a report's payload shape or math changes so stored payloads are ignored.
-const PRODUCT_REPORT_CACHE_VERSION = 'product-reports-v2';
+const PRODUCT_REPORT_CACHE_VERSION = 'product-reports-v3';
 
 type Fingerprint = { label: string; count?: number; updatedAt?: string | null; latest?: string | null };
 
@@ -182,7 +183,8 @@ export async function buildProductReportDataVersion(companyId: string): Promise<
       return { label: 'InforRawRecord', latest: isoOrNull(rows[0]?.businessDate) };
     }),
   ]);
-  return hashCacheParts([PRODUCT_REPORT_CACHE_VERSION, companyId, parts]);
+  // Closed months (actuals replacing Forecast-ADJ) roll over at EST month end.
+  return hashCacheParts([PRODUCT_REPORT_CACHE_VERSION, companyId, estMonthKey(), parts]);
 }
 
 /**

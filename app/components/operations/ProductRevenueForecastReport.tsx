@@ -27,6 +27,7 @@ import ProductMonthlyTrendChartModal, {
 } from './ProductMonthlyTrendChartModal';
 import { parseGoalDashboardFromWorkbook } from '@/lib/operations/product-goal-update';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
+import SgpBudgetLockBar from './SgpBudgetLockBar';
 
 type CustomerOption = {
   customerId: string;
@@ -198,6 +199,8 @@ export default function ProductRevenueForecastReport({
   const [chartOpen, setChartOpen] = useState(false);
   const [companyMonthTotals, setCompanyMonthTotals] = useState<ForecastMonthQtyTotals | null>(null);
   const [loadingCompanyTotals, setLoadingCompanyTotals] = useState(false);
+  const [sgpLocked, setSgpLocked] = useState(false);
+  const handleSgpLockChange = useCallback((locked: boolean) => setSgpLocked(locked), []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const customersRequestSeq = useRef(0);
 
@@ -210,6 +213,9 @@ export default function ProductRevenueForecastReport({
   const previousMonth = (selectedMonth === 1 ? 12 : selectedMonth - 1) as ForecastMonth;
   const previousMonthName = FORECAST_MONTH_FULL_LABELS[previousMonth];
   const canEditSelectedMonth = forecastMonthIsEditable(year, selectedMonth);
+  const canEditSgp = canEditSelectedMonth && !sgpLocked;
+  const sgpQty = (line: ForecastLine): MonthQtyMap =>
+    line.sgpForecastQty || (sgpLocked ? emptyMonthQtyMap() : line.forecastQty);
 
   const sortedLines = useMemo(() => {
     const next = [...lines];
@@ -380,6 +386,7 @@ export default function ProductRevenueForecastReport({
     raw: string
   ) => {
     if (!forecastMonthIsEditable(year, month)) return;
+    if (field === 'sgpForecastQty' && sgpLocked) return;
     const parsed = raw === '' ? 0 : Number(raw);
     const value = Number.isFinite(parsed) ? parsed : 0;
     setLines((prev) =>
@@ -620,7 +627,7 @@ export default function ProductRevenueForecastReport({
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Monthly Forecast</h3>
+        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Volume Forecast</h3>
         {onOpenInfo ? (
           <button
             type="button"
@@ -799,6 +806,9 @@ export default function ProductRevenueForecastReport({
         </button>
       </div>
 
+      {selectedCompanyId ? (
+        <SgpBudgetLockBar companyId={selectedCompanyId} year={year} onLockChange={handleSgpLockChange} />
+      ) : null}
       {loadingCustomers && customers.length === 0 && (
         <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading customers…</div>
       )}
@@ -950,13 +960,13 @@ export default function ProductRevenueForecastReport({
                       {column.label}
                     </th>
                   ))}
-                  <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>SGP Forecast<br />{previousMonthName}<br />&nbsp;</th>
+                  <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>{sgpLocked ? '🔒 ' : ''}SGP Forecast<br />{previousMonthName}<br />&nbsp;</th>
                   <th style={priorHeaderStyle}>Forecasted<br />{previousMonthName}<br />&nbsp;</th>
                   <th style={priorHeaderStyle}>{previousMonthName}<br />Forecast -<br />ADJUSTED</th>
                   <th style={priorHeaderStyle}>{previousMonthName}<br />Actual<br />&nbsp;</th>
                   <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs<br />Forecasted</th>
                   <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs Adj.<br />Forecast</th>
-                  <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>SGP Forecast<br />{monthName}<br />&nbsp;</th>
+                  <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }} title={sgpLocked ? 'SGP budget is signed off and locked' : undefined}>{sgpLocked ? '🔒 ' : ''}SGP Forecast<br />{monthName}<br />&nbsp;</th>
                   <th style={monthHeaderStyle}>Forecasted<br />{monthName}<br />&nbsp;</th>
                   <th style={monthHeaderStyle}>{monthName}<br />Forecast -<br />ADJUSTED</th>
                   <th style={monthHeaderStyle}>{monthName}<br />Actual<br />&nbsp;</th>
@@ -1034,7 +1044,7 @@ export default function ProductRevenueForecastReport({
                         </select>
                       </td>
                       <td style={{ ...priorCellStyle, borderLeft: '1px solid #e2e8f0' }}>
-                        {fmtQty(qtyValue(line.sgpForecastQty || line.forecastQty, previousMonth))}
+                        {fmtQty(qtyValue(sgpQty(line), previousMonth))}
                       </td>
                       <td style={priorCellStyle}>
                         {fmtQty(qtyValue(line.forecastQty, previousMonth))}
@@ -1057,11 +1067,11 @@ export default function ProductRevenueForecastReport({
                           typedAdjustedMonthQty(line.forecastQty, previousMonth, line.adjustedQty)
                         ))}
                       </td>
-                      {canEditSelectedMonth ? (
+                      {canEditSgp ? (
                         <td style={{ ...monthInputCellStyle, borderLeft: '2px solid #c7d2fe' }}>
                           <input
                             type="number"
-                            value={qtyValue(line.sgpForecastQty || line.forecastQty, selectedMonth)}
+                            value={qtyValue(sgpQty(line), selectedMonth)}
                             onChange={(event) => updateMonthQty(line.id, 'sgpForecastQty', selectedMonth, event.target.value)}
                             style={monthQtyInputStyle}
                             aria-label={`SGP Forecast ${monthName}`}
@@ -1069,7 +1079,7 @@ export default function ProductRevenueForecastReport({
                         </td>
                       ) : (
                         <td style={{ ...monthCellStyle, borderLeft: '2px solid #c7d2fe' }}>
-                          {fmtQty(qtyValue(line.sgpForecastQty || line.forecastQty, selectedMonth))}
+                          {fmtQty(qtyValue(sgpQty(line), selectedMonth))}
                         </td>
                       )}
                       {canEditSelectedMonth ? (
@@ -1135,7 +1145,7 @@ export default function ProductRevenueForecastReport({
       <ProductMonthlyTrendChartModal
         open={chartOpen}
         onClose={() => setChartOpen(false)}
-        title={`Monthly Forecast trend · ${year}`}
+        title={`Volume Forecast trend · ${year}`}
         subtitle={`${trendScopeLabel}. Units by month: Forecast, Forecast - ADJ, and Actual.`}
         unit="qty"
         rows={trendRows}

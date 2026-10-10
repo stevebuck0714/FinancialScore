@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import {
+  actualsClosedThrough,
   summarizeForecastQtyMonths,
+  withClosedMonthActualAdjusted,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
 import {
@@ -14,6 +16,7 @@ import {
   serializeForecastLine,
   upsertForecastLines,
   withProductActualQty,
+  type ProductActualQty,
 } from '@/lib/operations/product-revenue-forecast-db';
 import {
   listProductForecastCustomersWithCatalog,
@@ -21,6 +24,7 @@ import {
 } from '@/lib/operations/product-catalog-carryforward';
 
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
+import { getActiveSgpBudgetLock } from '@/lib/operations/product-sgp-budget-lock';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +32,14 @@ export const maxDuration = 300;
 
 function asText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function forecastLinesWithActuals(
+  lines: ReturnType<typeof serializeForecastLine>[],
+  actualQty: ProductActualQty,
+  dataThru: string | null
+) {
+  return withClosedMonthActualAdjusted(withProductActualQty(lines, actualQty), dataThru);
 }
 
 export async function GET(request: NextRequest) {
@@ -65,19 +77,22 @@ export async function GET(request: NextRequest) {
           year
         );
 
+        const workbookDataThru = settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null;
+
         if (!customerId && !customerName) {
+          const actualQty = await loadProductActualQty({ companyId, year });
+          const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf) ?? workbookDataThru;
           let totals = null;
           if (includeTotals) {
             const companyLines = await loadProductForecastLinesWithCatalog({ companyId, year });
-            const shipped = await loadProductActualQty({ companyId, year });
             totals = summarizeForecastQtyMonths(
-              withProductActualQty(companyLines.map(serializeForecastLine), shipped)
+              forecastLinesWithActuals(companyLines.map(serializeForecastLine), actualQty, dataThru)
             );
           }
           return {
             year,
             catalogSourceYear,
-            dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
+            dataThru,
             customers: customerPayload,
             totals,
             lines: [],
@@ -90,19 +105,20 @@ export async function GET(request: NextRequest) {
           customerId,
           customerName,
         });
-        const shipped = await loadProductActualQty({
+        const actualQty = await loadProductActualQty({
           companyId,
           year,
           customerId,
           customerName,
         });
+        const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf) ?? workbookDataThru;
 
         return {
           year,
           catalogSourceYear,
-          dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
+          dataThru,
           customers: customerPayload,
-          lines: withProductActualQty(lines.map(serializeForecastLine), shipped),
+          lines: forecastLinesWithActuals(lines.map(serializeForecastLine), actualQty, dataThru),
         };
       },
     });
@@ -144,12 +160,14 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Every row needs an APR P/N before saving.' }, { status: 400 });
     }
 
+    const sgpLock = await getActiveSgpBudgetLock(companyId, year);
     await upsertForecastLines({
       companyId,
       year,
       dataThru: asOptionalIsoDay(body.dataThru),
       replaceCustomer: { customerId, customerName },
       preserveLockedMonthQtys: true,
+      sgpLocked: Boolean(sgpLock),
       lines,
     });
     scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-forecast');
@@ -164,23 +182,27 @@ export async function PUT(request: NextRequest) {
       where: { companyId_year: { companyId, year } },
     });
 
-    const shipped = await loadProductActualQty({
+    const actualQty = await loadProductActualQty({
       companyId,
       year,
       customerId,
       customerName,
     });
+    const dataThru =
+      actualsClosedThrough(year, actualQty.actuals.asOf) ??
+      (settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null);
 
     return NextResponse.json({
       ok: true,
       year,
-      dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
-      lines: withProductActualQty(saved.map(serializeForecastLine), shipped),
+      dataThru,
+      lines: forecastLinesWithActuals(saved.map(serializeForecastLine), actualQty, dataThru),
     });
   } catch (error: any) {
+    const message = error?.message || 'Failed to save revenue forecast';
     return NextResponse.json(
-      { error: error?.message || 'Failed to save revenue forecast' },
-      { status: 500 }
+      { error: message },
+      { status: /SGP budget for \d{4} is locked/.test(message) ? 409 : 500 }
     );
   }
 }

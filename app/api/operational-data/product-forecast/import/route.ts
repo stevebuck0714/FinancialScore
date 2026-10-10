@@ -15,6 +15,7 @@ import {
   workbookFromImportPayload,
 } from '@/lib/operations/product-revenue-actual-db';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
+import { assertSgpBudgetsUnlocked, SgpBudgetLockedError } from '@/lib/operations/product-sgp-budget-lock';
 
 export const dynamic = 'force-dynamic';
 // Leaves room for the post-response operational cache rebuild.
@@ -94,6 +95,7 @@ export async function POST(request: NextRequest) {
     if (denied) return denied;
 
     await Promise.all([ensureProductRevenueForecastTables(), ensureProductRevenueTables()]);
+    await assertSgpBudgetsUnlocked(companyId, [parsed.year, parsed.forecast?.year ?? parsed.year]);
     const result = await persistParsedRevenueWorkbook({ companyId, parsed });
     scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-forecast-import');
 
@@ -105,7 +107,9 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('product-forecast import failed', error);
     const message = errorMessage(error, 'Failed to import revenue forecast workbook');
-    const status = message.includes('Company ID') || message.includes('Upload') || message.includes('too many') ? 400 : 500;
+    const status = error instanceof SgpBudgetLockedError
+      ? 409
+      : message.includes('Company ID') || message.includes('Upload') || message.includes('too many') ? 400 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

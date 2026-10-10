@@ -72,6 +72,10 @@ export type AuditAction =
   | 'ASSESSMENT_UPDATED'
   | 'ASSESSMENT_DELETED'
 
+  // Budget sign-off
+  | 'SGP_BUDGET_LOCKED'
+  | 'SGP_BUDGET_UNLOCKED'
+
   // Ask Corelytics threads
   | 'ASK_THREAD_DELETED'
   | 'ASK_THREAD_SHARED'

@@ -11079,7 +11079,7 @@ export default function OperationsTab({
               fontSize: '14px',
             }}
           >
-            Monthly Forecast
+            Volume Forecast
           </button>
         )}
         {showWholesaleProjectionViews && isForecastRollupEnabled && (
@@ -11098,7 +11098,7 @@ export default function OperationsTab({
               fontSize: '14px',
             }}
           >
-            Forecast Rollup
+            Volume Forecast Rollup
           </button>
         )}
         {showWholesaleProjectionViews && isMonthlyRevenueEnabled && (
@@ -12902,7 +12902,7 @@ export default function OperationsTab({
         ],
       },
       productsRevenueForecast: {
-        title: 'What Monthly Forecast shows',
+        title: 'What Volume Forecast shows',
         sections: [
           {
             body:
@@ -12919,7 +12919,7 @@ export default function OperationsTab({
         ],
       },
       productsForecastRollup: {
-        title: 'What Forecast Rollup shows',
+        title: 'What Volume Forecast Rollup shows',
         sections: [
           {
             body:
