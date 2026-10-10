@@ -48,6 +48,8 @@ const inputStyle: React.CSSProperties = {
 
 const HEADER_BG = '#e0e7ff';
 const CELL_BG = '#eef2ff';
+const QUARTER_HEADER_BG = '#ccfbf1';
+const QUARTER_CELL_BG = '#f0fdfa';
 const PERIODS = ['MTD', 'QTD', 'YTD'] as const;
 const MONTHLY_GOAL_MONTH_COL_PX = 72;
 const MONTHLY_GOAL_COL_PX = 92;
@@ -409,6 +411,41 @@ export default function ProductGoalUpdateReport({
     color: '#1e293b',
     background: '#f8fafc',
   };
+  const groupHeaderBase: React.CSSProperties = {
+    ...thStyle,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    fontSize: 11,
+    fontWeight: 800,
+    padding: '6px 8px',
+    verticalAlign: 'middle',
+  };
+  const annualGroupHeader: React.CSSProperties = {
+    ...groupHeaderBase,
+    background: '#c7d2fe',
+    color: '#312e81',
+    borderBottom: '2px solid #6366f1',
+  };
+  const quarterDivider: React.CSSProperties = { borderLeft: '3px solid #0d9488' };
+  const quarterGroupHeader: React.CSSProperties = {
+    ...groupHeaderBase,
+    ...quarterDivider,
+    background: '#99f6e4',
+    color: '#134e4a',
+    borderBottom: '2px solid #0d9488',
+  };
+  const quarterTh: React.CSSProperties = {
+    ...thStyle,
+    background: QUARTER_HEADER_BG,
+    color: '#115e59',
+  };
+  const quarterTd: React.CSSProperties = {
+    ...tdStyle,
+    background: QUARTER_CELL_BG,
+    color: '#134e4a',
+    borderTop: '1px solid #99f6e4',
+  };
   const monthlyGoalCell: React.CSSProperties = {
     ...tdStyle,
     padding: '3px 4px',
@@ -525,15 +562,21 @@ export default function ProductGoalUpdateReport({
             <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ ...thStyle, textAlign: 'left' }}>SGP Goal</th>
+                  <th rowSpan={2} style={{ ...thStyle, textAlign: 'left', verticalAlign: 'bottom' }}>SGP Goal</th>
+                  <th colSpan={4} style={annualGroupHeader}>Annual</th>
+                  <th colSpan={4} style={quarterGroupHeader}>
+                    Quarter{goalUpdate.quarter != null ? ` (Q${goalUpdate.quarter})` : ''}
+                  </th>
+                </tr>
+                <tr>
                   <th style={thStyle}>Annual SGP Goal</th>
                   <th style={thStyle}>YTD Actual</th>
                   <th style={thStyle}>Goal vs Actual YTD</th>
                   <th style={thStyle}>% YTD vs Goal</th>
-                  <th style={thStyle}>Qtr SGP Goal</th>
-                  <th style={thStyle}>Quarter YTD</th>
-                  <th style={thStyle}>Goal vs Actual QTD</th>
-                  <th style={thStyle}>% QTD vs Goal</th>
+                  <th style={{ ...quarterTh, ...quarterDivider }}>Qtr SGP Goal</th>
+                  <th style={quarterTh}>Quarter YTD</th>
+                  <th style={quarterTh}>Goal vs Actual QTD</th>
+                  <th style={quarterTh}>% QTD vs Goal</th>
                 </tr>
               </thead>
               <tbody>
@@ -544,10 +587,10 @@ export default function ProductGoalUpdateReport({
                     <td style={tdStyle}>{goalCell(row, 'ytdActual', 'dollars')}</td>
                     <td style={tdStyle}>{goalCell(row, 'goalVsActualYtd', 'dollars')}</td>
                     <td style={tdStyle}>{goalCell(row, 'pctYtdVsGoal', 'pct')}</td>
-                    <td style={tdStyle}>{goalCell(row, 'quarterGoal', 'dollars')}</td>
-                    <td style={tdStyle}>{goalCell(row, 'quarterYtd', 'dollars')}</td>
-                    <td style={tdStyle}>{goalCell(row, 'goalVsActualQtd', 'dollars')}</td>
-                    <td style={tdStyle}>{goalCell(row, 'pctQtdVsGoal', 'pct')}</td>
+                    <td style={{ ...quarterTd, ...quarterDivider }}>{goalCell(row, 'quarterGoal', 'dollars')}</td>
+                    <td style={quarterTd}>{goalCell(row, 'quarterYtd', 'dollars')}</td>
+                    <td style={quarterTd}>{goalCell(row, 'goalVsActualQtd', 'dollars')}</td>
+                    <td style={quarterTd}>{goalCell(row, 'pctQtdVsGoal', 'pct')}</td>
                   </tr>
                 ))}
               </tbody>

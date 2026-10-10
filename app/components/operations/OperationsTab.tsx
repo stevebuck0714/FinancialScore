@@ -15150,7 +15150,7 @@ export default function OperationsTab({
             canReorder={canManageReportLayout}
             isSaving={savingReportLayout}
             onMove={moveStandardReport}
-            style={getReportPanelStyle('inventoryCurrentTable', {})}
+            style={getReportPanelStyle('inventoryCurrentTable', { gridColumn: '1 / -1', minWidth: 0 })}
           >
             <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
@@ -15398,7 +15398,7 @@ export default function OperationsTab({
             canReorder={canManageReportLayout}
             isSaving={savingReportLayout}
             onMove={moveStandardReport}
-            style={getReportPanelStyle('inventoryAgingObsolescenceV1', {})}
+            style={getReportPanelStyle('inventoryAgingObsolescenceV1', { gridColumn: '1 / -1', minWidth: 0 })}
           >
             <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>

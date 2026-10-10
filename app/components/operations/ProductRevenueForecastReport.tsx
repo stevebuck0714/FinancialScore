@@ -560,9 +560,7 @@ export default function ProductRevenueForecastReport({
     background: MONTH_COL_HEADER_BG,
     whiteSpace: 'normal',
     lineHeight: 1.15,
-    width: MONTH_METRIC_COL_PX,
     minWidth: MONTH_METRIC_COL_PX,
-    maxWidth: MONTH_METRIC_COL_PX,
     boxSizing: 'border-box',
     fontSize: 11,
     fontWeight: 700,
@@ -575,18 +573,14 @@ export default function ProductRevenueForecastReport({
     borderTop: '1px solid #c7d2fe',
     background: MONTH_COL_CELL_BG,
     color: '#312e81',
-    width: MONTH_METRIC_COL_PX,
     minWidth: MONTH_METRIC_COL_PX,
-    maxWidth: MONTH_METRIC_COL_PX,
     boxSizing: 'border-box',
   };
   const monthInputCellStyle: React.CSSProperties = {
     padding: 2,
     borderTop: '1px solid #c7d2fe',
     background: MONTH_COL_CELL_BG,
-    width: MONTH_METRIC_COL_PX,
     minWidth: MONTH_METRIC_COL_PX,
-    maxWidth: MONTH_METRIC_COL_PX,
     boxSizing: 'border-box',
   };
   const monthQtyInputStyle: React.CSSProperties = {
@@ -601,9 +595,7 @@ export default function ProductRevenueForecastReport({
     background: '#f8fafc',
     whiteSpace: 'normal',
     lineHeight: 1.15,
-    width: MONTH_METRIC_COL_PX,
     minWidth: MONTH_METRIC_COL_PX,
-    maxWidth: MONTH_METRIC_COL_PX,
     boxSizing: 'border-box',
     fontSize: 11,
     fontWeight: 700,
@@ -616,9 +608,7 @@ export default function ProductRevenueForecastReport({
     borderTop: '1px solid #e2e8f0',
     background: '#ffffff',
     color: '#475569',
-    width: MONTH_METRIC_COL_PX,
     minWidth: MONTH_METRIC_COL_PX,
-    maxWidth: MONTH_METRIC_COL_PX,
     boxSizing: 'border-box',
   };
 
@@ -898,7 +888,7 @@ export default function ProductRevenueForecastReport({
                 {selectedCustomer.label}
               </div>
             </div>
-            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: TABLE_MIN_WIDTH_PX, minWidth: TABLE_MIN_WIDTH_PX, fontSize: 12, tableLayout: 'fixed' }}>
+            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: TABLE_MIN_WIDTH_PX, fontSize: 12, tableLayout: 'fixed' }}>
               <colgroup>
                 {IDENTITY_COLUMNS.map((column) => (
                   <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
@@ -906,7 +896,7 @@ export default function ProductRevenueForecastReport({
                 <col style={{ width: columnWidth(PLANNED_COL_CH) }} />
                 <col style={{ width: columnWidth(STATUS_COL_CH) }} />
                 {Array.from({ length: MONTH_METRIC_COL_COUNT }, (_, index) => (
-                  <col key={`metric-${index}`} style={{ width: MONTH_METRIC_COL_PX }} />
+                  <col key={`metric-${index}`} />
                 ))}
               </colgroup>
               <thead>

@@ -94,10 +94,13 @@ export async function buildProductYtdGapDataVersion(companyId: string): Promise<
       where: { companyId },
       _max: { updatedAt: true },
     }),
-    prisma.inforRawRecord.aggregate({
-      where: { companyId },
-      _max: { businessDate: true },
-    }),
+    // Prisma's aggregate wraps this in a subquery that defeats the
+    // (companyId, businessDate) index on 10M+ rows (minutes vs. ~200ms).
+    prisma.$queryRaw<Array<{ businessDate: Date | null }>>`
+      SELECT MAX("businessDate") AS "businessDate"
+      FROM "InforRawRecord"
+      WHERE "companyId" = ${companyId}
+    `,
   ]);
   return hashCacheParts([
     'product-ytd-gap-v1',
@@ -106,7 +109,7 @@ export async function buildProductYtdGapDataVersion(companyId: string): Promise<
     revenue._max.updatedAt?.toISOString() ?? null,
     prices._max.updatedAt?.toISOString() ?? null,
     settings._max.updatedAt?.toISOString() ?? null,
-    raw._max.businessDate?.toISOString() ?? null,
+    raw[0]?.businessDate?.toISOString() ?? null,
   ]);
 }
 
@@ -282,6 +285,7 @@ export async function loadProductYtdGapDataset(params: {
     includeEconomics: false,
   });
   const throughMonth = resolveThroughMonth({ year: dataset.year, dataThru: dataset.dataThru });
+  const goalRows = await loadMonthlyGoalRows(params);
   const months = monthsThrough(throughMonth);
   const remaining = monthsAfter(throughMonth);
 
@@ -325,8 +329,8 @@ export async function loadProductYtdGapDataset(params: {
     priceCount: dataset.priceCount,
     totals: {
       ...totals,
-      goals: await loadYtdGoals({ ...params, throughMonth }),
-      annualGoals: await loadYtdGoals({ ...params, throughMonth: 12 }),
+      goals: sumYtdGoals(goalRows, throughMonth),
+      annualGoals: sumYtdGoals(goalRows, 12),
     },
     groups,
     ...(params.includeComparison
@@ -376,20 +380,18 @@ async function loadYtdComparison(params: {
  * only at company level, so they belong on the totals row rather than being
  * allocated across line items.
  */
-async function loadYtdGoals(params: {
-  companyId: string;
-  year: number;
-  throughMonth: number;
-}): Promise<YtdGapGoals> {
-  if (params.throughMonth <= 0) return { baseline: null, growth: null, stretch: null };
+async function loadMonthlyGoalRows(params: { companyId: string; year: number }): Promise<unknown[]> {
   const snapshot = await loadProductGoalUpdate({ companyId: params.companyId, year: params.year }).catch(() => null);
-  const rows = Array.isArray(snapshot?.monthlyRevenueGoals) ? snapshot!.monthlyRevenueGoals : [];
-  if (rows.length === 0) return { baseline: null, growth: null, stretch: null };
+  return Array.isArray(snapshot?.monthlyRevenueGoals) ? snapshot!.monthlyRevenueGoals : [];
+}
+
+function sumYtdGoals(rows: unknown[], throughMonth: number): YtdGapGoals {
+  if (throughMonth <= 0 || rows.length === 0) return { baseline: null, growth: null, stretch: null };
 
   const totals: YtdGapGoals = { baseline: null, growth: null, stretch: null };
   for (const row of rows) {
     const month = Number((row as { month?: unknown })?.month);
-    if (!Number.isInteger(month) || month < 1 || month > params.throughMonth) continue;
+    if (!Number.isInteger(month) || month < 1 || month > throughMonth) continue;
     for (const key of ['baseline', 'growth', 'stretch'] as const) {
       const value = (row as Record<string, unknown>)[key];
       if (value == null || value === '') continue;
