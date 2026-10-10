@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
-import { estMonthIndex, estYear } from '@/lib/time/eastern';
+import { countShippingDaysRemaining } from '@/lib/operations/product-shipping-days';
+import { estMonthIndex, estYear, previousEstCalendarDate } from '@/lib/time/eastern';
 
 export const GOAL_SCENARIOS = ['FORECASTED', 'BASELINE', 'GROWTH', 'STRETCH'] as const;
 export type GoalScenario = (typeof GOAL_SCENARIOS)[number];
@@ -776,25 +777,169 @@ export function mergeGoalUpdateSnapshots(
   return { ...emptyGoalUpdateSnapshot(), monthlyRevenueGoals: monthly };
 }
 
+/**
+ * Days already counted in actuals. Uses dataThru when it falls in the year;
+ * otherwise yesterday (EST) for the current year, so today still counts as remaining.
+ */
+function shippingReferenceDate(year: number, dataThru: string | null | undefined): string {
+  const thru = String(dataThru || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(thru)) {
+    const thruYear = Number(thru.slice(0, 4));
+    if (thruYear === year) return thru;
+    if (thruYear > year) return `${year}-12-31`;
+  }
+  const currentYear = estYear();
+  if (year < currentYear) return `${year}-12-31`;
+  if (year > currentYear) return `${year - 1}-12-31`;
+  return previousEstCalendarDate();
+}
+
+function computeShippingDaysRemaining(year: number, quarter: number | null, dataThru: string | null | undefined): {
+  ytd: number;
+  qtd: number | null;
+} {
+  const afterDate = shippingReferenceDate(year, dataThru);
+  return {
+    ytd: countShippingDaysRemaining({ year, afterDate }),
+    qtd: quarter != null ? countShippingDaysRemaining({ year, afterDate, quarter }) : null,
+  };
+}
+
+function withShippingDays(block: PyramidBlock | null, days: { ytd: number; qtd: number | null }): PyramidBlock | null {
+  if (!block) return null;
+  return {
+    ...block,
+    qtd: block.qtd ? { ...block.qtd, shippingDaysRemaining: days.qtd } : null,
+    ytd: block.ytd ? { ...block.ytd, shippingDaysRemaining: days.ytd } : null,
+  };
+}
+
+/** Posted Infor invoice-line totals through the last complete month. */
+export type InforGoalActuals = {
+  throughMonth: number;
+  dataThru: string;
+  revenueByMonth: number[];
+  quantityByMonth: number[];
+};
+
+function sumByMonth(values: number[], months: number[]): number {
+  return months.reduce((sum, month) => sum + (Number(values[month - 1]) || 0), 0);
+}
+
+function periodActuals(values: number[], throughMonth: number): Record<PyramidPeriodKey, number> {
+  const quarterStart = (Math.ceil(throughMonth / 3) - 1) * 3 + 1;
+  const range = (from: number) => Array.from({ length: throughMonth - from + 1 }, (_, index) => from + index);
+  return {
+    MTD: sumByMonth(values, [throughMonth]),
+    QTD: sumByMonth(values, range(quarterStart)),
+    YTD: sumByMonth(values, range(1)),
+  };
+}
+
+function clearedPlans(metric: PyramidMetric): PyramidMetric {
+  return { ...emptyMetric(), actual: metric.actual };
+}
+
+function withActual(metric: PyramidMetric, actual: number): PyramidMetric {
+  return {
+    ...metric,
+    actual,
+    vsCurrentForecasts: vsPlan(actual, metric.currentForecasts),
+    vsSgpForecast: vsPlan(actual, metric.sgpForecast),
+    vsBaseline: vsPlan(actual, metric.baselineGoal),
+    vsGrowth: vsPlan(actual, metric.growthGoal),
+    vsStretch: vsPlan(actual, metric.stretchGoal),
+    pctCurrentForecasts: pctPlan(actual, metric.currentForecasts),
+    pctSgpForecast: pctPlan(actual, metric.sgpForecast),
+    pctBaseline: pctPlan(actual, metric.baselineGoal),
+    pctGrowth: pctPlan(actual, metric.growthGoal),
+    pctStretch: pctPlan(actual, metric.stretchGoal),
+  };
+}
+
+/**
+ * Replaces workbook actuals with Infor actuals. Workbook plan values for MTD/QTD
+ * are for the workbook's month; when Infor is through a different month or
+ * quarter they no longer line up, so they are cleared rather than compared.
+ */
+function overlayInforPyramidBlock(
+  block: PyramidBlock | null,
+  values: number[],
+  actuals: InforGoalActuals,
+  workbookMonth: number | null,
+  year: number
+): PyramidBlock | null {
+  if (!block) return null;
+  const totals = periodActuals(values, actuals.throughMonth);
+  const sameMonth = workbookMonth === actuals.throughMonth;
+  const sameQuarter = workbookMonth != null && Math.ceil(workbookMonth / 3) === Math.ceil(actuals.throughMonth / 3);
+  const apply = (period: PyramidPeriod | null, key: PyramidPeriodKey, plansValid: boolean): PyramidPeriod | null => {
+    if (!period) return null;
+    const metric = plansValid ? period.values : clearedPlans(period.values);
+    return {
+      ...period,
+      quarter: key === 'QTD' ? Math.ceil(actuals.throughMonth / 3) : period.quarter,
+      year: key === 'YTD' ? year : period.year,
+      values: withActual(metric, totals[key]),
+    };
+  };
+  return {
+    ...block,
+    monthLabel: MONTH_GOAL_LABELS[actuals.throughMonth - 1],
+    mtd: apply(block.mtd, 'MTD', sameMonth),
+    qtd: apply(block.qtd, 'QTD', sameQuarter),
+    ytd: apply(block.ytd, 'YTD', true),
+  };
+}
+
+function overlayInforGoalRow(row: GoalScenarioRow, ytdActual: number, quarterActual: number, sameQuarter: boolean): GoalScenarioRow {
+  const quarterGoal = sameQuarter ? row.quarterGoal : null;
+  return {
+    ...row,
+    ytdActual,
+    quarterYtd: quarterActual,
+    quarterGoal,
+    goalVsActualYtd: vsPlan(ytdActual, row.annualGoal),
+    pctYtdVsGoal: pctPlan(ytdActual, row.annualGoal),
+    goalVsActualQtd: vsPlan(quarterActual, quarterGoal),
+    pctQtdVsGoal: pctPlan(quarterActual, quarterGoal),
+  };
+}
+
 export function applyMonthlyRevenueGoals(params: {
   goalUpdate: GoalUpdateSnapshot | null;
   pyramid: PyramidSnapshot | null;
   year: number;
   dataThru?: string | null;
+  inforActuals?: InforGoalActuals | null;
 }): { goalUpdate: GoalUpdateSnapshot | null; pyramid: PyramidSnapshot | null } {
   const months = params.goalUpdate?.monthlyRevenueGoals || emptyMonthlyRevenueGoals();
   const useMonthly = hasMonthlyRevenueGoals(months);
-  const monthNumber = resolveGoalMonthNumber({
+  const infor = params.inforActuals && params.inforActuals.throughMonth >= 1 ? params.inforActuals : null;
+  const workbookMonth = resolveGoalMonthNumber({
     monthLabel: params.pyramid?.monthLabel || params.pyramid?.revenue?.monthLabel || null,
     dataThru: params.dataThru || null,
     year: params.year,
   });
+  const workbookQuarter = params.goalUpdate?.quarter || (workbookMonth ? Math.ceil(workbookMonth / 3) : null);
+  const monthNumber = infor ? infor.throughMonth : workbookMonth;
+  const dataThru = infor ? infor.dataThru : params.dataThru;
   const quarter = monthNumber ? Math.ceil(monthNumber / 3) : params.goalUpdate?.quarter || null;
+  const displayQuarter = infor ? quarter : params.goalUpdate?.quarter || quarter;
+  const sameQuarter = workbookQuarter != null && workbookQuarter === quarter;
+  const shippingDays = computeShippingDaysRemaining(params.year, displayQuarter, dataThru);
+  const revenueBlock = infor
+    ? overlayInforPyramidBlock(params.pyramid?.revenue ?? null, infor.revenueByMonth, infor, workbookMonth, params.year)
+    : params.pyramid?.revenue ?? null;
+  const issuesBlock = infor
+    ? overlayInforPyramidBlock(params.pyramid?.issues ?? null, infor.quantityByMonth, infor, workbookMonth, params.year)
+    : params.pyramid?.issues ?? null;
   const pyramid = params.pyramid
     ? {
         ...params.pyramid,
-        revenue: overlayPyramidBlock(params.pyramid.revenue, months, monthNumber, useMonthly),
-        issues: params.pyramid.issues,
+        monthLabel: infor ? MONTH_GOAL_LABELS[infor.throughMonth - 1] : params.pyramid.monthLabel,
+        revenue: withShippingDays(overlayPyramidBlock(revenueBlock, months, monthNumber, useMonthly), shippingDays),
+        issues: withShippingDays(issuesBlock, shippingDays),
       }
     : null;
 
@@ -803,12 +948,18 @@ export function applyMonthlyRevenueGoals(params: {
   }
 
   const base = params.goalUpdate || emptyGoalUpdateSnapshot(params.year);
+  const inforRevenue = infor ? periodActuals(infor.revenueByMonth, infor.throughMonth) : null;
+  const baseRows = inforRevenue
+    ? base.rows.map((row) => overlayInforGoalRow(row, inforRevenue.YTD, inforRevenue.QTD, sameQuarter))
+    : base.rows;
   const goalUpdate: GoalUpdateSnapshot = {
     ...base,
     year: base.year || params.year,
-    quarter: base.quarter || quarter,
+    quarter: displayQuarter,
+    shippingDaysRemainingYtd: shippingDays.ytd,
+    shippingDaysRemainingQtd: shippingDays.qtd,
     monthlyRevenueGoals: months,
-    rows: base.rows.map((row) => {
+    rows: baseRows.map((row) => {
       if (row.scenario === 'FORECASTED') return row;
       const key: MonthlyRevenueGoalKey =
         row.scenario === 'BASELINE' ? 'baseline' : row.scenario === 'GROWTH' ? 'growth' : 'stretch';

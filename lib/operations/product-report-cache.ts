@@ -157,6 +157,19 @@ export async function buildProductReportDataVersion(companyId: string): Promise<
       });
       return { label: 'ProductSalesSnapshot', latest: isoOrNull(result._max.snapshotDate) };
     }),
+    safeFingerprint('ProductInvoiceLineFact', async () => {
+      // Infor invoice lines are the actual revenue and units source.
+      const rows = await prisma.$queryRaw<Array<{ count: bigint; updatedAt: Date | null }>>`
+        SELECT COUNT(*)::bigint AS count, MAX("updatedAt") AS "updatedAt"
+        FROM "ProductInvoiceLineFact"
+        WHERE "companyId" = ${companyId}
+      `;
+      return {
+        label: 'ProductInvoiceLineFact',
+        count: Number(rows[0]?.count || 0),
+        updatedAt: isoOrNull(rows[0]?.updatedAt),
+      };
+    }),
     safeFingerprint('InforRawRecord', async () => {
       // Raw SQL rather than prisma.aggregate: on this table (10M+ rows) the
       // generated aggregate takes ~1.9s while this returns in ~70ms, both using

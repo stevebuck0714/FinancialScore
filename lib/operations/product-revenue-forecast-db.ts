@@ -11,6 +11,7 @@ import {
   forecastMonthIsEditable,
   FORECAST_MONTHS,
   monthQty,
+  overlayInvoicedQtyActuals,
   overlayShippedActuals,
   normalizeAdjustedQtyMap,
   normalizeMonthQtyMap,
@@ -642,6 +643,29 @@ export async function loadCsiMonthlyInvoicedRevenueActuals(params: {
   customerId?: string;
   customerName?: string;
 }): Promise<CsiInvoicedRevenueActuals> {
+  return loadCsiMonthlyInvoiceLineActuals(params, Prisma.sql`"revenue"`, 'revenue');
+}
+
+/** Invoiced units from posted Infor invoice lines, keyed like the revenue actuals. */
+export async function loadCsiMonthlyInvoicedQtyActuals(params: {
+  companyId: string;
+  year: number;
+  customerId?: string;
+  customerName?: string;
+}): Promise<CsiShippedActuals> {
+  return loadCsiMonthlyInvoiceLineActuals(params, Prisma.sql`"quantity"`, 'quantity');
+}
+
+async function loadCsiMonthlyInvoiceLineActuals(
+  params: {
+    companyId: string;
+    year: number;
+    customerId?: string;
+    customerName?: string;
+  },
+  measureSql: Prisma.Sql,
+  measureLabel: string
+): Promise<CsiShippedActuals> {
   try {
     const start = new Date(Date.UTC(params.year, 0, 1));
     const end = new Date(Date.UTC(params.year + 1, 0, 1));
@@ -658,7 +682,7 @@ export async function loadCsiMonthlyInvoicedRevenueActuals(params: {
         "itemSku",
         "customerPartNumber" AS "customerPn",
         EXTRACT(MONTH FROM "invoiceDate")::int AS month,
-        SUM("revenue")::double precision AS qty,
+        SUM(${measureSql})::double precision AS qty,
         MAX("invoiceDate") AS "asOf"
       FROM "ProductInvoiceLineFact"
       WHERE "companyId" = ${params.companyId}
@@ -675,14 +699,9 @@ export async function loadCsiMonthlyInvoicedRevenueActuals(params: {
       const amount = Number(row.qty || 0);
       const customerId = String(row.customerId || '');
       const itemSku = String(row.itemSku || '');
-      const itemId = String(row.itemId || '');
       const customerPn = String(row.customerPn || '');
       addShippedQty(byExact, forecastActualsExactKey(customerId, itemSku, customerPn), month, amount);
       addShippedQty(byItem, forecastActualsItemKey(customerId, itemSku), month, amount);
-      if (itemId && itemId.toUpperCase() !== itemSku.toUpperCase()) {
-        addShippedQty(byExact, forecastActualsExactKey(customerId, itemId, customerPn), month, amount);
-        addShippedQty(byItem, forecastActualsItemKey(customerId, itemId), month, amount);
-      }
       if (row.asOf) {
         const iso = new Date(row.asOf).toISOString().slice(0, 10);
         if (!asOf || iso > asOf) asOf = iso;
@@ -690,7 +709,7 @@ export async function loadCsiMonthlyInvoicedRevenueActuals(params: {
     }
     return { ok: true, asOf, byExact, byItem };
   } catch (error) {
-    console.error('[product-forecast] CSI invoiced revenue actuals failed', error);
+    console.error(`[product-forecast] CSI invoiced ${measureLabel} actuals failed`, error);
     return { ok: false, asOf: null, byExact: new Map(), byItem: new Map() };
   }
 }
@@ -702,4 +721,35 @@ export function withCsiShippedActuals<T extends {
   actualQty: MonthQtyMap;
 }>(lines: T[], actuals: CsiShippedActuals): T[] {
   return overlayShippedActuals(lines, actuals);
+}
+
+export type ProductActualQty = {
+  source: 'invoiced' | 'shipped';
+  actuals: CsiShippedActuals;
+};
+
+/**
+ * Actual units come from posted Infor invoice lines. Order-line shipment
+ * snapshots are only used for companies with no invoice lines for the year.
+ */
+export async function loadProductActualQty(params: {
+  companyId: string;
+  year: number;
+  customerId?: string;
+  customerName?: string;
+}): Promise<ProductActualQty> {
+  const invoiced = await loadCsiMonthlyInvoicedQtyActuals(params);
+  if (invoiced.ok) return { source: 'invoiced', actuals: invoiced };
+  return { source: 'shipped', actuals: await loadCsiMonthlyShippedActuals(params) };
+}
+
+export function withProductActualQty<T extends {
+  customerId: string;
+  itemSku: string;
+  customerPartNumber: string;
+  actualQty: MonthQtyMap;
+}>(lines: T[], actualQty: ProductActualQty): T[] {
+  return actualQty.source === 'invoiced'
+    ? overlayInvoicedQtyActuals(lines, actualQty.actuals)
+    : overlayShippedActuals(lines, actualQty.actuals);
 }

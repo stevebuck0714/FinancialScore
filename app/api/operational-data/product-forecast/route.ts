@@ -9,11 +9,11 @@ import {
   asOptionalIsoDay,
   assertProductsForecastAccess,
   ensureProductRevenueForecastTables,
-  loadCsiMonthlyShippedActuals,
+  loadProductActualQty,
   normalizeForecastLineInput,
   serializeForecastLine,
   upsertForecastLines,
-  withCsiShippedActuals,
+  withProductActualQty,
 } from '@/lib/operations/product-revenue-forecast-db';
 import {
   listProductForecastCustomersWithCatalog,
@@ -69,9 +69,9 @@ export async function GET(request: NextRequest) {
           let totals = null;
           if (includeTotals) {
             const companyLines = await loadProductForecastLinesWithCatalog({ companyId, year });
-            const shipped = await loadCsiMonthlyShippedActuals({ companyId, year });
+            const shipped = await loadProductActualQty({ companyId, year });
             totals = summarizeForecastQtyMonths(
-              withCsiShippedActuals(companyLines.map(serializeForecastLine), shipped)
+              withProductActualQty(companyLines.map(serializeForecastLine), shipped)
             );
           }
           return {
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
           customerId,
           customerName,
         });
-        const shipped = await loadCsiMonthlyShippedActuals({
+        const shipped = await loadProductActualQty({
           companyId,
           year,
           customerId,
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
           catalogSourceYear,
           dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
           customers: customerPayload,
-          lines: withCsiShippedActuals(lines.map(serializeForecastLine), shipped),
+          lines: withProductActualQty(lines.map(serializeForecastLine), shipped),
         };
       },
     });
@@ -164,7 +164,7 @@ export async function PUT(request: NextRequest) {
       where: { companyId_year: { companyId, year } },
     });
 
-    const shipped = await loadCsiMonthlyShippedActuals({
+    const shipped = await loadProductActualQty({
       companyId,
       year,
       customerId,
@@ -175,7 +175,7 @@ export async function PUT(request: NextRequest) {
       ok: true,
       year,
       dataThru: settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null,
-      lines: withCsiShippedActuals(saved.map(serializeForecastLine), shipped),
+      lines: withProductActualQty(saved.map(serializeForecastLine), shipped),
     });
   } catch (error: any) {
     return NextResponse.json(

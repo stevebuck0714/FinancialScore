@@ -108,6 +108,25 @@ export function plantClosureDates(year: number): { date: string; name: string }[
   return closures;
 }
 
+/**
+ * Shipping days strictly after `afterDate` (YYYY-MM-DD) through the end of the
+ * year, or through the end of `quarter` when given. Matches the workbook's
+ * "Shipping days remaining" convention, which excludes the data-thru day.
+ */
+export function countShippingDaysRemaining(params: {
+  year: number;
+  afterDate: string;
+  quarter?: number | null;
+}): number {
+  const quarter = params.quarter ?? null;
+  const end = quarter != null && quarter >= 1 && quarter <= 4
+    ? isoDay(utcDate(params.year, quarter * 3 + 1, 0))
+    : `${params.year}-12-31`;
+  return buildShippingCalendar(params.year).filter(
+    (day) => day.ship && day.date > params.afterDate && day.date <= end
+  ).length;
+}
+
 export function buildShippingCalendar(year: number): ShippingDay[] {
   const closed = new Set(plantClosureDates(year).map((row) => row.date));
   const days: ShippingDay[] = [];

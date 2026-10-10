@@ -291,6 +291,32 @@ export function overlayInvoicedRevenueActuals<T extends {
   });
 }
 
+/**
+ * Invoiced units replace workbook units the same way invoiced dollars replace
+ * workbook revenue: an unmatched line receives 0 rather than its workbook value.
+ */
+export function overlayInvoicedQtyActuals<T extends {
+  customerId: string;
+  itemSku: string;
+  customerPartNumber: string;
+  actualQty: MonthQtyMap;
+}>(lines: T[], actuals: CsiShippedActuals): T[] {
+  if (!actuals.ok) return lines;
+  const itemCounts = new Map<string, number>();
+  for (const line of lines) {
+    const key = forecastActualsItemKey(line.customerId, line.itemSku);
+    itemCounts.set(key, (itemCounts.get(key) || 0) + 1);
+  }
+  return lines.map((line) => {
+    const exact = actuals.byExact.get(
+      forecastActualsExactKey(line.customerId, line.itemSku, line.customerPartNumber)
+    );
+    const itemKey = forecastActualsItemKey(line.customerId, line.itemSku);
+    const byItem = itemCounts.get(itemKey) === 1 ? actuals.byItem.get(itemKey) : undefined;
+    return { ...line, actualQty: exact || byItem || emptyMonthQtyMap() };
+  });
+}
+
 export function typedAdjustedMonthQty(
   forecastQty: MonthQtyMap,
   month: ForecastMonth,

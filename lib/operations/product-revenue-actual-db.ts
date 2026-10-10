@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import {
   emptyMonthQtyMap,
@@ -10,11 +11,11 @@ import {
   asOptionalIsoDay,
   ensureProductRevenueForecastTables,
   loadCsiMonthlyInvoicedRevenueActuals,
-  loadCsiMonthlyShippedActuals,
+  loadProductActualQty,
   normalizeForecastLineInput,
   serializeForecastLine,
   upsertForecastLines,
-  withCsiShippedActuals,
+  withProductActualQty,
 } from '@/lib/operations/product-revenue-forecast-db';
 import {
   latestProductCatalogSourceYear,
@@ -48,6 +49,7 @@ import {
   normalizeMonthlyRevenueGoals,
   normalizePyramidSnapshot,
   type GoalUpdateSnapshot,
+  type InforGoalActuals,
   type MonthlyRevenueGoalMonth,
   type PyramidSnapshot,
 } from '@/lib/operations/product-goal-update';
@@ -578,6 +580,53 @@ export async function loadProductGoalUpdateRaw(params: {
   };
 }
 
+/**
+ * Monthly revenue and invoiced quantity from posted Infor invoice lines, through
+ * the last complete month (the same cutoff the YTD Gap report uses). Null when
+ * the company has no invoice lines covering the year.
+ */
+export async function loadInforGoalActuals(params: {
+  companyId: string;
+  year: number;
+}): Promise<InforGoalActuals | null> {
+  const start = new Date(Date.UTC(params.year, 0, 1));
+  const end = new Date(Date.UTC(params.year + 1, 0, 1));
+  const [latestRows, monthRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ latest: Date | null }>>(Prisma.sql`
+      SELECT MAX("invoiceDate") AS "latest"
+      FROM "ProductInvoiceLineFact"
+      WHERE "companyId" = ${params.companyId}
+    `),
+    prisma.$queryRaw<Array<{ month: number; revenue: number | null; quantity: number | null }>>(Prisma.sql`
+      SELECT
+        EXTRACT(MONTH FROM "invoiceDate")::int AS month,
+        SUM("revenue")::double precision AS revenue,
+        SUM("quantity")::double precision AS quantity
+      FROM "ProductInvoiceLineFact"
+      WHERE "companyId" = ${params.companyId}
+        AND "invoiceDate" >= ${start}
+        AND "invoiceDate" < ${end}
+      GROUP BY 1
+    `),
+  ]);
+  const latest = latestRows[0]?.latest ? new Date(latestRows[0].latest).toISOString().slice(0, 10) : null;
+  if (!latest || monthRows.length === 0) return null;
+  const latestYear = Number(latest.slice(0, 4));
+  if (latestYear < params.year) return null;
+  const dataThru = latestYear > params.year ? `${params.year}-12-31` : lastCompleteMonthFromSnapshot(latest);
+  if (!dataThru || Number(dataThru.slice(0, 4)) !== params.year) return null;
+
+  const revenueByMonth = Array.from({ length: 12 }, () => 0);
+  const quantityByMonth = Array.from({ length: 12 }, () => 0);
+  for (const row of monthRows) {
+    const month = Number(row.month);
+    if (!Number.isInteger(month) || month < 1 || month > 12) continue;
+    revenueByMonth[month - 1] = Number(row.revenue) || 0;
+    quantityByMonth[month - 1] = Number(row.quantity) || 0;
+  }
+  return { throughMonth: Number(dataThru.slice(5, 7)), dataThru, revenueByMonth, quantityByMonth };
+}
+
 export async function loadProductGoalUpdate(params: {
   companyId: string;
   year: number;
@@ -588,16 +637,23 @@ export async function loadProductGoalUpdate(params: {
   pyramid: PyramidSnapshot | null;
   monthlyRevenueGoals: MonthlyRevenueGoalMonth[];
 }> {
-  const raw = await loadProductGoalUpdateRaw(params);
+  const [raw, inforActuals] = await Promise.all([
+    loadProductGoalUpdateRaw(params),
+    loadInforGoalActuals(params).catch((error) => {
+      console.error('[product-goals] Infor actuals failed', error);
+      return null;
+    }),
+  ]);
   const applied = applyMonthlyRevenueGoals({
     goalUpdate: raw.goalUpdate,
     pyramid: raw.pyramid,
     year: params.year,
     dataThru: raw.dataThru,
+    inforActuals,
   });
   return {
     year: raw.year,
-    dataThru: raw.dataThru,
+    dataThru: inforActuals?.dataThru ?? raw.dataThru,
     goalUpdate: applied.goalUpdate,
     pyramid: applied.pyramid,
     monthlyRevenueGoals: applied.goalUpdate?.monthlyRevenueGoals || emptyGoalUpdateSnapshot(params.year).monthlyRevenueGoals,
@@ -869,7 +925,7 @@ export async function loadRevenueDataset(params: {
           catalogSourceYear
         )
       : Promise.resolve([] as RevenuePriceRow[]),
-    loadCsiMonthlyShippedActuals({
+    loadProductActualQty({
       companyId,
       year,
       customerId: scopedCustomerId || undefined,
@@ -886,7 +942,7 @@ export async function loadRevenueDataset(params: {
     listProductForecastCustomersWithCatalog(companyId, year),
   ]);
   const settings = settingsRows[0] || null;
-  const forecastRows = withCsiShippedActuals(forecastRaw.map(serializeForecastLine), shipped);
+  const forecastRows = withProductActualQty(forecastRaw.map(serializeForecastLine), shipped);
 
   const priceMap = new Map<string, { contractPrice: number | null; sgpPrice: number | null }>();
   for (const row of [...sourcePriceRows, ...priceRows]) {

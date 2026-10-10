@@ -77,7 +77,7 @@ export type YtdGapDataset = {
 };
 
 export async function buildProductYtdGapDataVersion(companyId: string): Promise<string> {
-  const [forecast, revenue, prices, settings, raw] = await Promise.all([
+  const [forecast, revenue, prices, settings, raw, invoices] = await Promise.all([
     prisma.productRevenueForecastLine.aggregate({
       where: { companyId },
       _max: { updatedAt: true },
@@ -101,6 +101,11 @@ export async function buildProductYtdGapDataVersion(companyId: string): Promise<
       FROM "InforRawRecord"
       WHERE "companyId" = ${companyId}
     `,
+    prisma.$queryRaw<Array<{ count: bigint; updatedAt: Date | null }>>`
+      SELECT COUNT(*)::bigint AS count, MAX("updatedAt") AS "updatedAt"
+      FROM "ProductInvoiceLineFact"
+      WHERE "companyId" = ${companyId}
+    `,
   ]);
   return hashCacheParts([
     'product-ytd-gap-v1',
@@ -110,6 +115,8 @@ export async function buildProductYtdGapDataVersion(companyId: string): Promise<
     prices._max.updatedAt?.toISOString() ?? null,
     settings._max.updatedAt?.toISOString() ?? null,
     raw[0]?.businessDate?.toISOString() ?? null,
+    Number(invoices[0]?.count || 0),
+    invoices[0]?.updatedAt?.toISOString() ?? null,
   ]);
 }
 
