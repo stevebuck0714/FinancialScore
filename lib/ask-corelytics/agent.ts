@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type OpenAI from 'openai';
 import { getAiProviderOptions, isUsingGateway, resolveModelName } from '@/lib/ai-gateway';
 import { formatEstDate } from '@/lib/time/eastern';
@@ -54,6 +55,7 @@ function buildSystemPrompt(params: { companyName: string; todayEst: string }) {
     'You have read-only tools over ALL of this company\'s financial and operational data. Use them:',
     '- Call list_datasets first to see what data exists and its date coverage.',
     '- Then query exactly the data needed to answer the question. Make as many queries as needed (comparisons, breakdowns, drill-downs) before answering.',
+    '- Each turn costs the user several seconds: when queries do not depend on each other\'s results, request them together in the same turn (parallel tool calls).',
     '- Prefer monthly_financials for month/year P&L and balance sheet questions; use operational datasets for customers, products, orders, inventory, AR/AP, vendors, GL detail.',
     '- Datasets named "<source>.<dataset>" come from connected operational systems (HR/payroll, CRM, field ops, spreadsheets); use them for headcount, payroll, pipeline, activity and other operational questions.',
     '- If a dataset has dataMode MOCK (or a result has dataNote), it is sample data: say the figures are sample data pending the live connection.',
@@ -100,6 +102,26 @@ function toThreadMessages(conversationContext: unknown): {
   return { messages, runningSummary: String(ctx.runningSummary || '').trim() };
 }
 
+function humanizeDatasetName(name: string): string {
+  const leaf = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : name;
+  return leaf.replace(/[_-]+/g, ' ').trim() || 'company data';
+}
+
+function describeToolCall(name: string, rawArgs: string): { label: string; dataset?: string } {
+  if (name === 'list_datasets') return { label: 'Reviewing available data' };
+  if (name === 'get_loans_and_covenants') return { label: 'Reviewing loans and covenants' };
+  if (name === 'query_dataset') {
+    let dataset = '';
+    try {
+      dataset = String(JSON.parse(rawArgs || '{}')?.dataset || '');
+    } catch {
+      dataset = '';
+    }
+    return { label: `Querying ${humanizeDatasetName(dataset)}`, dataset: dataset || undefined };
+  }
+  return { label: 'Querying company data' };
+}
+
 export async function runAskDataAgent(params: {
   openai: OpenAI;
   model: string;
@@ -110,8 +132,16 @@ export async function runAskDataAgent(params: {
   conversationContext?: unknown;
   sources: Source[];
   deadlineMs: number;
+  onProgress?: (message: string) => void;
 }): Promise<AskAgentOutput | null> {
   const { openai, companyId, question, sources } = params;
+  const progress = (message: string) => {
+    try {
+      params.onProgress?.(message);
+    } catch {
+      // Progress is best-effort; a closed client stream must not break the answer.
+    }
+  };
   const financialSource = sources.find((s) => /data review/i.test(String(s.title || ''))) || sources[0];
   const operationsSource = sources.find((s) => /operations/i.test(String(s.title || ''))) || financialSource;
   if (!financialSource) return null;
@@ -142,18 +172,41 @@ export async function runAskDataAgent(params: {
     },
   ];
 
-  const providerOptions = getAiProviderOptions();
+  const providerOptions = getAiProviderOptions({ promptCaching: true });
+  const affinityHeaders = isUsingGateway() ? { 'x-session-affinity': `ask-${randomUUID()}` } : undefined;
   const reasoningEffort = askReasoningEffort();
+  const model = resolveModelName(params.model);
+  const agentStartedAt = Date.now();
   let toolCalls = 0;
+  let llmMsTotal = 0;
+  let toolMsTotal = 0;
+  const logSummary = (outcome: string, rounds: number) => {
+    console.log('Ask agent: finished', {
+      outcome,
+      model,
+      reasoningEffort: reasoningEffort || 'default',
+      rounds,
+      toolCalls,
+      llmMs: llmMsTotal,
+      toolMs: toolMsTotal,
+      totalMs: Date.now() - agentStartedAt,
+    });
+  };
+
+  progress('Analyzing your question');
 
   for (let round = 0; round < MAX_ROUNDS; round += 1) {
     const remaining = params.deadlineMs - Date.now();
-    if (remaining < 15_000) return null;
+    if (remaining < 15_000) {
+      logSummary('deadline', round);
+      return null;
+    }
     const isLastRound = round === MAX_ROUNDS - 1 || remaining < 45_000;
 
+    const llmStartedAt = Date.now();
     const completion = await openai.chat.completions.create(
       {
-        model: resolveModelName(params.model),
+        model,
         messages,
         tools: ASK_DATA_TOOL_DEFINITIONS,
         tool_choice: isLastRound ? 'none' : 'auto',
@@ -161,12 +214,34 @@ export async function runAskDataAgent(params: {
         ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
         ...(providerOptions ? ({ providerOptions } as Record<string, unknown>) : {}),
       } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
-      { timeout: Math.max(10_000, remaining - 5_000) },
+      { timeout: Math.max(10_000, remaining - 5_000), ...(affinityHeaders ? { headers: affinityHeaders } : {}) },
     );
+    const llmMs = Date.now() - llmStartedAt;
+    llmMsTotal += llmMs;
 
     const message = completion.choices[0]?.message;
-    if (!message) return null;
-    const calls = (message.tool_calls || []).filter((c) => c.type === 'function');
+    const calls = (message?.tool_calls || []).filter((c) => c.type === 'function');
+    const usage = completion.usage as
+      | (OpenAI.Completions.CompletionUsage & {
+          prompt_tokens_details?: { cached_tokens?: number };
+          completion_tokens_details?: { reasoning_tokens?: number };
+        })
+      | undefined;
+    const roundLog = {
+      round: round + 1,
+      llmMs,
+      promptTokens: usage?.prompt_tokens ?? null,
+      cachedPromptTokens: usage?.prompt_tokens_details?.cached_tokens ?? null,
+      completionTokens: usage?.completion_tokens ?? null,
+      reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? null,
+      finishReason: completion.choices[0]?.finish_reason ?? null,
+    };
+
+    if (!message) {
+      console.log('Ask agent: round', { ...roundLog, toolCalls: [] });
+      logSummary('empty_message', round + 1);
+      return null;
+    }
 
     if (calls.length > 0) {
       // The gateway's reasoning fields must go back with the tool-call turn so thinking models
@@ -179,23 +254,40 @@ export async function runAskDataAgent(params: {
         ...(reasoning !== undefined ? { reasoning } : {}),
         ...(reasoningDetails !== undefined ? { reasoning_details: reasoningDetails } : {}),
       } as OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam);
+      const described = calls.map((call) => describeToolCall(call.function.name, call.function.arguments));
+      const labels = [...new Set(described.map((d) => d.label))];
+      progress(labels.length > 3 ? `${labels.slice(0, 3).join(', ')} and ${labels.length - 3} more` : labels.join(', '));
+
+      const toolStartedAt = Date.now();
+      const toolTimings: Array<{ name: string; dataset?: string; ms: number; chars: number }> = [];
       const results = await Promise.all(
-        calls.map(async (call) => {
+        calls.map(async (call, index) => {
           toolCalls += 1;
+          const callStartedAt = Date.now();
           const result = await executeAskDataTool(companyId, call.function.name, call.function.arguments);
           let content = JSON.stringify(result);
+          toolTimings.push({ name: call.function.name, dataset: described[index].dataset, ms: Date.now() - callStartedAt, chars: content.length });
           if (content.length > MAX_TOOL_RESULT_CHARS) {
             content = `${content.slice(0, MAX_TOOL_RESULT_CHARS)}... [truncated; narrow the query with filters, groupBy, or a smaller limit]`;
           }
           return { role: 'tool' as const, tool_call_id: call.id, content };
         }),
       );
+      const toolMs = Date.now() - toolStartedAt;
+      toolMsTotal += toolMs;
+      console.log('Ask agent: round', { ...roundLog, toolMs, toolCalls: toolTimings });
       messages.push(...results);
+      progress('Analyzing results');
       continue;
     }
 
+    console.log('Ask agent: round', { ...roundLog, toolCalls: [] });
     const parsed = parseJsonObject(String(message.content || ''));
-    if (!parsed || typeof parsed.shortAnswer !== 'string' || !parsed.shortAnswer.trim()) return null;
+    if (!parsed || typeof parsed.shortAnswer !== 'string' || !parsed.shortAnswer.trim()) {
+      logSummary('unparseable_answer', round + 1);
+      return null;
+    }
+    logSummary('answered', round + 1);
 
     const bullets = Array.isArray(parsed.citedBullets) ? parsed.citedBullets : [];
     const citedBullets = bullets
@@ -217,5 +309,6 @@ export async function runAskDataAgent(params: {
       toolCalls,
     };
   }
+  logSummary('max_rounds', MAX_ROUNDS);
   return null;
 }

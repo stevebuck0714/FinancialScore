@@ -2384,8 +2384,18 @@ async function generateAskJson(params: {
   };
 }
 
-export async function runAskCorelyticsLegacy(request: NextRequest) {
+export async function runAskCorelyticsLegacy(
+  request: NextRequest,
+  options?: { onProgress?: (message: string) => void },
+) {
   const requestStartedAt = Date.now();
+  const progress = (message: string) => {
+    try {
+      options?.onProgress?.(message);
+    } catch {
+      // Progress is best-effort; a closed client stream must not break the answer.
+    }
+  };
   try {
     await requireAuth();
 
@@ -2443,6 +2453,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       return NextResponse.json({ error: 'Document not found for this company' }, { status: 404 });
     }
 
+    progress('Loading company context');
     const now = new Date();
     const useExternalSources = uiMode === 'document' ? false : shouldUseExternalSources(question, useExternalSourcesOverride);
     const requestedCount = parseRequestedCount(question);
@@ -2933,6 +2944,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
         })
       : null;
     const externalQuery = externalQueryPlan?.query || question;
+    if (useExternalSources) progress('Searching the web');
     const searchResults = useExternalSources
       ? await searchExternalWeb(externalQuery, { requiredTerms: externalQueryPlan?.requiredTerms || [] })
       : [];
@@ -2972,6 +2984,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
     // Internal questions: let the model query the company's financial and operational data
     // directly. The single-prompt pipeline below is only a fallback if the agent fails.
     if (uiMode === 'default' && !useExternalSources) {
+      const contextMs = Date.now() - requestStartedAt;
       try {
         const agentAnswer = await runAskDataAgent({
           openai,
@@ -2983,12 +2996,14 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
           conversationContext,
           sources: sourcesWithDoc,
           deadlineMs: requestStartedAt + ASK_AGENT_BUDGET_MS,
+          onProgress: progress,
         });
         if (agentAnswer) {
           console.log('AI Analysis ask: data agent answered', {
             model: askModel,
             toolCalls: agentAnswer.toolCalls,
             needsClarification: agentAnswer.needsClarification,
+            contextMs,
             ms: Date.now() - requestStartedAt,
           });
           return NextResponse.json({
@@ -3013,6 +3028,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
     let parsed: AskOutput;
     let finishReason: string | null | undefined;
     const externalResultsOnly = Boolean((internalSummary as any)?.queryContext?.externalQuery);
+    progress('Writing the answer');
     try {
       const first = await generateAskJson({
         openai,
@@ -3218,9 +3234,65 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
   }
 }
 
+/**
+ * With `stream: true` in the body, responds with NDJSON: `progress` and `heartbeat`
+ * lines while the answer is built, then one `result` line carrying the HTTP status
+ * and the same payload the non-streaming response would return.
+ */
 export async function POST(request: NextRequest) {
   const body = await request.clone().json().catch(() => null);
-  const response = await runAskCorelyticsLegacy(request);
+  if (body?.stream !== true) return runAskAndSave(request, body);
+
+  const encoder = new TextEncoder();
+  const startedAt = Date.now();
+  let closed = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (event: Record<string, unknown>) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify({ ...event, elapsedMs: Date.now() - startedAt })}\n`));
+        } catch {
+          closed = true;
+        }
+      };
+      const heartbeat = setInterval(() => send({ type: 'heartbeat' }), 10_000);
+      runAskAndSave(request, body, (message) => send({ type: 'progress', message }))
+        .then(async (response) => {
+          const payload = await response.json().catch(() => null);
+          send({ type: 'result', status: response.status, payload: payload ?? { error: 'Failed to read Ask Corelytics answer' } });
+        })
+        .catch((error: any) => {
+          console.error('AI Analysis ask (stream) error:', error);
+          send({ type: 'result', status: 500, payload: { error: error?.message || 'Failed to run AI Analysis ask' } });
+        })
+        .finally(() => {
+          clearInterval(heartbeat);
+          if (closed) return;
+          closed = true;
+          try {
+            controller.close();
+          } catch {
+            // Client already disconnected.
+          }
+        });
+    },
+    cancel() {
+      closed = true;
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+    },
+  });
+}
+
+async function runAskAndSave(request: NextRequest, body: any, onProgress?: (message: string) => void): Promise<Response> {
+  const response = await runAskCorelyticsLegacy(request, { onProgress });
   const shouldSave = body?.saveToThread === true && String(body?.mode || '').toLowerCase() !== 'document';
   if (!shouldSave || !response.ok) return response;
 

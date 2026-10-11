@@ -127,6 +127,8 @@ export default function AIAnalysisView(props: {
   // Ask
   const [askQuestion, setAskQuestion] = useState('');
   const [askLoading, setAskLoading] = useState(false);
+  const [askProgress, setAskProgress] = useState<{ message: string; startedAt: number } | null>(null);
+  const [askClock, setAskClock] = useState(0);
   const [askError, setAskError] = useState<string | null>(null);
   const [askResponse, setAskResponse] = useState<AskResponse | null>(null);
   const [savedThreadId, setSavedThreadId] = useState<string | null>(null);
@@ -212,6 +214,14 @@ export default function AIAnalysisView(props: {
       Object.entries(saved).map(([category, questions]) => [category === 'Company' ? 'Financial Data' : category, questions]),
     );
   }
+
+  const askProgressStartedAt = askProgress?.startedAt ?? null;
+  const askElapsedSec = askProgressStartedAt === null ? 0 : Math.max(0, Math.floor((askClock - askProgressStartedAt) / 1000));
+  useEffect(() => {
+    if (askProgressStartedAt === null) return;
+    const id = setInterval(() => setAskClock(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [askProgressStartedAt]);
 
   useEffect(() => {
     setQuestionsError(null);
@@ -561,6 +571,7 @@ export default function AIAnalysisView(props: {
       docAbortRef.current = controller;
     } else {
       setAskLoading(true);
+      setAskProgress({ message: 'Sending question', startedAt: Date.now() });
       setAskError(null);
       setAskResponse(null);
       askAbortRef.current = controller;
@@ -581,11 +592,50 @@ export default function AIAnalysisView(props: {
           conversationContext: mode === 'default' ? buildConversationContext(askThreadTurns) : undefined,
           saveToThread: mode === 'default',
           savedThreadId: mode === 'default' ? savedThreadId : undefined,
+          stream: mode === 'default',
         }),
         signal: controller.signal,
       });
-      const data = await res.json();
-      if (!res.ok) {
+      let status = res.status;
+      let data: any;
+      if ((res.headers.get('content-type') || '').includes('application/x-ndjson') && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let result = null as { status: number; payload: any } | null;
+        const handleLine = (line: string) => {
+          if (!line.trim()) return;
+          let event: any;
+          try {
+            event = JSON.parse(line);
+          } catch {
+            return;
+          }
+          if (event?.type === 'progress' && event.message) {
+            setAskProgress((prev) => ({ message: String(event.message), startedAt: prev?.startedAt ?? Date.now() }));
+          } else if (event?.type === 'result') {
+            result = { status: Number(event.status) || 500, payload: event.payload };
+          }
+        };
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let newline = buffer.indexOf('\n');
+          while (newline >= 0) {
+            handleLine(buffer.slice(0, newline));
+            buffer = buffer.slice(newline + 1);
+            newline = buffer.indexOf('\n');
+          }
+        }
+        handleLine(buffer + decoder.decode());
+        if (!result) throw new Error('The answer stream ended unexpectedly. Please try again.');
+        status = result.status;
+        data = result.payload;
+      } else {
+        data = await res.json();
+      }
+      if (status < 200 || status >= 300) {
         throw new Error(data?.error || 'Failed to run AI Search');
       }
       if (mode === 'document') {
@@ -631,6 +681,7 @@ export default function AIAnalysisView(props: {
         if (docAbortRef.current === controller) docAbortRef.current = null;
       } else {
         setAskLoading(false);
+        setAskProgress(null);
         if (askAbortRef.current === controller) askAbortRef.current = null;
       }
     }
@@ -896,6 +947,12 @@ export default function AIAnalysisView(props: {
           {askLoading ? 'Searching…' : isFollowUp ? 'Ask Follow-up' : 'Search & Answer'}
         </button>
       </div>
+      {askLoading && askProgress && (
+        <div role="status" aria-live="polite" style={{ fontSize: '13px', color: '#0369a1', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span>{askProgress.message}…</span>
+          <span style={{ color: '#64748b' }}>{askElapsedSec}s</span>
+        </div>
+      )}
       {isFollowUp && (
         <div style={{ fontSize: '12px', color: '#64748b' }}>
           Follow-ups use the earlier questions and answers in this thread. Click New Thread to start fresh.

@@ -71,12 +71,16 @@ export function resolveModelName(model: string): string {
  * Provider-options blob to attach to every AI request when going via the
  * gateway. Per-request ZDR is free on Pro/Enterprise plans and means the
  * gateway only routes to providers with a ZDR agreement.
+ *
+ * `promptCaching` asks the gateway to add cache markers for providers that need
+ * them (Anthropic). Use it for multi-call loops that resend a growing prompt.
  */
-export function getAiProviderOptions(): Record<string, unknown> | undefined {
+export function getAiProviderOptions(opts?: { promptCaching?: boolean }): Record<string, unknown> | undefined {
   if (!isUsingGateway()) return undefined;
   return {
     gateway: {
       zeroDataRetention: true,
+      ...(opts?.promptCaching ? { caching: 'auto' } : {}),
     },
   };
 }
