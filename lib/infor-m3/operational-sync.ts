@@ -158,8 +158,8 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   },
   {
     module: 'Sales',
-    miProgram: 'SLInvItems',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLInvItems?properties=InvNum,InvSeq,CoNum,CoLine,CoRelease,CustNum,CustItem,Item,Description,QtyInvoiced,Price,ExtPrice,Disc,InvDate,RecordDate,RowPointer&recordCap=1000',
+    miProgram: 'SLInvItemAlls',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLInvItemAlls?properties=InvNum,InvSeq,InvLine,CoNum,CoLine,CoRelease,Item,QtyInvoiced,Price,DerExtendedPrice,InvhdrInvDate,InvhdrCustNum,CustaddrName,InvhdrBillType,RecordDate,RowPointer&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -813,11 +813,18 @@ function formatCsiDateTimeLiteral(date: Date): string {
   return `${year}-${month}-${day} ${hour}:${minute}:${second}.${millisecond}`;
 }
 
-function buildSlInvHdrsWindowFilter(window?: SyncWindow): string | null {
+function buildSlInvHdrsWindowFilter(window?: SyncWindow, field = 'InvDate'): string | null {
   if (!window) return null;
   const start = formatCsiDateLiteral(window.startDate);
   const endExclusive = formatCsiDateLiteralExclusiveEnd(window.endDate);
-  return `(InvDate >= '${start}' and InvDate < '${endExclusive}')`;
+  return `(${field} >= '${start}' and ${field} < '${endExclusive}')`;
+}
+
+// SLInvItems does not exist in every CSI tenant; SLInvItemAlls carries the
+// same posted invoice lines with the header date and customer joined in.
+function isInvoiceLineProgram(programId: string | null | undefined): boolean {
+  const upper = String(programId || '').trim().toUpperCase();
+  return upper === 'SLINVITEMS' || upper === 'SLINVITEMALLS';
 }
 
 function buildSlLedgersPeriodFilter(window?: SyncWindow, site?: string): string | null {
@@ -1369,11 +1376,12 @@ function applyCsiSourceWindowAndSort(
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
-  if (moduleType === 'sales' && ido === 'SLINVITEMS') {
-    const filter = buildSlInvHdrsWindowFilter(window);
+  if (moduleType === 'sales' && isInvoiceLineProgram(ido)) {
+    const dateField = ido === 'SLINVITEMALLS' ? 'InvhdrInvDate' : 'InvDate';
+    const filter = buildSlInvHdrsWindowFilter(window, dateField);
     if (!filter) return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
     if (!params.get('filter')) params.set('filter', filter);
-    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', `${dateField} desc, RecordDate desc`);
     if (!params.get('recordCap')) params.set('recordCap', '1000');
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
@@ -2014,7 +2022,7 @@ function classifyModuleFromProgramId(
   if (programId === 'SLCUSTOMERS') return 'customer';
   if (programId === 'SLBANKHDRS' || programId === 'SLBANKHDR') return 'cash';
   if (programId === 'SLITEMLOCS' || programId === 'SLITEMS' || programId === 'SLITEMWHSES') return 'inventory';
-  if (programId === 'SLCOITEMS' || programId === 'SLCOS' || programId === 'SLCOHDRS' || programId === 'SLINVHDRS' || programId === 'SLINVITEMS')
+  if (programId === 'SLCOITEMS' || programId === 'SLCOS' || programId === 'SLCOHDRS' || programId === 'SLINVHDRS' || isInvoiceLineProgram(programId))
     return 'sales';
 
   return null;
@@ -2047,6 +2055,7 @@ const INFOR_RAW_MIN_BUSINESS_DATE_COMPACT = '20230101'; // YYYYMMDD
 const INFOR_RAW_DATE_FIELDS_BY_PROGRAM: Record<string, string[]> = {
   SLARTRANS: ['InvDate', 'RecordDate'],
   SLINVITEMS: ['InvDate', 'RecordDate'],
+  SLINVITEMALLS: ['InvhdrInvDate', 'RecordDate'],
   SLAPTRX: ['InvDate', 'DistDate', 'RecordDate'],
   SLVCHHDRS: ['InvDate', 'RecordDate', 'DistDate'],
   SLAPTRXPS: ['InvDate', 'DistDate', 'RecordDate'],
@@ -2884,7 +2893,7 @@ function filterRecordsByDateWindow(
   const dateKeysByModule: Record<string, string[]> = {
     ar: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
     ap: ['InvDate', 'invoiceDate', 'DistDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
-    sales: ['OrderDate', 'orderDate', 'InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'ShipDate', 'RecordDate', 'date'],
+    sales: ['OrderDate', 'orderDate', 'InvDate', 'InvhdrInvDate', 'invoiceDate', 'DueDate', 'dueDate', 'ShipDate', 'RecordDate', 'date'],
     inventory: ['ItemChangeDate', 'ChangeDate', 'RecordDate', 'SSDATE', 'date'],
     gl: ['PostDate', 'PostingDate', 'TransDate', 'transDate', 'RecordDate', 'date'],
   };
@@ -5082,19 +5091,27 @@ async function saveProductInvoiceLines(
 ): Promise<number> {
   if (records.length === 0) return 0;
   await ensureProductRevenueTables();
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { name: true } });
+  const ownName = normalizeLegalEntityName(company?.name);
   const rows = records.flatMap((record, index) => {
     const invoiceNo = pickString(record, ['InvNum', 'invoiceNo', 'InvoiceNum', 'IVNO']);
-    const invoiceDate = parseMaybeDate(pickString(record, ['InvDate', 'invoiceDate', 'IVDT', 'RecordDate']));
+    const invoiceDate = parseMaybeDate(pickString(record, ['InvDate', 'InvhdrInvDate', 'invoiceDate', 'IVDT', 'RecordDate']));
     const itemSku = pickString(record, ['Item', 'item', 'ITNO', 'sku', 'itemCode']);
     if (!invoiceNo || !invoiceDate || !itemSku) return [];
+    const customerName = pickString(record, ['DerCustName', 'CustName', 'CustaddrName', 'customerName']) || '';
+    // Invoices the company bills to itself are internal transfers, not sales.
+    if (ownName && normalizeLegalEntityName(customerName) === ownName) return [];
     const quantity = pickNumber(record, ['QtyInvoiced', 'qtyInvoiced', 'InvoicedQty']);
     const unitPrice = pickNumber(record, ['Price', 'price', 'UnitPrice']);
     // CSI invoice-line ExtPrice is the posted product amount, net of line discounts.
-    const extPrice = pickNumber(record, ['ExtPrice', 'extPrice', 'LineAmount', 'lineAmount', 'Amount', 'amount']);
+    const extPrice = pickNumber(record, ['ExtPrice', 'DerExtendedPrice', 'extPrice', 'LineAmount', 'lineAmount', 'Amount', 'amount']);
     const revenue = extPrice !== 0 ? extPrice : quantity * unitPrice;
-    const sourceLineKey =
-      pickString(record, ['RowPointer', 'rowPointer', '_ItemId', 'itemId']) ||
-      `${invoiceNo}|${pickString(record, ['InvSeq', 'invoiceSequence']) || ''}|${pickString(record, ['CoNum', 'orderId']) || ''}|${pickString(record, ['CoLine', 'lineNo']) || ''}|${itemSku}|${index}`;
+    const invoiceLine = pickString(record, ['InvLine', 'invoiceLine']);
+    // SLInvItemAlls RowPointer is the invoice header's, shared by every line.
+    const sourceLineKey = invoiceLine
+      ? `${invoiceNo}|${pickString(record, ['InvSeq', 'invoiceSequence']) || ''}|${invoiceLine}`
+      : pickString(record, ['RowPointer', 'rowPointer', '_ItemId', 'itemId']) ||
+        `${invoiceNo}|${pickString(record, ['InvSeq', 'invoiceSequence']) || ''}|${pickString(record, ['CoNum', 'orderId']) || ''}|${pickString(record, ['CoLine', 'lineNo']) || ''}|${itemSku}|${index}`;
     return [{
       id: randomUUID(),
       companyId,
@@ -5104,8 +5121,8 @@ async function saveProductInvoiceLines(
       orderLineId: `${pickString(record, ['CoLine', 'lineNo']) || ''}-${pickString(record, ['CoRelease', 'releaseNo']) || ''}`,
       sourceLineKey,
       invoiceDate,
-      customerId: pickString(record, ['CustNum', 'custNum', 'CustomerId']),
-      customerName: pickString(record, ['DerCustName', 'CustName', 'customerName']) || '',
+      customerId: pickString(record, ['CustNum', 'InvhdrCustNum', 'custNum', 'CustomerId']),
+      customerName,
       customerPartNumber: pickString(record, ['CustItem', 'custItem', 'customerPn', 'customerPartNumber']) || '',
       itemSku,
       quantity,
@@ -5113,8 +5130,17 @@ async function saveProductInvoiceLines(
       sourceProgram: context.miProgram,
     }];
   });
-  for (let start = 0; start < rows.length; start += 500) {
-    const chunk = rows.slice(start, start + 500);
+  // Postgres rejects an upsert batch that touches the same conflict key twice.
+  const uniqueRows = Array.from(
+    new Map(
+      rows.map((row) => [
+        [row.invoiceNo, row.invoiceSequence, row.orderId, row.orderLineId, row.itemSku, row.sourceLineKey].join('\u0001'),
+        row,
+      ])
+    ).values()
+  );
+  for (let start = 0; start < uniqueRows.length; start += 500) {
+    const chunk = uniqueRows.slice(start, start + 500);
     const values = chunk.map((row) => Prisma.sql`(
       ${row.id}, ${row.companyId}, ${row.invoiceNo}, ${row.invoiceSequence}, ${row.orderId}, ${row.orderLineId},
       ${row.sourceLineKey}, ${row.invoiceDate}, ${row.customerId}, ${row.customerName}, ${row.customerPartNumber},
@@ -5133,7 +5159,242 @@ async function saveProductInvoiceLines(
         "updatedAt" = CURRENT_TIMESTAMP
     `);
   }
-  return rows.length;
+  return uniqueRows.length;
+}
+
+async function companyHasInvoiceLineFacts(companyId: string): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ found: number }>>(Prisma.sql`
+      SELECT 1 AS found FROM "ProductInvoiceLineFact" WHERE "companyId" = ${companyId} LIMIT 1
+    `);
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function loadLatestItemMaster(companyId: string): Promise<Map<string, { unitCost: number; description: string }>> {
+  const where = { companyId, platform: { in: ['INFOR_M3', 'INFOR_CSI'] }, miProgram: { in: ['SLItems', 'SLITEMS'] } };
+  const latest = await (prisma as any).inforRawRecord.findFirst({
+    where,
+    orderBy: { businessDate: 'desc' },
+    select: { businessDate: true },
+  });
+  const items = new Map<string, { unitCost: number; description: string }>();
+  if (!latest?.businessDate) return items;
+  const rows = await (prisma as any).inforRawRecord.findMany({
+    where: { ...where, businessDate: latest.businessDate },
+    select: { payload: true },
+    take: 300000,
+  });
+  for (const row of rows as any[]) {
+    const payload = asRawRecordPayload(row.payload);
+    if (!payload) continue;
+    const itemCode = String(pickString(payload, ['Item', 'item', 'ITNO']) || '').trim();
+    if (!itemCode) continue;
+    items.set(itemCode.toUpperCase(), {
+      unitCost: pickNumber(payload, ['CurUCost', 'CurMatCost', 'CurMatlCost', 'AvgUCost']),
+      description: String(pickString(payload, ['Description', 'description', 'ITDS']) || '').trim(),
+    });
+  }
+  return items;
+}
+
+/**
+ * Rewrites daily customer and product sales snapshots for [startDay, endDay]
+ * from posted invoice lines, keyed by invoice date. Days without invoices end
+ * up with no rows.
+ */
+export async function rebuildDailySalesSnapshotsFromInvoiceLines(
+  companyId: string,
+  startDay: Date,
+  endDay: Date
+): Promise<{ days: number; customerRows: number; productRows: number }> {
+  const start = startOfUtcDay(startDay);
+  const endExclusive = startOfUtcDay(endDay);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+  const lines = await prisma.$queryRaw<Array<{
+    invoiceDay: Date;
+    invoiceNo: string;
+    customerId: string | null;
+    customerName: string | null;
+    itemSku: string;
+    quantity: number | null;
+    revenue: number | null;
+  }>>(Prisma.sql`
+    SELECT date_trunc('day', "invoiceDate") AS "invoiceDay", "invoiceNo", "customerId", "customerName", "itemSku",
+           "quantity"::double precision AS quantity, "revenue"::double precision AS revenue
+    FROM "ProductInvoiceLineFact"
+    WHERE "companyId" = ${companyId} AND "invoiceDate" >= ${start} AND "invoiceDate" < ${endExclusive}
+  `);
+  const itemMaster = await loadLatestItemMaster(companyId);
+
+  const customerAgg = new Map<string, {
+    snapshotDate: Date;
+    customerId: string | null;
+    customerName: string;
+    revenue: number;
+    cogs: number;
+    invoices: Set<string>;
+  }>();
+  const productAgg = new Map<string, {
+    snapshotDate: Date;
+    sku: string;
+    itemName: string;
+    quantitySold: number;
+    revenue: number;
+    cogs: number;
+  }>();
+  const days = new Set<string>();
+  for (const line of lines) {
+    const snapshotDate = startOfUtcDay(new Date(line.invoiceDay));
+    const dayKey = snapshotDate.toISOString().slice(0, 10);
+    days.add(dayKey);
+    const quantity = Number(line.quantity || 0);
+    const revenue = Number(line.revenue || 0);
+    const sku = String(line.itemSku || '').trim();
+    const item = itemMaster.get(sku.toUpperCase());
+    const cogs = quantity * (item?.unitCost ?? 0);
+    const customerId = String(line.customerId || '').trim() || null;
+    const customerName = String(line.customerName || '').trim() || customerId || 'Unknown Customer';
+
+    const customerKey = `${dayKey}|${customerId || ''}|${customerName.toLowerCase()}`;
+    const customer = customerAgg.get(customerKey) ?? {
+      snapshotDate, customerId, customerName, revenue: 0, cogs: 0, invoices: new Set<string>(),
+    };
+    customer.revenue += revenue;
+    customer.cogs += cogs;
+    customer.invoices.add(String(line.invoiceNo || '').trim());
+    customerAgg.set(customerKey, customer);
+
+    const productKey = `${dayKey}|${sku.toUpperCase()}`;
+    const product = productAgg.get(productKey) ?? {
+      snapshotDate, sku, itemName: item?.description || sku, quantitySold: 0, revenue: 0, cogs: 0,
+    };
+    product.quantitySold += quantity;
+    product.revenue += revenue;
+    product.cogs += cogs;
+    productAgg.set(productKey, product);
+  }
+
+  const customerRows = Array.from(customerAgg.values()).map((row) => ({
+    companyId,
+    snapshotDate: row.snapshotDate,
+    frequency: 'daily',
+    customerId: row.customerId,
+    customerName: row.customerName,
+    revenue: row.revenue,
+    cogs: row.cogs,
+    grossMargin: row.revenue - row.cogs,
+    grossMarginPct: row.revenue !== 0 ? ((row.revenue - row.cogs) / row.revenue) * 100 : null,
+    invoiceCount: row.invoices.size,
+    avgInvoiceSize: row.invoices.size > 0 ? row.revenue / row.invoices.size : null,
+  }));
+  const productRows = Array.from(productAgg.values()).map((row) => ({
+    companyId,
+    snapshotDate: row.snapshotDate,
+    frequency: 'daily',
+    itemId: row.sku,
+    itemName: row.itemName,
+    sku: row.sku,
+    quantitySold: row.quantitySold,
+    revenue: row.revenue,
+    cogs: row.cogs,
+    grossMargin: row.revenue - row.cogs,
+    grossMarginPct: row.revenue !== 0 ? ((row.revenue - row.cogs) / row.revenue) * 100 : null,
+  }));
+
+  const range = { gte: start, lt: endExclusive };
+  await prisma.$transaction([
+    prisma.customerSalesSnapshot.deleteMany({ where: { companyId, frequency: 'daily', snapshotDate: range } }),
+    prisma.productSalesSnapshot.deleteMany({ where: { companyId, frequency: 'daily', snapshotDate: range } }),
+    prisma.customerSalesSnapshot.createMany({ data: customerRows }),
+    prisma.productSalesSnapshot.createMany({ data: productRows }),
+  ]);
+  return { days: days.size, customerRows: customerRows.length, productRows: productRows.length };
+}
+
+/**
+ * Pulls posted invoice lines from CSI month by month for [startDay, endDay],
+ * upserts them, then rebuilds the daily sales snapshots for the same range.
+ */
+export async function backfillInvoiceLinesFromCsi(options: {
+  companyId: string;
+  startDay: Date;
+  endDay: Date;
+  servicePrefix?: string;
+  mongooseConfig?: string;
+  site?: string;
+  ido?: 'SLInvItemAlls' | 'SLInvItems';
+}): Promise<{ months: Array<{ month: string; fetched: number; saved: number }>; snapshots: { days: number; customerRows: number; productRows: number } }> {
+  const { companyId } = options;
+  const ido = options.ido || 'SLInvItemAlls';
+  const servicePrefix = options.servicePrefix || '/APR_PRD/CSI/IDORequestService';
+  const dateField = ido === 'SLInvItemAlls' ? 'InvhdrInvDate' : 'InvDate';
+  const defaultRow = DEFAULT_CSI_PROGRAM_ROWS.find((row) => row.miProgram.toUpperCase() === ido.toUpperCase());
+  const properties = new URLSearchParams(String(defaultRow?.endpointPath || '').split('?')[1] || '').get('properties') || '*';
+  const { credentials } = await getInforM3CredentialsWithOptionalEnvFallback(companyId, 'INFOR_CSI');
+  if (!credentials) throw new Error('Infor CSI credentials are unavailable.');
+  const headers: Record<string, string> = {};
+  if (options.mongooseConfig) headers['X-Infor-MongooseConfig'] = options.mongooseConfig;
+  if (options.site) headers['X-Infor-Site'] = options.site;
+
+  const months: Array<{ month: string; fetched: number; saved: number }> = [];
+  const cursor = new Date(Date.UTC(options.startDay.getUTCFullYear(), options.startDay.getUTCMonth(), 1));
+  const lastDay = startOfUtcDay(options.endDay);
+  while (cursor <= lastDay) {
+    const monthStart = new Date(Math.max(cursor.getTime(), startOfUtcDay(options.startDay).getTime()));
+    const nextMonth = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+    const monthEnd = new Date(Math.min(nextMonth.getTime() - 86_400_000, lastDay.getTime()));
+    const filter = buildSlInvHdrsWindowFilter({ startDate: monthStart, endDate: monthEnd, mode: 'backfill' }, dateField);
+    let bookmark = '';
+    let fetched = 0;
+    let saved = 0;
+    for (let page = 0; page < 500; page += 1) {
+      const params = new URLSearchParams({ properties, filter: filter || '', orderby: `${dateField} asc`, recordCap: '1000' });
+      if (bookmark) params.set('bookmark', bookmark);
+      const result = await callInforIonApi(credentials, `${servicePrefix}/ido/load/${ido}?${params.toString()}`, {
+        timeoutMs: 90_000,
+        headers,
+        meta: { programId: ido, sourcePath: 'invoice-line-backfill' },
+      });
+      if (!isTransportAndPayloadSuccess(result)) {
+        throw new Error(`${ido} ${monthStart.toISOString().slice(0, 7)}: ${extractResponseMessage(result.body) || `HTTP ${result.status}`}`);
+      }
+      const body = result.body as Record<string, unknown>;
+      const items = Array.isArray(body.Items) ? (body.Items as Record<string, unknown>[]) : [];
+      fetched += items.length;
+      saved += await saveProductInvoiceLines(companyId, items, { miProgram: ido });
+      const paging = extractPagingState(result.body);
+      if (!paging.moreRowsExist || !paging.bookmark || items.length === 0) break;
+      bookmark = paging.bookmark;
+    }
+    months.push({ month: monthStart.toISOString().slice(0, 7), fetched, saved });
+    cursor.setTime(nextMonth.getTime());
+  }
+  const snapshots = await rebuildDailySalesSnapshotsFromInvoiceLines(companyId, options.startDay, options.endDay);
+  return { months, snapshots };
+}
+
+async function rebuildSalesSnapshotsForInvoiceRecords(companyId: string, records: Record<string, unknown>[]): Promise<void> {
+  let minDay: Date | null = null;
+  let maxDay: Date | null = null;
+  for (const record of records) {
+    const invoiceDate = parseMaybeDate(pickString(record, ['InvDate', 'InvhdrInvDate', 'invoiceDate', 'IVDT']));
+    if (!invoiceDate) continue;
+    if (!minDay || invoiceDate < minDay) minDay = invoiceDate;
+    if (!maxDay || invoiceDate > maxDay) maxDay = invoiceDate;
+  }
+  if (minDay && maxDay) await rebuildDailySalesSnapshotsFromInvoiceLines(companyId, minDay, maxDay);
+}
+
+function normalizeLegalEntityName(value: string | null | undefined): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function saveCustomerOrderLines(
@@ -8001,6 +8262,9 @@ async function saveCustomerSales(
   todayRecords: Record<string, unknown>[],
   orderCustomerLookup: Map<string, { customerId: string | null; customerName: string; orderDate: Date | null }>
 ): Promise<number> {
+  // Order-line QtyInvoiced deltas depend on which re-pull is stored per day;
+  // posted invoice lines own the daily snapshot whenever they exist.
+  if (frequency === 'daily' && (await companyHasInvoiceLineFacts(companyId))) return 0;
   await prisma.customerSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
   const lineKey = (r: Record<string, unknown>) => {
@@ -8129,6 +8393,7 @@ async function saveProductSales(
     const preferred = candidates.find((value) => looksLikeItemCode(value)) || candidates[0];
     return preferred || null;
   };
+  if (frequency === 'daily' && (await companyHasInvoiceLineFacts(companyId))) return 0;
   await prisma.productSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
   const lineKey = (r: Record<string, unknown>) => {
@@ -10231,7 +10496,7 @@ export async function syncInforM3OperationalData(
                   );
                 }
                 const isSlcoitemsProgram = String(salesProgramId || '').toUpperCase() === 'SLCOITEMS';
-                const isSlInvItemsProgram = String(salesProgramId || '').toUpperCase() === 'SLINVITEMS';
+                const isSlInvItemsProgram = isInvoiceLineProgram(salesProgramId);
                 const salesRowsCreated = isSlcoitemsProgram
                   ? await saveProductSales(companyId, snapshotDate, frequency, records)
                   : 0;
@@ -10250,6 +10515,14 @@ export async function syncInforM3OperationalData(
                 const invoiceLineRowsCreated = isSlInvItemsProgram
                   ? await saveProductInvoiceLines(companyId, recordsAfterDateWindow, context)
                   : 0;
+                if (invoiceLineRowsCreated > 0 && frequency === 'daily') {
+                  try {
+                    await rebuildSalesSnapshotsForInvoiceRecords(companyId, recordsAfterDateWindow);
+                  } catch (snapshotError) {
+                    const msg = snapshotError instanceof Error ? snapshotError.message : 'invoice-line sales snapshot rebuild failed';
+                    errors.push(`Sales/rebuildSalesSnapshotsFromInvoiceLines: ${msg}`);
+                  }
+                }
                 let slcosHydrationResult: { loaded: number; message?: string } | null = null;
                 const invoiceHeaderRowsCreated =
                   salesProgram === 'SLINVHDRS'
@@ -11321,6 +11594,19 @@ export async function transformInforM3RawRun(options: {
         recordsCreated += invoiceHeaderRowsCreated;
         if (invoiceHeaderRowsCreated > 0) {
           completedSourceKeys.add('sales');
+        }
+      }
+      const invoiceLineProgramItems = salesProgramItems.filter((item) => isInvoiceLineProgram(item.miProgram));
+      for (const item of invoiceLineProgramItems) {
+        try {
+          const invoiceLineRowsCreated = await saveProductInvoiceLines(companyId, item.records, { miProgram: item.miProgram });
+          recordsCreated += invoiceLineRowsCreated;
+          if (invoiceLineRowsCreated > 0 && frequency === 'daily') {
+            await rebuildSalesSnapshotsForInvoiceRecords(companyId, item.records);
+          }
+        } catch (invoiceLineError) {
+          const msg = invoiceLineError instanceof Error ? invoiceLineError.message : 'invoice-line replay failed';
+          errors.push(`transform/saveProductInvoiceLines: ${msg}`);
         }
       }
       const slcoitemsRecords = salesProgramItems
