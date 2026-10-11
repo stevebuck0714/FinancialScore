@@ -571,12 +571,12 @@ export default function ProductGoalUpdateReport({
                 <tr>
                   <th style={thStyle}>Annual SGP Goal</th>
                   <th style={thStyle}>YTD Actual</th>
-                  <th style={thStyle}>Goal vs Actual YTD</th>
-                  <th style={thStyle}>% YTD vs Goal</th>
+                  <th style={thStyle}>Actual YTD vs Goal</th>
+                  <th style={thStyle}>% of Goal YTD</th>
                   <th style={{ ...quarterTh, ...quarterDivider }}>Qtr SGP Goal</th>
                   <th style={quarterTh}>Quarter YTD</th>
-                  <th style={quarterTh}>Goal vs Actual QTD</th>
-                  <th style={quarterTh}>% QTD vs Goal</th>
+                  <th style={quarterTh}>Actual QTD vs Goal</th>
+                  <th style={quarterTh}>% of Goal QTD</th>
                 </tr>
               </thead>
               <tbody>
