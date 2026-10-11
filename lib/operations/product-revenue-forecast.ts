@@ -268,13 +268,16 @@ export function emptyCsiShippedActuals(ok = false): CsiShippedActuals {
   return { ok, asOf: null, byExact: new Map(), byItem: new Map() };
 }
 
+/**
+ * Actual units come only from Infor. A line or month with no Infor shipments
+ * is 0; workbook actual units are never kept.
+ */
 export function overlayShippedActuals<T extends {
   customerId: string;
   itemSku: string;
   customerPartNumber: string;
   actualQty: MonthQtyMap;
 }>(lines: T[], actuals: CsiShippedActuals): T[] {
-  if (!actuals.ok || (actuals.byExact.size === 0 && actuals.byItem.size === 0)) return lines;
   const itemCounts = new Map<string, number>();
   for (const line of lines) {
     const key = forecastActualsItemKey(line.customerId, line.itemSku);
@@ -287,12 +290,12 @@ export function overlayShippedActuals<T extends {
     const itemKey = forecastActualsItemKey(line.customerId, line.itemSku);
     const byItem = itemCounts.get(itemKey) === 1 ? actuals.byItem.get(itemKey) : undefined;
     const match = exact || byItem;
-    if (!match) return line;
-    const next = { ...line.actualQty };
-    for (const month of FORECAST_MONTHS) {
-      const key = String(month);
-      const shipped = Number(match[key]);
-      if (Number.isFinite(shipped) && shipped > 0) next[key] = shipped;
+    const next = emptyMonthQtyMap();
+    if (match) {
+      for (const month of FORECAST_MONTHS) {
+        const shipped = Number(match[String(month)]);
+        if (Number.isFinite(shipped) && shipped > 0) next[String(month)] = shipped;
+      }
     }
     return { ...line, actualQty: next };
   });
@@ -335,7 +338,6 @@ export function overlayInvoicedQtyActuals<T extends {
   customerPartNumber: string;
   actualQty: MonthQtyMap;
 }>(lines: T[], actuals: CsiShippedActuals): T[] {
-  if (!actuals.ok) return lines;
   const itemCounts = new Map<string, number>();
   for (const line of lines) {
     const key = forecastActualsItemKey(line.customerId, line.itemSku);

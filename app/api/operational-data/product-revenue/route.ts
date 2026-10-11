@@ -51,7 +51,6 @@ export async function GET(request: NextRequest) {
           year,
           customerId,
           customerName,
-          useInforActualRevenue: true,
         });
         return {
           ...dataset,
@@ -112,7 +111,6 @@ export async function PUT(request: NextRequest) {
       year,
       customerId,
       customerName,
-      useInforActualRevenue: true,
     });
     return NextResponse.json({
       ok: true,

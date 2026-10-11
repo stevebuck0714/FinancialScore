@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { loadCsiShipmentFingerprint } from '@/lib/infor-m3/csi-shipment-history';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { estMonthKey } from '@/lib/time/eastern';
 
@@ -8,7 +9,7 @@ import { estMonthKey } from '@/lib/time/eastern';
 const PRODUCT_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 // Bump when a report's payload shape or math changes so stored payloads are ignored.
-const PRODUCT_REPORT_CACHE_VERSION = 'product-reports-v3';
+const PRODUCT_REPORT_CACHE_VERSION = 'product-reports-v4';
 
 type Fingerprint = { label: string; count?: number; updatedAt?: string | null; latest?: string | null };
 
@@ -171,6 +172,10 @@ export async function buildProductReportDataVersion(companyId: string): Promise<
         updatedAt: isoOrNull(rows[0]?.updatedAt),
       };
     }),
+    safeFingerprint('InforShipmentPullMonth', async () => ({
+      label: 'InforShipmentPullMonth',
+      latest: await loadCsiShipmentFingerprint(companyId),
+    })),
     safeFingerprint('InforRawRecord', async () => {
       // Raw SQL rather than prisma.aggregate: on this table (10M+ rows) the
       // generated aggregate takes ~1.9s while this returns in ~70ms, both using

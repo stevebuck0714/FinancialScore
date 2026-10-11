@@ -1,6 +1,7 @@
 import { loadProductGroupDataset } from '@/lib/operations/product-group-reports';
 import { loadProductGoalUpdate } from '@/lib/operations/product-revenue-actual-db';
 import prisma from '@/lib/prisma';
+import { loadCsiShipmentFingerprint } from '@/lib/infor-m3/csi-shipment-history';
 import { hashCacheParts } from '@/lib/derived-api-cache';
 import { type ProductGroupRow } from '@/lib/operations/product-group-types';
 import {
@@ -77,7 +78,7 @@ export type YtdGapDataset = {
 };
 
 export async function buildProductYtdGapDataVersion(companyId: string): Promise<string> {
-  const [forecast, revenue, prices, settings, raw, invoices] = await Promise.all([
+  const [forecast, revenue, prices, settings, raw, invoices, shipments] = await Promise.all([
     prisma.productRevenueForecastLine.aggregate({
       where: { companyId },
       _max: { updatedAt: true },
@@ -106,9 +107,10 @@ export async function buildProductYtdGapDataVersion(companyId: string): Promise<
       FROM "ProductInvoiceLineFact"
       WHERE "companyId" = ${companyId}
     `,
+    loadCsiShipmentFingerprint(companyId),
   ]);
   return hashCacheParts([
-    'product-ytd-gap-v2',
+    'product-ytd-gap-v3',
     companyId,
     estMonthKey(),
     forecast._max.updatedAt?.toISOString() ?? null,
@@ -118,6 +120,7 @@ export async function buildProductYtdGapDataVersion(companyId: string): Promise<
     raw[0]?.businessDate?.toISOString() ?? null,
     Number(invoices[0]?.count || 0),
     invoices[0]?.updatedAt?.toISOString() ?? null,
+    shipments,
   ]);
 }
 
@@ -289,7 +292,6 @@ export async function loadProductYtdGapDataset(params: {
 }): Promise<YtdGapDataset> {
   const dataset = await loadProductGroupDataset({
     ...params,
-    useInforActualRevenue: true,
     includeEconomics: false,
   });
   const throughMonth = resolveThroughMonth({ year: dataset.year, dataThru: dataset.dataThru });
@@ -369,7 +371,6 @@ async function loadYtdComparison(params: {
         dataset: await loadProductGroupDataset({
           companyId: params.companyId,
           year,
-          useInforActualRevenue: true,
         }),
       }))
   );

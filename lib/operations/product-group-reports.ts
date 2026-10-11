@@ -184,7 +184,6 @@ function indexBySku<T extends { itemSku: string }>(rows: T[]): Map<string, T> {
 export async function loadProductGroupDataset(params: {
   companyId: string;
   year: number;
-  useInforActualRevenue?: boolean;
   includeEconomics?: boolean;
 }): Promise<ProductGroupDataset> {
   const [dataset, duties, freight] = await Promise.all([
@@ -192,7 +191,6 @@ export async function loadProductGroupDataset(params: {
       companyId: params.companyId,
       year: params.year,
       includeAllLines: true,
-      useInforActualRevenue: params.useInforActualRevenue,
     }),
     params.includeEconomics === false ? Promise.resolve([]) : listCompanyItemDuties(params.companyId).catch(() => []),
     params.includeEconomics === false ? Promise.resolve([]) : listCompanyItemFreight(params.companyId).catch(() => []),

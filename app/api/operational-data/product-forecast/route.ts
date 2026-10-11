@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
 import {
   actualsClosedThrough,
   summarizeForecastQtyMonths,
@@ -68,20 +67,14 @@ export async function GET(request: NextRequest) {
       build: async () => {
         await ensureProductRevenueForecastTables();
 
-        const settings = await prisma.productRevenueForecastSettings.findUnique({
-          where: { companyId_year: { companyId, year } },
-        });
-
         const { customers: customerPayload, catalogSourceYear } = await listProductForecastCustomersWithCatalog(
           companyId,
           year
         );
 
-        const workbookDataThru = settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null;
-
         if (!customerId && !customerName) {
           const actualQty = await loadProductActualQty({ companyId, year });
-          const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf) ?? workbookDataThru;
+          const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
           let totals = null;
           if (includeTotals) {
             const companyLines = await loadProductForecastLinesWithCatalog({ companyId, year });
@@ -111,7 +104,7 @@ export async function GET(request: NextRequest) {
           customerId,
           customerName,
         });
-        const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf) ?? workbookDataThru;
+        const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
 
         return {
           year,
@@ -178,19 +171,13 @@ export async function PUT(request: NextRequest) {
       customerId,
       customerName,
     });
-    const settings = await prisma.productRevenueForecastSettings.findUnique({
-      where: { companyId_year: { companyId, year } },
-    });
-
     const actualQty = await loadProductActualQty({
       companyId,
       year,
       customerId,
       customerName,
     });
-    const dataThru =
-      actualsClosedThrough(year, actualQty.actuals.asOf) ??
-      (settings?.dataThru ? settings.dataThru.toISOString().slice(0, 10) : null);
+    const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
 
     return NextResponse.json({
       ok: true,

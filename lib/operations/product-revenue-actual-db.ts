@@ -1,17 +1,16 @@
-import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import {
+  FORECAST_MONTHS,
   actualsClosedThrough,
   emptyMonthQtyMap,
+  monthQty,
   normalizeMonthQtyMap,
-  overlayInvoicedRevenueActuals,
 } from '@/lib/operations/product-revenue-forecast';
 import {
   assertProductsForecastAccess,
   asForecastYear,
   asOptionalIsoDay,
   ensureProductRevenueForecastTables,
-  loadCsiMonthlyInvoicedRevenueActuals,
   loadProductActualQty,
   normalizeForecastLineInput,
   serializeForecastLine,
@@ -570,47 +569,21 @@ export async function loadProductGoalUpdateRaw(params: {
 }
 
 /**
- * Monthly revenue and invoiced quantity from posted Infor invoice lines, through
- * the last complete month (the same cutoff the YTD Gap report uses). Null when
- * the company has no invoice lines covering the year.
+ * Goal actuals are the Monthly Revenue page's actuals summed: Infor actual units
+ * and their dollars for every line, through the last closed month. Null when no
+ * month of the year is closed.
  */
 export async function loadInforGoalActuals(params: {
   companyId: string;
   year: number;
 }): Promise<InforGoalActuals | null> {
-  const start = new Date(Date.UTC(params.year, 0, 1));
-  const end = new Date(Date.UTC(params.year + 1, 0, 1));
-  const [latestRows, monthRows] = await Promise.all([
-    prisma.$queryRaw<Array<{ latest: Date | null }>>(Prisma.sql`
-      SELECT MAX("invoiceDate") AS "latest"
-      FROM "ProductInvoiceLineFact"
-      WHERE "companyId" = ${params.companyId}
-    `),
-    prisma.$queryRaw<Array<{ month: number; revenue: number | null; quantity: number | null }>>(Prisma.sql`
-      SELECT
-        EXTRACT(MONTH FROM "invoiceDate")::int AS month,
-        SUM("revenue")::double precision AS revenue,
-        SUM("quantity")::double precision AS quantity
-      FROM "ProductInvoiceLineFact"
-      WHERE "companyId" = ${params.companyId}
-        AND "invoiceDate" >= ${start}
-        AND "invoiceDate" < ${end}
-      GROUP BY 1
-    `),
-  ]);
-  const latest = latestRows[0]?.latest ? new Date(latestRows[0].latest).toISOString().slice(0, 10) : null;
-  if (!latest || monthRows.length === 0) return null;
-  const dataThru = actualsClosedThrough(params.year, latest);
+  const dataset = await loadRevenueDataset({ companyId: params.companyId, year: params.year, includeAllLines: true });
+  const dataThru = dataset.dataThru;
   if (!dataThru) return null;
-
-  const revenueByMonth = Array.from({ length: 12 }, () => 0);
-  const quantityByMonth = Array.from({ length: 12 }, () => 0);
-  for (const row of monthRows) {
-    const month = Number(row.month);
-    if (!Number.isInteger(month) || month < 1 || month > 12) continue;
-    revenueByMonth[month - 1] = Number(row.revenue) || 0;
-    quantityByMonth[month - 1] = Number(row.quantity) || 0;
-  }
+  const revenueByMonth = FORECAST_MONTHS.map((month) => dataset.totals.months[month].ytd);
+  const quantityByMonth = FORECAST_MONTHS.map((month) =>
+    dataset.lines.reduce((sum, line) => sum + monthQty(line.actualQty, month), 0)
+  );
   return { throughMonth: Number(dataThru.slice(5, 7)), dataThru, revenueByMonth, quantityByMonth };
 }
 
@@ -848,9 +821,8 @@ export async function loadRevenueDataset(params: {
   customerId?: string;
   customerName?: string;
   includeAllLines?: boolean;
-  useInforActualRevenue?: boolean;
 }) {
-  const { companyId, year, customerId, customerName, useInforActualRevenue } = params;
+  const { companyId, year, customerId, customerName } = params;
   const scopedCustomerId = String(customerId || '').trim();
   const scopedCustomerName = String(customerName || '').trim();
   const revenueLineSql = scopedCustomerId
@@ -876,19 +848,11 @@ export async function loadRevenueDataset(params: {
       ? [companyId, year, scopedCustomerName]
       : [companyId, year];
   const catalogSourceYear = await latestProductCatalogSourceYear(companyId, year);
-  // Do not launch all nine queries together. This loader also runs alongside
+  // Do not launch all of these queries together. This loader also runs alongside
   // duty/freight lookups for product reports, and production has a seven-slot
   // Prisma pool. Two bounded batches keep the report responsive under cache
   // misses instead of timing out while waiting for a pooled connection.
-  const [settingsRows, forecastSettings, forecastRaw, revenueRows] = await Promise.all([
-    prisma.$queryRawUnsafe<RevenueSettingsRow[]>(
-      `SELECT "dataThru", "shippingDays" FROM "ProductRevenueSettings" WHERE "companyId" = $1 AND "year" = $2 LIMIT 1`,
-      companyId,
-      year
-    ),
-    prisma.productRevenueForecastSettings.findUnique({
-      where: { companyId_year: { companyId, year } },
-    }),
+  const [forecastRaw, revenueRows] = await Promise.all([
     loadProductForecastLinesWithCatalog({
       companyId,
       year,
@@ -897,7 +861,7 @@ export async function loadRevenueDataset(params: {
     }),
     prisma.$queryRawUnsafe<RevenueLineRow[]>(revenueLineSql, ...revenueLineParams),
   ]);
-  const [priceRows, sourcePriceRows, shipped, invoicedRevenue, catalogCustomers] = await Promise.all([
+  const [priceRows, sourcePriceRows, shipped, catalogCustomers] = await Promise.all([
     prisma.$queryRawUnsafe<RevenuePriceRow[]>(
       `SELECT "customerGroup", "itemSku", "contractPrice", "sgpPrice"
        FROM "ProductRevenuePrice"
@@ -920,17 +884,8 @@ export async function loadRevenueDataset(params: {
       customerId: scopedCustomerId || undefined,
       customerName: scopedCustomerName || undefined,
     }),
-    useInforActualRevenue
-      ? loadCsiMonthlyInvoicedRevenueActuals({
-          companyId,
-          year,
-          customerId: scopedCustomerId || undefined,
-          customerName: scopedCustomerName || undefined,
-        })
-      : Promise.resolve(null),
     listProductForecastCustomersWithCatalog(companyId, year),
   ]);
-  const settings = settingsRows[0] || null;
   const forecastRows = withProductActualQty(forecastRaw.map(serializeForecastLine), shipped);
 
   const priceMap = new Map<string, { contractPrice: number | null; sgpPrice: number | null }>();
@@ -1009,10 +964,21 @@ export async function loadRevenueDataset(params: {
     });
   }
 
-  const allLinesWithActuals = useInforActualRevenue && invoicedRevenue
-    ? overlayInvoicedRevenueActuals(Array.from(joinedByKey.values()), invoicedRevenue)
-    : Array.from(joinedByKey.values());
-  const allLines = allLinesWithActuals.sort((a, b) => {
+  const forecastKeys = new Set(forecastRows.map((row) => revenueLineKey(row)));
+  const joinedLines = Array.from(joinedByKey.values());
+  const revenueOnlyWithQty = withProductActualQty(
+    joinedLines.filter((line) => !forecastKeys.has(revenueLineKey(line))),
+    shipped
+  );
+  // Actual dollars are Infor actual units at the line's contract price; the
+  // workbook's actual revenue is never used.
+  const allLines = [
+    ...joinedLines.filter((line) => forecastKeys.has(revenueLineKey(line))),
+    ...revenueOnlyWithQty,
+  ].map((line) => ({
+    ...line,
+    actualRevenue: estimatedMonths(line.actualQty, line.contractPrice),
+  })).sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     return a.itemSku.localeCompare(b.itemSku);
   });
@@ -1041,14 +1007,7 @@ export async function loadRevenueDataset(params: {
   const customers = Array.from(customersMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 
   const includeLines = Boolean(customerId || customerName || params.includeAllLines);
-  const workbookDataThru = settings?.dataThru
-    ? new Date(settings.dataThru).toISOString().slice(0, 10)
-    : forecastSettings?.dataThru
-      ? forecastSettings.dataThru.toISOString().slice(0, 10)
-      : null;
-  const dataThru = useInforActualRevenue && invoicedRevenue?.ok && invoicedRevenue.asOf
-    ? actualsClosedThrough(year, invoicedRevenue.asOf) || workbookDataThru
-    : workbookDataThru;
+  const dataThru = shipped.actuals.ok ? actualsClosedThrough(year, shipped.actuals.asOf) : null;
   return {
     year,
     catalogSourceYear,

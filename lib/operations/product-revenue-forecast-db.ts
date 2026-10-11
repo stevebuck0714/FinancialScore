@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
+import { loadCsiShipmentMonthlyActuals } from '@/lib/infor-m3/csi-shipment-history';
 import {
   emptyMonthQtyMap,
   forecastActualsExactKey,
@@ -629,7 +630,57 @@ async function queryCsiShippedDeltas(params: {
   );
 }
 
+function replaceMonths(
+  base: Map<string, MonthQtyMap>,
+  replacement: Map<string, MonthQtyMap>,
+  months: Set<number>
+): Map<string, MonthQtyMap> {
+  const merged = new Map<string, MonthQtyMap>();
+  for (const [key, qty] of base) {
+    const next = { ...qty };
+    for (const month of months) delete next[String(month)];
+    merged.set(key, next);
+  }
+  for (const [key, qty] of replacement) {
+    const next = merged.get(key) || emptyMonthQtyMap();
+    for (const month of months) {
+      const value = Number(qty[String(month)]) || 0;
+      if (value) next[String(month)] = value;
+    }
+    merged.set(key, next);
+  }
+  return merged;
+}
+
+/**
+ * Shipped units per month. Months with a complete SLCoShips pull use those
+ * shipment records; other months use month-end deltas of the daily SLCoitems
+ * snapshots, which only exist since the snapshots started.
+ */
 export async function loadCsiMonthlyShippedActuals(params: {
+  companyId: string;
+  year: number;
+  customerId?: string;
+  customerName?: string;
+}): Promise<CsiShippedActuals> {
+  const [shipments, snapshots] = await Promise.all([
+    loadCsiShipmentMonthlyActuals(params),
+    loadCsiSnapshotShippedActuals(params),
+  ]);
+  if (shipments.completeMonths.size === 0) return snapshots;
+  const asOf = [snapshots.ok ? snapshots.asOf : null, shipments.completeThrough]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .pop() ?? null;
+  return {
+    ok: true,
+    asOf,
+    byExact: replaceMonths(snapshots.byExact, shipments.byExact, shipments.completeMonths),
+    byItem: replaceMonths(snapshots.byItem, shipments.byItem, shipments.completeMonths),
+  };
+}
+
+async function loadCsiSnapshotShippedActuals(params: {
   companyId: string;
   year: number;
   customerId?: string;

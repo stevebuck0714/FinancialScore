@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
-import prisma from '@/lib/prisma';
+import { loadWorkingCsiProgramSettings } from '@/lib/infor-m3/csi-shipment-history';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -11,44 +11,6 @@ function asItems(body: unknown): Array<Record<string, unknown>> {
   if (!body || typeof body !== 'object') return [];
   const items = (body as { Items?: unknown }).Items;
   return Array.isArray(items) ? items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
-}
-
-type CsiProgramSettings = {
-  programName: string | null;
-  servicePrefix: string | null;
-  mongooseConfig: string | null;
-  site: string | null;
-};
-
-async function loadWorkingCsiProgramSettings(companyId: string, inforSystem: string): Promise<CsiProgramSettings> {
-  const rows = await prisma.$queryRaw<Array<{ bySystem: unknown; global: unknown }>>`
-    SELECT
-      "connectionMetadata"->'accountingProgramsBySystem' AS "bySystem",
-      "connectionMetadata"->'accountingPrograms' AS "global"
-    FROM "AccountingConnection"
-    WHERE "companyId" = ${companyId}
-      AND platform = 'INFOR_M3'
-    LIMIT 1
-  `;
-  const bySystem = rows[0]?.bySystem && typeof rows[0].bySystem === 'object' ? (rows[0].bySystem as Record<string, unknown>) : {};
-  const programs = [
-    ...(Array.isArray(bySystem[inforSystem]) ? (bySystem[inforSystem] as unknown[]) : []),
-    ...(Array.isArray(rows[0]?.global) ? (rows[0].global as unknown[]) : []),
-  ].filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'));
-  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
-  const withPath = programs.filter((row) => /\/ido\/load\//i.test(text(row.endpointPath)) && row.enabled !== false);
-  const preferred =
-    withPath.find((row) => text(row.miProgram).toUpperCase() === 'SLCOITEMS') ||
-    withPath.find((row) => text(row.miProgram).toUpperCase() === 'SLCOS') ||
-    withPath[0];
-  if (!preferred) return { programName: null, servicePrefix: null, mongooseConfig: null, site: null };
-  const path = text(preferred.endpointPath);
-  return {
-    programName: text(preferred.miProgram) || null,
-    servicePrefix: path.slice(0, path.search(/\/ido\/load\//i)) || null,
-    mongooseConfig: text(preferred.mongooseConfig) || null,
-    site: text(preferred.site) || null,
-  };
 }
 
 export async function GET(request: NextRequest) {
@@ -67,7 +29,7 @@ export async function GET(request: NextRequest) {
     const { credentials } = await getInforM3CredentialsWithOptionalEnvFallback(companyId, 'INFOR_CSI');
     if (!credentials) return NextResponse.json({ error: 'Infor CSI credentials are unavailable.' }, { status: 409 });
 
-    const connection = await loadWorkingCsiProgramSettings(companyId, 'INFOR_CSI');
+    const connection = await loadWorkingCsiProgramSettings(companyId);
     const servicePrefix = connection.servicePrefix || '/APR_PRD/CSI/IDORequestService';
     const endpointPath = ido
       ? sample
