@@ -112,7 +112,7 @@ const SORT_COLUMNS: Array<{ key: DutySortKey; label: string; align?: 'left' | 'r
     label: 'Origin',
     title: 'Defaults to the vendor address country in Infor. Enter a code to override it (shared with SGP Freight vendor COO); clear it to go back to Infor.',
   },
-  { key: 'primaryCustomer', label: 'Primary Customer', width: 160, title: 'Customer with the most invoiced revenue for this item in the last 12 months (all time if none), from Infor invoices.' },
+  { key: 'primaryCustomer', label: 'Primary Customer', width: 160, title: 'Customer with the most shipped revenue for this item in the last 12 months (all time if none), from Infor shipments.' },
   { key: 'tradeProgram', label: 'Program' },
   { key: 'qtyUnit', label: 'Unit' },
   { key: 'dutyCode', label: 'Duty Code', width: 88, title: 'User-maintained duty code. Existing values were imported from the SGP Duty & Tariffs sheet.' },

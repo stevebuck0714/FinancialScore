@@ -18,7 +18,7 @@ import {
 import { loadPrimaryVendorByItem } from '@/lib/operations/vendor-monthly-forecast-db';
 
 const NAMESPACE = 'duties-tariffs';
-const SOURCE_VERSION = 'duties-tariffs-warm-v3-infor-items';
+const SOURCE_VERSION = 'duties-tariffs-warm-v4-shipment-customers';
 const TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export type DutiesTariffsPayload = {
@@ -57,16 +57,17 @@ async function loadNonUsVendors(companyId: string): Promise<DutiesTariffsPayload
   );
 }
 
-/** Customer with the most invoiced revenue per item over the last 12 months, else all time. */
+/** Customer with the most shipped revenue per item over the last 12 months, else all time (Infor shipments). */
 async function loadPrimaryCustomerByItem(companyId: string): Promise<Map<string, string>> {
   const rows = await prisma.$queryRaw<Array<{ itemKey: string; customer: string }>>`
     WITH totals AS (
       SELECT
         UPPER(BTRIM("itemSku")) AS "itemKey",
         COALESCE(NULLIF(BTRIM("customerName"), ''), NULLIF(BTRIM("customerId"), '')) AS "customer",
-        SUM("revenue") FILTER (WHERE "invoiceDate" >= NOW() - INTERVAL '12 months') AS "recentRevenue",
-        SUM("revenue") AS "totalRevenue"
-      FROM "ProductInvoiceLineFact"
+        SUM(("qtyShipped" - "qtyReturned") * COALESCE("price", 0))
+          FILTER (WHERE "shipDate" >= CURRENT_DATE - INTERVAL '12 months') AS "recentRevenue",
+        SUM(("qtyShipped" - "qtyReturned") * COALESCE("price", 0)) AS "totalRevenue"
+      FROM "InforShipmentFact"
       WHERE "companyId" = ${companyId}
       GROUP BY 1, 2
     )
