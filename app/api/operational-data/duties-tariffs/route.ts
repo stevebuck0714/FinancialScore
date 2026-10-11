@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
       ok: true,
       companyId,
       filter,
-      spreadsheetItems: payload.spreadsheetItems,
+      inactiveCount: payload.inactiveCount,
       discovered: payload.discovered,
       missingHtsCount: payload.missingHtsCount,
       items,
@@ -122,7 +122,8 @@ export async function PATCH(request: NextRequest) {
     if (!patches.length) return NextResponse.json({ error: 'items are required' }, { status: 400 });
 
     await ensureCompanyItemDutyTable();
-    await updateCompanyItemDuties(companyId, patches);
+    const editor = await requireAuth().catch(() => null);
+    await updateCompanyItemDuties(companyId, patches, editor?.email || editor?.userId || null);
     const applied = await rebuildAppliedCogs(companyId).catch((error) => {
       console.warn('HTS duty COGS rebuild after save skipped:', error);
       return null;

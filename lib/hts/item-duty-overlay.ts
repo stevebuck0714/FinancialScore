@@ -1,13 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
-import {
-  loadSpreadsheetDutyIdentities,
-  normalizeOriginCode,
-  readAprSgpGmpaWorkbook,
-  skuLookupKeys,
-  type AprSgpGmpaRow,
-} from '@/lib/operational/apr-sgp-gmpa';
+import { normalizeOriginCode, skuLookupKeys } from '@/lib/operational/apr-sgp-gmpa';
 
 export const TRADE_PROGRAMS = ['none', 'usmca', 'other'] as const;
 export const QTY_UNITS = ['piece', 'kg', 'lb', 'other'] as const;
@@ -24,6 +18,7 @@ export type CompanyItemDutyRow = {
   itemDescription: string | null;
   vendorId: string | null;
   vendorName: string | null;
+  primaryCustomer: string | null;
   htsCode: string | null;
   specialHtsCode: string | null;
   section301HtsCode: string | null;
@@ -59,6 +54,14 @@ export type CompanyItemDutyRow = {
   userEditedAt: string | null;
   updatedAt: string;
   needsHtsInput: boolean;
+  /** Infor item or vendor status is O or I. */
+  inactive: boolean;
+  inforDescription: string | null;
+  descriptionOverridden: boolean;
+  inforOrigin: string | null;
+  originOverridden: boolean;
+  inforValuePerPiece: number | null;
+  valueOverridden: boolean;
 };
 
 export type CompanyItemDutyPatch = {
@@ -117,9 +120,20 @@ type DutyDbRow = {
   lastRateFetchedAt: Date | null;
   lastRateAsOfDate: Date | null;
   lastRateReleaseName: string | null;
+  itemDescriptionOverride: string | null;
+  enteredValueOverride: number | null;
   userEditedAt: Date | null;
   updatedAt: Date;
 };
+
+const DUTY_SELECT_COLUMNS = Prisma.raw(`
+  "id", "companyId", "itemSku", "itemDescription", "htsCode", "specialHtsCode", "section301HtsCode", "section232HtsCode", "ieepaHtsCode", "additionalHtsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
+  "tariffHtsCode", "dutyCode", "dutyDescription", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
+  "dutyPerPiece", "tariffPerPiece", "dutyRatePct", "specialRatePct", "section301RatePct",
+  "section232RatePct", "ieepaRatePct", "additionalRatePct", "tariffRatePct", "rateSource", "identitySource",
+  "htsInputSource", "lastSpreadsheetSeedAt", "lastRateFetchedAt", "lastRateAsOfDate", "lastRateReleaseName",
+  "itemDescriptionOverride", "enteredValueOverride", "userEditedAt", "updatedAt"
+`);
 
 let ensureTablesOnce: Promise<void> | null = null;
 
@@ -203,6 +217,16 @@ export async function ensureCompanyItemDutyTable(): Promise<void> {
   // "htsInputSource", so handing HTS ownership to Infor would have let the workbook
   // overwrite a user's trade program.
   await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "programInputSource" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "itemDescriptionOverride" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemDuty" ADD COLUMN IF NOT EXISTS "enteredValueOverride" DOUBLE PRECISION`);
+}
+
+/** Duties store ISO origin codes; the freight convention shows the United States as DOM. */
+export function dutyOriginCode(value: unknown): string | null {
+  const code = normalizeOriginCode(value);
+  if (!code) return null;
+  const upper = code.toUpperCase();
+  return upper === 'DOM' ? 'US' : upper;
 }
 
 export function normalizeItemSku(value: unknown): string {
@@ -260,6 +284,7 @@ export function serializeCompanyItemDuty(row: DutyDbRow): CompanyItemDutyRow {
     itemDescription: row.itemDescription,
     vendorId: null,
     vendorName: null,
+    primaryCustomer: null,
     htsCode,
     specialHtsCode: String(row.specialHtsCode || '').trim() || null,
     section301HtsCode: String(row.section301HtsCode || '').trim() || null,
@@ -298,187 +323,42 @@ export function serializeCompanyItemDuty(row: DutyDbRow): CompanyItemDutyRow {
     userEditedAt: toIso(row.userEditedAt),
     updatedAt: toIso(row.updatedAt) || new Date().toISOString(),
     needsHtsInput: !htsCode,
+    inactive: false,
+    inforDescription: null,
+    descriptionOverridden: Boolean(String(row.itemDescriptionOverride || '').trim()),
+    inforOrigin: null,
+    originOverridden: false,
+    inforValuePerPiece: null,
+    valueOverridden: asNullableNumber(row.enteredValueOverride) != null,
   };
 }
 
 type SeedItem = {
   itemSku: string;
   itemDescription: string | null;
-  htsCode: string | null;
-  countryOfOrigin: string | null;
-  dutyCode: string | null;
-  dutyDescription: string | null;
-  tradeProgram: TradeProgram;
-  qtyUnit: QtyUnit;
-  enteredValuePerPiece: number | null;
-  dutyPerPiece: number | null;
-  tariffPerPiece: number | null;
   identitySource: string;
-  htsInputSource: string | null;
 };
 
-function firstNonNullNumber(...values: Array<number | null | undefined>): number | null {
-  for (const value of values) {
-    if (value != null && Number.isFinite(Number(value))) return Number(value);
-  }
-  return null;
-}
-
-function aggregateSgpRows(rows: AprSgpGmpaRow[]): SeedItem[] {
-  const bySku = new Map<string, SeedItem>();
-  for (const row of rows) {
-    const itemSku = normalizeItemSku(row.itemId);
-    if (!itemSku) continue;
-    const next: SeedItem = {
-      itemSku,
-      itemDescription: null,
-      // Transitional: the workbook still supplies HTS and origin for items Infor has not
-      // classified. Infor is applied afterwards and wins, so this only fills gaps. Remove
-      // both fields here at the cutover to Infor-only classification.
-      htsCode: normalizeHtsCode(row.htsCode),
-      countryOfOrigin: normalizeOriginCode(row.countryOfOrigin),
-      dutyCode: null,
-      dutyDescription: null,
-      tradeProgram: asTradeProgram(row.tradeProgram),
-      qtyUnit: asQtyUnit(row.qtyUnit),
-      enteredValuePerPiece: firstNonNullNumber(row.updatedMaterialCost, row.sgpMaterialCost),
-      dutyPerPiece: firstNonNullNumber(row.projectedDutiesPerPiece, row.sgpDutiesPerPiece),
-      tariffPerPiece: firstNonNullNumber(row.projectedTariffPerPiece, row.sgpTariffPerPiece),
-      identitySource: 'spreadsheet',
-      htsInputSource: normalizeHtsCode(row.htsCode) ? 'spreadsheet' : null,
-    };
-    const existing = bySku.get(itemSku);
-    if (!existing) {
-      bySku.set(itemSku, next);
-      continue;
-    }
-    bySku.set(itemSku, {
-      ...existing,
-      htsCode: existing.htsCode || next.htsCode,
-      countryOfOrigin: existing.countryOfOrigin || next.countryOfOrigin,
-      tradeProgram: existing.tradeProgram === 'none' ? next.tradeProgram : existing.tradeProgram,
-      qtyUnit: existing.qtyUnit === 'piece' ? next.qtyUnit : existing.qtyUnit,
-      enteredValuePerPiece: existing.enteredValuePerPiece ?? next.enteredValuePerPiece,
-      dutyPerPiece: existing.dutyPerPiece ?? next.dutyPerPiece,
-      tariffPerPiece: existing.tariffPerPiece ?? next.tariffPerPiece,
-      htsInputSource: existing.htsInputSource || next.htsInputSource,
-    });
-  }
-  return Array.from(bySku.values());
-}
-
-async function upsertSeedItems(companyId: string, items: SeedItem[], mode: 'spreadsheet' | 'identity'): Promise<number> {
+async function insertIdentityItems(companyId: string, items: SeedItem[]): Promise<number> {
   if (!items.length) return 0;
   let written = 0;
   const chunkSize = 200;
   for (let index = 0; index < items.length; index += chunkSize) {
     const chunk = items.slice(index, index + chunkSize);
     const values = chunk.map((item) => Prisma.sql`(
-      ${randomUUID()},
-      ${companyId},
-      ${item.itemSku},
-      ${item.itemDescription},
-      ${item.htsCode},
-      ${item.countryOfOrigin},
-      ${item.dutyCode},
-      ${item.dutyDescription},
-      ${item.tradeProgram},
-      ${item.qtyUnit},
-      ${item.enteredValuePerPiece},
-      ${mode === 'spreadsheet' ? 'spreadsheet' : null},
-      ${item.dutyPerPiece},
-      ${item.tariffPerPiece},
-      ${item.dutyPerPiece},
-      ${item.tariffPerPiece},
-      ${mode === 'spreadsheet' ? 'spreadsheet' : 'spreadsheet'},
-      ${item.identitySource},
-      ${item.htsInputSource},
-      ${mode === 'spreadsheet' ? new Date() : null},
-      NOW(),
-      NOW()
+      ${randomUUID()}, ${companyId}, ${item.itemSku}, ${item.itemDescription}, 'none', 'piece', 'hts', ${item.identitySource}, NOW(), NOW()
     )`);
-    if (mode === 'spreadsheet') {
-      await prisma.$executeRaw`
-        INSERT INTO "CompanyItemDuty" (
-          "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "dutyCode", "dutyDescription",
-          "tradeProgram", "qtyUnit",
-          "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
-          "dutyPerPiece", "tariffPerPiece", "rateSource", "identitySource", "htsInputSource",
-          "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
-        )
-        VALUES ${Prisma.join(values)}
-        ON CONFLICT ("companyId", "itemSku")
-        DO UPDATE SET
-          "itemDescription" = COALESCE("CompanyItemDuty"."itemDescription", EXCLUDED."itemDescription"),
-          "htsCode" = CASE
-            WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."htsCode"
-            ELSE COALESCE(NULLIF("CompanyItemDuty"."htsCode", ''), EXCLUDED."htsCode")
-          END,
-          "countryOfOrigin" = CASE
-            WHEN COALESCE("CompanyItemDuty"."htsInputSource", '') = 'user' THEN "CompanyItemDuty"."countryOfOrigin"
-            ELSE COALESCE(NULLIF("CompanyItemDuty"."countryOfOrigin", ''), EXCLUDED."countryOfOrigin")
-          END,
-          "dutyCode" = CASE
-            WHEN COALESCE("CompanyItemDuty"."dutyCodeSource", '') = 'user' THEN "CompanyItemDuty"."dutyCode"
-            ELSE COALESCE(NULLIF(EXCLUDED."dutyCode", ''), "CompanyItemDuty"."dutyCode")
-          END,
-          "dutyDescription" = COALESCE(NULLIF(EXCLUDED."dutyDescription", ''), "CompanyItemDuty"."dutyDescription"),
-          "tradeProgram" = CASE
-            WHEN COALESCE("CompanyItemDuty"."programInputSource", '') = 'user' THEN "CompanyItemDuty"."tradeProgram"
-            WHEN EXCLUDED."tradeProgram" IS NOT NULL AND EXCLUDED."tradeProgram" <> 'none' THEN EXCLUDED."tradeProgram"
-            ELSE "CompanyItemDuty"."tradeProgram"
-          END,
-          "qtyUnit" = CASE
-            WHEN COALESCE("CompanyItemDuty"."programInputSource", '') = 'user' THEN "CompanyItemDuty"."qtyUnit"
-            WHEN EXCLUDED."qtyUnit" IS NOT NULL AND EXCLUDED."qtyUnit" <> 'piece' THEN EXCLUDED."qtyUnit"
-            ELSE COALESCE("CompanyItemDuty"."qtyUnit", EXCLUDED."qtyUnit")
-          END,
-          "enteredValuePerPiece" = COALESCE("CompanyItemDuty"."enteredValuePerPiece", EXCLUDED."enteredValuePerPiece"),
-          "enteredValueSource" = COALESCE("CompanyItemDuty"."enteredValueSource", EXCLUDED."enteredValueSource"),
-          "spreadsheetDutyPerPiece" = EXCLUDED."spreadsheetDutyPerPiece",
-          "spreadsheetTariffPerPiece" = EXCLUDED."spreadsheetTariffPerPiece",
-          "dutyPerPiece" = CASE
-            WHEN "CompanyItemDuty"."rateSource" IN ('user', 'hts') THEN "CompanyItemDuty"."dutyPerPiece"
-            ELSE EXCLUDED."dutyPerPiece"
-          END,
-          "tariffPerPiece" = CASE
-            WHEN "CompanyItemDuty"."rateSource" IN ('user', 'hts') THEN "CompanyItemDuty"."tariffPerPiece"
-            ELSE EXCLUDED."tariffPerPiece"
-          END,
-          "htsInputSource" = COALESCE("CompanyItemDuty"."htsInputSource", EXCLUDED."htsInputSource"),
-          "lastSpreadsheetSeedAt" = NOW(),
-          "updatedAt" = NOW()
-      `;
-    } else {
-      await prisma.$executeRaw`
-        INSERT INTO "CompanyItemDuty" (
-          "id", "companyId", "itemSku", "itemDescription", "htsCode", "countryOfOrigin", "dutyCode", "dutyDescription",
-          "tradeProgram", "qtyUnit",
-          "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
-          "dutyPerPiece", "tariffPerPiece", "rateSource", "identitySource", "htsInputSource",
-          "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
-        )
-        VALUES ${Prisma.join(values)}
-        ON CONFLICT ("companyId", "itemSku") DO NOTHING
-      `;
-    }
+    await prisma.$executeRaw`
+      INSERT INTO "CompanyItemDuty" (
+        "id", "companyId", "itemSku", "itemDescription", "tradeProgram", "qtyUnit", "rateSource", "identitySource",
+        "createdAt", "updatedAt"
+      )
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("companyId", "itemSku") DO NOTHING
+    `;
     written += chunk.length;
   }
   return written;
-}
-
-export async function seedCompanyItemDutiesFromParsedRows(
-  companyId: string,
-  rows: AprSgpGmpaRow[]
-): Promise<{ itemCount: number; seeded: number }> {
-  const items = aggregateSgpRows(rows);
-  const seeded = await upsertSeedItems(companyId, items, 'spreadsheet');
-  return { itemCount: items.length, seeded };
-}
-
-export async function seedCompanyItemDutiesFromSgp(companyId: string): Promise<{ itemCount: number; seeded: number }> {
-  const workbook = await readAprSgpGmpaWorkbook(companyId);
-  return seedCompanyItemDutiesFromParsedRows(companyId, workbook?.rows || []);
 }
 
 async function loadDutySkuResolver(companyId: string): Promise<(itemSkuRaw: unknown) => string[]> {
@@ -508,65 +388,6 @@ async function loadDutySkuResolver(companyId: string): Promise<(itemSkuRaw: unkn
     const exact = canonicalSkuByUpper.get(normalizedSku.toUpperCase());
     return exact ? [exact] : [normalizedSku];
   };
-}
-
-// The workbook supplies the duty code, plus HTS and origin for the transition period until
-// classification is Infor-only. The description is not taken from here: the HTS import owns
-// that column and rewrites it per quote.
-async function overlayDutyHtsFromSpreadsheetSources(companyId: string): Promise<number> {
-  const [identities, freightRows, matchingDutySkus] = await Promise.all([
-    loadSpreadsheetDutyIdentities(companyId).catch((error) => {
-      console.warn('Duty spreadsheet identity load failed:', error);
-      return [];
-    }),
-    prisma.$queryRaw<Array<{ itemSku: string | null; htsCode: string | null; countryOfOrigin: string | null }>>`
-      SELECT "itemSku", "htsCode", "countryOfOrigin"
-      FROM "CompanyItemFreight"
-      WHERE "companyId" = ${companyId}
-        AND (
-          COALESCE(NULLIF("htsCode", ''), '') <> ''
-          OR COALESCE(NULLIF("countryOfOrigin", ''), '') <> ''
-        )
-    `.catch(() => []),
-    loadDutySkuResolver(companyId),
-  ]);
-  const bySku = new Map<string, SeedItem>();
-  const add = (itemSkuRaw: unknown, htsCodeRaw: unknown, originRaw: unknown, dutyCodeRaw?: unknown) => {
-    const htsCode = normalizeHtsCode(htsCodeRaw);
-    const countryOfOrigin = normalizeOriginCode(originRaw);
-    const dutyCode = String(dutyCodeRaw || '').trim().toUpperCase() || null;
-    if (!htsCode && !countryOfOrigin && !dutyCode) return;
-    for (const itemSku of matchingDutySkus(itemSkuRaw)) {
-      const existing = bySku.get(itemSku.toUpperCase());
-      if (!existing) {
-        bySku.set(itemSku.toUpperCase(), {
-          itemSku,
-          itemDescription: null,
-          htsCode,
-          countryOfOrigin,
-          dutyCode,
-          dutyDescription: null,
-          tradeProgram: 'none',
-          qtyUnit: 'piece',
-          enteredValuePerPiece: null,
-          dutyPerPiece: null,
-          tariffPerPiece: null,
-          identitySource: 'spreadsheet',
-          htsInputSource: htsCode ? 'spreadsheet' : null,
-        });
-        continue;
-      }
-      existing.htsCode = existing.htsCode || htsCode;
-      existing.countryOfOrigin = existing.countryOfOrigin || countryOfOrigin;
-      existing.dutyCode = existing.dutyCode || dutyCode;
-      existing.htsInputSource = existing.htsInputSource || (htsCode ? 'spreadsheet' : null);
-    }
-  };
-  for (const row of identities) add(row.itemSku, row.htsCode, row.countryOfOrigin, row.dutyCode);
-  for (const row of freightRows || []) add(row.itemSku, row.htsCode, row.countryOfOrigin);
-  const items = Array.from(bySku.values());
-  if (!items.length) return 0;
-  return upsertSeedItems(companyId, items, 'spreadsheet');
 }
 
 type InforDutyIdentity = { itemSku: string; htsCode: string | null; countryOfOrigin: string | null };
@@ -633,9 +454,9 @@ async function loadInforItemDutyIdentities(companyId: string): Promise<InforDuty
     // Rows arrive newest first, so the first sighting of an item wins.
     if (byItem.has(itemSku.toUpperCase())) continue;
     const htsCode = normalizeHtsCode(payload.HtsCode ?? payload.HTSCode ?? payload.Hts);
-    const countryOfOrigin = normalizeOriginCode(payload.Country ?? payload.Origin);
-    if (!htsCode && !countryOfOrigin) continue;
-    byItem.set(itemSku.toUpperCase(), { itemSku, htsCode, countryOfOrigin });
+    if (!htsCode) continue;
+    // Origin comes from the vendor address (applyDutyInforIdentity), not the item master.
+    byItem.set(itemSku.toUpperCase(), { itemSku, htsCode, countryOfOrigin: null });
   }
   return Array.from(byItem.values());
 }
@@ -744,17 +565,7 @@ async function loadIdentitySkus(companyId: string): Promise<SeedItem[]> {
       bySku.set(itemSku, {
         itemSku,
         itemDescription: description && description.toLowerCase() !== 'unknown item' ? description : null,
-        htsCode: null,
-        countryOfOrigin: null,
-        dutyCode: null,
-        dutyDescription: null,
-        tradeProgram: 'none',
-        qtyUnit: 'piece',
-        enteredValuePerPiece: null,
-        dutyPerPiece: null,
-        tariffPerPiece: null,
         identitySource,
-        htsInputSource: null,
       });
       return;
     }
@@ -773,7 +584,7 @@ async function loadIdentitySkus(companyId: string): Promise<SeedItem[]> {
 
 export async function syncCompanyItemDutyIdentities(companyId: string): Promise<{ discovered: number }> {
   const items = await loadIdentitySkus(companyId);
-  await upsertSeedItems(companyId, items, 'identity');
+  await insertIdentityItems(companyId, items);
   return { discovered: items.length };
 }
 
@@ -782,12 +593,7 @@ export async function listCompanyItemDuties(
   filter: 'all' | 'needs_hts' = 'all'
 ): Promise<CompanyItemDutyRow[]> {
   const rows = await prisma.$queryRaw<DutyDbRow[]>`
-    SELECT
-      "id", "companyId", "itemSku", "itemDescription", "htsCode", "specialHtsCode", "section301HtsCode", "section232HtsCode", "ieepaHtsCode", "additionalHtsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
-      "tariffHtsCode", "dutyCode", "dutyDescription", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
-      "dutyPerPiece", "tariffPerPiece", "dutyRatePct", "specialRatePct", "section301RatePct",
-      "section232RatePct", "ieepaRatePct", "additionalRatePct", "tariffRatePct", "rateSource", "identitySource",
-      "htsInputSource", "lastSpreadsheetSeedAt", "lastRateFetchedAt", "lastRateAsOfDate", "lastRateReleaseName", "userEditedAt", "updatedAt"
+    SELECT ${DUTY_SELECT_COLUMNS}
     FROM "CompanyItemDuty"
     WHERE "companyId" = ${companyId}
       ${filter === 'needs_hts' ? Prisma.sql`AND COALESCE(NULLIF("htsCode", ''), '') = ''` : Prisma.empty}
@@ -814,33 +620,128 @@ export async function clearDutyHtsUserOwnership(companyId: string): Promise<numb
   return rows.length;
 }
 
-export async function refreshCompanyItemDuties(companyId: string): Promise<{
-  spreadsheetItems: number;
-  discovered: number;
-}> {
+// Duty and tariff dollars come only from the HTS rate import; amounts the SGP workbook seeded
+// are dropped. User-entered amounts (rateSource 'user') are kept.
+async function clearSpreadsheetDutyAmounts(companyId: string): Promise<number> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    UPDATE "CompanyItemDuty"
+    SET
+      "spreadsheetDutyPerPiece" = NULL,
+      "spreadsheetTariffPerPiece" = NULL,
+      "dutyPerPiece" = CASE WHEN "rateSource" = 'spreadsheet' THEN NULL ELSE "dutyPerPiece" END,
+      "tariffPerPiece" = CASE WHEN "rateSource" = 'spreadsheet' THEN NULL ELSE "tariffPerPiece" END,
+      "updatedAt" = NOW()
+    WHERE "companyId" = ${companyId}
+      AND (
+        "spreadsheetDutyPerPiece" IS NOT NULL
+        OR "spreadsheetTariffPerPiece" IS NOT NULL
+        OR ("rateSource" = 'spreadsheet' AND ("dutyPerPiece" IS NOT NULL OR "tariffPerPiece" IS NOT NULL))
+      )
+    RETURNING "id"
+  `;
+  return rows.length;
+}
+
+/**
+ * Makes Infor the source of the item list and identity: adds a row for every Infor item with a
+ * primary vendor, then writes the effective description (override, else Infor), origin (shared
+ * COO override, else the vendor address country) and customs value (override, else Infor unit
+ * cost). Values are stored because the HTS rate lookup and duty COGS read them from this table.
+ */
+export async function applyDutyInforIdentity(companyId: string): Promise<{ inforItems: number; updated: number }> {
+  const { loadCsiItemFacts, loadVendorAddresses, loadCooOverrides, inforUnitCost } = await import(
+    '@/lib/operations/item-freight-overlay'
+  );
+  const { loadPrimaryVendorByItem } = await import('@/lib/operations/vendor-monthly-forecast-db');
+  const [csiByItem, vendorByItem, vendorAddresses, cooOverrides] = await Promise.all([
+    loadCsiItemFacts(companyId),
+    loadPrimaryVendorByItem(companyId).catch(() => new Map<string, { vendorId: string; vendorName: string }>()),
+    loadVendorAddresses(companyId),
+    loadCooOverrides(companyId),
+  ]);
+  if (!csiByItem.size) return { inforItems: 0, updated: 0 };
+
+  const identities: Array<{ itemSku: string; description: string | null; origin: string | null; cost: number | null }> = [];
+  for (const [key, csi] of csiByItem.entries()) {
+    const vendorId = vendorByItem.get(key)?.vendorId;
+    if (!vendorId) continue;
+    const origin = dutyOriginCode(cooOverrides.get(key)) || dutyOriginCode(vendorAddresses.get(vendorId)?.country);
+    identities.push({ itemSku: key, description: csi.description, origin, cost: inforUnitCost(csi) });
+  }
+  await insertIdentityItems(
+    companyId,
+    identities.map((item) => ({ itemSku: item.itemSku, itemDescription: item.description, identitySource: 'infor' }))
+  );
+
+  let updated = 0;
+  const chunkSize = 500;
+  for (let index = 0; index < identities.length; index += chunkSize) {
+    const chunk = identities.slice(index, index + chunkSize);
+    const values = Prisma.join(
+      chunk.map(
+        (item) =>
+          Prisma.sql`(${item.itemSku}::text, ${item.description}::text, ${item.origin}::text, ${item.cost}::double precision)`
+      )
+    );
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      UPDATE "CompanyItemDuty" AS d
+      SET
+        "itemDescription" = COALESCE(NULLIF(d."itemDescriptionOverride", ''), v."description", d."itemDescription"),
+        "countryOfOrigin" = COALESCE(v."origin", d."countryOfOrigin"),
+        "enteredValuePerPiece" = COALESCE(d."enteredValueOverride", v."cost", d."enteredValuePerPiece"),
+        "enteredValueSource" = CASE
+          WHEN d."enteredValueOverride" IS NOT NULL THEN 'user'
+          WHEN v."cost" IS NOT NULL THEN 'infor'
+          ELSE d."enteredValueSource"
+        END,
+        "identitySource" = 'infor',
+        "updatedAt" = NOW()
+      FROM (VALUES ${values}) AS v("itemSku", "description", "origin", "cost")
+      WHERE d."companyId" = ${companyId}
+        AND upper(btrim(d."itemSku")) = v."itemSku"
+        AND (
+          COALESCE(NULLIF(d."itemDescriptionOverride", ''), v."description", d."itemDescription") IS DISTINCT FROM d."itemDescription"
+          OR COALESCE(v."origin", d."countryOfOrigin") IS DISTINCT FROM d."countryOfOrigin"
+          OR COALESCE(d."enteredValueOverride", v."cost", d."enteredValuePerPiece") IS DISTINCT FROM d."enteredValuePerPiece"
+          OR d."identitySource" IS DISTINCT FROM 'infor'
+        )
+      RETURNING d."id"
+    `);
+    updated += rows.length;
+  }
+  return { inforItems: identities.length, updated };
+}
+
+export async function refreshCompanyItemDuties(companyId: string): Promise<{ discovered: number }> {
   await ensureCompanyItemDutyTable();
-  await loadSpreadsheetDutyIdentities(companyId).catch((error) => {
-    console.warn('Duty spreadsheet identity preload failed:', error);
-    return [];
-  });
-  const seeded = await seedCompanyItemDutiesFromSgp(companyId);
-  const identities = await syncCompanyItemDutyIdentities(companyId);
-  const overlaid = await overlayDutyHtsFromSpreadsheetSources(companyId).catch((error) => {
-    console.warn('Duty spreadsheet HTS overlay failed:', error);
+  await clearSpreadsheetDutyAmounts(companyId).catch((error) => {
+    console.warn('Duty spreadsheet amount cleanup failed:', error);
     return 0;
+  });
+  const identity = await applyDutyInforIdentity(companyId).catch((error) => {
+    console.warn('Duty Infor identity apply failed:', error);
+    return { inforItems: 0, updated: 0 };
   });
   await overlayDutyIdentityFromInfor(companyId).catch((error) => {
     console.warn('Duty Infor HTS overlay failed:', error);
     return 0;
   });
-  return { spreadsheetItems: Math.max(seeded.itemCount, overlaid), discovered: identities.discovered };
+  return { discovered: identity.inforItems };
 }
 
+/**
+ * Description, origin and value are overrides: a submitted value wins over Infor and a submitted
+ * blank clears the override so Infor applies again. Origin is the per-item COO override shared
+ * with SGP Freight. Callers must send only fields the user changed.
+ */
 export async function updateCompanyItemDuties(
   companyId: string,
-  patches: CompanyItemDutyPatch[]
+  patches: CompanyItemDutyPatch[],
+  editedBy: string | null = null
 ): Promise<CompanyItemDutyRow[]> {
   const updatedIds: string[] = [];
+  const cooPatches: Array<{ itemSku: string; vendorCoo: string | null }> = [];
+  let identityTouched = false;
   for (const patch of patches) {
     const id = String(patch.id || '').trim();
     const itemSku = normalizeItemSku(patch.itemSku);
@@ -852,8 +753,7 @@ export async function updateCompanyItemDuties(
     const section232HtsCode = patch.section232HtsCode === undefined ? undefined : normalizeHtsCode(patch.section232HtsCode);
     const ieepaHtsCode = patch.ieepaHtsCode === undefined ? undefined : normalizeHtsCode(patch.ieepaHtsCode);
     const additionalHtsCode = patch.additionalHtsCode === undefined ? undefined : normalizeHtsCode(patch.additionalHtsCode);
-    const countryOfOrigin =
-      patch.countryOfOrigin === undefined ? undefined : String(patch.countryOfOrigin || '').trim() || null;
+    const countryOfOrigin = patch.countryOfOrigin === undefined ? undefined : dutyOriginCode(patch.countryOfOrigin);
     const tradeProgram = patch.tradeProgram === undefined ? undefined : asTradeProgram(patch.tradeProgram);
     const qtyUnit = patch.qtyUnit === undefined ? undefined : asQtyUnit(patch.qtyUnit);
     const dutyCode = patch.dutyCode === undefined ? undefined : String(patch.dutyCode || '').trim().toUpperCase() || null;
@@ -863,9 +763,11 @@ export async function updateCompanyItemDuties(
     const tariffPerPiece = patch.tariffPerPiece === undefined ? undefined : asNullableNumber(patch.tariffPerPiece);
     const itemDescription =
       patch.itemDescription === undefined ? undefined : String(patch.itemDescription || '').trim() || null;
-    // The report saves every visible row, not just edited ones, so ownership has to
-    // follow an actual value change. Marking a field 'user' on submission alone would
-    // freeze it against the Infor and spreadsheet refreshes for good.
+    if (itemDescription !== undefined || countryOfOrigin !== undefined || enteredValuePerPiece !== undefined) {
+      identityTouched = true;
+    }
+    // Ownership follows an actual value change, so re-submitting an unchanged value does not
+    // freeze a field against the Infor refresh.
     const htsIdentityChanged = Prisma.sql`(
       (${htsCode !== undefined} AND COALESCE(${htsCode ?? null}::text, '') <> COALESCE("htsCode", ''))
       OR (${specialHtsCode !== undefined} AND COALESCE(${specialHtsCode ?? null}::text, '') <> COALESCE("specialHtsCode", ''))
@@ -873,7 +775,6 @@ export async function updateCompanyItemDuties(
       OR (${section232HtsCode !== undefined} AND COALESCE(${section232HtsCode ?? null}::text, '') <> COALESCE("section232HtsCode", ''))
       OR (${ieepaHtsCode !== undefined} AND COALESCE(${ieepaHtsCode ?? null}::text, '') <> COALESCE("ieepaHtsCode", ''))
       OR (${additionalHtsCode !== undefined} AND COALESCE(${additionalHtsCode ?? null}::text, '') <> COALESCE("additionalHtsCode", ''))
-      OR (${countryOfOrigin !== undefined} AND COALESCE(${countryOfOrigin ?? null}::text, '') <> COALESCE("countryOfOrigin", ''))
     )`;
     const programChanged = Prisma.sql`(
       (${tradeProgram !== undefined} AND COALESCE(${tradeProgram ?? null}::text, '') <> COALESCE("tradeProgram", ''))
@@ -891,23 +792,25 @@ export async function updateCompanyItemDuties(
       OR (${tariffPerPiece !== undefined} AND COALESCE(${tariffPerPiece ?? null}::double precision, -1) <> COALESCE("tariffPerPiece", -1))
     )`;
 
-    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    const rows = await prisma.$queryRaw<Array<{ id: string; itemSku: string }>>`
       UPDATE "CompanyItemDuty"
       SET
-        "itemDescription" = CASE WHEN ${itemDescription !== undefined} THEN ${itemDescription} ELSE "itemDescription" END,
+        "itemDescriptionOverride" = CASE WHEN ${itemDescription !== undefined} THEN ${itemDescription ?? null}::text ELSE "itemDescriptionOverride" END,
+        "itemDescription" = CASE WHEN ${itemDescription !== undefined} THEN COALESCE(${itemDescription ?? null}::text, "itemDescription") ELSE "itemDescription" END,
         "htsCode" = CASE WHEN ${htsCode !== undefined} THEN ${htsCode} ELSE "htsCode" END,
         "specialHtsCode" = CASE WHEN ${specialHtsCode !== undefined} THEN ${specialHtsCode} ELSE "specialHtsCode" END,
         "section301HtsCode" = CASE WHEN ${section301HtsCode !== undefined} THEN ${section301HtsCode} ELSE "section301HtsCode" END,
         "section232HtsCode" = CASE WHEN ${section232HtsCode !== undefined} THEN ${section232HtsCode} ELSE "section232HtsCode" END,
         "ieepaHtsCode" = CASE WHEN ${ieepaHtsCode !== undefined} THEN ${ieepaHtsCode} ELSE "ieepaHtsCode" END,
         "additionalHtsCode" = CASE WHEN ${additionalHtsCode !== undefined} THEN ${additionalHtsCode} ELSE "additionalHtsCode" END,
-        "countryOfOrigin" = CASE WHEN ${countryOfOrigin !== undefined} THEN ${countryOfOrigin} ELSE "countryOfOrigin" END,
+        "countryOfOrigin" = CASE WHEN ${countryOfOrigin !== undefined} THEN COALESCE(${countryOfOrigin ?? null}::text, "countryOfOrigin") ELSE "countryOfOrigin" END,
         "tradeProgram" = CASE WHEN ${tradeProgram !== undefined} THEN ${tradeProgram} ELSE "tradeProgram" END,
         "qtyUnit" = CASE WHEN ${qtyUnit !== undefined} THEN ${qtyUnit} ELSE "qtyUnit" END,
         "dutyCode" = CASE WHEN ${dutyCode !== undefined} THEN ${dutyCode} ELSE "dutyCode" END,
         "dutyCodeSource" = CASE WHEN ${dutyCodeChanged} THEN 'user' ELSE "dutyCodeSource" END,
-        "enteredValuePerPiece" = CASE WHEN ${enteredValuePerPiece !== undefined} THEN ${enteredValuePerPiece} ELSE "enteredValuePerPiece" END,
-        "enteredValueSource" = CASE WHEN ${enteredValueChanged} THEN 'user' ELSE "enteredValueSource" END,
+        "enteredValueOverride" = CASE WHEN ${enteredValuePerPiece !== undefined} THEN ${enteredValuePerPiece ?? null}::double precision ELSE "enteredValueOverride" END,
+        "enteredValuePerPiece" = CASE WHEN ${enteredValuePerPiece !== undefined} THEN COALESCE(${enteredValuePerPiece ?? null}::double precision, "enteredValuePerPiece") ELSE "enteredValuePerPiece" END,
+        "enteredValueSource" = CASE WHEN ${enteredValuePerPiece != null} THEN 'user' ELSE "enteredValueSource" END,
         "dutyPerPiece" = CASE WHEN ${dutyPerPiece !== undefined} THEN ${dutyPerPiece} ELSE "dutyPerPiece" END,
         "tariffPerPiece" = CASE WHEN ${tariffPerPiece !== undefined} THEN ${tariffPerPiece} ELSE "tariffPerPiece" END,
         "rateSource" = CASE WHEN ${rateChanged} THEN 'user' ELSE "rateSource" END,
@@ -915,6 +818,7 @@ export async function updateCompanyItemDuties(
         "programInputSource" = CASE WHEN ${programChanged} THEN 'user' ELSE "programInputSource" END,
         "userEditedAt" = CASE
           WHEN ${htsIdentityChanged} OR ${programChanged} OR ${dutyCodeChanged} OR ${enteredValueChanged} OR ${rateChanged}
+            OR ${itemDescription !== undefined} OR ${countryOfOrigin !== undefined}
           THEN NOW()
           ELSE "userEditedAt"
         END,
@@ -924,19 +828,24 @@ export async function updateCompanyItemDuties(
           (${id} <> '' AND "id" = ${id})
           OR (${itemSku} <> '' AND "itemSku" = ${itemSku})
         )
-      RETURNING "id"
+      RETURNING "id", "itemSku"
     `;
-    if (rows[0]?.id) updatedIds.push(rows[0].id);
+    if (rows[0]?.id) {
+      updatedIds.push(rows[0].id);
+      if (countryOfOrigin !== undefined) cooPatches.push({ itemSku: rows[0].itemSku, vendorCoo: countryOfOrigin });
+    }
   }
+
+  if (cooPatches.length) {
+    const { updateCompanyItemFreight } = await import('@/lib/operations/item-freight-overlay');
+    await updateCompanyItemFreight(companyId, cooPatches, editedBy);
+  }
+  // Re-applies Infor so a cleared override falls back to Infor's value right away.
+  if (identityTouched) await applyDutyInforIdentity(companyId);
 
   if (!updatedIds.length) return [];
   const rows = await prisma.$queryRaw<DutyDbRow[]>`
-    SELECT
-      "id", "companyId", "itemSku", "itemDescription", "htsCode", "specialHtsCode", "section301HtsCode", "section232HtsCode", "ieepaHtsCode", "additionalHtsCode", "countryOfOrigin", "tradeProgram", "qtyUnit",
-      "tariffHtsCode", "dutyCode", "dutyDescription", "enteredValuePerPiece", "enteredValueSource", "spreadsheetDutyPerPiece", "spreadsheetTariffPerPiece",
-      "dutyPerPiece", "tariffPerPiece", "dutyRatePct", "specialRatePct", "section301RatePct",
-      "section232RatePct", "ieepaRatePct", "additionalRatePct", "tariffRatePct", "rateSource", "identitySource",
-      "htsInputSource", "lastSpreadsheetSeedAt", "lastRateFetchedAt", "lastRateAsOfDate", "lastRateReleaseName", "userEditedAt", "updatedAt"
+    SELECT ${DUTY_SELECT_COLUMNS}
     FROM "CompanyItemDuty"
     WHERE "companyId" = ${companyId}
       AND "id" IN (${Prisma.join(updatedIds.map((id) => Prisma.sql`${id}`))})

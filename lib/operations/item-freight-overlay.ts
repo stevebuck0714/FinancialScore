@@ -329,7 +329,7 @@ export function vendorCooCode(value: unknown): string | null {
   return upper === 'US' ? 'DOM' : upper;
 }
 
-type CsiItemFacts = {
+export type CsiItemFacts = {
   description: string | null;
   revision: string | null;
   qtyOnHand: number | null;
@@ -380,7 +380,7 @@ function payloadNumber(payload: Record<string, unknown>, keys: string[]): number
   return null;
 }
 
-async function loadCsiItemFacts(companyId: string): Promise<Map<string, CsiItemFacts>> {
+export async function loadCsiItemFacts(companyId: string): Promise<Map<string, CsiItemFacts>> {
   const result = new Map<string, CsiItemFacts>();
   const rawDelegate = (prisma as any).inforRawRecord;
   if (!rawDelegate?.findMany) return result;
@@ -446,10 +446,10 @@ async function loadCsiItemFacts(companyId: string): Promise<Map<string, CsiItemF
   return result;
 }
 
-type VendorAddress = { vendorName: string | null; country: string | null; status: string | null };
+export type VendorAddress = { vendorName: string | null; country: string | null; status: string | null };
 
 /** Latest Infor vendor master (SLVendors) name, address country and status per vendor. */
-async function loadVendorAddresses(companyId: string): Promise<Map<string, VendorAddress>> {
+export async function loadVendorAddresses(companyId: string): Promise<Map<string, VendorAddress>> {
   const rows = await prisma.$queryRaw<Array<{ vendorId: string } & VendorAddress>>`
     SELECT DISTINCT ON (TRIM("vendorId"))
       TRIM("vendorId") AS "vendorId",
@@ -467,8 +467,30 @@ async function loadVendorAddresses(companyId: string): Promise<Map<string, Vendo
 
 const INACTIVE_STATUSES = new Set(['O', 'I']);
 
-function isInactiveStatus(value: string | null | undefined): boolean {
+export function isInactiveStatus(value: string | null | undefined): boolean {
   return INACTIVE_STATUSES.has(String(value || '').trim().toUpperCase());
+}
+
+/** Infor cost used as the default customs value: current unit cost, then unit cost. */
+export function inforUnitCost(csi: CsiItemFacts | null | undefined): number | null {
+  return firstPositive(csi?.currentUnitCost, csi?.unitCost);
+}
+
+/** Per-item COO overrides shared by SGP Freight and Duties & Tariffs, keyed by upper-case SKU. */
+export async function loadCooOverrides(companyId: string): Promise<Map<string, string>> {
+  await ensureCompanyItemFreightTable();
+  const rows = await prisma.$queryRaw<Array<{ itemSku: string; vendorCooOverride: string | null }>>`
+    SELECT "itemSku", "vendorCooOverride"
+    FROM "CompanyItemFreight"
+    WHERE "companyId" = ${companyId}
+      AND NULLIF(TRIM("vendorCooOverride"), '') IS NOT NULL
+  `.catch(() => []);
+  const result = new Map<string, string>();
+  for (const row of rows) {
+    const code = vendorCooCode(row.vendorCooOverride);
+    if (code) result.set(itemKey(row.itemSku), code);
+  }
+  return result;
 }
 
 function inforNumber(field: EditableFreightField, value: number | null | undefined): number | null {

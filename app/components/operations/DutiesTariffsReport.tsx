@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatEstDate, formatEstDateLabel } from '@/lib/time/eastern';
-import type { CompanyItemDutyRow } from '@/lib/hts/item-duty-overlay';
+import type { CompanyItemDutyPatch, CompanyItemDutyRow } from '@/lib/hts/item-duty-overlay';
 
 type MonthlyCogsRow = {
   monthKey: string;
@@ -90,11 +90,13 @@ type DutySortKey =
   | 'itemSku'
   | 'htsCode'
   | 'countryOfOrigin'
+  | 'primaryCustomer'
   | 'tradeProgram'
   | 'qtyUnit'
   | 'dutyCode'
-  | 'dutyDescription'
+  | 'itemDescription'
   | 'enteredValuePerPiece'
+  | 'totalTariffRatePct'
   | 'dutyRatePct'
   | 'specialRatePct'
   | 'section301RatePct'
@@ -105,12 +107,18 @@ type DutySortKey =
 
 const SORT_COLUMNS: Array<{ key: DutySortKey; label: string; align?: 'left' | 'right'; title?: string; width?: number }> = [
   { key: 'itemSku', label: 'Item' },
-  { key: 'countryOfOrigin', label: 'Origin' },
+  {
+    key: 'countryOfOrigin',
+    label: 'Origin',
+    title: 'Defaults to the vendor address country in Infor. Enter a code to override it (shared with SGP Freight vendor COO); clear it to go back to Infor.',
+  },
+  { key: 'primaryCustomer', label: 'Primary Customer', width: 160, title: 'Customer with the most invoiced revenue for this item in the last 12 months (all time if none), from Infor invoices.' },
   { key: 'tradeProgram', label: 'Program' },
   { key: 'qtyUnit', label: 'Unit' },
   { key: 'dutyCode', label: 'Duty Code', width: 88, title: 'User-maintained duty code. Existing values were imported from the SGP Duty & Tariffs sheet.' },
-  { key: 'dutyDescription', label: 'Description', width: 220, title: 'Official description from the HTS rate source.' },
-  { key: 'enteredValuePerPiece', label: 'Value $', align: 'right', title: 'Customs entered value per unit. Seeded from SGP material cost. Duty and tariff dollars = this value × the % rates.' },
+  { key: 'itemDescription', label: 'Description', width: 220, title: 'Item description from Infor. Enter text to override it; clear it to go back to Infor. Hover an HTS code for its official HTS description.' },
+  { key: 'enteredValuePerPiece', label: 'Value $', align: 'right', title: 'Customs entered value per unit. Defaults to the Infor unit cost; enter a value to override it, clear it to go back to Infor. Duty and tariff dollars = this value × the % rates.' },
+  { key: 'totalTariffRatePct', label: 'Total Tariff %', align: 'right', title: '301 % + 232 % + IEEPA % + Other %, matching Total Tariff $ in the Monthly Tariff Summary. Excludes Duty % and Special %.' },
   { key: 'dutyRatePct', label: 'Duty %', align: 'right' },
   { key: 'specialRatePct', label: 'Special %', align: 'right' },
   { key: 'section301RatePct', label: '301 %', align: 'right' },
@@ -120,14 +128,40 @@ const SORT_COLUMNS: Array<{ key: DutySortKey; label: string; align?: 'left' | 'r
   { key: 'updatedAt', label: 'Updated' },
 ];
 
+function totalTariffRatePct(row: CompanyItemDutyRow): number | null {
+  const parts = [row.section301RatePct, row.section232RatePct, row.ieepaRatePct, row.additionalRatePct].filter(
+    (value): value is number => value != null && Number.isFinite(Number(value))
+  );
+  return parts.length ? parts.reduce((sum, value) => sum + Number(value), 0) : null;
+}
+
+const DIFF_FIELDS = [
+  'htsCode',
+  'specialHtsCode',
+  'section301HtsCode',
+  'section232HtsCode',
+  'ieepaHtsCode',
+  'additionalHtsCode',
+  'countryOfOrigin',
+  'tradeProgram',
+  'qtyUnit',
+  'dutyCode',
+  'itemDescription',
+  'enteredValuePerPiece',
+] as const;
+
+const overrideInputStyle: React.CSSProperties = { background: '#fef3c7', borderColor: '#f59e0b' };
+
 function sortValue(row: CompanyItemDutyRow, key: DutySortKey): string | number {
   if (key === 'itemSku') return String(row.itemSku || '').trim().toLowerCase();
   if (key === 'htsCode') return String(row.htsCode || '').trim().toLowerCase();
   if (key === 'countryOfOrigin') return String(row.countryOfOrigin || '').trim().toLowerCase();
+  if (key === 'primaryCustomer') return String(row.primaryCustomer || '').trim().toLowerCase();
+  if (key === 'itemDescription') return String(row.itemDescription || '').trim().toLowerCase();
+  if (key === 'totalTariffRatePct') return totalTariffRatePct(row) ?? Number.NEGATIVE_INFINITY;
   if (key === 'tradeProgram') return PROGRAM_LABELS[row.tradeProgram] || row.tradeProgram || '';
   if (key === 'qtyUnit') return UNIT_LABELS[row.qtyUnit] || row.qtyUnit || '';
   if (key === 'dutyCode') return String(row.dutyCode || '').trim().toLowerCase();
-  if (key === 'dutyDescription') return String(row.dutyDescription || '').trim().toLowerCase();
   if (key === 'updatedAt') return row.userEditedAt || row.lastSpreadsheetSeedAt || row.updatedAt || '';
   const numeric = row[key];
   return numeric == null || !Number.isFinite(Number(numeric)) ? Number.NEGATIVE_INFINITY : Number(numeric);
@@ -172,7 +206,8 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [spreadsheetItems, setSpreadsheetItems] = useState(0);
+  const [originalById, setOriginalById] = useState<Record<string, CompanyItemDutyRow>>({});
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [missingHtsCount, setMissingHtsCount] = useState(0);
   const [sortKey, setSortKey] = useState<DutySortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -201,9 +236,10 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       if (!response.ok || payload?.ok === false) {
         throw new Error(payload?.error || 'Failed to load duties overlay');
       }
-      setItems(Array.isArray(payload.items) ? payload.items : []);
+      const loaded: CompanyItemDutyRow[] = Array.isArray(payload.items) ? payload.items : [];
+      setItems(loaded);
+      setOriginalById(Object.fromEntries(loaded.map((row) => [row.id, row])));
       setOffshoreVendors(Array.isArray(payload.vendorOptions) ? payload.vendorOptions : []);
-      setSpreadsheetItems(Number(payload.spreadsheetItems || 0));
       setMissingHtsCount(Number(payload.missingHtsCount || 0));
       setDirty(false);
     } catch (loadError) {
@@ -229,6 +265,25 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   };
 
   const save = async () => {
+    // Only changed fields are sent: description, origin and value are overrides, so re-sending
+    // an Infor value would pin it.
+    const patches: CompanyItemDutyPatch[] = [];
+    for (const row of items) {
+      const original = originalById[row.id];
+      const patch: Record<string, unknown> = { id: row.id, itemSku: row.itemSku };
+      let changed = false;
+      for (const field of DIFF_FIELDS) {
+        const next = row[field] ?? null;
+        if (original && (original[field] ?? null) === next) continue;
+        patch[field] = next === '' ? null : next;
+        changed = true;
+      }
+      if (changed) patches.push(patch as CompanyItemDutyPatch);
+    }
+    if (!patches.length) {
+      setDirty(false);
+      return;
+    }
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -236,24 +291,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       const response = await fetch('/api/operational-data/duties-tariffs', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          items: items.map((row) => ({
-            id: row.id,
-            itemSku: row.itemSku,
-            htsCode: row.htsCode,
-            specialHtsCode: row.specialHtsCode,
-            section301HtsCode: row.section301HtsCode,
-            section232HtsCode: row.section232HtsCode,
-            ieepaHtsCode: row.ieepaHtsCode,
-            additionalHtsCode: row.additionalHtsCode,
-            countryOfOrigin: row.countryOfOrigin,
-            tradeProgram: row.tradeProgram,
-            qtyUnit: row.qtyUnit,
-            dutyCode: row.dutyCode,
-            enteredValuePerPiece: row.enteredValuePerPiece,
-          })),
-        }),
+        body: JSON.stringify({ companyId: selectedCompanyId, items: patches }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.ok === false) {
@@ -268,14 +306,37 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     }
   };
 
+  const editedOverride = <K extends 'countryOfOrigin' | 'itemDescription' | 'enteredValuePerPiece'>(
+    row: CompanyItemDutyRow,
+    field: K,
+    inforValue: CompanyItemDutyRow[K] | null,
+    savedFlag: boolean
+  ): boolean => {
+    const original = originalById[row.id];
+    const value = row[field] ?? null;
+    if (original && (original[field] ?? null) !== value) return value != null && value !== '' && value !== inforValue;
+    return savedFlag;
+  };
+  const isOriginOverride = (row: CompanyItemDutyRow) =>
+    editedOverride(row, 'countryOfOrigin', row.inforOrigin, row.originOverridden);
+  const isDescriptionOverride = (row: CompanyItemDutyRow) =>
+    editedOverride(row, 'itemDescription', row.inforDescription, row.descriptionOverridden);
+  const isValueOverride = (row: CompanyItemDutyRow) =>
+    editedOverride(row, 'enteredValuePerPiece', row.inforValuePerPiece, row.valueOverridden);
+
+  const scopedItems = useMemo(
+    () => (includeInactive ? items : items.filter((row) => !row.inactive)),
+    [items, includeInactive]
+  );
+
   const counts = useMemo(() => {
-    const missing = items.filter((row) => row.needsHtsInput).length;
-    return { total: items.length, missing };
-  }, [items]);
+    const missing = scopedItems.filter((row) => row.needsHtsInput).length;
+    return { total: scopedItems.length, missing, inactive: items.filter((row) => row.inactive).length };
+  }, [items, scopedItems]);
 
   const vendorOptions = useMemo(() => {
     const byKey = new Map<string, { key: string; label: string; vendorId: string; count: number }>();
-    for (const row of items) {
+    for (const row of scopedItems) {
       const key = rowVendorKey(row);
       const existing = byKey.get(key);
       if (existing) {
@@ -312,7 +373,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
         };
       })
       .filter((vendor) => Boolean(vendor.label));
-  }, [items, offshoreVendors]);
+  }, [scopedItems, offshoreVendors]);
 
   const effectiveVendorFilter =
     vendorFilter === ALL_VENDORS_KEY || vendorOptions.some((vendor) => vendor.key === vendorFilter)
@@ -324,8 +385,11 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     : vendorOptions.find((vendor) => vendor.key === effectiveVendorFilter) || null;
 
   const visibleItems = useMemo(
-    () => (effectiveVendorFilter === ALL_VENDORS_KEY ? items : items.filter((row) => rowVendorKey(row) === effectiveVendorFilter)),
-    [items, effectiveVendorFilter]
+    () =>
+      effectiveVendorFilter === ALL_VENDORS_KEY
+        ? scopedItems
+        : scopedItems.filter((row) => rowVendorKey(row) === effectiveVendorFilter),
+    [scopedItems, effectiveVendorFilter]
   );
 
   const loadMonthlySummary = useCallback(async () => {
@@ -441,6 +505,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       const updatedCount = Number(payload.updated || 0);
       const lookedUp = Number(payload.lookedUp || 0);
       const failedCount = Array.isArray(payload.failed) ? payload.failed.length : 0;
+      setOriginalById(Object.fromEntries(nextItems.map((row) => [row.id, row])));
       if (lookedUp > 0) {
         setFilter('all');
         setItems(nextItems);
@@ -523,6 +588,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       if (!response.ok || payload?.ok === false) throw new Error(payload?.error || 'Failed to import tariff spreadsheet');
       const nextItems = Array.isArray(payload.items) ? (payload.items as CompanyItemDutyRow[]) : [];
       setItems(filter === 'needs_hts' ? nextItems.filter((row) => row.needsHtsInput) : nextItems);
+      setOriginalById(Object.fromEntries(nextItems.map((row) => [row.id, row])));
       setMonthlyCogs(Array.isArray(payload.monthlyCogs) ? (payload.monthlyCogs as MonthlyCogsRow[]) : []);
       setMissingHtsCount(nextItems.filter((row) => row.needsHtsInput).length);
       setTariffImportPreview(null);
@@ -550,12 +616,12 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <div style={{ fontSize: 13, color: '#475569' }}>
-            Seeded from the uploaded SGP workbook: HTS-10 and origin come from the Duty & Tariffs sheet, Value $ from SGP material cost.
-            New SKUs without a spreadsheet HTS stay blank for you to fill, then Save.
+            Items, vendors, descriptions and Value $ (unit cost) come from Infor, and origin comes from the vendor address in Infor. Description, origin and Value $ can be overridden (highlighted); clear the cell to go back to Infor.
+            HTS-10 codes are entered here or imported from a tariff file, then Save.
             Refresh rates fills Duty % from USITC Column 1, Section 301 from the China 8-digit lists, and IEEPA from origin-based Chapter 99 headings. Then it applies that snapshot to sales dates for product cost and P&L Duties / Tariffs. Value $ is required for dollar amounts.
           </div>
           <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-            Spreadsheet items: {spreadsheetItems}. Missing HTS: {filter === 'all' ? counts.missing : missingHtsCount}.
+            Inactive items: {counts.inactive}{includeInactive ? ' (shown)' : ' (hidden)'}. Missing HTS: {filter === 'all' ? counts.missing : missingHtsCount}.
             Showing {sortedItems.length} of {counts.total} item{counts.total === 1 ? '' : 's'}.
             {lastRateAsOfDate
               ? ` Rates as of ${formatEstDateLabel(lastRateAsOfDate)}${lastRateReleaseName ? ` (${lastRateReleaseName})` : ''}.`
@@ -588,6 +654,14 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
             <option value="needs_hts">Needs HTS input</option>
             <option value="all">All items</option>
           </select>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', fontWeight: 700 }}>
+            <input
+              type="checkbox"
+              checked={includeInactive}
+              onChange={(event) => setIncludeInactive(event.target.checked)}
+            />
+            Show inactive items
+          </label>
           <button
             type="button"
             onClick={() => void load(filter)}
@@ -764,10 +838,10 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                 <td colSpan={SORT_COLUMNS.length} style={{ padding: 24, color: '#64748b' }}>
                   {filter === 'needs_hts'
                     ? effectiveVendorFilter === ALL_VENDORS_KEY
-                      ? 'No items need HTS input. Switch to All items, or upload the SGP workbook / wait for new SKUs to load.'
+                      ? 'No items need HTS input. Switch to All items, or wait for new Infor items to load.'
                       : 'No items for this vendor need HTS input. Switch to All items or All vendors.'
                     : effectiveVendorFilter === ALL_VENDORS_KEY
-                    ? 'No items yet. Upload the SGP workbook or open this page after products have synced.'
+                    ? 'No Infor items with a primary vendor were found. Open this page after Infor has synced.'
                     : 'No items for this vendor. Switch to All vendors.'}
                 </td>
               </tr>
@@ -780,11 +854,25 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                 <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                   <input
                     value={row.countryOfOrigin || ''}
-                    onChange={(event) => updateRow(row.id, { countryOfOrigin: event.target.value || null })}
-                    placeholder="Origin"
+                    onChange={(event) => updateRow(row.id, { countryOfOrigin: event.target.value.toUpperCase() || null })}
+                    placeholder={row.inforOrigin || 'Origin'}
+                    title={isOriginOverride(row) ? `Override. Infor vendor address: ${row.inforOrigin || 'blank'}` : undefined}
                     size={7}
-                    style={{ ...inputStyle, width: '7ch', minWidth: '7ch', maxWidth: '7ch', boxSizing: 'content-box' }}
+                    style={{
+                      ...inputStyle,
+                      width: '7ch',
+                      minWidth: '7ch',
+                      maxWidth: '7ch',
+                      boxSizing: 'content-box',
+                      ...(isOriginOverride(row) ? overrideInputStyle : {}),
+                    }}
                   />
+                </td>
+                <td
+                  title={row.primaryCustomer || undefined}
+                  style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: 160, minWidth: 120, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {row.primaryCustomer || '—'}
                 </td>
                 <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', minWidth: 120, width: 120 }}>
                   <select
@@ -817,18 +905,30 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                     style={{ ...inputStyle, fontWeight: 700 }}
                   />
                 </td>
-                <td
-                  title={row.dutyDescription || undefined}
-                  style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: 220, minWidth: 180, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                >
-                  {row.dutyDescription || '—'}
+                <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: 220, minWidth: 180, maxWidth: 280 }}>
+                  <input
+                    value={row.itemDescription || ''}
+                    onChange={(event) => updateRow(row.id, { itemDescription: event.target.value || null })}
+                    placeholder={row.inforDescription || 'Description'}
+                    title={
+                      isDescriptionOverride(row)
+                        ? `Override. Infor: ${row.inforDescription || 'blank'}`
+                        : row.itemDescription || undefined
+                    }
+                    style={{ ...inputStyle, ...(isDescriptionOverride(row) ? overrideInputStyle : {}) }}
+                  />
                 </td>
                 <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
                   <input
                     value={moneyText(row.enteredValuePerPiece)}
                     onChange={(event) => updateRow(row.id, { enteredValuePerPiece: parseMoney(event.target.value) })}
-                    style={{ ...inputStyle, textAlign: 'right' }}
+                    placeholder={moneyText(row.inforValuePerPiece)}
+                    title={isValueOverride(row) ? `Override. Infor unit cost: ${moneyText(row.inforValuePerPiece) || 'blank'}` : undefined}
+                    style={{ ...inputStyle, textAlign: 'right', ...(isValueOverride(row) ? overrideInputStyle : {}) }}
                   />
+                </td>
+                <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 700 }}>
+                  {pctText(totalTariffRatePct(row))}
                 </td>
                 {([
                   ['htsCode', row.dutyRatePct],
@@ -844,6 +944,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
                         value={row[field] || ''}
                         onChange={(event) => updateRow(row.id, { [field]: event.target.value || null })}
                         placeholder="HTS-10"
+                        title={field === 'htsCode' ? row.dutyDescription || undefined : undefined}
                         aria-label={`${field} HTS code`}
                         style={{
                           ...inputStyle,

@@ -10,7 +10,6 @@ import {
   parseAprSgpGmpaWorkbook,
 } from '@/lib/operational/apr-sgp-gmpa';
 import { parseSgpFreightWorkbook } from '@/lib/operational/apr-sgp-freight';
-import { refreshCompanyItemDuties } from '@/lib/hts/item-duty-overlay';
 export const dynamic = 'force-dynamic';
 
 const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
@@ -120,10 +119,6 @@ export async function POST(request: NextRequest) {
       errorMessage: null,
     });
 
-    const dutySeed = await refreshCompanyItemDuties(companyId).catch((error) => {
-      console.error('SGP duties overlay seed failed:', error);
-      return { spreadsheetItems: 0, discovered: 0 };
-    });
     const stored = await runOperationalSource({ companyId, sourceCode: APR_SGP_GMPA_SOURCE_CODE, mode: 'LIVE' });
     if (!stored.ok) console.error('SGP/GMPA store write failed:', stored.error || stored.skipped);
 
@@ -137,7 +132,6 @@ export async function POST(request: NextRequest) {
       rowCount: parsed.rowCount,
       customerCount: parsed.customerCount,
       itemCount: parsed.itemCount,
-      dutyItemsSeeded: dutySeed.spreadsheetItems,
     });
   } catch (error: any) {
     return NextResponse.json(

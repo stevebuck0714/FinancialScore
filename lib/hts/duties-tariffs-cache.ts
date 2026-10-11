@@ -1,19 +1,28 @@
 import prisma from '@/lib/prisma';
 import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import {
+  dutyOriginCode,
   ensureCompanyItemDutyTable,
   listCompanyItemDuties,
+  normalizeItemSku,
   refreshCompanyItemDuties,
   type CompanyItemDutyRow,
 } from '@/lib/hts/item-duty-overlay';
+import {
+  inforUnitCost,
+  isInactiveStatus,
+  loadCooOverrides,
+  loadCsiItemFacts,
+  loadVendorAddresses,
+} from '@/lib/operations/item-freight-overlay';
 import { loadPrimaryVendorByItem } from '@/lib/operations/vendor-monthly-forecast-db';
 
 const NAMESPACE = 'duties-tariffs';
-const SOURCE_VERSION = 'duties-tariffs-warm-v2-freight-vendor-link';
+const SOURCE_VERSION = 'duties-tariffs-warm-v3-infor-items';
 const TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export type DutiesTariffsPayload = {
-  spreadsheetItems: number;
+  inactiveCount: number;
   discovered: number;
   missingHtsCount: number;
   items: CompanyItemDutyRow[];
@@ -22,8 +31,7 @@ export type DutiesTariffsPayload = {
 };
 
 async function loadNonUsVendors(companyId: string): Promise<DutiesTariffsPayload['vendorOptions']> {
-  const [vendorMasterRows, freightRows] = await Promise.all([
-    prisma.$queryRaw<Array<{ vendorId: string; vendorName: string; country: string | null }>>`
+  const vendorMasterRows = await prisma.$queryRaw<Array<{ vendorId: string; vendorName: string; country: string | null }>>`
     WITH latest AS (
       SELECT MAX("snapshotDate") AS "snapshotDate"
       FROM "VendorSnapshot"
@@ -35,20 +43,9 @@ async function loadNonUsVendors(companyId: string): Promise<DutiesTariffsPayload
       AND "snapshotDate" = (SELECT "snapshotDate" FROM latest)
       AND UPPER(TRIM(COALESCE("country", ''))) NOT IN ('', 'US', 'USA', 'UNITED STATES', 'DOM')
     ORDER BY "vendorName" ASC, "vendorId" ASC
-    `.catch(() => []),
-    prisma.$queryRaw<Array<{ vendorId: string | null; vendorName: string | null; country: string | null }>>`
-      SELECT DISTINCT
-        "spreadsheetVendorId" AS "vendorId",
-        "spreadsheetVendorName" AS "vendorName",
-        COALESCE("spreadsheetVendorCoo", "countryOfOrigin") AS "country"
-      FROM "CompanyItemFreight"
-      WHERE "companyId" = ${companyId}
-        AND COALESCE(NULLIF("spreadsheetVendorId", ''), NULLIF("spreadsheetVendorName", '')) IS NOT NULL
-        AND UPPER(TRIM(COALESCE("spreadsheetVendorCoo", "countryOfOrigin", ''))) NOT IN ('', 'US', 'USA', 'UNITED STATES', 'DOM')
-    `.catch(() => []),
-  ]);
+  `.catch(() => []);
   const vendors = new Map<string, { vendorId: string; vendorName: string; country: string | null }>();
-  for (const row of [...vendorMasterRows, ...freightRows]) {
+  for (const row of vendorMasterRows) {
     const vendorId = String(row.vendorId || '').trim();
     const vendorName = String(row.vendorName || '').trim();
     if (!vendorId && !vendorName) continue;
@@ -60,37 +57,68 @@ async function loadNonUsVendors(companyId: string): Promise<DutiesTariffsPayload
   );
 }
 
-async function withVendorNames(companyId: string, items: CompanyItemDutyRow[]): Promise<CompanyItemDutyRow[]> {
-  const [vendorByItem, freightVendorRows] = await Promise.all([
-    loadPrimaryVendorByItem(companyId).catch(() => new Map()),
-    prisma.$queryRaw<Array<{ itemSku: string; vendorId: string | null; vendorName: string | null }>>`
+/** Customer with the most invoiced revenue per item over the last 12 months, else all time. */
+async function loadPrimaryCustomerByItem(companyId: string): Promise<Map<string, string>> {
+  const rows = await prisma.$queryRaw<Array<{ itemKey: string; customer: string }>>`
+    WITH totals AS (
       SELECT
-        "itemSku",
-        "spreadsheetVendorId" AS "vendorId",
-        "spreadsheetVendorName" AS "vendorName"
-      FROM "CompanyItemFreight"
+        UPPER(BTRIM("itemSku")) AS "itemKey",
+        COALESCE(NULLIF(BTRIM("customerName"), ''), NULLIF(BTRIM("customerId"), '')) AS "customer",
+        SUM("revenue") FILTER (WHERE "invoiceDate" >= NOW() - INTERVAL '12 months') AS "recentRevenue",
+        SUM("revenue") AS "totalRevenue"
+      FROM "ProductInvoiceLineFact"
       WHERE "companyId" = ${companyId}
-        AND COALESCE(NULLIF("spreadsheetVendorId", ''), NULLIF("spreadsheetVendorName", '')) IS NOT NULL
-    `.catch(() => []),
+      GROUP BY 1, 2
+    )
+    SELECT DISTINCT ON ("itemKey") "itemKey", "customer"
+    FROM totals
+    WHERE "customer" IS NOT NULL
+    ORDER BY "itemKey", "recentRevenue" DESC NULLS LAST, "totalRevenue" DESC
+  `.catch(() => []);
+  return new Map(rows.map((row) => [row.itemKey, row.customer] as [string, string]));
+}
+
+/**
+ * Limits the list to Infor items with a primary vendor and resolves each row's Infor values:
+ * vendor, description, origin (shared COO override, else vendor address) and unit cost.
+ */
+async function withInforContext(companyId: string, items: CompanyItemDutyRow[]): Promise<CompanyItemDutyRow[]> {
+  const [csiByItem, vendorByItem, vendorAddresses, cooOverrides, primaryCustomers] = await Promise.all([
+    loadCsiItemFacts(companyId).catch(() => new Map()),
+    loadPrimaryVendorByItem(companyId).catch(() => new Map<string, { vendorId: string; vendorName: string }>()),
+    loadVendorAddresses(companyId),
+    loadCooOverrides(companyId).catch(() => new Map<string, string>()),
+    loadPrimaryCustomerByItem(companyId),
   ]);
-  const freightVendorByItem = new Map<string, { vendorId: string; vendorName: string }>();
-  for (const row of freightVendorRows) {
-    const itemSku = String(row.itemSku || '').trim();
-    const vendorId = String(row.vendorId || '').trim();
-    const vendorName = String(row.vendorName || '').trim();
-    if (!itemSku || (!vendorId && !vendorName)) continue;
-    freightVendorByItem.set(itemSku.toUpperCase(), { vendorId, vendorName: vendorName || vendorId });
+  const result: CompanyItemDutyRow[] = [];
+  for (const item of items) {
+    const key = normalizeItemSku(item.itemSku).toUpperCase();
+    const csi = csiByItem.get(key);
+    const vendor = vendorByItem.get(key);
+    if (!csi || !vendor?.vendorId) continue;
+    const address = vendorAddresses.get(vendor.vendorId);
+    const vendorName =
+      vendor.vendorName && vendor.vendorName !== vendor.vendorId ? vendor.vendorName : address?.vendorName || vendor.vendorId;
+    const inforOrigin = dutyOriginCode(address?.country);
+    const originOverride = dutyOriginCode(cooOverrides.get(key));
+    const inforDescription = String(csi.description || '').trim() || null;
+    const inforValuePerPiece = inforUnitCost(csi);
+    result.push({
+      ...item,
+      vendorId: vendor.vendorId,
+      vendorName,
+      primaryCustomer: primaryCustomers.get(key) || null,
+      inactive: isInactiveStatus(csi.materialStatus) || isInactiveStatus(address?.status),
+      inforDescription,
+      itemDescription: item.descriptionOverridden ? item.itemDescription : inforDescription || item.itemDescription,
+      inforOrigin,
+      originOverridden: Boolean(originOverride),
+      countryOfOrigin: originOverride || inforOrigin || item.countryOfOrigin,
+      inforValuePerPiece,
+      enteredValuePerPiece: item.valueOverridden ? item.enteredValuePerPiece : inforValuePerPiece ?? item.enteredValuePerPiece,
+    });
   }
-  return items.map((item) => {
-    const sku = String(item.itemSku || '').trim();
-    // Freight-sheet assignments are Atlantic's authoritative item/vendor link
-    // and remain available for SKUs that have not received an HTS code yet.
-    const vendor =
-      freightVendorByItem.get(sku.toUpperCase()) ||
-      vendorByItem.get(sku.toUpperCase()) ||
-      vendorByItem.get(sku);
-    return { ...item, vendorId: vendor?.vendorId || null, vendorName: vendor?.vendorName || null };
-  });
+  return result;
 }
 
 export async function dutiesTariffsDataVersion(companyId: string): Promise<string> {
@@ -125,13 +153,13 @@ export async function buildDutiesTariffsPayload(companyId: string, discovered = 
     listCompanyItemDuties(companyId, 'all'),
     loadNonUsVendors(companyId),
   ]);
-  const items = await withVendorNames(companyId, dutyRows);
+  const items = await withInforContext(companyId, dutyRows);
   const { loadMonthlyHtsDutyCogs } = await import('@/lib/hts/apply-duty-cogs');
   const monthly = await loadMonthlyHtsDutyCogs(companyId).catch(() => new Map());
   return {
-    spreadsheetItems: items.filter((item) => item.htsInputSource === 'spreadsheet' || Boolean(item.lastSpreadsheetSeedAt)).length,
+    inactiveCount: items.filter((item) => item.inactive).length,
     discovered,
-    missingHtsCount: items.filter((item) => item.needsHtsInput).length,
+    missingHtsCount: items.filter((item) => item.needsHtsInput && !item.inactive).length,
     items,
     monthlyCogs: Array.from(monthly.values()),
     vendorOptions,
