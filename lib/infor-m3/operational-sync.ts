@@ -7808,6 +7808,11 @@ function getApSourceItemId(record: Record<string, unknown>): string {
     .join('|');
 }
 
+function isVoucherHeaderRecord(record: Record<string, unknown>): boolean {
+  const itemId = pickString(record, ['_ItemId', 'ItemId', 'itemId']);
+  return /^PBT=\[vch_hdr\]/i.test(String(itemId || '').trim());
+}
+
 async function saveAPTransactionFacts(
   companyId: string,
   records: Record<string, unknown>[]
@@ -7833,6 +7838,11 @@ async function saveAPTransactionFacts(
     const rawType = String(pickString(record, ['Type', 'type']) || 'V').trim().toLowerCase();
     const transType = rawType || 'v';
     const sign = AP_TYPE_SIGN[transType] ?? 1;
+    // A vch_hdr Type=A row carries the voucher's full adjusted total, not the
+    // adjustment, so booking it re-opens a settled voucher. The genuine
+    // adjustment arrives on the aptrxp Type=A row. Atlantic carried 204 of
+    // these worth +$4.1M against $341K books AP.
+    if (transType === 'a' && isVoucherHeaderRecord(record)) continue;
     const vouchSeq = pickString(record, ['VouchSeq', 'vouchSeq']) || '0';
     const isPaymentLike = transType === 'p' || transType === 'a';
     // Only payment-like rows get a per-line identity. Type=V stays null so the
@@ -10442,6 +10452,8 @@ export async function syncInforM3OperationalData(
                   // payment activity; do not turn those repeats into second
                   // invoice events. Preserve non-V events (P/A/C/D) from that
                   // stream so the ledger has actual settlements and credits.
+                  // SLVchHdrs Type=A rows hold full adjusted totals, not the
+                  // adjustment, so only the SLAptrx* Type=A rows are kept.
                   const apFactRecords = isSlAptrxFamily
                     ? records.filter(
                         (record) =>
@@ -10449,7 +10461,12 @@ export async function syncInforM3OperationalData(
                             .trim()
                             .toUpperCase() !== 'V'
                       )
-                    : records;
+                    : records.filter(
+                        (record) =>
+                          String(pickString(record, ['Type', 'type']) || '')
+                            .trim()
+                            .toUpperCase() !== 'A'
+                      );
                   const apFactRows = await saveAPTransactionFacts(companyId, apFactRecords);
                   moduleRecordsCreated += apFactRows;
                 }
