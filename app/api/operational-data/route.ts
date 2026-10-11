@@ -2631,6 +2631,12 @@ const DEFAULT_TERMS_LABEL = 'default:N30';
 // a total with no distribution.
 const AP_AGING_MAX_DAYS_PAST_LEDGER = 14;
 
+// Open vouchers may fall short of books AP (CSI omits duty and tariff
+// settlements), but far above it means paid vouchers still look open because
+// the feed lacks whatever closed them. Their age mix and bill list are then
+// mostly stale residuals, so neither is shown.
+const AP_AGING_RULE_MAX_BOOKS_RATIO = 1.25;
+
 function termsCodeToDays(code: string | null | undefined): number | null {
   if (!code) return null;
   const trimmed = String(code).trim().toUpperCase();
@@ -3695,7 +3701,7 @@ export async function GET(request: NextRequest) {
               // v3: QBD/QBO KPI cards follow APAgingSnapshot (same as the trend
               // chart) instead of re-aged APOpenBillSnapshot totals.
               cacheType === 'ap-aging' || cacheType === 'ap'
-                ? 'ap-books-anchor-v4-qbd-1to30-kpi'
+                ? 'ap-books-anchor-v5-voucher-overstatement-gate'
                 : null,
               cacheType === 'customers' ? CUSTOMER_CONCENTRATION_CACHE_VERSION : null,
               cacheType === 'customers' ? CUSTOMER_REVENUE_SOURCE_VERSION : null,
@@ -8735,7 +8741,20 @@ export async function GET(request: NextRequest) {
               // which leaves the ledger a variable amount below books and used
               // to force every bucket to zero. A distribution just needs some
               // open vouchers behind it.
-              agingRuleValidated = atLedger != null && Number(atLedger.apBalance || 0) > 0;
+              const ledgerApBalance = Number(atLedger?.apBalance || 0);
+              const booksAtLedger = Number(booksApAtLedgerAsOf || 0);
+              agingRuleValidated =
+                atLedger != null &&
+                ledgerApBalance > 0 &&
+                (booksAtLedger <= 0 || ledgerApBalance <= booksAtLedger * AP_AGING_RULE_MAX_BOOKS_RATIO);
+              if (atLedger != null && ledgerApBalance > 0 && !agingRuleValidated) {
+                console.warn('[ap-aging] open vouchers far exceed books AP; showing books total only', {
+                  companyId,
+                  apLedgerAsOfKey,
+                  booksApAtLedgerAsOf,
+                  ledgerApBalance,
+                });
+              }
               if (latestDfsKey) {
                 apLedgerLagDays = Math.floor(
                   (parseIsoDayKey(latestDfsKey).getTime() - parseIsoDayKey(apLedgerAsOfKey).getTime()) /
