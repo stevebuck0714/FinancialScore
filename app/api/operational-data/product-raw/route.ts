@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
+import { loadInforCustomerGroups, resolveCustomerGroup } from '@/lib/operations/infor-customer-groups';
 import {
   ensureCustomerOrderLineFilledTables,
   isTrulyOpenSql,
@@ -118,6 +119,7 @@ function mapOrderLineRecord(row: any, status: 'open' | 'filled') {
 }
 
 type LineIdentity = { customerPn: string; customerGroup: string };
+type CustomerLineIdentity = { byItem: Map<string, LineIdentity>; customerGroup: string };
 
 function itemIdentityKey(value: unknown): string {
   return String(value || '').trim().toUpperCase();
@@ -138,7 +140,7 @@ async function loadCustomerLineIdentity(params: {
   companyId: string;
   customerId: string;
   customerName: string;
-}): Promise<Map<string, LineIdentity>> {
+}): Promise<CustomerLineIdentity> {
   const byItem = new Map<string, LineIdentity>();
   const matchRevenue = customerMatchSql(params.customerId, params.customerName);
 
@@ -168,22 +170,22 @@ async function loadCustomerLineIdentity(params: {
     // Forecast table is optional for Raw Data.
   }
 
-  return byItem;
+  const groups = await loadInforCustomerGroups(params.companyId);
+  return { byItem, customerGroup: resolveCustomerGroup(groups, params.customerId, params.customerName) };
 }
 
-function applyLineIdentity(row: any, identityByItem: Map<string, LineIdentity>) {
+function applyLineIdentity(row: any, lineIdentity: CustomerLineIdentity) {
+  const { byItem } = lineIdentity;
   const identity =
-    identityByItem.get(itemIdentityKey(row.sku)) ||
-    identityByItem.get(itemIdentityKey(row.itemId)) ||
-    identityByItem.get(itemIdentityKey(row.itemName));
+    byItem.get(itemIdentityKey(row.sku)) ||
+    byItem.get(itemIdentityKey(row.itemId)) ||
+    byItem.get(itemIdentityKey(row.itemName));
   if (!row.customerPn && identity?.customerPn) {
     row.customerPn = identity.customerPn;
     row.customerPartNumber = identity.customerPn;
     row.custItem = identity.customerPn;
   }
-  if (!row.customerGroup && identity?.customerGroup) {
-    row.customerGroup = identity.customerGroup;
-  }
+  row.customerGroup = lineIdentity.customerGroup || row.customerGroup || '';
   return row;
 }
 
@@ -738,7 +740,7 @@ export async function GET(request: NextRequest) {
     const wantsFilled = view === 'filled' || (view !== 'open' && windowKind === 'older');
 
     if (!wantsFilled) {
-      const [{ rows: openRows, openAsOf }, identityByItem] = await Promise.all([
+      const [{ rows: openRows, openAsOf }, lineIdentity] = await Promise.all([
         loadOpenLines({
           companyId,
           customerId,
@@ -753,7 +755,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         openRecords: openRows
           .map((row) => mapOrderLineRecord(row, 'open'))
-          .map((row) => applyLineIdentity(row, identityByItem)),
+          .map((row) => applyLineIdentity(row, lineIdentity)),
         filledRecords: [],
         openAsOf: openAsOf ? isoDay(openAsOf) : null,
         window: null,
@@ -795,7 +797,7 @@ export async function GET(request: NextRequest) {
 
     const endExclusive = addUtcDays(utcDay(endDate), 1);
     const nextOlderWindow = olderWindowBefore(startDate);
-    const [identityByItem, filledRows] = await Promise.all([
+    const [lineIdentity, filledRows] = await Promise.all([
       loadCustomerLineIdentity({ companyId, customerId, customerName }),
       loadFilledLines({
         companyId,
@@ -813,7 +815,7 @@ export async function GET(request: NextRequest) {
       openRecords: [],
       filledRecords: limitedFilled
         .map((row) => mapOrderLineRecord(row, 'filled'))
-        .map((row) => applyLineIdentity(row, identityByItem)),
+        .map((row) => applyLineIdentity(row, lineIdentity)),
       window: {
         kind,
         startDate: isoDay(startDate),

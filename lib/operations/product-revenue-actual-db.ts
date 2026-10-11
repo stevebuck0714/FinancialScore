@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { loadInforCustomerGroups, withInforCustomerGroups } from '@/lib/operations/infor-customer-groups';
 import {
   FORECAST_MONTHS,
   actualsClosedThrough,
@@ -352,7 +353,7 @@ export async function upsertRevenueLines(params: {
        ) VALUES ${sqlValues(chunk.length, columns)}
        ON CONFLICT ("companyId", "year", "customerId", "itemSku", "customerPartNumber") DO UPDATE SET
          "customerName" = EXCLUDED."customerName",
-         "customerGroup" = EXCLUDED."customerGroup",
+         "customerGroup" = COALESCE(EXCLUDED."customerGroup", "ProductRevenueLine"."customerGroup"),
          "team" = EXCLUDED."team",
          "csr" = EXCLUDED."csr",
          "productionType" = EXCLUDED."productionType",
@@ -1008,6 +1009,8 @@ export async function loadRevenueDataset(params: {
 
   const includeLines = Boolean(customerId || customerName || params.includeAllLines);
   const dataThru = shipped.actuals.ok ? actualsClosedThrough(year, shipped.actuals.asOf) : null;
+  // Stored groups stay as price keys; displayed groups come from Infor.
+  const customerGroups = includeLines ? await loadInforCustomerGroups(companyId) : new Map<string, string>();
   return {
     year,
     catalogSourceYear,
@@ -1019,6 +1022,8 @@ export async function loadRevenueDataset(params: {
       ? catalogCustomers.customers.reduce((sum, row) => sum + Number(row.lineCount || 0), 0)
       : allLines.length,
     totals: summarizeRevenueLines(includeLines ? scoped : allLines, dataThru),
-    lines: includeLines ? scoped.map((line) => serializeJoinedRevenueLine(line, dataThru)) : [],
+    lines: includeLines
+      ? withInforCustomerGroups(scoped, customerGroups).map((line) => serializeJoinedRevenueLine(line, dataThru))
+      : [],
   };
 }

@@ -90,9 +90,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Select a customer before saving rows.' }, { status: 400 });
     }
 
-    const lines = rawLines.map((raw, index) =>
-      normalizeRevenueLineInput(raw as ProductRevenueLineInput, { customerId, customerName }, index)
-    );
+    // Group is read-only on the page (Infor corporate customer), so saves keep the stored price-key group.
+    const lines = rawLines.map((raw, index) => ({
+      ...normalizeRevenueLineInput(raw as ProductRevenueLineInput, { customerId, customerName }, index),
+      customerGroup: null,
+    }));
     if (lines.some((line) => !line.itemSku)) {
       return NextResponse.json({ error: 'Every row needs an APR P/N before saving.' }, { status: 400 });
     }

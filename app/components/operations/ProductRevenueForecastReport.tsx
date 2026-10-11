@@ -62,10 +62,12 @@ const IDENTITY_COLUMNS: Array<{
   widthCh: number;
   compact?: boolean;
   sortable?: boolean;
+  readOnly?: boolean;
 }> = [
   { key: 'itemSku', label: 'APR P/N', widthCh: 12, sortable: true },
   { key: 'customerPartNumber', label: 'Customer P/N', widthCh: 12, sortable: true },
-  { key: 'customerGroup', label: 'Group', widthCh: 8 },
+  // Infor corporate customer, else the customer name.
+  { key: 'customerGroup', label: 'Group', widthCh: 8, readOnly: true },
   { key: 'team', label: 'TEAM', widthCh: 5, compact: true },
   { key: 'csr', label: 'CSR', widthCh: 3, compact: true },
 ];
@@ -992,10 +994,12 @@ export default function ProductRevenueForecastReport({
                           <input
                             value={line[column.key]}
                             title={line[column.key] || undefined}
-                            onChange={(event) => updateLine(line.id, { [column.key]: event.target.value })}
+                            readOnly={column.readOnly}
+                            onChange={column.readOnly ? undefined : (event) => updateLine(line.id, { [column.key]: event.target.value })}
                             style={{
                               ...identityInputStyle,
                               padding: column.compact ? '5px 4px' : identityInputStyle.padding,
+                              ...(column.readOnly ? { background: '#f8fafc', color: '#475569', cursor: 'default' } : {}),
                             }}
                           />
                         </td>

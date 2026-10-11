@@ -459,7 +459,7 @@ export async function upsertForecastLines(params: {
        ) VALUES ${sqlValues(chunk.length, columns)}
        ON CONFLICT ("companyId", "year", "customerId", "itemSku", "customerPartNumber") DO UPDATE SET
          "customerName" = EXCLUDED."customerName",
-         "customerGroup" = EXCLUDED."customerGroup",
+         "customerGroup" = COALESCE(EXCLUDED."customerGroup", "ProductRevenueForecastLine"."customerGroup"),
          "team" = EXCLUDED."team",
          "csr" = EXCLUDED."csr",
          "productionType" = EXCLUDED."productionType",

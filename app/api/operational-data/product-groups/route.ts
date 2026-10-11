@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { asForecastYear, assertProductsForecastAccess, ensureProductRevenueTables } from '@/lib/operations/product-revenue-actual-db';
+import { loadInforCustomerGroups, resolveCustomerGroup } from '@/lib/operations/infor-customer-groups';
 import { loadProductGroupDataset } from '@/lib/operations/product-group-reports';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
 import { ATLANTIC_PRECISION_COMPANY_ID } from '@/lib/operations/product-group-report-warmup';
@@ -60,15 +61,18 @@ export async function GET(request: NextRequest) {
 async function buildGroupReportPayload(companyId: string, year: number) {
   await ensureProductRevenueTables();
   const dataset = await loadProductGroupDataset({ companyId, year });
-  const historyLines = await prisma.productRevenueLine.findMany({
-    where: { companyId },
-    select: { year: true, customerGroup: true, actualRevenue: true },
-    orderBy: [{ year: 'asc' }, { customerGroup: 'asc' }],
-  });
+  const [historyLines, customerGroups] = await Promise.all([
+    prisma.productRevenueLine.findMany({
+      where: { companyId },
+      select: { year: true, customerId: true, customerName: true, actualRevenue: true },
+      orderBy: [{ year: 'asc' }, { customerName: 'asc' }],
+    }),
+    loadInforCustomerGroups(companyId),
+  ]);
   const historyByGroup = new Map<string, { key: string; label: string; values: Record<string, number>; total: number }>();
   const monthKeys = new Set<string>();
   for (const line of historyLines) {
-    const group = String(line.customerGroup || '').trim() || 'Unassigned';
+    const group = resolveCustomerGroup(customerGroups, line.customerId, line.customerName) || 'Unassigned';
     const bucket = historyByGroup.get(group) || { key: group, label: group, values: {}, total: 0 };
     const actualRevenue = line.actualRevenue && typeof line.actualRevenue === 'object' && !Array.isArray(line.actualRevenue)
       ? line.actualRevenue as Record<string, unknown>

@@ -642,6 +642,9 @@ function applyProgramEndpointPropertyPolicy(endpointPath: string, explicitProgra
   if (programId === 'SLITEMS' && /\/IDORequestService\/ido\/load\//i.test(next)) {
     next = unionCsiProperties(next, SLITEMS_FREIGHT_PROPERTIES);
   }
+  if (programId === 'SLCUSTOMERS' && /\/IDORequestService\/ido\/load\//i.test(next)) {
+    next = unionCsiProperties(next, SLCUSTOMERS_GROUP_PROPERTIES);
+  }
   const enforced = ENFORCED_PROGRAM_PROPERTIES[programId];
   if (enforced && /\/IDORequestService\/ido\/load\//i.test(next)) {
     next = ensureCsiProperties(next, enforced);
@@ -1784,6 +1787,8 @@ const SLITEMS_FREIGHT_PROPERTIES = [
   'OrderMin', 'Revision', 'Country', 'Origin', 'CostType', 'CostMethod', 'PlanCode',
   'RatePerDay', 'LeadTime', 'ReasonCode', 'StatusChgUserCode',
 ];
+// Corporate customer drives the customer group on the product and vendor pages.
+const SLCUSTOMERS_GROUP_PROPERTIES = ['CustNum', 'Name', 'CustSeq', 'CorpCust', 'CorpadrName'];
 const OPTIONAL_CSI_GL_SUMMARY_PROGRAMS = new Set([
   'GLACCTPERIODBALANCES',
   'SLGLACCTPERIODBALANCES',
