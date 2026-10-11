@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { formatEstDate } from '@/lib/time/eastern';
 import { ensureProductRevenueTables } from '@/lib/operations/product-revenue-actual-db';
 import { ensureVendorMonthlyForecastTables, assertVendorsForecastAccess } from '@/lib/operations/vendor-monthly-forecast-db';
+import { ensureVendorForecastFromInfor } from '@/lib/operations/vendor-forecast-infor';
 import { buildMockVendorReportsPayload } from '@/lib/operations/sector-mock-data';
 
 export const dynamic = 'force-dynamic';
@@ -63,6 +64,9 @@ export async function GET(request: NextRequest) {
 
     await Promise.all([ensureVendorMonthlyForecastTables(), ensureProductRevenueTables()]);
     const year = asYear(request.nextUrl.searchParams.get('year'));
+    await ensureVendorForecastFromInfor(companyId, year).catch((error) => {
+      console.error('[vendor-reports] Infor forecast refresh failed', error);
+    });
     const months = recentMonthNumbers();
     const latestSnapshot = await prisma.vendorSnapshot.findFirst({
       where: { companyId },

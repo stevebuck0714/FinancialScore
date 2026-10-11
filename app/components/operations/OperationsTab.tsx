@@ -12939,21 +12939,22 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'Monthly SGP estimated units vs YTD actual, by APR P/N and vendor. Import the Revenue Forecasts workbook, then pick a vendor.',
+              'Monthly estimated units vs actual shipped units, by APR P/N and vendor. Everything comes from Infor; pick a vendor.',
           },
           {
-            heading: 'How to load it',
+            heading: 'Where the numbers come from',
             body: [
-              'Use Import workbook with the file that contains SGP Forecasts Current (also named Forecasts 2026 SGP). The annual GMPA worksheet does not have those monthly columns.',
-              'After import, choose a vendor. Estimated months can be typed or imported. YTD and percents come from operations data.',
+              'Rows are customer + item pairs with open Infor orders or shipments in the last 12 months. Vendor is the item\'s primary vendor in Infor; customer name is from the Infor customer master.',
+              'Estimated units for the current and future months are the Infor order book by due month: open lines at ordered quantity, filled lines at shipped quantity. They refresh with each Infor order load.',
+              'Past months keep the estimate they had when the month closed, so actual vs estimated stays meaningful.',
+              'Actual units are Infor shipments for that month. % Actual vs Estimated is Actual ÷ Estimated for that month.',
             ],
           },
           {
-            heading: 'What is typed vs calculated',
+            heading: 'What you can edit',
             body: [
-              'Typed (or imported from the workbook): annual SGP estimated (column J) and monthly Estimated for Jan–Dec (N, Q, T, Z, AC, AF, AL, AO, AR, AX, BA, BD).',
-              'YTD actuals come from operations data. % YTD vs Estimated is YTD ÷ Estimated for that month.',
-              'Identity (APR P/N, customer, group, Planned/MTO) is imported from the item master / workbook. Quarter and annual totals belong on Forecast Rollup.',
+              'Type an estimate to override Infor for that month (highlighted amber; the tooltip shows the Infor value). Clear it to go back to Infor.',
+              'Planned/MTO is editable. Team, CSR, group and status are kept from the earlier workbook rows; Infor has no fields for them. Quarter and annual totals belong on Forecast Rollup.',
             ],
           },
         ],

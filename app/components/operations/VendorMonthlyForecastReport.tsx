@@ -10,15 +10,11 @@ import {
   monthQty,
   pctVsPlan,
   remainingForecastQty,
-  readProductOperationsWorkbook,
-  workbookImportErrorMessage,
   type ForecastMonth,
   type MonthQtyMap,
 } from '@/lib/operations/product-revenue-forecast';
-import {
-  parseVendorMonthlyForecastWorkbook,
-  type VendorMonthlyForecastLineInput,
-} from '@/lib/operations/vendor-monthly-forecast';
+import { type VendorMonthlyForecastLineInput } from '@/lib/operations/vendor-monthly-forecast';
+import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
 type VendorOption = {
   vendorId: string;
@@ -28,7 +24,15 @@ type VendorOption = {
   lineCount?: number;
 };
 
-type ForecastLine = VendorMonthlyForecastLineInput & { id: string };
+type ForecastLine = VendorMonthlyForecastLineInput & {
+  id: string;
+  inforForecastQty?: MonthQtyMap;
+  forecastOverrideQty?: MonthQtyMap;
+};
+
+function lineEditSignature(line: ForecastLine): string {
+  return JSON.stringify([line.productionType || '', line.forecastOverrideQty || {}]);
+}
 
 type VendorMonthlyForecastReportProps = {
   selectedCompanyId: string;
@@ -115,12 +119,23 @@ const qtyInputStyle: React.CSSProperties = {
 };
 
 function currentYear(): number {
-  return new Date().getFullYear();
+  return estYear();
 }
 
 function currentMonth(): ForecastMonth {
-  return (new Date().getMonth() + 1) as ForecastMonth;
+  return (estMonthIndex() + 1) as ForecastMonth;
 }
+
+function monthFollowsInfor(year: number, month: ForecastMonth): boolean {
+  const thisYear = currentYear();
+  if (year !== thisYear) return year > thisYear;
+  return month >= currentMonth();
+}
+
+const overrideInputStyle: React.CSSProperties = {
+  background: '#fef3c7',
+  borderColor: '#f59e0b',
+};
 
 function yearOptions(): number[] {
   const year = currentYear();
@@ -159,15 +174,20 @@ export default function VendorMonthlyForecastReport({
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [loadingLines, setLoadingLines] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [inforSourceDate, setInforSourceDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
   const [sortKey, setSortKey] = useState<IdentitySortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const savedSignatures = useRef(new Map<string, string>());
   const vendorsRequestSeq = useRef(0);
+
+  const applyLoadedLines = useCallback((next: ForecastLine[]) => {
+    savedSignatures.current = new Map(next.map((line) => [line.id, lineEditSignature(line)]));
+    setLines(next);
+  }, []);
 
   const selectedVendor = useMemo(
     () => vendors.find((vendor) => vendor.key === vendorKey) || null,
@@ -194,6 +214,7 @@ export default function VendorMonthlyForecastReport({
       const nextVendors = Array.isArray(payload.vendors) ? payload.vendors : [];
       setVendors(nextVendors);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
+      setInforSourceDate(payload.inforSourceDate ? String(payload.inforSourceDate).slice(0, 10) : '');
       return nextVendors;
     } catch (err: any) {
       if (seq !== vendorsRequestSeq.current) return [];
@@ -218,16 +239,17 @@ export default function VendorMonthlyForecastReport({
       const response = await fetch(`/api/operational-data/vendor-forecast?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to load forecast rows');
-      setLines(Array.isArray(payload.lines) ? payload.lines : []);
+      applyLoadedLines(Array.isArray(payload.lines) ? payload.lines : []);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
+      setInforSourceDate(payload.inforSourceDate ? String(payload.inforSourceDate).slice(0, 10) : '');
       setDirty(false);
     } catch (err: any) {
       setError(err?.message || 'Failed to load forecast rows');
-      setLines([]);
+      applyLoadedLines([]);
     } finally {
       setLoadingLines(false);
     }
-  }, [selectedCompanyId, year]);
+  }, [applyLoadedLines, selectedCompanyId, year]);
 
   useEffect(() => {
     setVendorKey('');
@@ -260,13 +282,21 @@ export default function VendorMonthlyForecastReport({
     markDirty();
   };
 
-  const updateMonthQty = (id: string, month: ForecastMonth, raw: string) => {
-    const parsed = raw === '' ? 0 : Number(raw);
-    const value = Number.isFinite(parsed) ? parsed : 0;
+  const updateMonthOverride = (id: string, month: ForecastMonth, raw: string) => {
+    const key = String(month);
+    const parsed = Number(raw);
     setLines((prev) =>
       prev.map((line) => {
         if (line.id !== id) return line;
-        return { ...line, forecastQty: { ...line.forecastQty, [String(month)]: value } };
+        const overrides = { ...(line.forecastOverrideQty || {}) };
+        if (raw.trim() === '' || !Number.isFinite(parsed)) delete overrides[key];
+        else overrides[key] = parsed;
+        const inforQty = monthQty(line.inforForecastQty || line.forecastQty, month);
+        return {
+          ...line,
+          forecastOverrideQty: overrides,
+          forecastQty: { ...line.forecastQty, [key]: key in overrides ? overrides[key] : inforQty },
+        };
       })
     );
     markDirty();
@@ -284,10 +314,7 @@ export default function VendorMonthlyForecastReport({
 
   const handleSave = async () => {
     if (!selectedCompanyId || !selectedVendor) return;
-    if (lines.some((line) => !String(line.itemSku || '').trim())) {
-      setError('Every row needs an APR P/N before saving.');
-      return;
-    }
+    const changed = lines.filter((line) => savedSignatures.current.get(line.id) !== lineEditSignature(line));
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -301,83 +328,23 @@ export default function VendorMonthlyForecastReport({
           dataThru: dataThru || null,
           vendorId: selectedVendor.vendorId,
           vendorName: selectedVendor.vendorName,
-          lines: lines.map((line) => ({
-            ...line,
-            vendorName: selectedVendor.vendorName,
+          lines: changed.map((line) => ({
+            id: line.id,
+            productionType: line.productionType || '',
+            forecastOverrideQty: line.forecastOverrideQty || {},
           })),
         }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to save');
-      setLines(Array.isArray(payload.lines) ? payload.lines : lines);
+      applyLoadedLines(Array.isArray(payload.lines) ? payload.lines : lines);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
       setDirty(false);
-      const savedCount = Array.isArray(payload.lines) ? payload.lines.length : lines.length;
-      setNotice(`Saved ${savedCount} rows for ${selectedVendor.label}.`);
-      setVendors((prev) =>
-        prev.map((vendor) =>
-          vendor.key === selectedVendor.key ? { ...vendor, lineCount: savedCount } : vendor
-        )
-      );
+      setNotice(`Saved ${changed.length.toLocaleString()} changed rows for ${selectedVendor.label}.`);
     } catch (err: any) {
       setError(err?.message || 'Failed to save monthly forecast');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleImport = async (file: File) => {
-    if (!selectedCompanyId) {
-      setError('Select a company before importing.');
-      return;
-    }
-    if (dirty && !window.confirm('Import will replace matching vendor rows from the workbook. Continue?')) {
-      return;
-    }
-    setImporting(true);
-    setError(null);
-    setNotice('Reading workbook…');
-    try {
-      const workbook = readProductOperationsWorkbook(await file.arrayBuffer());
-      const parsed = parseVendorMonthlyForecastWorkbook(workbook, year);
-      setNotice(`Saving ${parsed.rows.length.toLocaleString()} monthly forecast rows…`);
-      const response = await fetch('/api/operational-data/vendor-forecast/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          year: parsed.year || year,
-          parsed,
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          payload.error || payload.message || `Failed to import workbook (${response.status})`
-        );
-      }
-      const importedYear = Number(payload.year) || year;
-      if (importedYear !== year) setYear(importedYear);
-      if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
-      setDirty(false);
-      const vendorCount = Number(payload.vendorCount || 0);
-      setNotice(
-        `Imported ${Number(payload.rowCount || 0).toLocaleString()} monthly forecast rows` +
-          (vendorCount ? ` across ${vendorCount.toLocaleString()} vendors.` : '.')
-      );
-      const nextVendors = await loadVendors(importedYear);
-      const preferred = nextVendors.find((vendor) => vendor.key === vendorKey) || nextVendors[0] || null;
-      if (preferred) {
-        setVendorKey(preferred.key);
-        await loadLines(preferred, importedYear);
-      }
-    } catch (err: unknown) {
-      console.error('Vendor monthly forecast import failed', err);
-      setNotice(null);
-      setError(workbookImportErrorMessage(err, 'Failed to import workbook'));
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -386,11 +353,11 @@ export default function VendorMonthlyForecastReport({
       (acc, line) => {
         acc.remaining += remainingForecastQty(line.forecastQty, dataThru || null);
         acc.monthEstimated += qtyValue(line.forecastQty, selectedMonth);
-        acc.monthYtd += qtyValue(line.actualQty, selectedMonth);
-        acc.sgpEstimated += Number(line.annualBaseQty) || 0;
+        acc.monthActual += qtyValue(line.actualQty, selectedMonth);
+        acc.annualEstimated += FORECAST_MONTHS.reduce((sum, month) => sum + qtyValue(line.forecastQty, month), 0);
         return acc;
       },
-      { remaining: 0, monthEstimated: 0, monthYtd: 0, sgpEstimated: 0 }
+      { remaining: 0, monthEstimated: 0, monthActual: 0, annualEstimated: 0 }
     );
   }, [dataThru, lines, selectedMonth]);
 
@@ -502,7 +469,10 @@ export default function VendorMonthlyForecastReport({
         ) : null}
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
-        Monthly SGP estimated units vs YTD actual by APR P/N and vendor. Estimated months are typed; YTD and percents come from operations data.
+        Monthly estimated units vs actual shipped units by APR P/N and vendor. Rows, vendor, and estimated units come from the Infor order book
+        (open order lines at ordered quantity, filled lines at shipped quantity, by due month); past months keep the estimate they closed with.
+        Type an estimate to override Infor; clear it to go back. Actuals come from Infor shipments.
+        {inforSourceDate ? ` Infor orders as of ${inforSourceDate}.` : ''}
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
@@ -598,33 +568,6 @@ export default function VendorMonthlyForecastReport({
         </label>
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={importing}
-          style={{
-            border: '1px solid #cbd5e1',
-            borderRadius: 8,
-            padding: '8px 12px',
-            background: '#ffffff',
-            color: '#334155',
-            fontWeight: 700,
-            cursor: importing ? 'wait' : 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {importing ? 'Importing…' : 'Import workbook'}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          style={{ display: 'none' }}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleImport(file);
-          }}
-        />
-        <button
-          type="button"
           onClick={() => void handleSave()}
           disabled={!selectedVendor || saving || !dirty}
           style={{
@@ -650,7 +593,7 @@ export default function VendorMonthlyForecastReport({
 
       {!selectedVendor ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
-          Select a vendor, or import the Revenue Forecasts workbook (sheet SGP Forecasts Current / Forecasts 2026 SGP) to load estimated quantities. The annual GMPA workbook will not import here.
+          Select a vendor to see its Infor forecast rows.
         </div>
       ) : loadingLines ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>Loading forecast rows…</div>
@@ -658,10 +601,10 @@ export default function VendorMonthlyForecastReport({
         <>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#334155', marginBottom: 10 }}>
             <span><strong>Rows:</strong> {lines.length.toLocaleString()}</span>
-            <span><strong>SGP estimated:</strong> {fmtQty(totals.sgpEstimated)}</span>
+            <span><strong>Annual estimated:</strong> {fmtQty(totals.annualEstimated)}</span>
             <span><strong>Estimated {monthName}:</strong> {fmtQty(totals.monthEstimated)}</span>
-            <span><strong>{monthName} YTD:</strong> {fmtQty(totals.monthYtd)}</span>
-            <span><strong>% {monthName} YTD vs estimated:</strong> {fmtPct(pctVsPlan(totals.monthYtd, totals.monthEstimated))}</span>
+            <span><strong>{monthName} actual:</strong> {fmtQty(totals.monthActual)}</span>
+            <span><strong>% {monthName} actual vs estimated:</strong> {fmtPct(pctVsPlan(totals.monthActual, totals.monthEstimated))}</span>
             <span><strong>Remaining-year estimated:</strong> {fmtQty(totals.remaining)}</span>
             {closed.length ? (
               <span><strong>Closed through:</strong> {FORECAST_MONTH_LABELS[closed[closed.length - 1]]}</span>
@@ -741,11 +684,11 @@ export default function VendorMonthlyForecastReport({
                     Planned<br />MTO
                   </th>
                   <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>{`Estimated ${previousMonthName}`}</th>
-                  <th style={priorHeaderStyle}>{`${previousMonthName} YTD`}</th>
-                  <th style={priorHeaderStyle}>{`% ${previousMonthName} YTD vs Estimated`}</th>
+                  <th style={priorHeaderStyle}>{`${previousMonthName} Actual`}</th>
+                  <th style={priorHeaderStyle}>{`% ${previousMonthName} Actual vs Estimated`}</th>
                   <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>{`Estimated ${monthName}`}</th>
-                  <th style={monthHeaderStyle}>{`${monthName} YTD`}</th>
-                  <th style={monthHeaderStyle}>{`% ${monthName} YTD vs Estimated`}</th>
+                  <th style={monthHeaderStyle}>{`${monthName} Actual`}</th>
+                  <th style={monthHeaderStyle}>{`% ${monthName} Actual vs Estimated`}</th>
                 </tr>
               </thead>
               <tbody>
@@ -788,13 +731,26 @@ export default function VendorMonthlyForecastReport({
                       ))}
                     </td>
                     <td style={{ ...monthInputCellStyle, borderLeft: '2px solid #c7d2fe' }}>
-                      <input
-                        type="number"
-                        value={qtyValue(line.forecastQty, selectedMonth)}
-                        onChange={(event) => updateMonthQty(line.id, selectedMonth, event.target.value)}
-                        style={monthQtyInputStyle}
-                        aria-label={`Estimated ${monthName}`}
-                      />
+                      {(() => {
+                        const key = String(selectedMonth);
+                        const overrides = line.forecastOverrideQty || {};
+                        const overridden = key in overrides;
+                        const inforQty = qtyValue(line.inforForecastQty || line.forecastQty, selectedMonth);
+                        const sourceLabel = monthFollowsInfor(year, selectedMonth) ? 'Infor order book' : 'Closed-month estimate';
+                        return (
+                          <input
+                            type="number"
+                            value={overridden ? overrides[key] : ''}
+                            placeholder={fmtQty(inforQty)}
+                            onChange={(event) => updateMonthOverride(line.id, selectedMonth, event.target.value)}
+                            style={overridden ? { ...monthQtyInputStyle, ...overrideInputStyle } : monthQtyInputStyle}
+                            title={overridden
+                              ? `Override. ${sourceLabel}: ${fmtQty(inforQty)}. Clear to use it.`
+                              : `${sourceLabel}: ${fmtQty(inforQty)}. Type to override.`}
+                            aria-label={`Estimated ${monthName}`}
+                          />
+                        );
+                      })()}
                     </td>
                     <td style={monthCellStyle}>{fmtQty(qtyValue(line.actualQty, selectedMonth))}</td>
                     <td style={monthCellStyle}>
@@ -808,7 +764,7 @@ export default function VendorMonthlyForecastReport({
                 {lines.length === 0 && (
                   <tr>
                     <td colSpan={11} style={{ padding: 16, color: '#64748b' }}>
-                      No forecast rows for this vendor yet. Import the Forecasts 2026 SGP sheet, then save.
+                      No forecast rows for this vendor. Rows appear for items with open Infor orders or shipments in the last 12 months.
                     </td>
                   </tr>
                 )}

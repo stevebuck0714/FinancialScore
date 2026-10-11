@@ -65,6 +65,18 @@ export async function ensureVendorMonthlyForecastTables(): Promise<void> {
         CREATE INDEX IF NOT EXISTS "VendorMonthlyForecastLine_companyId_year_vendorName_idx"
           ON "VendorMonthlyForecastLine"("companyId", "year", "vendorName")
       `);
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "VendorMonthlyForecastLine" ADD COLUMN IF NOT EXISTS "inforForecastQty" JSONB NOT NULL DEFAULT '{}'`
+      );
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "VendorMonthlyForecastLine" ADD COLUMN IF NOT EXISTS "forecastOverrideQty" JSONB NOT NULL DEFAULT '{}'`
+      );
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "VendorMonthlyForecastSettings" ADD COLUMN IF NOT EXISTS "inforSourceDate" TIMESTAMP(3)`
+      );
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "VendorMonthlyForecastSettings" ADD COLUMN IF NOT EXISTS "inforRefreshedAt" TIMESTAMP(3)`
+      );
     })().catch((error) => {
       ensureTablesOnce = null;
       throw error;
@@ -317,6 +329,48 @@ export async function loadPrimaryVendorByItem(companyId: string): Promise<Map<st
   return result;
 }
 
+export function isEmptyQtySource(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return true;
+  return Object.keys(value as Record<string, unknown>).length === 0;
+}
+
+/** Only the months a user typed; absent months fall back to the Infor quantity. */
+export function parseForecastOverrideQty(value: unknown): MonthQtyMap {
+  const result: MonthQtyMap = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const month = Number(key);
+    if (!Number.isInteger(month) || month < 1 || month > 12) continue;
+    if (raw === null || raw === undefined || raw === '') continue;
+    const qty = Number(raw);
+    if (Number.isFinite(qty)) result[String(month)] = qty;
+  }
+  return result;
+}
+
+/**
+ * Rows written before the Infor feed have no Infor map yet; their stored
+ * forecast is the frozen baseline until the first refresh fills it.
+ */
+export function vendorForecastBaseQty(row: { forecastQty: unknown; inforForecastQty?: unknown }): MonthQtyMap {
+  return isEmptyQtySource(row.inforForecastQty)
+    ? normalizeMonthQtyMap(row.forecastQty)
+    : normalizeMonthQtyMap(row.inforForecastQty);
+}
+
+export function effectiveVendorForecastQty(base: MonthQtyMap, overrides: MonthQtyMap): MonthQtyMap {
+  const result: MonthQtyMap = {};
+  for (let month = 1; month <= 12; month += 1) {
+    const key = String(month);
+    result[key] = key in overrides ? overrides[key] : Number(base[key]) || 0;
+  }
+  return result;
+}
+
+export function sumMonthQty(map: MonthQtyMap): number {
+  return Object.values(map).reduce((sum, value) => sum + (Number(value) || 0), 0);
+}
+
 export function serializeVendorForecastLine(row: {
   id: string;
   vendorId: string;
@@ -332,10 +386,14 @@ export function serializeVendorForecastLine(row: {
   statusFlag: string | null;
   annualBaseQty: number | null;
   forecastQty: Prisma.JsonValue;
+  inforForecastQty?: Prisma.JsonValue;
+  forecastOverrideQty?: Prisma.JsonValue;
   actualQty: Prisma.JsonValue;
   sortOrder: number;
 }) {
   return {
+    inforForecastQty: vendorForecastBaseQty(row),
+    forecastOverrideQty: parseForecastOverrideQty(row.forecastOverrideQty),
     id: row.id,
     vendorId: row.vendorId || UNASSIGNED_VENDOR_ID,
     vendorName: row.vendorName || UNASSIGNED_VENDOR_NAME,
@@ -400,13 +458,27 @@ type VendorForecastLineRow = {
   statusFlag: string | null;
   annualBaseQty: number | null;
   forecastQty: Prisma.JsonValue;
+  inforForecastQty: Prisma.JsonValue;
+  forecastOverrideQty: Prisma.JsonValue;
   actualQty: Prisma.JsonValue;
   sortOrder: number;
 };
 
-export async function loadVendorForecastSettings(companyId: string, year: number): Promise<{ dataThru: Date | null } | null> {
-  const rows = await prisma.$queryRawUnsafe<Array<{ dataThru: Date | null }>>(
-    `SELECT "dataThru" FROM "VendorMonthlyForecastSettings" WHERE "companyId" = $1 AND "year" = $2 LIMIT 1`,
+const LINE_SELECT_COLUMNS = `"id", "vendorId", "vendorName", "customerId", "customerName", "customerGroup", "customerPartNumber",
+              "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty", "forecastQty",
+              "inforForecastQty", "forecastOverrideQty", "actualQty", "sortOrder"`;
+
+export async function loadVendorForecastSettings(companyId: string, year: number): Promise<{
+  dataThru: Date | null;
+  inforSourceDate: Date | null;
+  inforRefreshedAt: Date | null;
+} | null> {
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    dataThru: Date | null;
+    inforSourceDate: Date | null;
+    inforRefreshedAt: Date | null;
+  }>>(
+    `SELECT "dataThru", "inforSourceDate", "inforRefreshedAt" FROM "VendorMonthlyForecastSettings" WHERE "companyId" = $1 AND "year" = $2 LIMIT 1`,
     companyId,
     year
   );
@@ -434,8 +506,7 @@ export async function loadVendorForecastLines(params: {
   const { companyId, year, vendorId, vendorName } = params;
   if (vendorId) {
     return prisma.$queryRawUnsafe<VendorForecastLineRow[]>(
-      `SELECT "id", "vendorId", "vendorName", "customerId", "customerName", "customerGroup", "customerPartNumber",
-              "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty", "forecastQty", "actualQty", "sortOrder"
+      `SELECT ${LINE_SELECT_COLUMNS}
          FROM "VendorMonthlyForecastLine"
         WHERE "companyId" = $1 AND "year" = $2 AND "vendorId" = $3
         ORDER BY "sortOrder" ASC, "itemSku" ASC`,
@@ -445,8 +516,7 @@ export async function loadVendorForecastLines(params: {
     );
   }
   return prisma.$queryRawUnsafe<VendorForecastLineRow[]>(
-    `SELECT "id", "vendorId", "vendorName", "customerId", "customerName", "customerGroup", "customerPartNumber",
-            "itemSku", "team", "csr", "productionType", "statusFlag", "annualBaseQty", "forecastQty", "actualQty", "sortOrder"
+    `SELECT ${LINE_SELECT_COLUMNS}
        FROM "VendorMonthlyForecastLine"
       WHERE "companyId" = $1 AND "year" = $2 AND "vendorName" = $3
       ORDER BY "sortOrder" ASC, "itemSku" ASC`,
@@ -581,6 +651,63 @@ export async function upsertVendorForecastLines(params: {
          "sortOrder" = EXCLUDED."sortOrder",
          "updatedAt" = EXCLUDED."updatedAt"`,
       ...paramsList
+    );
+  }
+}
+
+export type VendorForecastLinePatch = {
+  id: string;
+  productionType?: string | null;
+  forecastOverrideQty?: MonthQtyMap;
+};
+
+/** Saves the user-owned fields; the Infor quantities are only written by the refresh. */
+export async function patchVendorForecastLines(companyId: string, year: number, patches: VendorForecastLinePatch[]) {
+  const ids = patches.map((patch) => asText(patch.id)).filter(Boolean);
+  if (ids.length === 0) return;
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    id: string;
+    productionType: string | null;
+    forecastQty: Prisma.JsonValue;
+    inforForecastQty: Prisma.JsonValue;
+    forecastOverrideQty: Prisma.JsonValue;
+  }>>(
+    `SELECT "id", "productionType", "forecastQty", "inforForecastQty", "forecastOverrideQty"
+       FROM "VendorMonthlyForecastLine"
+      WHERE "companyId" = $1 AND "year" = $2 AND "id" = ANY($3::text[])`,
+    companyId,
+    year,
+    ids
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const now = new Date();
+  for (const patch of patches) {
+    const row = byId.get(asText(patch.id));
+    if (!row) continue;
+    const base = vendorForecastBaseQty(row);
+    const overrides = patch.forecastOverrideQty !== undefined
+      ? parseForecastOverrideQty(patch.forecastOverrideQty)
+      : parseForecastOverrideQty(row.forecastOverrideQty);
+    const effective = effectiveVendorForecastQty(base, overrides);
+    const productionType = patch.productionType !== undefined
+      ? asText(patch.productionType) || null
+      : row.productionType;
+    await prisma.$executeRawUnsafe(
+      `UPDATE "VendorMonthlyForecastLine"
+          SET "productionType" = $2,
+              "inforForecastQty" = $3::jsonb,
+              "forecastOverrideQty" = $4::jsonb,
+              "forecastQty" = $5::jsonb,
+              "annualBaseQty" = $6,
+              "updatedAt" = $7
+        WHERE "id" = $1`,
+      row.id,
+      productionType,
+      JSON.stringify(base),
+      JSON.stringify(overrides),
+      JSON.stringify(effective),
+      sumMonthQty(effective),
+      now
     );
   }
 }
