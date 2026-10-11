@@ -173,6 +173,13 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   },
   {
     key: 'productsVendorPricing',
+    label: 'Vendor Contracts',
+    tabKey: 'vendors',
+    group: 'Vendors',
+    sectorCategories: ['42'],
+  },
+  {
+    key: 'vendorsVendorPricing',
     label: 'Vendor Pricing',
     tabKey: 'vendors',
     group: 'Vendors',
@@ -421,6 +428,7 @@ const ATLANTIC_ONLY_GROUP_REPORT_KEYS = new Set([
 
 const ATLANTIC_ONLY_VENDOR_REPORT_KEYS = new Set([
   'productsVendorPricing',
+  'vendorsVendorPricing',
   'vendorsMonthlyForecast',
   'vendorsForecastRollup',
   'vendorsDutiesTariffs',

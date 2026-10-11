@@ -3,6 +3,10 @@ import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
+import { formatEstDate } from '@/lib/time/eastern';
+import { inforUnitCost, loadCsiItemFacts } from '@/lib/operations/item-freight-overlay';
+import { loadApprovedVendorNewCosts, vendorPricingPairKey } from '@/lib/operations/vendor-pricing-db';
+import { pickCurrentVendorContract } from '@/lib/operations/vendor-pricing';
 import { buildOperationalMockResponse, buildOperationalMockSummaryCounts, buildRealEstateOperationalHubMockReports } from '@/lib/operations/sector-mock-data';
 import {
   buildJobCostControlMock,
@@ -414,12 +418,19 @@ async function buildWholesaleVendorPricingDataVersion(companyId: string): Promis
      FROM "InforRawRecord"
      WHERE "companyId" = $1
        AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
-       AND "miProgram" IN ('SLItemVends', 'SLItemVendPrices')
+       AND "miProgram" IN ('SLItemVends', 'SLItemVendPrices', 'SLItems')
      GROUP BY "miProgram"
      ORDER BY "miProgram" ASC`,
     companyId
   );
-  return hashCacheParts(['wholesale-vendor-pricing-v1', companyId, vendorFeeds]);
+  const pricingEdits = await safeOperationalVersionPart(
+    'VendorPricingLine',
+    `SELECT COUNT(*)::text AS count, MAX("updatedAt") AS "maxUpdatedAt"
+     FROM "VendorPricingLine"
+     WHERE "companyId" = $1`,
+    companyId
+  );
+  return hashCacheParts(['wholesale-vendor-pricing-v2', companyId, vendorFeeds, pricingEdits]);
 }
 
 const DAILY_FINANCIAL_COGS_DETAIL_FIELDS = [
@@ -3667,8 +3678,8 @@ export async function GET(request: NextRequest) {
               companyId,
               cacheType,
               frequency,
-              isWholesaleVendorPricingRequest ? 'vendor-pricing-date-independent-v1' : startDate.toISOString(),
-              isWholesaleVendorPricingRequest ? 'vendor-pricing-date-independent-v1' : endDate.toISOString(),
+              isWholesaleVendorPricingRequest ? 'vendor-pricing-current-contract-v2' : startDate.toISOString(),
+              isWholesaleVendorPricingRequest ? `vendor-pricing-current-contract-v2-${formatEstDate()}` : endDate.toISOString(),
               sectorCategory,
               statementCurrency,
               statementRollup,
@@ -9268,7 +9279,7 @@ export async function GET(request: NextRequest) {
               const key = rowPointer || `${keyFor(item, vendorId)}||${readText(payload.EffectDate, payload.RecordDate)}`;
               if (item && vendorId) latestPriceRows.set(key, rawRow);
             }
-            wholesaleVendorPricingRows = [...latestPriceRows.values()]
+            const priceRows = [...latestPriceRows.values()]
               .map((rawRow) => {
                 const payload = rawRow?.payload && typeof rawRow.payload === 'object' ? rawRow.payload : null;
                 if (!payload) return null;
@@ -9276,9 +9287,6 @@ export async function GET(request: NextRequest) {
                 const vendorId = readText(payload.VendNum);
                 if (!item || !vendorId) return null;
                 const master = masterByItemVendor.get(keyFor(item, vendorId)) || {};
-                const actualNoAdj = readNumber(payload.BrkCostConv_1, payload.BrkCost_1);
-                const formalContracts = readNumber(payload.BrkCost_1);
-                const vendorPricingSheet = actualNoAdj ?? formalContracts;
                 return {
                   source: 'SLItemVendPrices', item, vendorId,
                   vendorName: readText(payload.VendAddrName, payload.VendaddrName, master.vendorName),
@@ -9287,9 +9295,7 @@ export async function GET(request: NextRequest) {
                   effectiveDate: parseDateTokenToIso(payload.EffectDate) || parseDateTokenToIso(payload.RecordDate) || parseDateTokenToIso(rawRow.businessDate),
                   effectiveDateRaw: readText(payload.EffectDate, payload.RecordDate),
                   breakQty1: readNumber(payload.BrkQty_1),
-                  actualNoAdj, formalContracts, vendorPricingSheet,
-                  difference: actualNoAdj != null && vendorPricingSheet != null ? Number((actualNoAdj - vendorPricingSheet).toFixed(4)) : null,
-                  updatedDiff: actualNoAdj != null && vendorPricingSheet != null ? Number((actualNoAdj - vendorPricingSheet).toFixed(4)) : null,
+                  contractCost: readNumber(payload.BrkCostConv_1, payload.BrkCost_1),
                   unitBrokerageCost: readNumber(payload.UnitBrokerageCost),
                   unitDutyCost: readNumber(payload.UnitDutyCost),
                   unitFreightCost: readNumber(payload.UnitFreightCost),
@@ -9303,11 +9309,52 @@ export async function GET(request: NextRequest) {
                   snapshotDate: parseDateTokenToIso(rawRow.businessDate),
                 };
               })
-              .filter(Boolean)
+              .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+            // One current contract per item/vendor (EST today). Older and
+            // not-yet-effective rows ride along as history for as-of lookups.
+            const today = formatEstDate();
+            const priceGroups = new Map<string, typeof priceRows>();
+            for (const row of priceRows) {
+              const key = keyFor(row.item, row.vendorId);
+              const group = priceGroups.get(key) || [];
+              group.push(row);
+              priceGroups.set(key, group);
+            }
+            const [itemFacts, approvedNewCosts] = await Promise.all([
+              loadCsiItemFacts(companyId).catch(() => new Map()),
+              loadApprovedVendorNewCosts(companyId),
+            ]);
+            const roundCost = (value: number) => Number(value.toFixed(4));
+            wholesaleVendorPricingRows = [...priceGroups.values()]
+              .map((group) => {
+                const { current, byNewest } = pickCurrentVendorContract(group, today);
+                const actualNoAdj = inforUnitCost(itemFacts.get(current.item.toUpperCase()));
+                const formalContracts = current.contractCost;
+                const vendorPricingSheet =
+                  approvedNewCosts.get(vendorPricingPairKey(current.item, current.vendorId)) ?? formalContracts;
+                const diff = (left: number | null, right: number | null) =>
+                  left != null && right != null ? roundCost(left - right) : null;
+                const { contractCost: _contractCost, ...currentFields } = current;
+                return {
+                  ...currentFields,
+                  actualNoAdj,
+                  formalContracts,
+                  vendorPricingSheet,
+                  difference: diff(actualNoAdj, formalContracts),
+                  updatedDiff: diff(actualNoAdj, vendorPricingSheet),
+                  history: byNewest
+                    .filter((row) => row !== current)
+                    .map(({ contractCost, ...row }) => ({
+                      ...row,
+                      formalContracts: contractCost,
+                      vendorPricingSheet: contractCost,
+                    })),
+                };
+              })
               .sort((a, b) =>
                 String(a.item || '').localeCompare(String(b.item || ''), undefined, { sensitivity: 'base', numeric: true }) ||
-                String(a.vendorName || a.vendorId || '').localeCompare(String(b.vendorName || b.vendorId || ''), undefined, { sensitivity: 'base', numeric: true }) ||
-                String(b.effectiveDate || '').localeCompare(String(a.effectiveDate || ''))
+                String(a.vendorName || a.vendorId || '').localeCompare(String(b.vendorName || b.vendorId || ''), undefined, { sensitivity: 'base', numeric: true })
               );
           }
           return cacheOperationalPayload({

@@ -42,6 +42,7 @@ import DutiesTariffsReport from './DutiesTariffsReport';
 import SgpFreightReport from './SgpFreightReport';
 import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
 import VendorForecastRollupReport from './VendorForecastRollupReport';
+import VendorPricingReport from './VendorPricingReport';
 import DefaultVendorReport from './DefaultVendorReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
@@ -254,7 +255,7 @@ type WipLineItemSortKey =
   | 'contractValue'
   | 'invoicedValue';
 type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'reports' | 'ytdGap' | 'retailForecast' | 'merchandiseProfitability';
-type VendorReportView = 'vendorPricing' | 'monthlyForecast' | 'forecastRollup' | 'dutiesTariffs' | 'sgpFreight';
+type VendorReportView = 'vendorPricing' | 'vendorPricingSheet' | 'monthlyForecast' | 'forecastRollup' | 'dutiesTariffs' | 'sgpFreight';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
   key: string;
@@ -1107,6 +1108,8 @@ export default function OperationsTab({
   const [wholesaleRawFilledSortDir, setWholesaleRawFilledSortDir] = useState<'asc' | 'desc'>('desc');
   const [vendorPricingVendorFilter, setVendorPricingVendorFilter] = useState('all');
   const [vendorPricingSearchTerm, setVendorPricingSearchTerm] = useState('');
+  const [vendorPricingMismatchOnly, setVendorPricingMismatchOnly] = useState(false);
+  const [vendorPricingExpanded, setVendorPricingExpanded] = useState<Set<string>>(() => new Set());
   const [vendorPricingSortKey, setVendorPricingSortKey] = useState<VendorPricingSortKey>('item');
   const [vendorPricingSortDir, setVendorPricingSortDir] = useState<'asc' | 'desc'>('asc');
   const [openBottleneckSortKey, setOpenBottleneckSortKey] = useState<OpenBottleneckSortKey>('openAge');
@@ -9437,6 +9440,7 @@ export default function OperationsTab({
     const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
     const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
     const isVendorPricingEnabled = isWholesaleProductSector && isSectionEnabled('productsVendorPricing');
+    const isVendorPricingSheetEnabled = isWholesaleProductSector && isSectionEnabled('vendorsVendorPricing');
     const isVendorMonthlyForecastEnabled = isWholesaleProductSector && isSectionEnabled('vendorsMonthlyForecast');
     const isVendorForecastRollupEnabled = isWholesaleProductSector && isSectionEnabled('vendorsForecastRollup');
     const isRevenueForecastEnabled = isWholesaleProductSector && isSectionEnabled('productsRevenueForecast');
@@ -9577,6 +9581,8 @@ export default function OperationsTab({
     const fallbackVendorReportView: VendorReportView =
       isVendorPricingEnabled
         ? 'vendorPricing'
+        : isVendorPricingSheetEnabled
+        ? 'vendorPricingSheet'
         : isDutiesTariffsEnabled
         ? 'dutiesTariffs'
         : isSgpFreightEnabled
@@ -9586,6 +9592,8 @@ export default function OperationsTab({
         : 'forecastRollup';
     const effectiveVendorReportView =
       vendorReportView === 'vendorPricing' && !isVendorPricingEnabled
+        ? fallbackVendorReportView
+        : vendorReportView === 'vendorPricingSheet' && !isVendorPricingSheetEnabled
         ? fallbackVendorReportView
         : vendorReportView === 'dutiesTariffs' && !isDutiesTariffsEnabled
         ? fallbackVendorReportView
@@ -10223,6 +10231,7 @@ export default function OperationsTab({
     const vendorPricingFilteredRows = vendorPricingRows.filter((row: any) => {
       const vendorKey = `${String(row?.vendorId || '').trim()}||${String(row?.vendorName || '').trim()}`;
       if (vendorPricingVendorFilter !== 'all' && vendorKey !== vendorPricingVendorFilter) return false;
+      if (vendorPricingMismatchOnly && !(Math.abs(Number(row?.difference)) >= 0.00005)) return false;
       const search = vendorPricingSearchTerm.trim().toLowerCase();
       if (!search) return true;
       return [
@@ -10285,7 +10294,11 @@ export default function OperationsTab({
           : new Date(raw);
         return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
       };
-      for (const row of vendorPricingRows as any[]) {
+      const contractRows = (vendorPricingRows as any[]).flatMap((row: any) => [
+        row,
+        ...(Array.isArray(row?.history) ? row.history.map((past: any) => ({ ...row, ...past, history: undefined })) : []),
+      ]);
+      for (const row of contractRows) {
         const item = String(row?.item || '').trim();
         if (!item) continue;
         const price = Number(row?.vendorPricingSheet ?? row?.formalContracts ?? row?.actualNoAdj ?? 0);
@@ -12009,9 +12022,29 @@ export default function OperationsTab({
         { key: 'actualNoAdj', label: 'ACTUAL NO ADJ', align: 'right', render: (row) => formatVendorNumber(row.actualNoAdj) },
         { key: 'formalContracts', label: 'FORMAL CONTRACTS', align: 'right', render: (row) => formatVendorNumber(row.formalContracts) },
         { key: 'vendorPricingSheet', label: 'Vendor Pricing Sheet', align: 'right', render: (row) => formatVendorNumber(row.vendorPricingSheet) },
-        { key: 'difference', label: 'Difference', align: 'right', render: (row) => formatVendorNumber(row.difference) },
-        { key: 'updatedDiff', label: 'UPDATED DIFF', align: 'right', render: (row) => formatVendorNumber(row.updatedDiff) },
+        { key: 'difference', label: 'Difference', align: 'right', render: (row) => renderVendorDiff(row.difference) },
+        { key: 'updatedDiff', label: 'UPDATED DIFF', align: 'right', render: (row) => renderVendorDiff(row.updatedDiff) },
       ];
+      function renderVendorDiff(value: number | null | undefined) {
+        const mismatch = value != null && Math.abs(Number(value)) >= 0.00005;
+        return (
+          <span style={mismatch ? { color: '#b91c1c', fontWeight: 700 } : undefined}>
+            {formatVendorNumber(value)}
+          </span>
+        );
+      }
+      const vendorPricingRowKey = (row: any) => `${row.item}||${row.vendorId}`;
+      const vendorPricingMismatchCount = vendorPricingRows.filter(
+        (row: any) => Math.abs(Number(row?.difference)) >= 0.00005
+      ).length;
+      const toggleVendorPricingHistory = (key: string) => {
+        setVendorPricingExpanded((prev) => {
+          const next = new Set(prev);
+          if (next.has(key)) next.delete(key);
+          else next.add(key);
+          return next;
+        });
+      };
 
       if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)) {
         return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading vendor pricing data...</div>;
@@ -12028,9 +12061,12 @@ export default function OperationsTab({
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Vendor Pricing</h3>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Vendor Contracts</h3>
               <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
-                Normalized from CSI SLItemVends and SLItemVendPrices raw snapshots. The table displays the first 1,000 matching rows.
+                One row per item and vendor with the contract price in effect today (Infor SLItemVendPrices). ACTUAL NO ADJ is the Infor item unit cost;
+                FORMAL CONTRACTS is the vendor contract price. Vendor Pricing Sheet is the approved New Cost from Vendor Pricing, else the contract price.
+                Difference is ACTUAL NO ADJ − FORMAL CONTRACTS; UPDATED DIFF is ACTUAL NO ADJ − Vendor Pricing Sheet. Expand a row for earlier prices.
+                The table displays the first 1,000 matching rows.
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -12053,6 +12089,14 @@ export default function OperationsTab({
                 placeholder="Search item, vendor, date..."
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px' }}
               />
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#334155' }}>
+                <input
+                  type="checkbox"
+                  checked={vendorPricingMismatchOnly}
+                  onChange={(event) => setVendorPricingMismatchOnly(event.target.checked)}
+                />
+                Only unit cost ≠ contract
+              </label>
             </div>
           </div>
 
@@ -12060,6 +12104,7 @@ export default function OperationsTab({
             <span><strong>Loaded rows:</strong> {vendorPricingRows.length.toLocaleString()}</span>
             <span><strong>Filtered rows:</strong> {vendorPricingFilteredRows.length.toLocaleString()}</span>
             <span><strong>Displayed:</strong> {vendorPricingVisibleRows.length.toLocaleString()}</span>
+            <span><strong>Unit cost ≠ contract:</strong> {vendorPricingMismatchCount.toLocaleString()}</span>
           </div>
           {vendorPricingFilteredRows.length > vendorPricingVisibleRows.length && (
             <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: '12px' }}>
@@ -12088,21 +12133,56 @@ export default function OperationsTab({
                       {column.label}{vendorPricingSortLabel(column.key)}
                     </th>
                   ))}
+                  <th style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', whiteSpace: 'nowrap' }}>
+                    Price history
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {vendorPricingVisibleRows.map((row: any, index: number) => (
-                  <tr key={`${row.source}-${row.item}-${row.vendorId}-${row.effectiveDateRaw || row.effectiveDate}-${index}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    {columns.map((column) => (
-                      <td key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
-                        {column.render(row)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {vendorPricingVisibleRows.map((row: any, index: number) => {
+                  const rowKey = vendorPricingRowKey(row);
+                  const history: any[] = Array.isArray(row.history) ? row.history : [];
+                  const expanded = vendorPricingExpanded.has(rowKey);
+                  return (
+                    <React.Fragment key={`${row.source}-${rowKey}-${index}`}>
+                      <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        {columns.map((column) => (
+                          <td key={column.key} style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: column.align || 'left', whiteSpace: 'nowrap' }}>
+                            {column.render(row)}
+                          </td>
+                        ))}
+                        <td style={{ padding: '8px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {history.length ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleVendorPricingHistory(rowKey)}
+                              style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontSize: '12px', padding: 0 }}
+                            >
+                              {expanded ? '▾' : '▸'} {history.length} earlier
+                            </button>
+                          ) : (
+                            <span style={{ color: '#94a3b8' }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+                      {expanded && history.map((past: any, pastIndex: number) => (
+                        <tr key={`${rowKey}-history-${past.rowPointer || pastIndex}`} style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                          <td colSpan={4} style={{ padding: '6px 8px 6px 24px', fontSize: '11px', color: '#64748b' }}>
+                            {past.status && past.status !== 'A' ? `Status ${past.status}` : ''}
+                          </td>
+                          <td style={{ padding: '6px 8px', fontSize: '11px', color: '#475569' }}>{formatVendorDate(past.effectiveDate)}</td>
+                          <td style={{ padding: '6px 8px', fontSize: '11px', color: '#475569', textAlign: 'right' }}>{formatVendorNumber(past.breakQty1, 0)}</td>
+                          <td />
+                          <td style={{ padding: '6px 8px', fontSize: '11px', color: '#475569', textAlign: 'right' }}>{formatVendorNumber(past.formalContracts)}</td>
+                          <td colSpan={4} />
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
                 {vendorPricingVisibleRows.length === 0 && (
                   <tr>
-                    <td colSpan={columns.length} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                    <td colSpan={columns.length + 1} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
                       No vendor pricing rows match the selected filters.
                     </td>
                   </tr>
@@ -12882,6 +12962,25 @@ export default function OperationsTab({
           },
         ],
       },
+      vendorsVendorPricing: {
+        title: 'What Vendor Pricing shows',
+        sections: [
+          {
+            body:
+              'One row per Infor item with its primary (rank 1) vendor. Current Cost and its effective date are the vendor contract price in effect today from Infor. 2026 SGP FCST is the item\'s annual estimate on the Vendors Monthly Forecast page, and MTO or Not defaults from that page\'s Planned / MTO setting. Part Weight (kg) defaults from the Infor item weight (pounds per order quantity) ÷ order multiple × 0.4536 and can be overridden. Subsupplier, New Cost, Approval Status, Material, material costs and the dates are typed here and saved for the company.',
+          },
+          {
+            heading: 'How it is calculated',
+            body: [
+              '% Change = (New Cost − Current Cost) ÷ Current Cost.',
+              '% Change Material = (New Material Cost − Current Material Cost) ÷ Current Material Cost.',
+              'Price change = (New Material Cost − Current Material Cost) × Part Weight (kg): the material-driven change per piece.',
+              'Current (USD/KG) = Current Cost ÷ Part Weight; New (USD/KG) = New Cost ÷ Part Weight; %Change compares the two.',
+              'When Approval Status is Approved, the New Cost becomes the Vendor Pricing Sheet price on Vendor Contracts.',
+            ],
+          },
+        ],
+      },
       vendorsSgpFreight: {
         title: 'What SGP Freight shows',
         sections: [
@@ -13187,7 +13286,8 @@ export default function OperationsTab({
         getActiveReportOrder('vendors')
       );
       const customVendorReports = [
-        { key: 'productsVendorPricing', view: 'vendorPricing' as VendorReportView, label: 'Vendor Pricing', enabled: isWholesaleProductSector && isVendorPricingEnabled },
+        { key: 'productsVendorPricing', view: 'vendorPricing' as VendorReportView, label: 'Vendor Contracts', enabled: isWholesaleProductSector && isVendorPricingEnabled },
+        { key: 'vendorsVendorPricing', view: 'vendorPricingSheet' as VendorReportView, label: 'Vendor Pricing', enabled: isWholesaleProductSector && isVendorPricingSheetEnabled },
         { key: 'vendorsDutiesTariffs', view: 'dutiesTariffs' as VendorReportView, label: 'Duties & Tariffs', enabled: isWholesaleProductSector && isDutiesTariffsEnabled },
         { key: 'vendorsSgpFreight', view: 'sgpFreight' as VendorReportView, label: 'SGP Freight', enabled: isWholesaleProductSector && isSgpFreightEnabled },
         { key: 'vendorsMonthlyForecast', view: 'monthlyForecast' as VendorReportView, label: 'Monthly Forecast', enabled: isWholesaleProductSector && isVendorMonthlyForecastEnabled },
@@ -13296,6 +13396,14 @@ export default function OperationsTab({
               {renderReorderableCompanyReport('vendorsDutiesTariffs', 'vendors', <DutiesTariffsReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsDutiesTariffs')}
+              />)}
+              {renderProductChartInfoModal()}
+            </>
+          ) : activeCustomReport?.view === 'vendorPricingSheet' ? (
+            <>
+              {renderReorderableCompanyReport('vendorsVendorPricing', 'vendors', <VendorPricingReport
+                selectedCompanyId={selectedCompanyId}
+                onOpenInfo={() => setProductChartInfoKey('vendorsVendorPricing')}
               />)}
               {renderProductChartInfoModal()}
             </>
