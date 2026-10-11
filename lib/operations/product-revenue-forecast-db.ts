@@ -653,9 +653,9 @@ function replaceMonths(
 }
 
 /**
- * Shipped units per month. Months with a complete SLCoShips pull use those
- * shipment records; other months use month-end deltas of the daily SLCoitems
- * snapshots, which only exist since the snapshots started.
+ * Shipped units per month. Months covered by SLCoShips pulls (finished months
+ * and the current month to date) use those shipment records; other months use
+ * month-end deltas of the daily SLCoitems snapshots.
  */
 export async function loadCsiMonthlyShippedActuals(params: {
   companyId: string;
@@ -667,16 +667,16 @@ export async function loadCsiMonthlyShippedActuals(params: {
     loadCsiShipmentMonthlyActuals(params),
     loadCsiSnapshotShippedActuals(params),
   ]);
-  if (shipments.completeMonths.size === 0) return snapshots;
-  const asOf = [snapshots.ok ? snapshots.asOf : null, shipments.completeThrough]
+  if (shipments.months.size === 0) return snapshots;
+  const asOf = [snapshots.ok ? snapshots.asOf : null, shipments.coveredThrough]
     .filter((value): value is string => Boolean(value))
     .sort()
     .pop() ?? null;
   return {
     ok: true,
     asOf,
-    byExact: replaceMonths(snapshots.byExact, shipments.byExact, shipments.completeMonths),
-    byItem: replaceMonths(snapshots.byItem, shipments.byItem, shipments.completeMonths),
+    byExact: replaceMonths(snapshots.byExact, shipments.byExact, shipments.months),
+    byItem: replaceMonths(snapshots.byItem, shipments.byItem, shipments.months),
   };
 }
 

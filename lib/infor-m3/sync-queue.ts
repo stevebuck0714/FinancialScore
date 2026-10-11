@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import type { AccountingPlatform } from '@prisma/client';
 import type { InforOperationalAsyncRun } from '@/lib/infor-m3/async-run-state';
 import { processPendingInforRawTransforms, transformInforM3RawRun } from '@/lib/infor-m3/operational-sync';
+import { runNightlyCsiShipmentSync } from '@/lib/infor-m3/csi-shipment-history';
 import {
   isInforSyncInProcessWorkerEnabled,
   runOperationalSyncRequest,
@@ -2204,6 +2205,17 @@ async function processTask(
       platform: String(task.run.platform || 'INFOR_M3'),
     });
     if (String(task.run.platform || '').toUpperCase() === 'INFOR_M3') {
+      if (isOperationalInforFrequency(task.run)) {
+        // Failure here is logged only; the sync run itself has already succeeded.
+        const shipmentSync = await runNightlyCsiShipmentSync(task.companyId);
+        if (!shipmentSync.ok) {
+          console.warn('Infor CSI shipment sync failed after Infor sync completion:', {
+            companyId: task.companyId,
+            runId: task.runId,
+            error: shipmentSync.error,
+          });
+        }
+      }
       const [wholesaleReportWarmup, operationalTabsWarmup] = await Promise.all([
         warmWholesaleProductsReportCache(task.companyId),
         task.companyId === ATLANTIC_PRECISION_COMPANY_ID

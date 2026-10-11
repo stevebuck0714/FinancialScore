@@ -9,6 +9,7 @@ import {
   forecastActualsItemKey,
   type MonthQtyMap,
 } from '@/lib/operations/product-revenue-forecast';
+import { formatEstDate } from '@/lib/time/eastern';
 
 /**
  * SLCoShips is the CSI shipment log: one row per shipment of an order line,
@@ -125,6 +126,10 @@ export async function ensureCsiShipmentTables(): Promise<void> {
           "pulledAt" TIMESTAMP(3) NOT NULL,
           CONSTRAINT "InforShipmentPullMonth_pkey" PRIMARY KEY ("companyId", "monthStart")
         )
+      `);
+      // Last ship date saved contiguously from the first of the month.
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "InforShipmentPullMonth" ADD COLUMN IF NOT EXISTS "coveredThrough" DATE
       `);
     })().catch((error) => {
       ensureTablesOnce = null;
@@ -258,13 +263,24 @@ type InforRequest = {
   headers: Record<string, string>;
 };
 
-async function pullShipmentMonth(
+function addDays(isoDate: string, days: number): string {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function minDate(left: string, right: string): string {
+  return left < right ? left : right;
+}
+
+/** Saves every shipment with ShipDate in [start, endExclusive). */
+async function pullShipmentRange(
   companyId: string,
   request: InforRequest,
-  month: string
+  start: string,
+  endExclusive: string,
+  pulledAt: Date
 ): Promise<{ rowCount: number; pages: number }> {
-  const start = `${month}-01`;
-  const endExclusive = `${nextMonthKey(month)}-01`;
   const query = new URLSearchParams({
     properties: SHIPMENT_PROPERTIES.join(','),
     filter: `(ShipDate >= '${start}' and ShipDate < '${endExclusive}')`,
@@ -272,7 +288,6 @@ async function pullShipmentMonth(
     loadtype: 'FIRST',
   });
   const basePath = `${request.servicePrefix}/ido/load/SLCoShips`;
-  const pulledAt = new Date();
   let bookmark: string | null = null;
   let pages = 0;
   let rowCount = 0;
@@ -290,7 +305,7 @@ async function pullShipmentMonth(
     const body = result.body && typeof result.body === 'object' ? (result.body as Record<string, unknown>) : {};
     const message = String(body.Message || '').trim();
     if (!result.ok || body.Success === false) {
-      throw new Error(`Infor SLCoShips ${month} failed: HTTP ${result.status} ${message}`.trim());
+      throw new Error(`Infor SLCoShips ${start}..${endExclusive} failed: HTTP ${result.status} ${message}`.trim());
     }
     const items = Array.isArray(body.Items) ? (body.Items as Array<Record<string, unknown>>) : [];
     const rows = items.map(toShipmentRow).filter((row): row is ShipmentRow => row !== null);
@@ -301,9 +316,25 @@ async function pullShipmentMonth(
     if (!more || !bookmark || items.length === 0) break;
   }
   if (pages >= MAX_PAGES_PER_MONTH) {
-    throw new Error(`Infor SLCoShips ${month} exceeded ${MAX_PAGES_PER_MONTH} pages; month not marked complete.`);
+    throw new Error(`Infor SLCoShips ${start}..${endExclusive} exceeded ${MAX_PAGES_PER_MONTH} pages.`);
   }
-  // Shipments removed or re-dated in Infor since an earlier pull of this month.
+  return { rowCount, pages };
+}
+
+/**
+ * Full pull of one month. Removes shipments Infor no longer has in that month
+ * and records the month as covered from its first day through `today` (or month end).
+ */
+async function pullShipmentMonth(
+  companyId: string,
+  request: InforRequest,
+  month: string,
+  today: string = formatEstDate()
+): Promise<{ rowCount: number; pages: number }> {
+  const start = `${month}-01`;
+  const endExclusive = `${nextMonthKey(month)}-01`;
+  const pulledAt = new Date();
+  const result = await pullShipmentRange(companyId, request, start, endExclusive, pulledAt);
   await prisma.$executeRaw`
     DELETE FROM "InforShipmentFact"
     WHERE "companyId" = ${companyId}
@@ -311,14 +342,102 @@ async function pullShipmentMonth(
       AND "shipDate" < ${endExclusive}::date
       AND "pulledAt" < ${pulledAt}
   `;
+  const coveredThrough = minDate(addDays(endExclusive, -1), today);
   await prisma.$executeRaw`
-    INSERT INTO "InforShipmentPullMonth" ("companyId", "monthStart", "rowCount", "pulledAt")
-    VALUES (${companyId}, ${start}::date, ${rowCount}, ${pulledAt})
+    INSERT INTO "InforShipmentPullMonth" ("companyId", "monthStart", "rowCount", "pulledAt", "coveredThrough")
+    VALUES (${companyId}, ${start}::date, ${result.rowCount}, ${pulledAt}, ${coveredThrough}::date)
     ON CONFLICT ("companyId", "monthStart") DO UPDATE SET
       "rowCount" = EXCLUDED."rowCount",
-      "pulledAt" = EXCLUDED."pulledAt"
+      "pulledAt" = EXCLUDED."pulledAt",
+      "coveredThrough" = EXCLUDED."coveredThrough"
   `;
-  return { rowCount, pages };
+  return result;
+}
+
+async function buildInforRequest(companyId: string): Promise<InforRequest | null> {
+  const { credentials } = await getInforM3CredentialsWithOptionalEnvFallback(companyId, 'INFOR_CSI');
+  if (!credentials) return null;
+  const settings = await loadWorkingCsiProgramSettings(companyId);
+  if (!settings.servicePrefix) return null;
+  const headers: Record<string, string> = {};
+  if (settings.mongooseConfig) headers['X-Infor-MongooseConfig'] = settings.mongooseConfig;
+  if (settings.site) headers['X-Infor-Site'] = settings.site;
+  return { credentials, servicePrefix: settings.servicePrefix, headers };
+}
+
+async function loadMonthCoverage(
+  companyId: string,
+  month: string
+): Promise<{ pulledAt: Date; coveredThrough: string | null } | null> {
+  const rows = await prisma.$queryRaw<Array<{ pulledAt: Date; coveredThrough: string | null }>>`
+    SELECT "pulledAt", "coveredThrough"::text AS "coveredThrough"
+    FROM "InforShipmentPullMonth"
+    WHERE "companyId" = ${companyId} AND "monthStart" = ${`${month}-01`}::date
+  `;
+  return rows[0] ?? null;
+}
+
+function monthIsFinal(month: string, coverage: { pulledAt: Date; coveredThrough: string | null } | null): boolean {
+  if (!coverage?.coveredThrough) return false;
+  const monthEnd = addDays(`${nextMonthKey(month)}-01`, -1);
+  // Pulled at least 5 hours past UTC midnight after month end, i.e. after the month ended in EST.
+  const finalAfter = new Date(`${nextMonthKey(month)}-01T05:00:00Z`);
+  return coverage.coveredThrough >= monthEnd && coverage.pulledAt >= finalAfter;
+}
+
+const NIGHTLY_WINDOW_DAYS = 3;
+const FINALIZE_PREVIOUS_MONTH_THROUGH_DAY = 3;
+
+export type NightlyShipmentSyncResult = {
+  ok: boolean;
+  skipped?: string;
+  previousMonth?: { month: string; rows: number } | null;
+  currentMonth?: { month: string; mode: 'window' | 'full'; rows: number };
+  error?: string;
+};
+
+/**
+ * Nightly SLCoShips step. Saves the last three days of shipments; re-pulls all
+ * of last month during the first days of a month (or until it is final), and
+ * re-pulls the current month in full whenever its coverage has a gap.
+ */
+export async function runNightlyCsiShipmentSync(companyId: string): Promise<NightlyShipmentSyncResult> {
+  try {
+    const request = await buildInforRequest(companyId);
+    if (!request) return { ok: true, skipped: 'no CSI connection' };
+    await ensureCsiShipmentTables();
+    const today = formatEstDate();
+    const currentMonth = today.slice(0, 7);
+    const [year, monthNumber] = currentMonth.split('-').map(Number);
+    const previousMonth = monthKey(year, monthNumber - 2);
+
+    let previous: NightlyShipmentSyncResult['previousMonth'] = null;
+    const previousCoverage = await loadMonthCoverage(companyId, previousMonth);
+    if (Number(today.slice(8, 10)) <= FINALIZE_PREVIOUS_MONTH_THROUGH_DAY || !monthIsFinal(previousMonth, previousCoverage)) {
+      const result = await pullShipmentMonth(companyId, request, previousMonth, today);
+      previous = { month: previousMonth, rows: result.rowCount };
+    }
+
+    const windowStart = addDays(today, -NIGHTLY_WINDOW_DAYS);
+    const coverage = await loadMonthCoverage(companyId, currentMonth);
+    const contiguous =
+      coverage?.coveredThrough != null && coverage.coveredThrough >= addDays(windowStart, -1);
+    if (!contiguous || windowStart < `${currentMonth}-01`) {
+      const result = await pullShipmentMonth(companyId, request, currentMonth, today);
+      return { ok: true, previousMonth: previous, currentMonth: { month: currentMonth, mode: 'full', rows: result.rowCount } };
+    }
+    const pulledAt = new Date();
+    const result = await pullShipmentRange(companyId, request, windowStart, addDays(today, 1), pulledAt);
+    await prisma.$executeRaw`
+      UPDATE "InforShipmentPullMonth"
+      SET "coveredThrough" = GREATEST("coveredThrough", ${today}::date),
+          "pulledAt" = ${pulledAt}
+      WHERE "companyId" = ${companyId} AND "monthStart" = ${`${currentMonth}-01`}::date
+    `;
+    return { ok: true, previousMonth: previous, currentMonth: { month: currentMonth, mode: 'window', rows: result.rowCount } };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export type ShipmentHistoryPullResult = {
@@ -339,17 +458,10 @@ export async function pullCsiShipmentHistory(params: {
   budgetMs: number;
 }): Promise<ShipmentHistoryPullResult> {
   await ensureCsiShipmentTables();
-  const { credentials } = await getInforM3CredentialsWithOptionalEnvFallback(params.companyId, 'INFOR_CSI');
-  if (!credentials) return { ok: false, months: [], nextMonth: params.fromMonth, error: 'Infor CSI credentials are unavailable.' };
-  const settings = await loadWorkingCsiProgramSettings(params.companyId);
-  const headers: Record<string, string> = {};
-  if (settings.mongooseConfig) headers['X-Infor-MongooseConfig'] = settings.mongooseConfig;
-  if (settings.site) headers['X-Infor-Site'] = settings.site;
-  const request: InforRequest = {
-    credentials,
-    servicePrefix: settings.servicePrefix || '/APR_PRD/CSI/IDORequestService',
-    headers,
-  };
+  const request = await buildInforRequest(params.companyId);
+  if (!request) {
+    return { ok: false, months: [], nextMonth: params.fromMonth, error: 'Infor CSI credentials or sync programs are unavailable.' };
+  }
   const startedAt = Date.now();
   const months: ShipmentHistoryPullResult['months'] = [];
   let month = params.fromMonth;
@@ -369,10 +481,13 @@ export async function pullCsiShipmentHistory(params: {
 }
 
 export type CsiShipmentMonthlyActuals = {
-  /** Months (1-12) of `year` pulled after the month ended, so their totals are final. */
-  completeMonths: Set<number>;
-  /** Last day of the latest complete month, YYYY-MM-DD. */
-  completeThrough: string | null;
+  /**
+   * Months (1-12) of `year` whose shipments are used: months pulled in full after
+   * they ended, plus the current EST month (month to date) once it has coverage.
+   */
+  months: Set<number>;
+  /** Latest ship date covered by those months, YYYY-MM-DD. */
+  coveredThrough: string | null;
   byExact: Map<string, MonthQtyMap>;
   byItem: Map<string, MonthQtyMap>;
 };
@@ -402,17 +517,23 @@ export async function loadCsiShipmentMonthlyActuals(params: {
   customerId?: string;
   customerName?: string;
 }): Promise<CsiShipmentMonthlyActuals> {
-  const empty: CsiShipmentMonthlyActuals = { completeMonths: new Set(), completeThrough: null, byExact: new Map(), byItem: new Map() };
+  const empty: CsiShipmentMonthlyActuals = { months: new Set(), coveredThrough: null, byExact: new Map(), byItem: new Map() };
   try {
-    const pulls = await prisma.$queryRaw<Array<{ month: number }>>`
-      SELECT EXTRACT(MONTH FROM "monthStart")::int AS month
+    await ensureCsiShipmentTables();
+    const pulls = await prisma.$queryRaw<Array<{ monthStart: string; pulledAt: Date; coveredThrough: string | null }>>`
+      SELECT "monthStart"::text AS "monthStart", "pulledAt", "coveredThrough"::text AS "coveredThrough"
       FROM "InforShipmentPullMonth"
       WHERE "companyId" = ${params.companyId}
         AND EXTRACT(YEAR FROM "monthStart")::int = ${params.year}
-        AND "pulledAt" >= ("monthStart" + INTERVAL '1 month 5 hours')
     `;
-    if (pulls.length === 0) return empty;
-    const completeMonths = new Set(pulls.map((row) => Number(row.month)));
+    const currentMonth = formatEstDate().slice(0, 7);
+    const usable = pulls.filter((pull) => {
+      const month = pull.monthStart.slice(0, 7);
+      if (month === currentMonth) return pull.coveredThrough != null;
+      return monthIsFinal(month, pull);
+    });
+    if (usable.length === 0) return empty;
+    const months = new Set(usable.map((pull) => Number(pull.monthStart.slice(5, 7))));
     const start = `${params.year}-01-01`;
     const end = `${params.year + 1}-01-01`;
     const rows = await prisma.$queryRaw<Array<{
@@ -436,16 +557,19 @@ export async function loadCsiShipmentMonthlyActuals(params: {
     const byItem = new Map<string, MonthQtyMap>();
     for (const row of rows) {
       const month = Number(row.month);
-      if (!completeMonths.has(month)) continue;
+      if (!months.has(month)) continue;
       const qty = Number(row.qty || 0);
       const customerId = String(row.customerId || '');
       const itemSku = String(row.itemSku || '');
       addQty(byExact, forecastActualsExactKey(customerId, itemSku, String(row.customerPn || '')), month, qty);
       addQty(byItem, forecastActualsItemKey(customerId, itemSku), month, qty);
     }
-    const lastMonth = Math.max(...completeMonths);
-    const completeThrough = new Date(Date.UTC(params.year, lastMonth, 0)).toISOString().slice(0, 10);
-    return { completeMonths, completeThrough, byExact, byItem };
+    const coveredThrough = usable
+      .map((pull) => pull.coveredThrough)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .pop() ?? null;
+    return { months, coveredThrough, byExact, byItem };
   } catch (error) {
     // The tables are created on the first pull; before that there is nothing to read.
     if (/InforShipment\w+" does not exist/i.test(error instanceof Error ? error.message : String(error))) return empty;
