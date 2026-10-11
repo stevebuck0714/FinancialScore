@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
-import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +11,44 @@ function asItems(body: unknown): Array<Record<string, unknown>> {
   if (!body || typeof body !== 'object') return [];
   const items = (body as { Items?: unknown }).Items;
   return Array.isArray(items) ? items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
+}
+
+type CsiProgramSettings = {
+  programName: string | null;
+  servicePrefix: string | null;
+  mongooseConfig: string | null;
+  site: string | null;
+};
+
+async function loadWorkingCsiProgramSettings(companyId: string, inforSystem: string): Promise<CsiProgramSettings> {
+  const rows = await prisma.$queryRaw<Array<{ bySystem: unknown; global: unknown }>>`
+    SELECT
+      "connectionMetadata"->'accountingProgramsBySystem' AS "bySystem",
+      "connectionMetadata"->'accountingPrograms' AS "global"
+    FROM "AccountingConnection"
+    WHERE "companyId" = ${companyId}
+      AND platform = 'INFOR_M3'
+    LIMIT 1
+  `;
+  const bySystem = rows[0]?.bySystem && typeof rows[0].bySystem === 'object' ? (rows[0].bySystem as Record<string, unknown>) : {};
+  const programs = [
+    ...(Array.isArray(bySystem[inforSystem]) ? (bySystem[inforSystem] as unknown[]) : []),
+    ...(Array.isArray(rows[0]?.global) ? (rows[0].global as unknown[]) : []),
+  ].filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'));
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  const withPath = programs.filter((row) => /\/ido\/load\//i.test(text(row.endpointPath)) && row.enabled !== false);
+  const preferred =
+    withPath.find((row) => text(row.miProgram).toUpperCase() === 'SLCOITEMS') ||
+    withPath.find((row) => text(row.miProgram).toUpperCase() === 'SLCOS') ||
+    withPath[0];
+  if (!preferred) return { programName: null, servicePrefix: null, mongooseConfig: null, site: null };
+  const path = text(preferred.endpointPath);
+  return {
+    programName: text(preferred.miProgram) || null,
+    servicePrefix: path.slice(0, path.search(/\/ido\/load\//i)) || null,
+    mongooseConfig: text(preferred.mongooseConfig) || null,
+    site: text(preferred.site) || null,
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -26,27 +63,31 @@ export async function GET(request: NextRequest) {
       .map((term) => term.trim().replace(/[^a-z0-9]/gi, ''))
       .filter(Boolean);
     const matchPattern = new RegExp(matchTerms.length ? matchTerms.join('|') : 'inv', 'i');
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { accountingSystem: true },
-    });
-    const { credentials } = await getInforM3CredentialsWithOptionalEnvFallback(
-      companyId,
-      normalizeInforSystem(company?.accountingSystem)
-    );
+    // IDO requests only exist in CSI; the M3 login is rejected with InvalidCredentials.
+    const { credentials } = await getInforM3CredentialsWithOptionalEnvFallback(companyId, 'INFOR_CSI');
     if (!credentials) return NextResponse.json({ error: 'Infor CSI credentials are unavailable.' }, { status: 409 });
 
+    const connection = await loadWorkingCsiProgramSettings(companyId, 'INFOR_CSI');
+    const servicePrefix = connection.servicePrefix || '/APR_PRD/CSI/IDORequestService';
     const endpointPath = ido
       ? sample
-        ? `/APR_PRD/CSI/IDORequestService/ido/load/${encodeURIComponent(ido)}?properties=*&recordCap=1`
-        : `/APR_PRD/CSI/IDORequestService/ido/info/${encodeURIComponent(ido)}`
-      : '/APR_PRD/CSI/IDORequestService/ido/load/IDOs?properties=Name,Description&recordCap=1000';
+        ? `${servicePrefix}/ido/load/${encodeURIComponent(ido)}?properties=*&recordCap=1`
+        : `${servicePrefix}/ido/info/${encodeURIComponent(ido)}`
+      : `${servicePrefix}/ido/load/IDOs?properties=Name,Description&recordCap=1000`;
+    const headers: Record<string, string> = {};
+    if (connection.mongooseConfig) headers['X-Infor-MongooseConfig'] = connection.mongooseConfig;
+    if (connection.site) headers['X-Infor-Site'] = connection.site;
     const result = await callInforIonApi(credentials, endpointPath, {
       timeoutMs: 30_000,
-      // CSI rejects IDO requests without the Mongoose configuration, but still answers HTTP 200.
-      headers: { 'X-Infor-MongooseConfig': 'TMSManager' },
+      headers,
       meta: { programId: ido || 'IDOs', sourcePath: 'site-admin-ido-discovery' },
     });
+    const usedSettings = {
+      copiedFromProgram: connection.programName,
+      servicePrefix,
+      mongooseConfig: connection.mongooseConfig || null,
+      site: connection.site || null,
+    };
     if (!result.ok) {
       return NextResponse.json({ error: `Infor returned HTTP ${result.status}`, details: result.body }, { status: 502 });
     }
@@ -60,6 +101,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         ido,
         inforMessage,
+        usedSettings,
         sample: sampleItems[0] ?? null,
         properties: sample
           ? Array.from(new Set(sampleItems.flatMap((item) => Object.keys(item)))).sort()
@@ -80,6 +122,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       idos,
       inforMessage,
+      usedSettings,
       catalogItemCount: catalogItems.length,
       catalogSample: catalogItems.slice(0, 20),
     });
