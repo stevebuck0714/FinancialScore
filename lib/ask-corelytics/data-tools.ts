@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { formatEstDate } from '@/lib/time/eastern';
 import { ASK_PRODUCT_REVENUE_TOOL_DEFINITION, getAskProductRevenue } from '@/lib/ask-corelytics/product-revenue-tool';
 
 /**
@@ -271,24 +272,15 @@ export const ASK_DATASETS: Record<string, DatasetDef> = {
     measures: ['valueNumber', 'compareNumber', 'sharePct', 'auxNumber'],
     rowColumns: ['monthKey', 'factType', 'metricName', 'dimensionType', 'dimensionLabel', 'valueNumber', 'compareNumber', 'sharePct', 'auxNumber'],
   },
-  product_forecast: {
-    table: 'ProductRevenueForecastLine',
-    description:
-      'Raw wholesale product quantity forecast lines by customer/item for a calendar year; forecastQty/adjustedQty/actualQty are JSON maps of month -> quantity. The stored actualQty can lag: for actual units, any dollars, or forecast vs actual, use get_product_revenue instead.',
-    kind: 'by_year',
-    dateColumn: 'year',
-    dimensions: ['customerName', 'customerGroup', 'itemSku', 'customerPartNumber', 'team', 'csr', 'productionType', 'statusFlag'],
-    measures: ['annualBaseQty'],
-    rowColumns: ['year', 'customerName', 'customerGroup', 'itemSku', 'customerPartNumber', 'team', 'statusFlag', 'annualBaseQty', 'forecastQty', 'adjustedQty', 'actualQty'],
-  },
   vendor_forecast: {
     table: 'VendorMonthlyForecastLine',
-    description: 'Vendor purchase quantity forecast lines by vendor/customer/item for a calendar year; forecastQty/actualQty are JSON maps of month -> quantity.',
+    description:
+      'Vendor purchase quantity forecast lines by vendor/customer/item for a calendar year; forecastQty is a JSON map of month -> quantity. For actual units shipped, use get_product_revenue with the itemSku.',
     kind: 'by_year',
     dateColumn: 'year',
     dimensions: ['vendorName', 'vendorId', 'customerName', 'customerGroup', 'itemSku', 'team', 'statusFlag'],
     measures: ['annualBaseQty'],
-    rowColumns: ['year', 'vendorName', 'customerName', 'itemSku', 'customerPartNumber', 'statusFlag', 'annualBaseQty', 'forecastQty', 'actualQty'],
+    rowColumns: ['year', 'vendorName', 'customerName', 'itemSku', 'customerPartNumber', 'statusFlag', 'annualBaseQty', 'forecastQty'],
   },
 };
 
@@ -404,6 +396,9 @@ async function listOperationalStoreDatasets(companyId: string) {
       rowCount: row.rowCount,
       minDate: row.minDate ? row.minDate.toISOString().slice(0, 10) : null,
       maxDate: row.maxDate ? row.maxDate.toISOString().slice(0, 10) : null,
+      daysSinceLatest: row.maxDate
+        ? Math.round((Date.parse(`${formatEstDate()}T00:00:00Z`) - Date.parse(`${row.maxDate.toISOString().slice(0, 10)}T00:00:00Z`)) / 86_400_000)
+        : null,
       lastSyncedAt: row.lastSyncedAt ? row.lastSyncedAt.toISOString() : null,
     };
   });
@@ -448,18 +443,41 @@ async function listBuiltInAskDatasets(companyId: string) {
       }
     }),
   );
+  const todayEst = formatEstDate();
+  const latestImport = Object.values(ASK_DATASETS).some((def) => def.latestFinancialRecordOnly)
+    ? await prisma.financialRecord
+        .findFirst({ where: { companyId }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } })
+        .catch(() => null)
+    : null;
   return entries
     .filter((e) => Number((e.stats as any)?.rowCount || 0) > 0)
-    .map(({ name, def, stats }) => ({
-      dataset: name,
-      description: def.description,
-      kind: def.kind,
-      dateColumn: def.dateColumn,
-      dimensions: def.dimensions,
-      measures: def.measures,
-      rowColumns: def.rowColumns,
-      ...stats,
-    }));
+    .map(({ name, def, stats }) => {
+      const rawMax = (stats as any)?.maxDate;
+      const maxDateText = rawMax instanceof Date ? rawMax.toISOString().slice(0, 10) : String(rawMax ?? '').slice(0, 10);
+      const maxDate = isDateKey(maxDateText) ? maxDateText : null;
+      const daysSinceLatest =
+        maxDate && def.kind !== 'by_year' && !def.latestFinancialRecordOnly
+          ? Math.round((Date.parse(`${todayEst}T00:00:00Z`) - Date.parse(`${maxDate}T00:00:00Z`)) / 86_400_000)
+          : null;
+      const importedAt = def.latestFinancialRecordOnly && latestImport ? formatEstDate(latestImport.createdAt) : null;
+      return {
+        dataset: name,
+        description: def.description,
+        kind: def.kind,
+        dateColumn: def.dateColumn,
+        dimensions: def.dimensions,
+        measures: def.measures,
+        rowColumns: def.rowColumns,
+        ...stats,
+        daysSinceLatest,
+        ...(importedAt
+          ? {
+              importedAt,
+              freshnessNote: `Imported ${importedAt}. Months on or after the import month contain only partial activity.`,
+            }
+          : {}),
+      };
+    });
 }
 
 type Filter = { column: string; op: 'eq' | 'neq' | 'contains' | 'in' | 'gt' | 'gte' | 'lt' | 'lte'; value: unknown };

@@ -24,6 +24,7 @@ type AskRevenueLine = {
   customerPartNumber: string;
   statusFlag: string;
   contractPrice: number | null;
+  annualBaseQty: number;
   forecastQty: MonthArray;
   adjustedQty: MonthArray;
   actualQty: MonthArray;
@@ -50,7 +51,7 @@ async function loadAskRevenueDataset(companyId: string, year: number): Promise<A
   const { payload } = await withProductReportCache<AskRevenueDataset>({
     namespace: 'ask-product-revenue',
     companyId,
-    keyParts: ['all-lines', year],
+    keyParts: ['all-lines-v2', year],
     build: async () => {
       await ensureProductRevenueTables();
       const dataset = await loadRevenueDataset({ companyId, year, includeAllLines: true });
@@ -75,6 +76,7 @@ async function loadAskRevenueDataset(companyId: string, year: number): Promise<A
             customerPartNumber: line.customerPartNumber,
             statusFlag: line.statusFlag,
             contractPrice: line.contractPrice,
+            annualBaseQty: Number(line.annualBaseQty) || 0,
             forecastQty: FORECAST_MONTHS.map((m) => monthQty(line.forecastQty, m)),
             adjustedQty: FORECAST_MONTHS.map((m) => adjustedMonthQty(line.forecastQty, line.actualQty, m, dataThru, adjustedQtyMap)),
             actualQty: FORECAST_MONTHS.map((m) => monthQty(line.actualQty, m)),
@@ -97,6 +99,10 @@ function sumMonths(lines: AskRevenueLine[], measure: Measure, months: number[]):
 
 function summarize(lines: AskRevenueLine[], months: number[]) {
   return Object.fromEntries(MEASURES.map((measure) => [measure, sumMonths(lines, measure, months)])) as Record<Measure, number>;
+}
+
+function sumAnnualBase(lines: AskRevenueLine[]): number {
+  return round(lines.reduce((sum, line) => sum + line.annualBaseQty, 0));
 }
 
 function groupKey(line: AskRevenueLine, groupBy: GroupBy): string {
@@ -138,7 +144,12 @@ export async function getAskProductRevenue(companyId: string, args: Record<strin
     }
   }
   const groupRows = [...groups.entries()]
-    .map(([key, groupLines]) => ({ [groupBy]: key, lineCount: groupLines.length, ...summarize(groupLines, months) }))
+    .map(([key, groupLines]) => ({
+      [groupBy]: key,
+      lineCount: groupLines.length,
+      annualBaseQty: sumAnnualBase(groupLines),
+      ...summarize(groupLines, months),
+    }))
     .sort((a, b) => (b.adjustedDollars as number) - (a.adjustedDollars as number));
 
   return {
@@ -151,8 +162,9 @@ export async function getAskProductRevenue(companyId: string, args: Record<strin
       forecastDollars: 'Forecast units x contract price (the plan).',
       adjustedDollars: 'Forecast-ADJ: actual dollars for closed months, planner-adjusted forecast units x contract price for open months.',
       adjustedQty: 'Forecast-ADJ units: actual units for closed months, planner-adjusted forecast units for open months.',
+      annualBaseQty: 'Full-year base quantity on the forecast (not limited to the selected months).',
     },
-    totals: summarize(lines, months),
+    totals: { annualBaseQty: sumAnnualBase(lines), ...summarize(lines, months) },
     byMonth,
     ...(groupBy !== 'none'
       ? { groupBy, groupCount: groupRows.length, returnedGroups: Math.min(limit, groupRows.length), groups: groupRows.slice(0, limit) }
@@ -166,7 +178,7 @@ export const ASK_PRODUCT_REVENUE_TOOL_DEFINITION = {
     name: 'get_product_revenue',
     description: [
       'Wholesale product revenue and unit forecast by month, exactly as shown on the Monthly Revenue page.',
-      'Use this for product/customer/item sales dollars, actuals vs forecast, and projected revenue or units for a month.',
+      'Use this for every product forecast question (units or dollars), product/customer/item sales dollars, actuals vs forecast, and projected revenue or units for a month.',
       'Returns actual units and dollars (from Infor), forecast and Forecast-ADJ units and dollars, totals, by-month detail, and a breakdown by customer, customer group, or item.',
     ].join(' '),
     parameters: {

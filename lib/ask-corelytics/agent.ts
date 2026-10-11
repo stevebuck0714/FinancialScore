@@ -60,6 +60,7 @@ function buildSystemPrompt(params: { companyName: string; todayEst: string }) {
     '- Datasets named "<source>.<dataset>" come from connected operational systems (HR/payroll, CRM, field ops, spreadsheets); use them for headcount, payroll, pipeline, activity and other operational questions.',
     '- If a dataset has dataMode MOCK (or a result has dataNote), it is sample data: say the figures are sample data pending the live connection.',
     '- Cross-check when two sources overlap (e.g. monthly_financials revenue vs customer_sales) and say which you used.',
+    '- Freshness: state the as-of date of the data behind each key figure. If a dataset\'s daysSinceLatest is more than 7, or a month is on/after monthly_financials importedAt, say the figure is stale or partial and give the date; never present it as current or complete.',
     '',
     'Answer rules:',
     '- Answer the exact question asked, with specific numbers, periods, names and $/% changes computed from tool results.',
