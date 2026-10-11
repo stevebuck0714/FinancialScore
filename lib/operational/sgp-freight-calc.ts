@@ -67,6 +67,15 @@ export function isDomesticShipment(shipmentType: string | null | undefined): boo
   return value === 'DOM' || value === 'DOMESTIC' || value === 'US' || value === 'USA' || value.startsWith('DOM');
 }
 
+export function deriveShipmentType(explicit: string | null | undefined, countryOfOrigin: string | null | undefined): string | null {
+  const shipment = String(explicit ?? '').trim().toUpperCase();
+  if (shipment) return shipment;
+  const origin = String(countryOfOrigin ?? '').trim().toUpperCase();
+  if (!origin) return null;
+  if (['DOM', 'US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(origin)) return 'DOM';
+  return 'OVERSEAS';
+}
+
 export function calcCbmFromInches(heightIn: number | null, widthIn: number | null, lengthIn: number | null): number | null {
   const height = Number(heightIn);
   const width = Number(widthIn);

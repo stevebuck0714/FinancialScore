@@ -1,11 +1,16 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CompanyItemFreightPatch, CompanyItemFreightRow } from '@/lib/operations/item-freight-overlay';
+import type {
+  CompanyItemFreightPatch,
+  CompanyItemFreightRow,
+  EditableFreightField,
+} from '@/lib/operations/item-freight-overlay';
 import {
   calcCbmFromInches,
   calcItemFreight,
   DEFAULT_SGP_FREIGHT_ASSUMPTIONS,
+  deriveShipmentType,
   futureDomesticRate,
   normalizeSgpFreightAssumptions,
   type SgpFreightAssumptions,
@@ -106,24 +111,24 @@ const SORT_COLUMNS: Array<{
     width: 76,
   },
   { key: 'percentOfContainer', label: '% of\nContainer', align: 'right', title: 'CBM ÷ order multiple ÷ CBMs', width: 68 },
-  { key: 'vendorCoo', label: 'Current\nVendor\nCOO', width: 72 },
+  { key: 'vendorCoo', label: 'Current\nVendor\nCOO', editable: true, title: 'From the vendor address in Infor.', width: 72 },
   { key: 'shipmentType', label: 'Shipment\nType', width: 72 },
   { key: 'item', label: 'Item', width: 88 },
   { key: 'revision', label: 'Rev', width: 40 },
-  { key: 'qtyOnHand', label: 'Quantity\nOn Hand', align: 'right', width: 72 },
+  { key: 'qtyOnHand', label: 'Quantity\nOn Hand', align: 'right', editable: true, width: 72 },
   { key: 'nonNettableStock', label: 'Non-Nettable\nStock', align: 'right', width: 84 },
   { key: 'safetyStock', label: 'Safety\nStock', align: 'right', width: 64 },
   { key: 'allocatedQty', label: 'Allocated To\nCustomer\nOrders', align: 'right', width: 80 },
-  { key: 'quantityOrdered', label: 'Quantity\nOrdered', align: 'right', width: 72 },
-  { key: 'orderMultiple', label: 'Order\nMultiple', align: 'right', width: 72 },
-  { key: 'heightIn', label: 'Height\n(in)', align: 'right', width: 60 },
-  { key: 'widthIn', label: 'Width\n(in)', align: 'right', width: 60 },
-  { key: 'orderMinimum', label: 'Order\nMinimum', align: 'right', width: 72 },
-  { key: 'lengthIn', label: 'Length\n(in)', align: 'right', width: 60 },
-  { key: 'cbm', label: 'CBM', align: 'right', title: 'From Infor SLItems.', width: 64 },
-  { key: 'unitWeight', label: 'Unit\nWeight', align: 'right', width: 64 },
-  { key: 'unitCost', label: 'Unit\nCost', align: 'right', width: 64 },
-  { key: 'currentUnitCost', label: 'Current\nUnit Cost', align: 'right', width: 72 },
+  { key: 'quantityOrdered', label: 'Quantity\nOrdered', align: 'right', editable: true, width: 72 },
+  { key: 'orderMultiple', label: 'Order\nMultiple', align: 'right', editable: true, width: 72 },
+  { key: 'heightIn', label: 'Height\n(in)', align: 'right', editable: true, width: 60 },
+  { key: 'widthIn', label: 'Width\n(in)', align: 'right', editable: true, width: 60 },
+  { key: 'orderMinimum', label: 'Order\nMinimum', align: 'right', editable: true, width: 72 },
+  { key: 'lengthIn', label: 'Length\n(in)', align: 'right', editable: true, width: 60 },
+  { key: 'cbm', label: 'CBM', align: 'right', editable: true, title: 'From Infor SLItems.', width: 64 },
+  { key: 'unitWeight', label: 'Unit\nWeight', align: 'right', editable: true, width: 64 },
+  { key: 'unitCost', label: 'Unit\nCost', align: 'right', editable: true, width: 64 },
+  { key: 'currentUnitCost', label: 'Current\nUnit Cost', align: 'right', editable: true, width: 72 },
   { key: 'htsCode', label: 'HTS\nCode', width: 88 },
   { key: 'countryOfOrigin', label: 'Country\nOf Origin', width: 72 },
   { key: 'productCode', label: 'Product\nCode', width: 64 },
@@ -198,7 +203,6 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [, setSpreadsheetItems] = useState(0);
   const [vendorFilter, setVendorFilter] = useState('');
   const [sortKey, setSortKey] = useState<FreightSortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -219,7 +223,6 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
       setItems(Array.isArray(payload.items) ? payload.items : []);
       setAssumptions(normalizeSgpFreightAssumptions(payload.assumptions || DEFAULT_SGP_FREIGHT_ASSUMPTIONS));
       setAssumptionsDirty(false);
-      setSpreadsheetItems(Number(payload.spreadsheetItems || 0));
       setEdits({});
       setDirty(false);
     } catch (loadError) {
@@ -296,9 +299,16 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
   const displayRow = (row: CompanyItemFreightRow): CompanyItemFreightRow => {
     const edit = edits[row.id];
     const next = edit ? { ...row, ...edit } : { ...row };
-    if (edit?.cbm === undefined && (edit?.heightIn !== undefined || edit?.widthIn !== undefined || edit?.lengthIn !== undefined)) {
+    if (
+      !row.inforFields.includes('cbm') &&
+      edit?.cbm === undefined &&
+      (edit?.heightIn !== undefined || edit?.widthIn !== undefined || edit?.lengthIn !== undefined)
+    ) {
       next.cbm = calcCbmFromInches(next.heightIn, next.widthIn, next.lengthIn) ?? next.cbm;
       next.cbmIsManual = false;
+    }
+    if (edit?.vendorCoo !== undefined) {
+      next.shipmentType = deriveShipmentType(null, next.vendorCoo);
     }
     const calculated = calcItemFreight({
       cbm: next.cbm,
@@ -321,8 +331,8 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
     setNotice(null);
   };
 
-  const updateField = (row: CompanyItemFreightRow, key: keyof CompanyItemFreightPatch, value: string) => {
-    const parsed = parseNumber(value);
+  const updateField = (row: CompanyItemFreightRow, key: EditableFreightField, value: string) => {
+    const parsed = key === 'vendorCoo' ? value.trim().toUpperCase() || null : parseNumber(value);
     setEdits((prev) => ({
       ...prev,
       [row.id]: {
@@ -383,7 +393,19 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
 
   const renderValue = (row: CompanyItemFreightRow, column: (typeof SORT_COLUMNS)[number]) => {
     const current = displayRow(row);
-    if (column.editable) {
+    const field = column.key as EditableFreightField;
+    if (column.editable && field === 'vendorCoo' && !row.inforFields.includes(field)) {
+      return (
+        <input
+          value={current.vendorCoo || ''}
+          onChange={(event) => updateField(row, field, event.target.value)}
+          placeholder="e.g. CN"
+          maxLength={12}
+          style={inputStyle}
+        />
+      );
+    }
+    if (column.editable && !row.inforFields.includes(field)) {
       const raw = current[column.key as keyof CompanyItemFreightRow];
       const isCount = COUNT_KEYS.has(column.key);
       const digits = column.key === 'unitCost' || column.key === 'currentUnitCost' || column.key === 'cbm' ? 4 : 2;
@@ -396,7 +418,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
                 ? commaText(Number(raw), 2)
                 : String(Number(Number(raw).toFixed(digits)))
           }
-          onChange={(event) => updateField(row, column.key as keyof CompanyItemFreightPatch, event.target.value)}
+          onChange={(event) => updateField(row, field, event.target.value)}
           inputMode="decimal"
           style={{ ...inputStyle, textAlign: 'right' }}
         />
@@ -420,7 +442,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
     <div>
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}>
-          Values and formulas come from the SGP Freight sheet. Change the rate and shipment assumptions above the table to recalculate % of container and estimated freight.
+          Item values come from Infor, and vendor COO comes from the vendor address in Infor. Where Infor has no value, the cell is editable for manual entry. Change the rate and shipment assumptions above the table to recalculate % of container and estimated freight.
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {onOpenInfo ? (
@@ -634,7 +656,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
             {sortedItems.length === 0 && (
               <tr>
                 <td colSpan={SORT_COLUMNS.length} style={{ padding: 24, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
-                  {loading ? 'Loading…' : 'No SGP Freight rows yet. Upload the GMPA workbook that includes the SGP Freight sheet, then Reload.'}
+                  {loading ? 'Loading…' : 'No active Infor items with a primary vendor were found.'}
                 </td>
               </tr>
             )}

@@ -12887,7 +12887,7 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'This is the vendor item overlay for the SGP Freight sheet. Quantity ordered, order multiple, dimensions, order minimum, CBM, unit weight, and unit costs seed once from that tab, then stay user-entered. Re-uploading fills blank new SKUs only and does not overwrite saved values.',
+              'This lists every active Infor item that has a primary vendor. Item values come from the Infor item master (SLItems), the vendor comes from Infor item vendors (SLItemVends), and the vendor COO comes from the vendor address in Infor (SLVendors). Where Infor has no value, the cell can be entered manually; Infor replaces the manual value as soon as it supplies one.',
           },
           {
             heading: 'How it is calculated',
@@ -12896,7 +12896,7 @@ export default function OperationsTab({
               '% of container matches the sheet: CBM ÷ order multiple ÷ CBMs. If order multiple is missing or zero, % and overseas freight stay blank.',
               'Overseas current freight is Average Shipment Cost × % of container. Overseas future freight is Estimated Freight Cost × % of container.',
               'Non-overseas freight current is unit cost × Estimated Domestic Rate (CURRENT). Future uses that rate increased by Estimated Increase (8.00% × 1.05 = 8.40% with the sheet defaults).',
-              'Vendor, shipment type, HTS, and origin come from the SGP Freight sheet. Qty on hand can refresh from inventory/CSI.',
+              'Shipment type follows the vendor COO: a United States vendor address is DOM, any other country is OVERSEAS. The rate and shipment assumptions are user-entered and saved for the company.',
             ],
           },
         ],

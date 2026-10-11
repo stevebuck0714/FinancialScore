@@ -252,30 +252,41 @@ export async function loadPrimaryVendorByItem(companyId: string): Promise<Map<st
   const result = new Map<string, { vendorId: string; vendorName: string }>();
   if (!rawDelegate?.findMany) return result;
 
-  const latest = await rawDelegate.findFirst({
-    where: {
-      companyId,
-      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-      miProgram: 'SLItemVends',
-    },
-    select: { businessDate: true },
-    orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
-  });
-  if (!latest?.businessDate) return result;
+  // Nightly SLItemVends loads are deltas (often a handful of rows), so start at the newest
+  // full load and overlay every later change per item/vendor.
+  const fullLoads = await prisma.$queryRaw<Array<{ businessDate: Date }>>(Prisma.sql`
+    SELECT "businessDate"
+    FROM "InforRawRecord"
+    WHERE "companyId" = ${companyId}
+      AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
+      AND "miProgram" = 'SLItemVends'
+      AND "businessDate" IS NOT NULL
+    GROUP BY "businessDate"
+    HAVING COUNT(*) >= 100
+    ORDER BY "businessDate" DESC
+    LIMIT 1
+  `).catch(() => []);
+  const baseline = fullLoads[0]?.businessDate
+    || (await rawDelegate.findFirst({
+      where: { companyId, platform: { in: ['INFOR_M3', 'INFOR_CSI'] }, miProgram: 'SLItemVends' },
+      select: { businessDate: true },
+      orderBy: [{ businessDate: 'desc' }, { fetchedAt: 'desc' }, { createdAt: 'desc' }],
+    }))?.businessDate;
+  if (!baseline) return result;
 
   const rows = await rawDelegate.findMany({
     where: {
       companyId,
       platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
       miProgram: 'SLItemVends',
-      businessDate: latest.businessDate,
+      businessDate: { gte: baseline },
     },
     select: { payload: true },
+    orderBy: [{ businessDate: 'asc' }, { fetchedAt: 'asc' }, { createdAt: 'asc' }],
     take: 50000,
   });
 
-  type RankedVendor = { vendorId: string; vendorName: string; rank: number };
-  const ranked = new Map<string, RankedVendor>();
+  const latestByItemVendor = new Map<string, { item: string; vendorId: string; vendorName: string; rank: number }>();
   for (const row of rows as Array<{ payload?: Record<string, unknown> }>) {
     const payload = row?.payload && typeof row.payload === 'object' ? row.payload : null;
     if (!payload) continue;
@@ -284,10 +295,20 @@ export async function loadPrimaryVendorByItem(companyId: string): Promise<Map<st
     const vendorName = String(payload.VendaddrName ?? payload.VendAddrName ?? '').trim();
     const rank = Number(payload.Rank);
     if (!item || !vendorId) continue;
-    const nextRank = Number.isFinite(rank) ? rank : 99;
+    latestByItemVendor.set(`${item}||${vendorId}`, {
+      item,
+      vendorId,
+      vendorName,
+      rank: Number.isFinite(rank) ? rank : 99,
+    });
+  }
+
+  type RankedVendor = { vendorId: string; vendorName: string; rank: number };
+  const ranked = new Map<string, RankedVendor>();
+  for (const { item, vendorId, vendorName, rank } of latestByItemVendor.values()) {
     const prior = ranked.get(item);
-    if (!prior || nextRank < prior.rank) {
-      ranked.set(item, { vendorId, vendorName: vendorName || vendorId, rank: nextRank });
+    if (!prior || rank < prior.rank) {
+      ranked.set(item, { vendorId, vendorName: vendorName || vendorId, rank });
     }
   }
   for (const [item, vendor] of ranked) {

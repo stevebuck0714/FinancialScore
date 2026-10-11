@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import {
   calcCbmFromInches,
   DEFAULT_SGP_FREIGHT_ASSUMPTIONS,
+  deriveShipmentType,
   normalizeSgpFreightAssumptions,
   type SgpFreightAssumptions,
 } from '@/lib/operational/sgp-freight-calc';
@@ -12,6 +13,7 @@ export {
   calcPercentOfContainer,
   CUBIC_INCHES_PER_CBM,
   DEFAULT_SGP_FREIGHT_ASSUMPTIONS,
+  deriveShipmentType,
   futureDomesticRate,
   futureEstimatedFreightCost,
   isDomesticShipment,
@@ -223,15 +225,6 @@ export function parseSgpFreightAssumptions(matrix: MatrixCell[][], headerIndex: 
     if (rate != null) assumptions.freightCostIncrease = rate;
   }
   return normalizeSgpFreightAssumptions(assumptions);
-}
-
-export function deriveShipmentType(explicit: string | null | undefined, countryOfOrigin: string | null | undefined): string | null {
-  const shipment = asString(explicit).toUpperCase();
-  if (shipment) return shipment;
-  const origin = asString(countryOfOrigin).toUpperCase();
-  if (!origin) return null;
-  if (['DOM', 'US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'].includes(origin)) return 'DOM';
-  return 'OVERSEAS';
 }
 
 function pickFreightSheetName(workbook: { SheetNames?: string[] } | null | undefined): string | null {

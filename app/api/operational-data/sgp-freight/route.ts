@@ -6,7 +6,6 @@ import {
   ensureCompanyItemFreightTable,
   getCompanyItemFreightSettings,
   listCompanyItemFreight,
-  refreshCompanyItemFreight,
   updateCompanyItemFreight,
   updateCompanyItemFreightSettings,
   type CompanyItemFreightPatch,
@@ -69,14 +68,13 @@ export async function GET(request: NextRequest) {
     if (denied) return denied;
 
     await ensureCompanyItemFreightTable();
-    const sync = await refreshCompanyItemFreight(companyId);
-    const items = await listCompanyItemFreight(companyId);
-    const assumptions = await getCompanyItemFreightSettings(companyId);
+    const [items, assumptions] = await Promise.all([
+      listCompanyItemFreight(companyId, { scope: 'page' }),
+      getCompanyItemFreightSettings(companyId),
+    ]);
     return NextResponse.json({
       ok: true,
       companyId,
-      spreadsheetItems: sync.spreadsheetItems || items.filter((row) => Boolean(row.lastSpreadsheetSeedAt)).length,
-      discovered: 0,
       assumptions,
       items,
     });
@@ -104,26 +102,29 @@ export async function PATCH(request: NextRequest) {
     if (!patches.length && !assumptionsPatch) {
       return NextResponse.json({ error: 'items or assumptions are required' }, { status: 400 });
     }
-    if (patches.length) {
-      return NextResponse.json(
-        { error: 'SGP Freight item fields are managed by the Infor SLItems sync and cannot be edited.' },
-        { status: 403 }
-      );
-    }
 
     await ensureCompanyItemFreightTable();
     if (assumptionsPatch) {
       await updateCompanyItemFreightSettings(companyId, assumptionsPatch);
-      scheduleOperationalCacheWarmupAfterSave(request, companyId, 'sgp-freight');
     }
-    const items = patches.length
-      ? await updateCompanyItemFreight(companyId, patches)
-      : await listCompanyItemFreight(companyId);
-    const assumptions = await getCompanyItemFreightSettings(companyId);
+    let updated = 0;
+    let skipped: Awaited<ReturnType<typeof updateCompanyItemFreight>>['skipped'] = [];
+    if (patches.length) {
+      const editor = await requireAuth().catch(() => null);
+      const result = await updateCompanyItemFreight(companyId, patches, editor?.email || editor?.userId || null);
+      updated = result.updated;
+      skipped = result.skipped;
+    }
+    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'sgp-freight');
+    const [items, assumptions] = await Promise.all([
+      listCompanyItemFreight(companyId, { scope: 'page' }),
+      getCompanyItemFreightSettings(companyId),
+    ]);
     return NextResponse.json({
       ok: true,
       companyId,
-      updated: patches.length,
+      updated,
+      skipped,
       assumptions,
       items,
     });

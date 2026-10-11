@@ -5,21 +5,57 @@ import {
   calcCbmFromInches,
   calcItemFreight,
   deriveShipmentType,
-  parseSgpFreightWorkbook,
-  pickFreightSheetNameFromList,
   DEFAULT_SGP_FREIGHT_ASSUMPTIONS,
   normalizeSgpFreightAssumptions,
-  type ParsedSgpFreightRow,
-  type ParsedSgpFreightWorkbook,
   type SgpFreightAssumptions,
-} from '@/lib/operational/apr-sgp-freight';
-import { normalizeHtsCode, normalizeItemSku } from '@/lib/hts/item-duty-overlay';
+} from '@/lib/operational/sgp-freight-calc';
+import { normalizeItemSku } from '@/lib/hts/item-duty-overlay';
+import { normalizeOriginCode } from '@/lib/operational/apr-sgp-gmpa';
 import { loadPrimaryVendorByItem } from '@/lib/operations/vendor-monthly-forecast-db';
-import { APR_SGP_GMPA_SOURCE_CODE } from '@/lib/operational/apr-sgp-gmpa';
-import { APR_SGP_FREIGHT_FALLBACK } from '@/lib/operational/apr-sgp-freight-fallback';
-import * as XLSX from 'xlsx';
 
-const ATLANTIC_PRECISION_COMPANY_ID = 'cmmcp278j0002kz0439rlixdj';
+export const EDITABLE_FREIGHT_FIELDS = [
+  'vendorCoo',
+  'qtyOnHand',
+  'quantityOrdered',
+  'orderMultiple',
+  'orderMinimum',
+  'heightIn',
+  'widthIn',
+  'lengthIn',
+  'cbm',
+  'unitWeight',
+  'unitCost',
+  'currentUnitCost',
+] as const;
+
+export type EditableFreightField = (typeof EDITABLE_FREIGHT_FIELDS)[number];
+
+// Infor reports these as 0 when the item master has no value.
+const ZERO_IS_BLANK = new Set<EditableFreightField>([
+  'heightIn',
+  'widthIn',
+  'lengthIn',
+  'cbm',
+  'unitWeight',
+  'orderMultiple',
+  'unitCost',
+  'currentUnitCost',
+]);
+
+const FIELD_COLUMNS: Record<EditableFreightField, string> = {
+  vendorCoo: 'spreadsheetVendorCoo',
+  qtyOnHand: 'spreadsheetQtyOnHand',
+  quantityOrdered: 'quantityOrdered',
+  orderMultiple: 'orderMultiple',
+  orderMinimum: 'orderMinimum',
+  heightIn: 'heightIn',
+  widthIn: 'widthIn',
+  lengthIn: 'lengthIn',
+  cbm: 'cbm',
+  unitWeight: 'unitWeight',
+  unitCost: 'unitCost',
+  currentUnitCost: 'currentUnitCost',
+};
 
 export type CompanyItemFreightRow = {
   id: string;
@@ -61,8 +97,10 @@ export type CompanyItemFreightRow = {
   nonNettableStock: number | null;
   safetyStock: number | null;
   allocatedQty: number | null;
+  inInfor: boolean;
+  /** Editable fields whose value comes from Infor; these are read-only on the page. */
+  inforFields: EditableFreightField[];
   identitySource: string;
-  lastSpreadsheetSeedAt: string | null;
   userEditedAt: string | null;
   updatedAt: string;
 };
@@ -75,6 +113,8 @@ export type CompanyItemFreightSettings = SgpFreightAssumptions & {
 export type CompanyItemFreightPatch = {
   id?: string;
   itemSku?: string;
+  vendorCoo?: string | null;
+  qtyOnHand?: number | null;
   quantityOrdered?: number | null;
   orderMultiple?: number | null;
   heightIn?: number | null;
@@ -104,13 +144,9 @@ type FreightDbRow = {
   unitWeight: number | null;
   unitCost: number | null;
   currentUnitCost: number | null;
-  spreadsheetCbm: number | null;
-  spreadsheetFreightCurrent: number | null;
-  spreadsheetFreightFuture: number | null;
   spreadsheetVendorId: string | null;
   spreadsheetVendorName: string | null;
   spreadsheetVendorCoo: string | null;
-  shipmentType: string | null;
   htsCode: string | null;
   countryOfOrigin: string | null;
   spreadsheetQtyOnHand: number | null;
@@ -128,7 +164,6 @@ type FreightDbRow = {
   safetyStock: number | null;
   allocatedQty: number | null;
   identitySource: string | null;
-  lastSpreadsheetSeedAt: Date | null;
   userEditedAt: Date | null;
   updatedAt: Date;
 };
@@ -195,6 +230,7 @@ export async function ensureCompanyItemFreightTable(): Promise<void> {
       await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "nonNettableStock" DOUBLE PRECISION`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "safetyStock" DOUBLE PRECISION`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "allocatedQty" DOUBLE PRECISION`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "manualEdits" JSONB`);
       await prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "CompanyItemFreightSettings" (
           "companyId" TEXT NOT NULL,
@@ -231,11 +267,6 @@ function toIso(value: Date | null | undefined): string | null {
   return Number.isFinite(time) ? value.toISOString() : null;
 }
 
-function effectiveCbm(row: Pick<FreightDbRow, 'cbm' | 'cbmIsManual' | 'heightIn' | 'widthIn' | 'lengthIn'>): number | null {
-  if (row.cbmIsManual) return asNullableNumber(row.cbm);
-  return calcCbmFromInches(row.heightIn, row.widthIn, row.lengthIn) ?? asNullableNumber(row.cbm);
-}
-
 function firstText(...values: Array<string | null | undefined>): string | null {
   for (const value of values) {
     const text = String(value || '').trim();
@@ -246,511 +277,31 @@ function firstText(...values: Array<string | null | undefined>): string | null {
 
 function firstNumber(...values: Array<number | null | undefined>): number | null {
   for (const value of values) {
-    if (value == null || value === undefined) continue;
+    if (value == null) continue;
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
 }
 
-function serializeFreight(
-  row: FreightDbRow,
-  extras: {
-    vendorId?: string | null;
-    vendorName?: string | null;
-    htsCode?: string | null;
-    countryOfOrigin?: string | null;
-    qtyOnHand?: number | null;
-    nonNettableStock?: number | null;
-    safetyStock?: number | null;
-    allocatedQty?: number | null;
-    itemDescription?: string | null;
-    revision?: string | null;
-    unitCost?: number | null;
-    currentUnitCost?: number | null;
-    productCode?: string | null;
-    costType?: string | null;
-    costMethod?: string | null;
-    plannerCode?: string | null;
-    ratePerDay?: number | null;
-    leadTime?: number | null;
-    materialStatus?: string | null;
-    reason?: string | null;
-    lastChange?: string | null;
-    sheetUser?: string | null;
-    heightIn?: number | null;
-    widthIn?: number | null;
-    lengthIn?: number | null;
-    cbm?: number | null;
-    unitWeight?: number | null;
-    quantityOrdered?: number | null;
-    orderMultiple?: number | null;
-    orderMinimum?: number | null;
-  },
-  assumptions: SgpFreightAssumptions
-): CompanyItemFreightRow {
-  const heightIn = firstNumber(extras?.heightIn, asNullableNumber(row.heightIn));
-  const widthIn = firstNumber(extras?.widthIn, asNullableNumber(row.widthIn));
-  const lengthIn = firstNumber(extras?.lengthIn, asNullableNumber(row.lengthIn));
-  const cbm = extras?.cbm ?? effectiveCbm({ ...row, heightIn, widthIn, lengthIn });
-  const origin = firstText(extras?.countryOfOrigin, row.countryOfOrigin);
-  const vendorCoo = firstText(row.spreadsheetVendorCoo);
-  const unitCost = firstNumber(extras?.unitCost, asNullableNumber(row.unitCost));
-  const currentUnitCost = firstNumber(extras?.currentUnitCost, asNullableNumber(row.currentUnitCost));
-  const shipmentType = deriveShipmentType(row.shipmentType, row.spreadsheetVendorCoo || origin);
-  const calculated = calcItemFreight({
-    cbm,
-    shipmentType,
-    unitCost,
-    currentUnitCost,
-    orderMultiple: firstNumber(extras?.orderMultiple, asNullableNumber(row.orderMultiple)),
-    assumptions,
-  });
-  return {
-    id: row.id,
-    companyId: row.companyId,
-    itemSku: row.itemSku,
-    itemDescription: firstText(extras?.itemDescription, row.itemDescription),
-    revision: firstText(extras?.revision, row.revision),
-    quantityOrdered: firstNumber(extras?.quantityOrdered, asNullableNumber(row.quantityOrdered)),
-    orderMultiple: firstNumber(extras?.orderMultiple, asNullableNumber(row.orderMultiple)),
-    heightIn,
-    widthIn,
-    orderMinimum: firstNumber(extras?.orderMinimum, asNullableNumber(row.orderMinimum)),
-    lengthIn,
-    cbm,
-    cbmIsManual: Boolean(row.cbmIsManual) || (!heightIn && !widthIn && !lengthIn && cbm != null),
-    unitWeight: firstNumber(extras?.unitWeight, asNullableNumber(row.unitWeight)),
-    unitCost,
-    currentUnitCost,
-    percentOfContainer: calculated.percentOfContainer,
-    estimatedFreightCurrent: calculated.estimatedFreightCurrent,
-    estimatedFreightFuture: calculated.estimatedFreightFuture,
-    vendorId: firstText(extras?.vendorId, row.spreadsheetVendorId),
-    vendorName: firstText(extras?.vendorName, row.spreadsheetVendorName),
-    vendorCoo,
-    shipmentType,
-    htsCode: firstText(extras?.htsCode, row.htsCode),
-    countryOfOrigin: origin,
-    qtyOnHand: firstNumber(extras?.qtyOnHand, asNullableNumber(row.spreadsheetQtyOnHand)),
-    productCode: firstText(extras?.productCode, row.productCode),
-    costType: firstText(extras?.costType, row.costType),
-    costMethod: firstText(extras?.costMethod, row.costMethod),
-    plannerCode: firstText(extras?.plannerCode, row.plannerCode),
-    ratePerDay: firstNumber(extras?.ratePerDay, asNullableNumber(row.ratePerDay)),
-    leadTime: firstNumber(extras?.leadTime, asNullableNumber(row.leadTime)),
-    materialStatus: firstText(extras?.materialStatus, row.materialStatus),
-    reason: firstText(extras?.reason, row.reason),
-    lastChange: firstText(extras?.lastChange, row.lastChange),
-    sheetUser: firstText(extras?.sheetUser, row.sheetUser),
-    nonNettableStock: firstNumber(extras?.nonNettableStock, asNullableNumber(row.nonNettableStock)),
-    safetyStock: firstNumber(extras?.safetyStock, asNullableNumber(row.safetyStock)),
-    allocatedQty: firstNumber(extras?.allocatedQty, asNullableNumber(row.allocatedQty)),
-    identitySource: row.identitySource || 'spreadsheet',
-    lastSpreadsheetSeedAt: toIso(row.lastSpreadsheetSeedAt),
-    userEditedAt: toIso(row.userEditedAt),
-    updatedAt: toIso(row.updatedAt) || new Date().toISOString(),
-  };
-}
-
-async function upsertFreightRows(companyId: string, rows: ParsedSgpFreightRow[], mode: 'spreadsheet' | 'identity'): Promise<number> {
-  if (!rows.length) return 0;
-  const chunkSize = 150;
-  let written = 0;
-  for (let index = 0; index < rows.length; index += chunkSize) {
-    const chunk = rows.slice(index, index + chunkSize);
-    const values = chunk.map((row) => {
-      const itemSku = normalizeItemSku(row.itemSku);
-      const heightIn = row.heightIn ?? null;
-      const widthIn = row.widthIn ?? null;
-      const lengthIn = row.lengthIn ?? null;
-      const cbm = row.cbm ?? calcCbmFromInches(heightIn, widthIn, lengthIn);
-      return Prisma.sql`(
-        ${randomUUID()},
-        ${companyId},
-        ${itemSku},
-        ${row.itemDescription ?? null},
-        ${row.revision ?? null},
-        ${row.quantityOrdered ?? null},
-        ${row.orderMultiple ?? null},
-        ${heightIn},
-        ${widthIn},
-        ${row.orderMinimum ?? null},
-        ${lengthIn},
-        ${cbm},
-        FALSE,
-        ${row.unitWeight ?? null},
-        ${row.unitCost ?? null},
-        ${row.currentUnitCost ?? null},
-        ${cbm},
-        ${row.estimatedFreightCurrent ?? null},
-        ${row.estimatedFreightFuture ?? null},
-        ${row.vendorId ?? null},
-        ${row.vendorName ?? null},
-        ${row.vendorCoo ?? null},
-        ${row.shipmentType ?? null},
-        ${normalizeHtsCode(row.htsCode)},
-        ${row.countryOfOrigin ?? null},
-        ${row.qtyOnHand ?? null},
-        ${row.productCode ?? null},
-        ${row.costType ?? null},
-        ${row.costMethod ?? null},
-        ${row.plannerCode ?? null},
-        ${row.ratePerDay ?? null},
-        ${row.leadTime ?? null},
-        ${row.materialStatus ?? null},
-        ${row.reason ?? null},
-        ${row.lastChange ?? null},
-        ${row.sheetUser ?? null},
-        ${row.nonNettableStock ?? null},
-        ${row.safetyStock ?? null},
-        ${row.allocatedQty ?? null},
-        ${mode},
-        ${mode === 'spreadsheet' ? new Date() : null},
-        NOW(),
-        NOW()
-      )`;
-    });
-    if (mode === 'spreadsheet') {
-      await prisma.$executeRaw`
-        INSERT INTO "CompanyItemFreight" (
-          "id", "companyId", "itemSku", "itemDescription", "revision",
-          "quantityOrdered", "orderMultiple", "heightIn", "widthIn", "orderMinimum", "lengthIn",
-          "cbm", "cbmIsManual", "unitWeight", "unitCost", "currentUnitCost",
-          "spreadsheetCbm", "spreadsheetFreightCurrent", "spreadsheetFreightFuture",
-          "spreadsheetVendorId", "spreadsheetVendorName", "spreadsheetVendorCoo",
-          "shipmentType", "htsCode", "countryOfOrigin",
-          "spreadsheetQtyOnHand", "productCode", "costType", "costMethod", "plannerCode",
-          "ratePerDay", "leadTime", "materialStatus", "reason", "lastChange", "sheetUser",
-          "nonNettableStock", "safetyStock", "allocatedQty", "identitySource",
-          "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
-        )
-        VALUES ${Prisma.join(values)}
-        ON CONFLICT ("companyId", "itemSku")
-        DO UPDATE SET
-          "itemDescription" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."itemDescription", "CompanyItemFreight"."itemDescription") ELSE "CompanyItemFreight"."itemDescription" END,
-          "revision" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."revision", "CompanyItemFreight"."revision") ELSE "CompanyItemFreight"."revision" END,
-          "quantityOrdered" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."quantityOrdered", "CompanyItemFreight"."quantityOrdered") ELSE "CompanyItemFreight"."quantityOrdered" END,
-          "orderMultiple" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."orderMultiple", "CompanyItemFreight"."orderMultiple") ELSE "CompanyItemFreight"."orderMultiple" END,
-          "heightIn" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."heightIn", "CompanyItemFreight"."heightIn") ELSE "CompanyItemFreight"."heightIn" END,
-          "widthIn" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."widthIn", "CompanyItemFreight"."widthIn") ELSE "CompanyItemFreight"."widthIn" END,
-          "orderMinimum" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."orderMinimum", "CompanyItemFreight"."orderMinimum") ELSE "CompanyItemFreight"."orderMinimum" END,
-          "lengthIn" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."lengthIn", "CompanyItemFreight"."lengthIn") ELSE "CompanyItemFreight"."lengthIn" END,
-          "cbm" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."cbm", "CompanyItemFreight"."cbm") ELSE "CompanyItemFreight"."cbm" END,
-          "unitWeight" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."unitWeight", "CompanyItemFreight"."unitWeight") ELSE "CompanyItemFreight"."unitWeight" END,
-          "unitCost" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."unitCost", "CompanyItemFreight"."unitCost") ELSE "CompanyItemFreight"."unitCost" END,
-          "currentUnitCost" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."currentUnitCost", "CompanyItemFreight"."currentUnitCost") ELSE "CompanyItemFreight"."currentUnitCost" END,
-          "spreadsheetCbm" = COALESCE(EXCLUDED."spreadsheetCbm", "CompanyItemFreight"."spreadsheetCbm"),
-          "spreadsheetFreightCurrent" = COALESCE(EXCLUDED."spreadsheetFreightCurrent", "CompanyItemFreight"."spreadsheetFreightCurrent"),
-          "spreadsheetFreightFuture" = COALESCE(EXCLUDED."spreadsheetFreightFuture", "CompanyItemFreight"."spreadsheetFreightFuture"),
-          "spreadsheetVendorId" = COALESCE(EXCLUDED."spreadsheetVendorId", "CompanyItemFreight"."spreadsheetVendorId"),
-          "spreadsheetVendorName" = COALESCE(EXCLUDED."spreadsheetVendorName", "CompanyItemFreight"."spreadsheetVendorName"),
-          "spreadsheetVendorCoo" = COALESCE(EXCLUDED."spreadsheetVendorCoo", "CompanyItemFreight"."spreadsheetVendorCoo"),
-          "shipmentType" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."shipmentType", "CompanyItemFreight"."shipmentType") ELSE "CompanyItemFreight"."shipmentType" END,
-          "htsCode" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."htsCode", "CompanyItemFreight"."htsCode") ELSE "CompanyItemFreight"."htsCode" END,
-          "countryOfOrigin" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."countryOfOrigin", "CompanyItemFreight"."countryOfOrigin") ELSE "CompanyItemFreight"."countryOfOrigin" END,
-          "spreadsheetQtyOnHand" = COALESCE(EXCLUDED."spreadsheetQtyOnHand", "CompanyItemFreight"."spreadsheetQtyOnHand"),
-          "productCode" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."productCode", "CompanyItemFreight"."productCode") ELSE "CompanyItemFreight"."productCode" END,
-          "costType" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."costType", "CompanyItemFreight"."costType") ELSE "CompanyItemFreight"."costType" END,
-          "costMethod" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."costMethod", "CompanyItemFreight"."costMethod") ELSE "CompanyItemFreight"."costMethod" END,
-          "plannerCode" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."plannerCode", "CompanyItemFreight"."plannerCode") ELSE "CompanyItemFreight"."plannerCode" END,
-          "ratePerDay" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."ratePerDay", "CompanyItemFreight"."ratePerDay") ELSE "CompanyItemFreight"."ratePerDay" END,
-          "leadTime" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."leadTime", "CompanyItemFreight"."leadTime") ELSE "CompanyItemFreight"."leadTime" END,
-          "materialStatus" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."materialStatus", "CompanyItemFreight"."materialStatus") ELSE "CompanyItemFreight"."materialStatus" END,
-          "reason" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."reason", "CompanyItemFreight"."reason") ELSE "CompanyItemFreight"."reason" END,
-          "lastChange" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."lastChange", "CompanyItemFreight"."lastChange") ELSE "CompanyItemFreight"."lastChange" END,
-          "sheetUser" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."sheetUser", "CompanyItemFreight"."sheetUser") ELSE "CompanyItemFreight"."sheetUser" END,
-          "nonNettableStock" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."nonNettableStock", "CompanyItemFreight"."nonNettableStock") ELSE "CompanyItemFreight"."nonNettableStock" END,
-          "safetyStock" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."safetyStock", "CompanyItemFreight"."safetyStock") ELSE "CompanyItemFreight"."safetyStock" END,
-          "allocatedQty" = CASE WHEN "CompanyItemFreight"."userEditedAt" IS NULL THEN COALESCE(EXCLUDED."allocatedQty", "CompanyItemFreight"."allocatedQty") ELSE "CompanyItemFreight"."allocatedQty" END,
-          "identitySource" = 'spreadsheet',
-          "lastSpreadsheetSeedAt" = NOW(),
-          "updatedAt" = NOW()
-      `;
-    } else {
-      await prisma.$executeRaw`
-        INSERT INTO "CompanyItemFreight" (
-          "id", "companyId", "itemSku", "itemDescription", "revision",
-          "quantityOrdered", "orderMultiple", "heightIn", "widthIn", "orderMinimum", "lengthIn",
-          "cbm", "cbmIsManual", "unitWeight", "unitCost", "currentUnitCost",
-          "spreadsheetCbm", "spreadsheetFreightCurrent", "spreadsheetFreightFuture",
-          "spreadsheetVendorId", "spreadsheetVendorName", "spreadsheetVendorCoo",
-          "shipmentType", "htsCode", "countryOfOrigin",
-          "spreadsheetQtyOnHand", "productCode", "costType", "costMethod", "plannerCode",
-          "ratePerDay", "leadTime", "materialStatus", "reason", "lastChange", "sheetUser",
-          "nonNettableStock", "safetyStock", "allocatedQty", "identitySource",
-          "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
-        )
-        VALUES ${Prisma.join(values)}
-        ON CONFLICT ("companyId", "itemSku") DO NOTHING
-      `;
-    }
-    written += chunk.length;
-  }
-  return written;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-export async function getCompanyItemFreightSettings(companyId: string): Promise<CompanyItemFreightSettings> {
-  await ensureCompanyItemFreightTable();
-  const rows = await prisma.$queryRaw<Array<{
-    domesticRateCurrent: number | null;
-    domesticRateIncrease: number | null;
-    averageShipmentCost: number | null;
-    estimatedFreightCost: number | null;
-    freightCostIncrease: number | null;
-    containerCbm: number | null;
-    userEditedAt: Date | null;
-    lastSpreadsheetSeedAt: Date | null;
-  }>>`
-    SELECT
-      "domesticRateCurrent", "domesticRateIncrease", "averageShipmentCost",
-      "estimatedFreightCost", "freightCostIncrease", "containerCbm",
-      "userEditedAt", "lastSpreadsheetSeedAt"
-    FROM "CompanyItemFreightSettings"
-    WHERE "companyId" = ${companyId}
-    LIMIT 1
-  `.catch(() => []);
-  const row = rows[0];
-  return {
-    ...normalizeSgpFreightAssumptions(row || DEFAULT_SGP_FREIGHT_ASSUMPTIONS),
-    userEditedAt: toIso(row?.userEditedAt),
-    lastSpreadsheetSeedAt: toIso(row?.lastSpreadsheetSeedAt),
-  };
-}
-
-export async function seedCompanyItemFreightSettings(
-  companyId: string,
-  assumptions: SgpFreightAssumptions | null | undefined
-): Promise<CompanyItemFreightSettings> {
-  await ensureCompanyItemFreightTable();
-  const next = normalizeSgpFreightAssumptions(assumptions || DEFAULT_SGP_FREIGHT_ASSUMPTIONS);
-  await prisma.$executeRaw`
-    INSERT INTO "CompanyItemFreightSettings" (
-      "companyId", "domesticRateCurrent", "domesticRateIncrease", "averageShipmentCost",
-      "estimatedFreightCost", "freightCostIncrease", "containerCbm",
-      "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
-    )
-    VALUES (
-      ${companyId}, ${next.domesticRateCurrent}, ${next.domesticRateIncrease}, ${next.averageShipmentCost},
-      ${next.estimatedFreightCost}, ${next.freightCostIncrease}, ${next.containerCbm},
-      NOW(), NOW(), NOW()
-    )
-    ON CONFLICT ("companyId")
-    DO UPDATE SET
-      "domesticRateCurrent" = CASE WHEN "CompanyItemFreightSettings"."userEditedAt" IS NULL THEN EXCLUDED."domesticRateCurrent" ELSE "CompanyItemFreightSettings"."domesticRateCurrent" END,
-      "domesticRateIncrease" = CASE WHEN "CompanyItemFreightSettings"."userEditedAt" IS NULL THEN EXCLUDED."domesticRateIncrease" ELSE "CompanyItemFreightSettings"."domesticRateIncrease" END,
-      "averageShipmentCost" = CASE WHEN "CompanyItemFreightSettings"."userEditedAt" IS NULL THEN EXCLUDED."averageShipmentCost" ELSE "CompanyItemFreightSettings"."averageShipmentCost" END,
-      "estimatedFreightCost" = CASE WHEN "CompanyItemFreightSettings"."userEditedAt" IS NULL THEN EXCLUDED."estimatedFreightCost" ELSE "CompanyItemFreightSettings"."estimatedFreightCost" END,
-      "freightCostIncrease" = CASE WHEN "CompanyItemFreightSettings"."userEditedAt" IS NULL THEN EXCLUDED."freightCostIncrease" ELSE "CompanyItemFreightSettings"."freightCostIncrease" END,
-      "containerCbm" = CASE WHEN "CompanyItemFreightSettings"."userEditedAt" IS NULL THEN EXCLUDED."containerCbm" ELSE "CompanyItemFreightSettings"."containerCbm" END,
-      "lastSpreadsheetSeedAt" = CASE WHEN "CompanyItemFreightSettings"."userEditedAt" IS NULL THEN NOW() ELSE "CompanyItemFreightSettings"."lastSpreadsheetSeedAt" END,
-      "updatedAt" = NOW()
-  `;
-  return getCompanyItemFreightSettings(companyId);
-}
-
-export async function updateCompanyItemFreightSettings(
-  companyId: string,
-  patch: Partial<SgpFreightAssumptions>
-): Promise<CompanyItemFreightSettings> {
-  await ensureCompanyItemFreightTable();
-  const current = await getCompanyItemFreightSettings(companyId);
-  const next = normalizeSgpFreightAssumptions({ ...current, ...patch });
-  await prisma.$executeRaw`
-    INSERT INTO "CompanyItemFreightSettings" (
-      "companyId", "domesticRateCurrent", "domesticRateIncrease", "averageShipmentCost",
-      "estimatedFreightCost", "freightCostIncrease", "containerCbm",
-      "userEditedAt", "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
-    )
-    VALUES (
-      ${companyId}, ${next.domesticRateCurrent}, ${next.domesticRateIncrease}, ${next.averageShipmentCost},
-      ${next.estimatedFreightCost}, ${next.freightCostIncrease}, ${next.containerCbm},
-      NOW(), ${current.lastSpreadsheetSeedAt ? new Date(current.lastSpreadsheetSeedAt) : null}, NOW(), NOW()
-    )
-    ON CONFLICT ("companyId")
-    DO UPDATE SET
-      "domesticRateCurrent" = EXCLUDED."domesticRateCurrent",
-      "domesticRateIncrease" = EXCLUDED."domesticRateIncrease",
-      "averageShipmentCost" = EXCLUDED."averageShipmentCost",
-      "estimatedFreightCost" = EXCLUDED."estimatedFreightCost",
-      "freightCostIncrease" = EXCLUDED."freightCostIncrease",
-      "containerCbm" = EXCLUDED."containerCbm",
-      "userEditedAt" = NOW(),
-      "updatedAt" = NOW()
-  `;
-  return getCompanyItemFreightSettings(companyId);
-}
-
-export async function seedCompanyItemFreightFromRows(
-  companyId: string,
-  rows: ParsedSgpFreightRow[],
-  assumptions?: SgpFreightAssumptions | null
-): Promise<{ itemCount: number; seeded: number }> {
-  await ensureCompanyItemFreightTable();
-  const seeded = await upsertFreightRows(companyId, rows, 'spreadsheet');
-  await seedCompanyItemFreightSettings(companyId, assumptions || DEFAULT_SGP_FREIGHT_ASSUMPTIONS);
-  return { itemCount: rows.length, seeded };
-}
-
-function freightRowHasFacts(row: ParsedSgpFreightRow): boolean {
-  return Boolean(
-    row.vendorId ||
-      row.vendorName ||
-      row.heightIn ||
-      row.widthIn ||
-      row.lengthIn ||
-      (row.cbm != null && Number(row.cbm) > 0) ||
-      (row.orderMultiple != null && Number(row.orderMultiple) > 0)
-  );
-}
-
-async function persistFreightParse(companyId: string, parsed: ParsedSgpFreightWorkbook): Promise<void> {
-  const { getOperationalSystemConnection, saveOperationalSystemConnection } = await import(
-    '@/lib/operational/operational-system-connections'
-  );
-  const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
-  if (!connection) return;
-  await saveOperationalSystemConnection({
-    companyId,
-    provider: 'SPREADSHEET_UPLOAD',
-    sourceCode: APR_SGP_GMPA_SOURCE_CODE,
-    status: connection.status,
-    authType: connection.authType,
-    accessToken: connection.accessToken,
-    refreshToken: connection.refreshToken,
-    tokenExpiresAt: connection.tokenExpiresAt,
-    baseUrl: connection.baseUrl,
-    lastSyncAt: connection.lastSyncAt,
-    autoSync: connection.autoSync,
-    syncFrequency: connection.syncFrequency,
-    connectionMetadata: {
-      ...asRecord(connection.connectionMetadata),
-      aprSgpFreightParsed: {
-        sheetName: parsed.sheetName,
-        rowCount: parsed.rowCount,
-        rows: parsed.rows,
-        assumptions: parsed.assumptions,
-        parsedAt: new Date().toISOString(),
-      },
-    },
-    errorMessage: connection.errorMessage,
-  });
-}
-
-async function parseFreightSheetFromBlob(blobUrl: string, knownSheetNames?: string[]): Promise<ParsedSgpFreightWorkbook | null> {
-  const response = await fetch(blobUrl, { signal: AbortSignal.timeout(120000) });
-  if (!response.ok) return null;
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const preview = XLSX.read(buffer, { type: 'buffer', bookSheets: true });
-  const sheetName =
-    pickFreightSheetNameFromList(preview.SheetNames || []) ||
-    pickFreightSheetNameFromList(knownSheetNames || []);
-  if (!sheetName) return null;
-  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true, sheets: [sheetName] });
-  return parseSgpFreightWorkbook(workbook);
-}
-
-async function loadFreightParseFromBlob(
-  companyId: string,
-  metadata: Record<string, unknown>
-): Promise<ParsedSgpFreightWorkbook | null> {
-  const upload = asRecord(metadata.aprSgpGmpaWorkbookUpload);
-  const parsedWorkbook = asRecord(metadata.aprSgpGmpaParsedWorkbook);
-  const knownSheetNames = [
-    ...(Array.isArray(upload.sheetNames) ? upload.sheetNames.map((name) => String(name)) : []),
-    ...(Array.isArray(parsedWorkbook.sheetNames) ? parsedWorkbook.sheetNames.map((name) => String(name)) : []),
-  ];
-  const docs = (await prisma.companyDocument
-    .findMany({
-      where: { companyId },
-      select: { blobUrl: true, originalFileName: true, sizeBytes: true },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    })
-    .catch(() => [])) as Array<{ blobUrl: string | null; originalFileName: string | null; sizeBytes: number | null }>;
-  const candidates = [
-    {
-      url: String(upload.blobUrl || '').trim(),
-      size: typeof upload.sizeBytes === 'number' ? Number(upload.sizeBytes) : 0,
-      name: String(upload.originalFileName || ''),
-    },
-    ...docs.map((doc) => ({
-      url: String(doc.blobUrl || '').trim(),
-      size: typeof doc.sizeBytes === 'number' ? Number(doc.sizeBytes) : 0,
-      name: String(doc.originalFileName || ''),
-    })),
-  ].filter((candidate) => candidate.url);
-  const seen = new Set<string>();
-  const unique = candidates.filter((candidate) => {
-    if (seen.has(candidate.url)) return false;
-    seen.add(candidate.url);
-    return true;
-  });
-  unique.sort((left, right) => {
-    const leftFreight = /freight|gmpa|sgp|forecast/i.test(left.name) ? 1 : 0;
-    const rightFreight = /freight|gmpa|sgp|forecast/i.test(right.name) ? 1 : 0;
-    if (leftFreight !== rightFreight) return rightFreight - leftFreight;
-    return right.size - left.size;
-  });
-
-  let attempts = 0;
-  for (const candidate of unique) {
-    if (candidate.size > 0 && candidate.size < 400000 && unique.some((other) => other.size >= 1000000)) {
-      continue;
-    }
-    if (attempts >= 3) break;
-    attempts += 1;
-    try {
-      const parsed = await parseFreightSheetFromBlob(candidate.url, knownSheetNames);
-      if (parsed?.rows.length) return parsed;
-    } catch (error) {
-      console.warn('SGP Freight workbook re-parse failed:', error);
-    }
+function firstPositive(...values: Array<number | null | undefined>): number | null {
+  for (const value of values) {
+    const parsed = asNullableNumber(value);
+    if (parsed != null && parsed > 0) return parsed;
   }
   return null;
 }
 
-async function loadStoredFreightParse(companyId: string): Promise<{ rows: ParsedSgpFreightRow[]; assumptions: SgpFreightAssumptions }> {
-  const { getOperationalSystemConnection } = await import('@/lib/operational/operational-system-connections');
-  const connection = await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', APR_SGP_GMPA_SOURCE_CODE);
-  const metadata = asRecord(connection?.connectionMetadata);
-  const stored = asRecord(metadata.aprSgpFreightParsed);
-  const storedRows = Array.isArray(stored.rows) ? (stored.rows as ParsedSgpFreightRow[]) : [];
-  const storedAssumptions = stored.assumptions
-    ? normalizeSgpFreightAssumptions(stored.assumptions)
-    : DEFAULT_SGP_FREIGHT_ASSUMPTIONS;
-  if (storedRows.some(freightRowHasFacts)) {
-    return { rows: storedRows, assumptions: storedAssumptions };
-  }
-
-  const upload = asRecord(metadata.aprSgpGmpaWorkbookUpload);
-  const uploadSize = typeof upload.sizeBytes === 'number' ? Number(upload.sizeBytes) : 0;
-  const annualOnlyUpload = uploadSize > 0 && uploadSize < 500000;
-  const fromBlob =
-    annualOnlyUpload && companyId === ATLANTIC_PRECISION_COMPANY_ID
-      ? null
-      : await loadFreightParseFromBlob(companyId, metadata);
-  const fallback =
-    companyId === ATLANTIC_PRECISION_COMPANY_ID && !fromBlob?.rows.length
-      ? APR_SGP_FREIGHT_FALLBACK
-      : null;
-  const parsed = fromBlob?.rows.length ? fromBlob : fallback;
-  if (!parsed?.rows.length) {
-    return { rows: storedRows, assumptions: storedAssumptions };
-  }
-  await persistFreightParse(companyId, parsed).catch((error) => {
-    console.warn('SGP Freight parse persist failed:', error);
-  });
-  return { rows: parsed.rows, assumptions: parsed.assumptions };
+function itemKey(itemSku: unknown): string {
+  return normalizeItemSku(itemSku).toUpperCase();
 }
 
-export async function seedCompanyItemFreightFromSgp(companyId: string): Promise<{ itemCount: number; seeded: number }> {
-  const parsed = await loadStoredFreightParse(companyId);
-  return seedCompanyItemFreightFromRows(companyId, parsed.rows, parsed.assumptions);
+/** Two-letter origin code, with the United States shown as DOM to match the freight sheet convention. */
+export function vendorCooCode(value: unknown): string | null {
+  const code = normalizeOriginCode(value);
+  if (!code) return null;
+  const upper = code.toUpperCase();
+  return upper === 'US' ? 'DOM' : upper;
 }
 
 type CsiItemFacts = {
@@ -834,7 +385,7 @@ async function loadCsiItemFacts(companyId: string): Promise<Map<string, CsiItemF
   for (const row of rows as Array<{ payload?: Record<string, unknown> }>) {
     const payload = row?.payload && typeof row.payload === 'object' ? row.payload : null;
     if (!payload) continue;
-    const itemSku = normalizeItemSku(payloadText(payload, ['Item', 'item', 'ITNO'])).toUpperCase();
+    const itemSku = itemKey(payloadText(payload, ['Item', 'item', 'ITNO']));
     if (!itemSku) continue;
     result.set(itemSku, {
       description: payloadText(payload, ['Description', 'description', 'ITDS']),
@@ -870,212 +421,351 @@ async function loadCsiItemFacts(companyId: string): Promise<Map<string, CsiItemF
   return result;
 }
 
-export async function listCompanyItemFreight(companyId: string): Promise<CompanyItemFreightRow[]> {
+/** Latest Infor vendor master (SLVendors) name and address country per vendor. */
+async function loadVendorAddresses(companyId: string): Promise<Map<string, { vendorName: string | null; country: string | null }>> {
+  const rows = await prisma.$queryRaw<Array<{ vendorId: string; vendorName: string | null; country: string | null }>>`
+    SELECT DISTINCT ON (TRIM("vendorId"))
+      TRIM("vendorId") AS "vendorId",
+      "vendorName",
+      NULLIF(TRIM("country"), '') AS "country"
+    FROM "VendorSnapshot"
+    WHERE "companyId" = ${companyId}
+    ORDER BY TRIM("vendorId"), "snapshotDate" DESC
+  `.catch(() => []);
+  const result = new Map<string, { vendorName: string | null; country: string | null }>();
+  for (const row of rows) result.set(row.vendorId, { vendorName: row.vendorName, country: row.country });
+  return result;
+}
+
+function inforNumber(field: EditableFreightField, value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  if (ZERO_IS_BLANK.has(field) && Number(value) === 0) return null;
+  return Number(value);
+}
+
+type ResolvedVendor = { vendorId: string; vendorName: string; country: string | null };
+
+function serializeFreight(
+  row: FreightDbRow,
+  csi: CsiItemFacts | null,
+  vendor: ResolvedVendor | null,
+  assumptions: SgpFreightAssumptions
+): CompanyItemFreightRow {
+  const inforFields: EditableFreightField[] = [];
+  const pick = (field: EditableFreightField, inforValue: number | null | undefined, stored: unknown) => {
+    const value = inforNumber(field, inforValue);
+    if (value != null) {
+      inforFields.push(field);
+      return value;
+    }
+    return asNullableNumber(stored);
+  };
+
+  const qtyOnHand = pick('qtyOnHand', csi?.qtyOnHand, row.spreadsheetQtyOnHand);
+  const quantityOrdered = pick('quantityOrdered', csi?.quantityOrdered, row.quantityOrdered);
+  const orderMultiple = pick('orderMultiple', csi?.orderMultiple, row.orderMultiple);
+  const orderMinimum = pick('orderMinimum', csi?.orderMinimum, row.orderMinimum);
+  const heightIn = pick('heightIn', csi?.heightIn, row.heightIn);
+  const widthIn = pick('widthIn', csi?.widthIn, row.widthIn);
+  const lengthIn = pick('lengthIn', csi?.lengthIn, row.lengthIn);
+  const unitWeight = pick('unitWeight', csi?.unitWeight, row.unitWeight);
+  const unitCost = pick('unitCost', csi?.unitCost, row.unitCost);
+  const currentUnitCost = pick('currentUnitCost', csi?.currentUnitCost, row.currentUnitCost);
+
+  const inforCbm = inforNumber('cbm', csi?.cbm);
+  let cbm: number | null;
+  if (inforCbm != null) {
+    inforFields.push('cbm');
+    cbm = inforCbm;
+  } else if (row.cbmIsManual) {
+    cbm = asNullableNumber(row.cbm);
+  } else {
+    cbm = calcCbmFromInches(heightIn, widthIn, lengthIn) ?? asNullableNumber(row.cbm);
+  }
+
+  const inforCoo = vendorCooCode(vendor?.country);
+  if (inforCoo) inforFields.push('vendorCoo');
+  const vendorCoo = inforCoo || vendorCooCode(row.spreadsheetVendorCoo);
+  const shipmentType = deriveShipmentType(null, vendorCoo);
+  const calculated = calcItemFreight({ cbm, shipmentType, unitCost, currentUnitCost, orderMultiple, assumptions });
+
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    itemSku: row.itemSku,
+    itemDescription: firstText(csi?.description, row.itemDescription),
+    revision: firstText(csi?.revision, row.revision),
+    quantityOrdered,
+    orderMultiple,
+    heightIn,
+    widthIn,
+    orderMinimum,
+    lengthIn,
+    cbm,
+    cbmIsManual: inforCbm == null && (Boolean(row.cbmIsManual) || (!heightIn && !widthIn && !lengthIn && cbm != null)),
+    unitWeight,
+    unitCost,
+    currentUnitCost,
+    percentOfContainer: calculated.percentOfContainer,
+    estimatedFreightCurrent: calculated.estimatedFreightCurrent,
+    estimatedFreightFuture: calculated.estimatedFreightFuture,
+    vendorId: vendor?.vendorId || null,
+    vendorName: vendor?.vendorName || null,
+    vendorCoo,
+    shipmentType,
+    htsCode: firstText(csi?.htsCode, row.htsCode),
+    countryOfOrigin: firstText(csi?.countryOfOrigin, row.countryOfOrigin),
+    qtyOnHand,
+    productCode: firstText(csi?.productCode, row.productCode),
+    costType: firstText(csi?.costType, row.costType),
+    costMethod: firstText(csi?.costMethod, row.costMethod),
+    plannerCode: firstText(csi?.plannerCode, row.plannerCode),
+    ratePerDay: firstNumber(csi?.ratePerDay, asNullableNumber(row.ratePerDay)),
+    leadTime: firstNumber(csi?.leadTime, asNullableNumber(row.leadTime)),
+    materialStatus: firstText(csi?.materialStatus, row.materialStatus),
+    reason: firstText(csi?.reason, row.reason),
+    lastChange: firstText(csi?.lastChange, row.lastChange),
+    sheetUser: firstText(csi?.sheetUser, row.sheetUser),
+    nonNettableStock: firstNumber(csi?.nonNettableStock, asNullableNumber(row.nonNettableStock)),
+    safetyStock: firstNumber(csi?.safetyStock, asNullableNumber(row.safetyStock)),
+    allocatedQty: firstNumber(csi?.allocatedQty, asNullableNumber(row.allocatedQty)),
+    inInfor: Boolean(csi),
+    inforFields,
+    identitySource: csi ? 'infor' : row.identitySource || 'manual',
+    userEditedAt: toIso(row.userEditedAt),
+    updatedAt: toIso(row.updatedAt) || new Date().toISOString(),
+  };
+}
+
+function emptyFreightRow(companyId: string, itemSku: string): FreightDbRow {
+  return {
+    id: `infor-slitems:${companyId}:${itemSku}`,
+    companyId,
+    itemSku,
+    itemDescription: null,
+    revision: null,
+    quantityOrdered: null,
+    orderMultiple: null,
+    heightIn: null,
+    widthIn: null,
+    orderMinimum: null,
+    lengthIn: null,
+    cbm: null,
+    cbmIsManual: false,
+    unitWeight: null,
+    unitCost: null,
+    currentUnitCost: null,
+    spreadsheetVendorId: null,
+    spreadsheetVendorName: null,
+    spreadsheetVendorCoo: null,
+    htsCode: null,
+    countryOfOrigin: null,
+    spreadsheetQtyOnHand: null,
+    productCode: null,
+    costType: null,
+    costMethod: null,
+    plannerCode: null,
+    ratePerDay: null,
+    leadTime: null,
+    materialStatus: null,
+    reason: null,
+    lastChange: null,
+    sheetUser: null,
+    nonNettableStock: null,
+    safetyStock: null,
+    allocatedQty: null,
+    identitySource: 'infor',
+    userEditedAt: null,
+    updatedAt: new Date(),
+  };
+}
+
+export async function getCompanyItemFreightSettings(companyId: string): Promise<CompanyItemFreightSettings> {
+  await ensureCompanyItemFreightTable();
+  const rows = await prisma.$queryRaw<Array<{
+    domesticRateCurrent: number | null;
+    domesticRateIncrease: number | null;
+    averageShipmentCost: number | null;
+    estimatedFreightCost: number | null;
+    freightCostIncrease: number | null;
+    containerCbm: number | null;
+    userEditedAt: Date | null;
+    lastSpreadsheetSeedAt: Date | null;
+  }>>`
+    SELECT
+      "domesticRateCurrent", "domesticRateIncrease", "averageShipmentCost",
+      "estimatedFreightCost", "freightCostIncrease", "containerCbm",
+      "userEditedAt", "lastSpreadsheetSeedAt"
+    FROM "CompanyItemFreightSettings"
+    WHERE "companyId" = ${companyId}
+    LIMIT 1
+  `.catch(() => []);
+  const row = rows[0];
+  return {
+    ...normalizeSgpFreightAssumptions(row || DEFAULT_SGP_FREIGHT_ASSUMPTIONS),
+    userEditedAt: toIso(row?.userEditedAt),
+    lastSpreadsheetSeedAt: toIso(row?.lastSpreadsheetSeedAt),
+  };
+}
+
+export async function updateCompanyItemFreightSettings(
+  companyId: string,
+  patch: Partial<SgpFreightAssumptions>
+): Promise<CompanyItemFreightSettings> {
+  await ensureCompanyItemFreightTable();
+  const current = await getCompanyItemFreightSettings(companyId);
+  const next = normalizeSgpFreightAssumptions({ ...current, ...patch });
+  await prisma.$executeRaw`
+    INSERT INTO "CompanyItemFreightSettings" (
+      "companyId", "domesticRateCurrent", "domesticRateIncrease", "averageShipmentCost",
+      "estimatedFreightCost", "freightCostIncrease", "containerCbm",
+      "userEditedAt", "lastSpreadsheetSeedAt", "createdAt", "updatedAt"
+    )
+    VALUES (
+      ${companyId}, ${next.domesticRateCurrent}, ${next.domesticRateIncrease}, ${next.averageShipmentCost},
+      ${next.estimatedFreightCost}, ${next.freightCostIncrease}, ${next.containerCbm},
+      NOW(), ${current.lastSpreadsheetSeedAt ? new Date(current.lastSpreadsheetSeedAt) : null}, NOW(), NOW()
+    )
+    ON CONFLICT ("companyId")
+    DO UPDATE SET
+      "domesticRateCurrent" = EXCLUDED."domesticRateCurrent",
+      "domesticRateIncrease" = EXCLUDED."domesticRateIncrease",
+      "averageShipmentCost" = EXCLUDED."averageShipmentCost",
+      "estimatedFreightCost" = EXCLUDED."estimatedFreightCost",
+      "freightCostIncrease" = EXCLUDED."freightCostIncrease",
+      "containerCbm" = EXCLUDED."containerCbm",
+      "userEditedAt" = NOW(),
+      "updatedAt" = NOW()
+  `;
+  return getCompanyItemFreightSettings(companyId);
+}
+
+/**
+ * Rows are built from the Infor item master plus any stored row. `scope: 'page'` limits the
+ * result to what the SGP Freight page lists: non-obsolete items that have a primary vendor.
+ */
+export async function listCompanyItemFreight(
+  companyId: string,
+  options: { scope?: 'all' | 'page' } = {}
+): Promise<CompanyItemFreightRow[]> {
+  await ensureCompanyItemFreightTable();
   const rows = await prisma.$queryRaw<FreightDbRow[]>`
     SELECT
       "id", "companyId", "itemSku", "itemDescription", "revision",
       "quantityOrdered", "orderMultiple", "heightIn", "widthIn", "orderMinimum", "lengthIn",
       "cbm", "cbmIsManual", "unitWeight", "unitCost", "currentUnitCost",
-      "spreadsheetCbm", "spreadsheetFreightCurrent", "spreadsheetFreightFuture",
       "spreadsheetVendorId", "spreadsheetVendorName", "spreadsheetVendorCoo",
-      "shipmentType", "htsCode", "countryOfOrigin",
+      "htsCode", "countryOfOrigin",
       "spreadsheetQtyOnHand", "productCode", "costType", "costMethod", "plannerCode",
       "ratePerDay", "leadTime", "materialStatus", "reason", "lastChange", "sheetUser",
       "nonNettableStock", "safetyStock", "allocatedQty", "identitySource",
-      "lastSpreadsheetSeedAt", "userEditedAt", "updatedAt"
+      "userEditedAt", "updatedAt"
     FROM "CompanyItemFreight"
     WHERE "companyId" = ${companyId}
-    ORDER BY "itemSku" ASC
   `;
-  const [vendorByItem, csiByItem, assumptions] = await Promise.all([
-    loadPrimaryVendorByItem(companyId).catch(() => new Map()),
-    loadCsiItemFacts(companyId).catch(() => new Map()),
+  const [vendorByItem, csiByItem, vendorAddresses, assumptions] = await Promise.all([
+    loadPrimaryVendorByItem(companyId).catch(() => new Map<string, { vendorId: string; vendorName: string }>()),
+    loadCsiItemFacts(companyId).catch(() => new Map<string, CsiItemFacts>()),
+    loadVendorAddresses(companyId),
     getCompanyItemFreightSettings(companyId),
   ]);
-  const existingItems = new Set(rows.map((row) => normalizeItemSku(row.itemSku).toUpperCase()).filter(Boolean));
-  const csiOnlyRows: FreightDbRow[] = [...csiByItem.keys()]
-    .filter((itemSku) => !existingItems.has(itemSku))
-    .map((itemSku) => ({
-      id: `infor-slitems:${companyId}:${itemSku}`,
-      companyId,
-      itemSku,
-      itemDescription: null,
-      revision: null,
-      quantityOrdered: null,
-      orderMultiple: null,
-      heightIn: null,
-      widthIn: null,
-      orderMinimum: null,
-      lengthIn: null,
-      cbm: null,
-      cbmIsManual: false,
-      unitWeight: null,
-      unitCost: null,
-      currentUnitCost: null,
-      spreadsheetCbm: null,
-      spreadsheetFreightCurrent: null,
-      spreadsheetFreightFuture: null,
-      spreadsheetVendorId: null,
-      spreadsheetVendorName: null,
-      spreadsheetVendorCoo: null,
-      shipmentType: null,
-      htsCode: null,
-      countryOfOrigin: null,
-      spreadsheetQtyOnHand: null,
-      productCode: null,
-      costType: null,
-      costMethod: null,
-      plannerCode: null,
-      ratePerDay: null,
-      leadTime: null,
-      materialStatus: null,
-      reason: null,
-      lastChange: null,
-      sheetUser: null,
-      nonNettableStock: null,
-      safetyStock: null,
-      allocatedQty: null,
-      identitySource: 'infor',
-      lastSpreadsheetSeedAt: null,
-      userEditedAt: null,
-      updatedAt: new Date(),
-    }));
-  return [...rows, ...csiOnlyRows].map((row) => {
-    const key = normalizeItemSku(row.itemSku).toUpperCase();
-    const vendor = vendorByItem.get(key) || vendorByItem.get(row.itemSku);
-    const csi = csiByItem.get(key);
-    return serializeFreight(row, {
-      vendorId: vendor?.vendorId || null,
-      vendorName: vendor?.vendorName || null,
-      qtyOnHand: csi?.qtyOnHand ?? null,
-      nonNettableStock: csi?.nonNettableStock ?? null,
-      safetyStock: csi?.safetyStock ?? null,
-      allocatedQty: csi?.allocatedQty ?? null,
-      itemDescription: csi?.description || null,
-      revision: csi?.revision || null,
-      htsCode: csi?.htsCode || null,
-      countryOfOrigin: csi?.countryOfOrigin || null,
-      productCode: csi?.productCode || null,
-      costType: csi?.costType || null,
-      costMethod: csi?.costMethod || null,
-      plannerCode: csi?.plannerCode || null,
-      ratePerDay: csi?.ratePerDay ?? null,
-      leadTime: csi?.leadTime ?? null,
-      materialStatus: csi?.materialStatus || null,
-      reason: csi?.reason || null,
-      lastChange: csi?.lastChange || null,
-      sheetUser: csi?.sheetUser || null,
-      heightIn: csi?.heightIn ?? null,
-      widthIn: csi?.widthIn ?? null,
-      lengthIn: csi?.lengthIn ?? null,
-      cbm: csi?.cbm ?? null,
-      unitWeight: csi?.unitWeight ?? null,
-      quantityOrdered: csi?.quantityOrdered ?? null,
-      orderMultiple: csi?.orderMultiple ?? null,
-      orderMinimum: csi?.orderMinimum ?? null,
-      unitCost: csi?.unitCost ?? null,
-      currentUnitCost: csi?.currentUnitCost ?? null,
-    }, assumptions);
-  });
-}
 
-export async function refreshCompanyItemFreight(companyId: string): Promise<{ spreadsheetItems: number; discovered: number }> {
-  await ensureCompanyItemFreightTable();
-  const seeded = await seedCompanyItemFreightFromSgp(companyId);
-  if (seeded.itemCount > 0) {
-    await prisma.$executeRaw`
-      DELETE FROM "CompanyItemFreight"
-      WHERE "companyId" = ${companyId}
-        AND "lastSpreadsheetSeedAt" IS NULL
-        AND "userEditedAt" IS NULL
-    `;
+  const storedByKey = new Map<string, FreightDbRow>();
+  for (const row of rows) {
+    const key = itemKey(row.itemSku);
+    if (key) storedByKey.set(key, row);
   }
-  return { spreadsheetItems: seeded.itemCount, discovered: 0 };
+  const keys = new Set<string>([...csiByItem.keys(), ...storedByKey.keys()]);
+  const pageOnly = options.scope === 'page';
+  const result: CompanyItemFreightRow[] = [];
+  for (const key of keys) {
+    const stored = storedByKey.get(key) || emptyFreightRow(companyId, key);
+    const csi = csiByItem.get(key) || null;
+    const inforVendor = vendorByItem.get(key);
+    const vendorId = firstText(inforVendor?.vendorId, stored.spreadsheetVendorId);
+    if (pageOnly) {
+      if (!vendorId) continue;
+      if (String(csi?.materialStatus || '').trim().toUpperCase() === 'O') continue;
+    }
+    const address = vendorId ? vendorAddresses.get(vendorId) : undefined;
+    const vendorName = inforVendor
+      ? firstText(inforVendor.vendorName !== inforVendor.vendorId ? inforVendor.vendorName : null, address?.vendorName, inforVendor.vendorId)
+      : firstText(stored.spreadsheetVendorName, address?.vendorName, vendorId);
+    const vendor = vendorId ? { vendorId, vendorName: vendorName || vendorId, country: address?.country ?? null } : null;
+    result.push(serializeFreight(stored, csi, vendor, assumptions));
+  }
+  return result.sort((left, right) =>
+    left.itemSku.localeCompare(right.itemSku, undefined, { numeric: true, sensitivity: 'base' })
+  );
 }
 
+/**
+ * Saves manual values for fields Infor leaves blank. Fields Infor supplies are skipped, and
+ * Infor takes over again as soon as it reports a value.
+ */
 export async function updateCompanyItemFreight(
   companyId: string,
-  patches: CompanyItemFreightPatch[]
-): Promise<CompanyItemFreightRow[]> {
+  patches: CompanyItemFreightPatch[],
+  editedBy: string | null
+): Promise<{ updated: number; skipped: Array<{ itemSku: string; field: EditableFreightField }> }> {
+  await ensureCompanyItemFreightTable();
+  const current = await listCompanyItemFreight(companyId);
+  const byId = new Map(current.map((row) => [row.id, row]));
+  const byKey = new Map(current.map((row) => [itemKey(row.itemSku), row]));
+  const skipped: Array<{ itemSku: string; field: EditableFreightField }> = [];
+  let updated = 0;
+
   for (const patch of patches) {
-    const id = String(patch.id || '').trim();
-    const itemSku = normalizeItemSku(patch.itemSku);
-    if (!id && !itemSku) continue;
+    const row = byId.get(String(patch.id || '').trim()) || byKey.get(itemKey(patch.itemSku));
+    if (!row) continue;
+    const locked = new Set(row.inforFields);
+    const assignments: Array<{ column: string; value: string | number | boolean | null }> = [];
+    const editedFields: EditableFreightField[] = [];
+    for (const field of EDITABLE_FREIGHT_FIELDS) {
+      const raw = patch[field];
+      if (raw === undefined) continue;
+      if (locked.has(field)) {
+        skipped.push({ itemSku: row.itemSku, field });
+        continue;
+      }
+      assignments.push({
+        column: FIELD_COLUMNS[field],
+        value: field === 'vendorCoo' ? vendorCooCode(raw) : asNullableNumber(raw),
+      });
+      editedFields.push(field);
+    }
+    if (!assignments.length) continue;
+    if (editedFields.includes('cbm')) {
+      assignments.push({ column: 'cbmIsManual', value: true });
+    } else if (editedFields.some((field) => field === 'heightIn' || field === 'widthIn' || field === 'lengthIn')) {
+      assignments.push({ column: 'cbmIsManual', value: false });
+    }
 
-    const quantityOrdered = patch.quantityOrdered === undefined ? undefined : asNullableNumber(patch.quantityOrdered);
-    const orderMultiple = patch.orderMultiple === undefined ? undefined : asNullableNumber(patch.orderMultiple);
-    const heightIn = patch.heightIn === undefined ? undefined : asNullableNumber(patch.heightIn);
-    const widthIn = patch.widthIn === undefined ? undefined : asNullableNumber(patch.widthIn);
-    const orderMinimum = patch.orderMinimum === undefined ? undefined : asNullableNumber(patch.orderMinimum);
-    const lengthIn = patch.lengthIn === undefined ? undefined : asNullableNumber(patch.lengthIn);
-    const unitWeight = patch.unitWeight === undefined ? undefined : asNullableNumber(patch.unitWeight);
-    const unitCost = patch.unitCost === undefined ? undefined : asNullableNumber(patch.unitCost);
-    const currentUnitCost = patch.currentUnitCost === undefined ? undefined : asNullableNumber(patch.currentUnitCost);
-    const cbmPatched = patch.cbm !== undefined;
-    const cbm = cbmPatched ? asNullableNumber(patch.cbm) : undefined;
-
+    const at = new Date().toISOString();
+    const manualEdits = JSON.stringify(Object.fromEntries(editedFields.map((field) => [field, { by: editedBy, at }])));
+    const columns = assignments.map((assignment) => Prisma.raw(`"${assignment.column}"`));
+    const values = assignments.map((assignment) => Prisma.sql`${assignment.value}`);
+    const updates = assignments.map((assignment) => Prisma.raw(`"${assignment.column}" = EXCLUDED."${assignment.column}"`));
     await prisma.$executeRaw`
-      UPDATE "CompanyItemFreight"
-      SET
-        "quantityOrdered" = CASE WHEN ${quantityOrdered !== undefined} THEN ${quantityOrdered} ELSE "quantityOrdered" END,
-        "orderMultiple" = CASE WHEN ${orderMultiple !== undefined} THEN ${orderMultiple} ELSE "orderMultiple" END,
-        "heightIn" = CASE WHEN ${heightIn !== undefined} THEN ${heightIn} ELSE "heightIn" END,
-        "widthIn" = CASE WHEN ${widthIn !== undefined} THEN ${widthIn} ELSE "widthIn" END,
-        "orderMinimum" = CASE WHEN ${orderMinimum !== undefined} THEN ${orderMinimum} ELSE "orderMinimum" END,
-        "lengthIn" = CASE WHEN ${lengthIn !== undefined} THEN ${lengthIn} ELSE "lengthIn" END,
-        "cbmIsManual" = CASE
-          WHEN ${cbmPatched} THEN TRUE
-          WHEN ${heightIn !== undefined || widthIn !== undefined || lengthIn !== undefined} THEN FALSE
-          ELSE "cbmIsManual"
-        END,
-        "cbm" = CASE
-          WHEN ${cbmPatched} THEN ${cbm}
-          ELSE "cbm"
-        END,
-        "unitWeight" = CASE WHEN ${unitWeight !== undefined} THEN ${unitWeight} ELSE "unitWeight" END,
-        "unitCost" = CASE WHEN ${unitCost !== undefined} THEN ${unitCost} ELSE "unitCost" END,
-        "currentUnitCost" = CASE WHEN ${currentUnitCost !== undefined} THEN ${currentUnitCost} ELSE "currentUnitCost" END,
+      INSERT INTO "CompanyItemFreight" (
+        "id", "companyId", "itemSku", "identitySource", "manualEdits", "userEditedAt", "createdAt", "updatedAt",
+        ${Prisma.join(columns)}
+      )
+      VALUES (
+        ${randomUUID()}, ${companyId}, ${row.itemSku}, ${row.inInfor ? 'infor' : 'manual'}, ${manualEdits}::jsonb, NOW(), NOW(), NOW(),
+        ${Prisma.join(values)}
+      )
+      ON CONFLICT ("companyId", "itemSku")
+      DO UPDATE SET
+        ${Prisma.join(updates)},
+        "manualEdits" = COALESCE("CompanyItemFreight"."manualEdits", '{}'::jsonb) || EXCLUDED."manualEdits",
         "userEditedAt" = NOW(),
         "updatedAt" = NOW()
-      WHERE "companyId" = ${companyId}
-        AND (
-          (${id.length > 0} AND "id" = ${id || null})
-          OR (${itemSku.length > 0} AND "itemSku" = ${itemSku || null})
-        )
     `;
+    updated += 1;
   }
 
-  const dimensionPatches = patches.filter(
-    (patch) => patch.cbm === undefined && (patch.heightIn !== undefined || patch.widthIn !== undefined || patch.lengthIn !== undefined)
-  );
-  for (const patch of dimensionPatches) {
-    const id = String(patch.id || '').trim();
-    const itemSku = normalizeItemSku(patch.itemSku);
-    const current = await prisma.$queryRaw<Array<{ heightIn: number | null; widthIn: number | null; lengthIn: number | null }>>`
-      SELECT "heightIn", "widthIn", "lengthIn"
-      FROM "CompanyItemFreight"
-      WHERE "companyId" = ${companyId}
-        AND (
-          (${id.length > 0} AND "id" = ${id || null})
-          OR (${itemSku.length > 0} AND "itemSku" = ${itemSku || null})
-        )
-      LIMIT 1
-    `;
-    const nextCbm = calcCbmFromInches(current[0]?.heightIn ?? null, current[0]?.widthIn ?? null, current[0]?.lengthIn ?? null);
-    if (nextCbm == null) continue;
-    await prisma.$executeRaw`
-      UPDATE "CompanyItemFreight"
-      SET "cbm" = ${nextCbm}, "updatedAt" = NOW()
-      WHERE "companyId" = ${companyId}
-        AND "cbmIsManual" = FALSE
-        AND (
-          (${id.length > 0} AND "id" = ${id || null})
-          OR (${itemSku.length > 0} AND "itemSku" = ${itemSku || null})
-        )
-    `;
-  }
-
-  return listCompanyItemFreight(companyId);
+  return { updated, skipped };
 }
 
 export async function listCompanyItemMaterialCosts(companyId: string): Promise<Record<string, number>> {
@@ -1084,35 +774,26 @@ export async function listCompanyItemMaterialCosts(companyId: string): Promise<R
     itemSku: string;
     unitCost: number | null;
     currentUnitCost: number | null;
-    userEditedAt: Date | null;
   }>>`
-    SELECT "itemSku", "unitCost", "currentUnitCost", "userEditedAt"
+    SELECT "itemSku", "unitCost", "currentUnitCost"
     FROM "CompanyItemFreight"
     WHERE "companyId" = ${companyId}
   `.catch(() => []);
   const csiByItem = await loadCsiItemFacts(companyId).catch(() => new Map<string, CsiItemFacts>());
   const result: Record<string, number> = {};
-  const takeCost = (...values: Array<number | null | undefined>) => {
-    const cost = firstNumber(...values);
-    return cost != null && cost > 0 ? cost : null;
-  };
   for (const row of rows) {
-    const key = normalizeItemSku(row.itemSku).toUpperCase();
+    const key = itemKey(row.itemSku);
     if (!key) continue;
-    const userOwned = Boolean(row.userEditedAt);
     const csi = csiByItem.get(key);
-    const unitCost = userOwned
-      ? asNullableNumber(row.unitCost)
-      : firstNumber(asNullableNumber(row.unitCost), csi?.unitCost);
-    const currentUnitCost = userOwned
-      ? asNullableNumber(row.currentUnitCost)
-      : firstNumber(asNullableNumber(row.currentUnitCost), csi?.currentUnitCost);
-    const cost = takeCost(currentUnitCost, unitCost);
+    const cost = firstPositive(
+      firstPositive(csi?.currentUnitCost, row.currentUnitCost),
+      firstPositive(csi?.unitCost, row.unitCost)
+    );
     if (cost != null) result[key] = cost;
   }
   for (const [key, csi] of csiByItem.entries()) {
     if (result[key]) continue;
-    const cost = takeCost(csi.currentUnitCost, csi.unitCost);
+    const cost = firstPositive(csi.currentUnitCost, csi.unitCost);
     if (cost != null) result[key] = cost;
   }
   return result;
