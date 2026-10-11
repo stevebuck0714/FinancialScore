@@ -2,11 +2,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  compactParsedRevenueWorkbook,
-  parseProductOperationsFile,
-} from '@/lib/operations/product-revenue-actual';
-import { workbookImportErrorMessage } from '@/lib/operations/product-revenue-forecast';
-import {
   emptyMonthlyRevenueGoals,
   fmtGoalDays,
   fmtGoalDollars,
@@ -187,10 +182,8 @@ export default function ProductGoalUpdateReport({
   const [savingGoals, setSavingGoals] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const goalsByYearRef = useRef<GoalsByYear>(goalsByYear);
   const reloadMonthlyGoalsRef = useRef(true);
 
@@ -272,49 +265,6 @@ export default function ProductGoalUpdateReport({
     reloadMonthlyGoalsRef.current = false;
     void loadSnapshot(year, { reloadMonthlyGoals });
   }, [selectedCompanyId, year, loadSnapshot]);
-
-  const handleImport = async (file: File) => {
-    if (!selectedCompanyId) {
-      setError('Select a company before importing.');
-      return;
-    }
-    setImporting(true);
-    setError(null);
-    setNotice('Reading workbook…');
-    try {
-      const parsed = compactParsedRevenueWorkbook(await parseProductOperationsFile(file, year, { allowForecastOnly: true }));
-      setNotice('Saving Goal Update and Pyramid…');
-      const response = await fetch('/api/operational-data/product-revenue/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          year,
-          parsed,
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || payload.message || `Failed to import workbook (${response.status})`);
-      }
-      const importedYear = Number(payload.year) || year;
-      setYear(importedYear);
-      if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
-      reloadMonthlyGoalsRef.current = true;
-      await loadSnapshot(importedYear, { reloadMonthlyGoals: true });
-      setNotice(
-        payload.hasGoalUpdate || payload.hasPyramid
-          ? 'Imported Goal Update and Pyramid from the workbook.'
-          : 'Workbook imported. Goal Update / Pyramid sheets were not found.'
-      );
-    } catch (err: unknown) {
-      setNotice(null);
-      setError(workbookImportErrorMessage(err, 'Failed to import workbook'));
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
 
   const saveMonthlyGoals = async () => {
     if (!selectedCompanyId) {
@@ -505,33 +455,6 @@ export default function ProductGoalUpdateReport({
           Data thru
           <input type="date" value={dataThru} readOnly style={{ ...inputStyle, width: 150, background: '#f8fafc' }} />
         </label>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={importing || !selectedCompanyId}
-          style={{
-            border: '1px solid #cbd5e1',
-            borderRadius: 8,
-            padding: '8px 12px',
-            background: '#ffffff',
-            color: '#334155',
-            fontWeight: 700,
-            cursor: importing ? 'wait' : 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {importing ? 'Importing…' : 'Import workbook'}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.xlsm,.xls"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleImport(file);
-          }}
-        />
       </div>
 
       {error ? (
@@ -630,7 +553,7 @@ export default function ProductGoalUpdateReport({
             <button
               type="button"
               onClick={() => void saveMonthlyGoals()}
-              disabled={savingGoals || importing || !selectedCompanyId}
+              disabled={savingGoals || !selectedCompanyId}
               style={{
                 border: '1px solid #4338ca',
                 borderRadius: 8,
@@ -638,7 +561,7 @@ export default function ProductGoalUpdateReport({
                 background: savingGoals ? '#c7d2fe' : '#4f46e5',
                 color: '#ffffff',
                 fontWeight: 700,
-                cursor: savingGoals || importing || !selectedCompanyId ? 'wait' : 'pointer',
+                cursor: savingGoals || !selectedCompanyId ? 'wait' : 'pointer',
                 fontSize: 12,
               }}
             >
@@ -662,7 +585,7 @@ export default function ProductGoalUpdateReport({
                 goalYear={goalYear}
                 months={goalsByYear[goalYear] || emptyMonthlyRevenueGoals()}
                 highlightMonth={goalYear === year ? monthNumberFromLabel(pyramid?.monthLabel) : null}
-                disabled={importing}
+                disabled={false}
                 thStyle={thStyle}
                 monthlyGoalCell={monthlyGoalCell}
                 monthlyGoalLabel={monthlyGoalLabel}

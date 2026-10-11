@@ -9,7 +9,7 @@ import { estMonthKey } from '@/lib/time/eastern';
 const PRODUCT_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 // Bump when a report's payload shape or math changes so stored payloads are ignored.
-const PRODUCT_REPORT_CACHE_VERSION = 'product-reports-v4';
+const PRODUCT_REPORT_CACHE_VERSION = 'product-reports-v5';
 
 type Fingerprint = { label: string; count?: number; updatedAt?: string | null; latest?: string | null };
 

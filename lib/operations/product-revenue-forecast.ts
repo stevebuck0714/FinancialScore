@@ -202,7 +202,10 @@ export function actualsClosedThrough(year: number, actualsAsOf: string | null | 
   return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
 }
 
-/** Forecast-ADJ units with closed months replaced by actual units. */
+/**
+ * Closed months: Forecast-ADJ becomes the actual units and Forecast follows
+ * Forecast-ADJ. SGP forecast is left as is, so callers must resolve it before this.
+ */
 export function withClosedMonthActualAdjusted<T extends {
   forecastQty: MonthQtyMap;
   adjustedQty?: MonthQtyMap | null;
@@ -211,10 +214,13 @@ export function withClosedMonthActualAdjusted<T extends {
   if (!closedThrough) return lines;
   return lines.map((line) => {
     const adjusted = normalizeAdjustedQtyMap(line.adjustedQty, line.forecastQty);
+    const forecast = { ...line.forecastQty };
     for (const month of FORECAST_MONTHS) {
-      if (monthIsClosed(month, closedThrough)) adjusted[String(month)] = monthQty(line.actualQty, month);
+      if (!monthIsClosed(month, closedThrough)) continue;
+      adjusted[String(month)] = monthQty(line.actualQty, month);
+      forecast[String(month)] = adjusted[String(month)];
     }
-    return { ...line, adjustedQty: adjusted };
+    return { ...line, forecastQty: forecast, adjustedQty: adjusted };
   });
 }
 

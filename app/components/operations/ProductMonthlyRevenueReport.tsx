@@ -12,8 +12,6 @@ import {
   type MonthQtyMap,
 } from '@/lib/operations/product-revenue-forecast';
 import {
-  compactParsedRevenueWorkbook,
-  parseProductOperationsFile,
   pctDaysShippedMonth,
   pctDaysShippedYear,
   pctRevenueShipped,
@@ -22,7 +20,6 @@ import {
   type RevenueTotals,
   type ShippingDay,
 } from '@/lib/operations/product-revenue-actual';
-import { workbookImportErrorMessage } from '@/lib/operations/product-revenue-forecast';
 import ProductMonthlyTrendChartModal, {
   buildProductMonthlyTrendRows,
 } from './ProductMonthlyTrendChartModal';
@@ -232,7 +229,6 @@ export default function ProductMonthlyRevenueReport({
   const [priceCount, setPriceCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -240,8 +236,6 @@ export default function ProductMonthlyRevenueReport({
   const [sortKey, setSortKey] = useState<'itemSku' | 'customerPartNumber'>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [chartOpen, setChartOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
     [customers, customerKey]
@@ -409,47 +403,6 @@ export default function ProductMonthlyRevenueReport({
       setError(err?.message || 'Failed to save monthly revenue');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleImport = async (file: File) => {
-    if (!selectedCompanyId) return;
-    if (dirty && !window.confirm('Import will merge workbook rows and may overwrite matching part/customer lines. Continue?')) {
-      return;
-    }
-    setImporting(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const parsed = compactParsedRevenueWorkbook(await parseProductOperationsFile(file, year));
-      const response = await fetch('/api/operational-data/product-revenue/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          year,
-          parsed,
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          payload.error || payload.message || `Failed to import workbook (${response.status})`
-        );
-      }
-      const importedYear = Number(payload.year) || year;
-      setYear(importedYear);
-      if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
-      setDirty(false);
-      await loadDataset(importedYear, selectedCustomer);
-      setNotice(
-        `Imported ${payload.rowCount || 0} revenue rows and ${payload.priceCount || 0} prices.`
-      );
-    } catch (err: unknown) {
-      setError(workbookImportErrorMessage(err, 'Failed to import workbook'));
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -688,33 +641,6 @@ export default function ProductMonthlyRevenueReport({
             </button>
           </span>
         </label>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={importing}
-          style={{
-            border: '1px solid #cbd5e1',
-            borderRadius: 8,
-            padding: '8px 12px',
-            background: '#ffffff',
-            color: '#334155',
-            fontWeight: 700,
-            cursor: importing ? 'wait' : 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {importing ? 'Importing…' : 'Import workbook'}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          style={{ display: 'none' }}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleImport(file);
-          }}
-        />
         <button
           type="button"
           onClick={() => void handleSave()}

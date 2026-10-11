@@ -11,12 +11,9 @@ import {
   forecastMonthIsEditable,
   monthQty,
   monthQtyTotal,
-  parseProductRevenueForecastWorkbook,
   pctVsPlan,
-  readProductOperationsWorkbook,
   remainingForecastQty,
   summarizeForecastQtyMonths,
-  workbookImportErrorMessage,
   type ForecastMonth,
   type ForecastMonthQtyTotals,
   type MonthQtyMap,
@@ -25,7 +22,6 @@ import {
 import ProductMonthlyTrendChartModal, {
   buildProductMonthlyTrendRows,
 } from './ProductMonthlyTrendChartModal';
-import { parseGoalDashboardFromWorkbook } from '@/lib/operations/product-goal-update';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
 import SgpBudgetLockBar from './SgpBudgetLockBar';
 
@@ -191,7 +187,6 @@ export default function ProductRevenueForecastReport({
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingLines, setLoadingLines] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -203,7 +198,6 @@ export default function ProductRevenueForecastReport({
   const [loadingCompanyTotals, setLoadingCompanyTotals] = useState(false);
   const [sgpLocked, setSgpLocked] = useState(false);
   const handleSgpLockChange = useCallback((locked: boolean) => setSgpLocked(locked), []);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const customersRequestSeq = useRef(0);
 
   const selectedCustomer = useMemo(
@@ -461,68 +455,6 @@ export default function ProductRevenueForecastReport({
     }
   };
 
-  const handleImport = async (file: File) => {
-    if (!selectedCompanyId) {
-      setError('Select a company before importing.');
-      return;
-    }
-    if (dirty && !window.confirm('Import will merge workbook rows and may overwrite matching part/customer lines. Continue?')) {
-      return;
-    }
-    setImporting(true);
-    setError(null);
-    setNotice('Reading workbook…');
-    try {
-      const workbook = readProductOperationsWorkbook(await file.arrayBuffer(), 'all');
-      const forecast = parseProductRevenueForecastWorkbook(workbook, year);
-      const goals = parseGoalDashboardFromWorkbook(workbook);
-      setNotice(`Saving ${forecast.rows.length.toLocaleString()} forecast rows…`);
-      const response = await fetch('/api/operational-data/product-forecast/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          year: forecast.year || year,
-          parsed: {
-            year: forecast.year,
-            dataThru: forecast.dataThru,
-            rows: [],
-            prices: [],
-            forecast,
-            goalUpdate: goals.goalUpdate,
-            pyramid: goals.pyramid,
-          },
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          payload.error || payload.message || `Failed to import workbook (${response.status})`
-        );
-      }
-      const importedYear = Number(payload.year) || year;
-      setYear(importedYear);
-      if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
-      setDirty(false);
-      const forecastCount = Number(payload.forecastRowCount || payload.rowCount || 0);
-      const priceCount = Number(payload.priceCount || 0);
-      setNotice(
-        priceCount > 0
-          ? `Imported ${forecastCount} forecast rows and ${priceCount} prices.`
-          : `Imported ${forecastCount} forecast rows.`
-      );
-      await loadCustomers(importedYear);
-      if (selectedCustomer) await loadLines(selectedCustomer, importedYear);
-    } catch (err: unknown) {
-      console.error('Monthly Forecast import failed', err);
-      setNotice(null);
-      setError(workbookImportErrorMessage(err, 'Failed to import workbook'));
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
   const totals = useMemo(() => {
     const ytdMonths = FORECAST_MONTHS.filter((month) => month <= selectedMonth);
     const thru = dataThru || null;
@@ -762,33 +694,6 @@ export default function ProductRevenueForecastReport({
             </button>
           </span>
         </label>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={importing}
-          style={{
-            border: '1px solid #cbd5e1',
-            borderRadius: 8,
-            padding: '8px 12px',
-            background: '#ffffff',
-            color: '#334155',
-            fontWeight: 700,
-            cursor: importing ? 'wait' : 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {importing ? 'Importing…' : 'Import workbook'}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          style={{ display: 'none' }}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleImport(file);
-          }}
-        />
         <button
           type="button"
           onClick={() => void handleSave()}
