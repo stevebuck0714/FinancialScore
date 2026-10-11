@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { ASK_PRODUCT_REVENUE_TOOL_DEFINITION, getAskProductRevenue } from '@/lib/ask-corelytics/product-revenue-tool';
 
 /**
  * Read-only, company-scoped data access for Ask Corelytics tool calls.
@@ -270,18 +271,10 @@ export const ASK_DATASETS: Record<string, DatasetDef> = {
     measures: ['valueNumber', 'compareNumber', 'sharePct', 'auxNumber'],
     rowColumns: ['monthKey', 'factType', 'metricName', 'dimensionType', 'dimensionLabel', 'valueNumber', 'compareNumber', 'sharePct', 'auxNumber'],
   },
-  product_revenue_plan: {
-    table: 'ProductRevenueLine',
-    description: 'Wholesale product revenue lines by customer/item for a calendar year; actualRevenue is a JSON map of month -> revenue.',
-    kind: 'by_year',
-    dateColumn: 'year',
-    dimensions: ['customerName', 'customerGroup', 'itemSku', 'customerPartNumber', 'team', 'csr', 'productionType', 'statusFlag'],
-    measures: [],
-    rowColumns: ['year', 'customerName', 'customerGroup', 'itemSku', 'customerPartNumber', 'team', 'csr', 'productionType', 'statusFlag', 'actualRevenue'],
-  },
   product_forecast: {
     table: 'ProductRevenueForecastLine',
-    description: 'Wholesale product quantity forecast lines by customer/item for a calendar year; forecastQty/adjustedQty/actualQty are JSON maps of month -> quantity.',
+    description:
+      'Raw wholesale product quantity forecast lines by customer/item for a calendar year; forecastQty/adjustedQty/actualQty are JSON maps of month -> quantity. The stored actualQty can lag: for actual units, any dollars, or forecast vs actual, use get_product_revenue instead.',
     kind: 'by_year',
     dateColumn: 'year',
     dimensions: ['customerName', 'customerGroup', 'itemSku', 'customerPartNumber', 'team', 'csr', 'productionType', 'statusFlag'],
@@ -735,6 +728,7 @@ export const ASK_DATA_TOOL_DEFINITIONS = [
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
+  ASK_PRODUCT_REVENUE_TOOL_DEFINITION,
 ];
 
 export async function executeAskDataTool(companyId: string, name: string, rawArgs: unknown): Promise<unknown> {
@@ -743,6 +737,7 @@ export async function executeAskDataTool(companyId: string, name: string, rawArg
     if (name === 'list_datasets') return await listAskDatasets(companyId);
     if (name === 'query_dataset') return await queryAskDataset(companyId, args as unknown as QueryDatasetArgs);
     if (name === 'get_loans_and_covenants') return await getAskLoansAndCovenants(companyId);
+    if (name === 'get_product_revenue') return await getAskProductRevenue(companyId, args);
     return { error: `Unknown tool "${name}"` };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };

@@ -110,6 +110,7 @@ function humanizeDatasetName(name: string): string {
 function describeToolCall(name: string, rawArgs: string): { label: string; dataset?: string } {
   if (name === 'list_datasets') return { label: 'Reviewing available data' };
   if (name === 'get_loans_and_covenants') return { label: 'Reviewing loans and covenants' };
+  if (name === 'get_product_revenue') return { label: 'Loading product revenue' };
   if (name === 'query_dataset') {
     let dataset = '';
     try {
