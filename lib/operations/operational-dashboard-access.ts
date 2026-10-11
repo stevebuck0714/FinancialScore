@@ -1,10 +1,110 @@
 import { getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
-import { getModuleLabel, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
+import {
+  getModuleLabel,
+  isLoansDefaultEnabledForCompany,
+  mapModuleToDataType,
+  resolveModuleKey,
+  type OpsDataType,
+} from '@/lib/operations/module-registry';
+import { getOperationalHubDefaultModuleKeys, getOperationalHubModuleLabel } from '@/lib/operations/operational-hub-layout';
+import { getHubTabSource, parseOperationalHubCustomTabs, type HubTabSource } from '@/lib/operations/operational-hub-overlay';
+import { isAtlanticPrecisionCompany } from '@/lib/operations/company-specific-reports';
+import { getSectorMasterTabKeys, getSectorMasterTabLabel } from '@/lib/operations/sector-master-tabs';
 
 export type OperationalDashboardModuleAccess = {
   key: string;
   label: string;
 };
+
+export type OperationalHubCompanyLike = {
+  id?: string | null;
+  name?: string | null;
+  industrySectorCategory?: string | null;
+  userDefinedAllocations?: unknown;
+};
+
+export type OperationalHubTabCategory = {
+  moduleKey: string;
+  label: string;
+  source: HubTabSource;
+};
+
+export function getCompanyOperationalHubSettings(company: OperationalHubCompanyLike | null | undefined): Record<string, any> {
+  const uda = company?.userDefinedAllocations as Record<string, any> | null | undefined;
+  const hub = uda && typeof uda === 'object' && !Array.isArray(uda) ? uda.operationalHub : null;
+  return hub && typeof hub === 'object' && !Array.isArray(hub) ? hub : {};
+}
+
+export function getCompanyOperationalHubSections(company: OperationalHubCompanyLike | null | undefined): Record<string, any> {
+  const sections = getCompanyOperationalHubSettings(company).sections;
+  return sections && typeof sections === 'object' && !Array.isArray(sections) ? sections : {};
+}
+
+/** Tab categories offered by Site Admin tab customization for a company. */
+export function getOperationalHubTabCategories(company: OperationalHubCompanyLike | null | undefined): OperationalHubTabCategory[] {
+  const sectorCategory = String(company?.industrySectorCategory || '').trim();
+  const isAtlanticCompany = isAtlanticPrecisionCompany(company?.id, company?.name);
+  const customTabs = parseOperationalHubCustomTabs(getCompanyOperationalHubSettings(company)).filter((tab) => {
+    if (!isAtlanticCompany) return true;
+    return !['group', 'cap table'].includes(tab.label.trim().toLowerCase());
+  });
+  const customTabKeys = customTabs.map((tab) => tab.key);
+  const liveKeys = (() => {
+    const keys = getOperationalHubDefaultModuleKeys(sectorCategory);
+    if (!isAtlanticCompany || keys.includes('groups')) return keys;
+    const productsIdx = keys.findIndex((module) => module === 'products_skus' || module === 'products');
+    if (productsIdx < 0) return [...keys, 'groups'];
+    return [...keys.slice(0, productsIdx + 1), 'groups', ...keys.slice(productsIdx + 1)];
+  })();
+  const masterKeys = getSectorMasterTabKeys(sectorCategory);
+  const extraKeys = liveKeys.filter((key) => !masterKeys.includes(key) && !customTabKeys.includes(key));
+  const orderedKeys = [
+    ...masterKeys,
+    ...extraKeys,
+    ...customTabKeys.filter((key) => !liveKeys.includes(key) && !masterKeys.includes(key)),
+  ];
+  const seen = new Set<string>();
+  return orderedKeys
+    .filter((moduleKey) => {
+      if (!moduleKey || seen.has(moduleKey)) return false;
+      seen.add(moduleKey);
+      return true;
+    })
+    .map((moduleKey) => {
+      const source = getHubTabSource({ sectorCategory, moduleKey, customTabKeys });
+      const customTab = customTabs.find((tab) => tab.key === moduleKey);
+      const label =
+        customTab?.label ||
+        (source === 'master' ? getSectorMasterTabLabel(sectorCategory, moduleKey) : null) ||
+        getOperationalHubModuleLabel(moduleKey, sectorCategory);
+      return { moduleKey, label, source };
+    });
+}
+
+export function isOperationalHubTabDefaultEnabled(moduleKey: string, companyId: string | null | undefined): boolean {
+  const key = moduleKey.startsWith('tab:') ? moduleKey.slice(4) : moduleKey;
+  const dataType = mapModuleToDataType(key);
+  if (dataType === 'cap-table') return false;
+  if (key === 'loans' || dataType === 'loans') return isLoansDefaultEnabledForCompany(companyId);
+  return true;
+}
+
+/** Tab categories switched on for the company in Site Admin tab customization. */
+export function getEnabledOperationalDashboardModulesForCompany(
+  company: OperationalHubCompanyLike | null | undefined
+): OperationalDashboardModuleAccess[] {
+  const sections = getCompanyOperationalHubSections(company);
+  return uniqueModules(
+    getOperationalHubTabCategories(company)
+      .filter((tab) => {
+        const explicit = sections[`tab:${tab.moduleKey}`];
+        return explicit === undefined
+          ? isOperationalHubTabDefaultEnabled(tab.moduleKey, company?.id)
+          : explicit !== false;
+      })
+      .map((tab) => ({ key: tab.moduleKey, label: tab.label }))
+  );
+}
 
 const ALWAYS_AVAILABLE_OPERATIONAL_MODULES: OperationalDashboardModuleAccess[] = [
   { key: 'dashboard', label: 'Overview' },

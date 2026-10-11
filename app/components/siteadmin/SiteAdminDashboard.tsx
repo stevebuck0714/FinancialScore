@@ -44,6 +44,10 @@ import CompanyBrandingCard from '@/app/components/siteadmin/CompanyBrandingCard'
 import HubSpotIntegrationCard from '@/app/components/siteadmin/HubSpotIntegrationCard';
 import { DEFAULT_ALLOWED_SECTIONS } from '@/app/components/admin/CompanyDetailsTab';
 import { getSectorMasterTabLabel, getSectorMasterTabKeys } from '@/lib/operations/sector-master-tabs';
+import {
+  getOperationalHubTabCategories,
+  isOperationalHubTabDefaultEnabled as isTabDefaultEnabledForCompany,
+} from '@/lib/operations/operational-dashboard-access';
 import { GENERIC_OVERVIEW_WIDGET_REPORT_KEYS, sectorHidesGenericOverviewWidgets } from '@/lib/operations/overview-print-options';
 import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
 import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
@@ -1568,68 +1572,20 @@ export default function SiteAdminDashboard(props: any) {
 
   const getOperationalHubTabCategoryOptions = (
     company: any
-  ): Array<{ key: string; label: string; group: string; source: HubTabSource; moduleKey: string }> => {
-    const companySectorCategory = String(company?.industrySectorCategory || '').trim();
-    const isAtlanticCompany = isAtlanticPrecisionCompany(company?.id, company?.name);
-    const customTabs = getOperationalHubCustomTabs(company).filter((tab) => {
-      if (!isAtlanticCompany) return true;
-      return !['group', 'cap table'].includes(tab.label.trim().toLowerCase());
-    });
-    const customTabKeys = customTabs.map((tab) => tab.key);
-    const liveKeys = (() => {
-      const keys = getOperationalHubDefaultModuleKeys(companySectorCategory);
-      if (!isAtlanticPrecisionCompany(company?.id, company?.name) || keys.includes('groups')) return keys;
-      const productsIdx = keys.findIndex((module) => module === 'products_skus' || module === 'products');
-      if (productsIdx < 0) return [...keys, 'groups'];
-      return [...keys.slice(0, productsIdx + 1), 'groups', ...keys.slice(productsIdx + 1)];
-    })();
-    const masterKeys = getSectorMasterTabKeys(companySectorCategory);
-    const extraKeys = liveKeys.filter((key) => !masterKeys.includes(key) && !customTabKeys.includes(key));
-    const orderedKeys = [
-      ...masterKeys,
-      ...extraKeys,
-      ...customTabs.map((tab) => tab.key).filter((key) => !liveKeys.includes(key) && !masterKeys.includes(key)),
-    ];
-    const seen = new Set<string>();
-    return orderedKeys
-      .filter((moduleKey) => {
-        if (!moduleKey || seen.has(moduleKey)) return false;
-        seen.add(moduleKey);
-        return true;
-      })
-      .map((moduleKey) => {
-        const source = getHubTabSource({
-          sectorCategory: companySectorCategory,
-          moduleKey,
-          customTabKeys,
-        });
-        const customTab = customTabs.find((tab) => tab.key === moduleKey);
-        const label =
-          customTab?.label ||
-          (source === 'master'
-            ? getSectorMasterTabLabel(companySectorCategory, moduleKey)
-            : null) ||
-          getOperationalHubModuleLabel(moduleKey, companySectorCategory);
-        return {
-          key: `tab:${moduleKey}`,
-          moduleKey,
-          label,
-          group: 'Tab Categories',
-          source,
-        };
-      });
-  };
+  ): Array<{ key: string; label: string; group: string; source: HubTabSource; moduleKey: string }> =>
+    getOperationalHubTabCategories(company).map((tab) => ({
+      key: `tab:${tab.moduleKey}`,
+      moduleKey: tab.moduleKey,
+      label: tab.label,
+      group: 'Tab Categories',
+      source: tab.source,
+    }));
 
   const getOperationalHubReportTabOptions = (company: any): Array<{ key: string; label: string; group: string }> =>
     getOperationalHubTabCategoryOptions(company);
 
-  const isOperationalHubTabDefaultEnabled = (sectionKey: string, company: any): boolean => {
-    const moduleKey = sectionKey.startsWith('tab:') ? sectionKey.slice(4) : sectionKey;
-    const dataType = mapModuleToDataType(moduleKey);
-    if (dataType === 'cap-table') return false;
-    if (moduleKey === 'loans' || dataType === 'loans') return isLoansDefaultEnabledForCompany(company?.id);
-    return true;
-  };
+  const isOperationalHubTabDefaultEnabled = (sectionKey: string, company: any): boolean =>
+    isTabDefaultEnabledForCompany(sectionKey, company?.id);
 
   const getSelectedTabCategoryKeys = (company: any, draft?: Record<string, boolean>): Set<string> => {
     const tabOptions = getOperationalHubTabCategoryOptions(company);

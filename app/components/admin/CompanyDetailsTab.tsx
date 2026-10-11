@@ -5,7 +5,7 @@ import { INDUSTRY_SECTORS } from "@/data/industrySectors";
 import { formatPhoneNumber } from "@/app/utils/phone";
 import PasswordInput from "@/app/components/common/PasswordInput";
 import {
-  getOperationalDashboardModulesForSector,
+  getEnabledOperationalDashboardModulesForCompany,
   normalizeOperationalDashboardAccess,
 } from "@/lib/operations/operational-dashboard-access";
 
@@ -39,6 +39,7 @@ interface Company {
   industrySector?: string | null;
   industrySectorCategory?: string | null;
   consultantId?: string;
+  userDefinedAllocations?: unknown;
 }
 
 interface AssessmentRecord {
@@ -559,9 +560,9 @@ export default function CompanyDetailsTab({
     });
   };
 
-  const toggleOperationalDashboardModule = (userId: string, moduleKey: string, sectorCategory?: string | null) => {
+  const toggleOperationalDashboardModule = (userId: string, moduleKey: string, company: Company) => {
     setUserPermissions((prev) => {
-      const modules = getOperationalDashboardModulesForSector(sectorCategory);
+      const modules = getEnabledOperationalDashboardModulesForCompany(company);
       const defaultAccess = modules.map((module) => module.key);
       const currentAllowed =
         normalizeOperationalDashboardAccess(prev[userId]?.operationalDashboardAccess) ||
@@ -842,9 +843,7 @@ export default function CompanyDetailsTab({
                       ? selectedUserPerm.sidebarAccess
                       : DEFAULT_ALLOWED_SECTIONS;
                     const operationalDashboardModules =
-                      getOperationalDashboardModulesForSector(
-                        comp.industrySectorCategory || comp.industrySector,
-                      );
+                      getEnabledOperationalDashboardModulesForCompany(comp);
                     const selectedOperationalDashboardAccess =
                       normalizeOperationalDashboardAccess(
                         selectedUserPerm?.operationalDashboardAccess,
@@ -1788,8 +1787,7 @@ export default function CompanyDetailsTab({
                                                                 toggleOperationalDashboardModule(
                                                                   selectedUser.id,
                                                                   module.key,
-                                                                  comp.industrySectorCategory ||
-                                                                    comp.industrySector,
+                                                                  comp,
                                                                 )
                                                               }
                                                             />
