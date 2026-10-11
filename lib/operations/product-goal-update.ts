@@ -822,6 +822,22 @@ export type InforGoalActuals = {
   quantityByMonth: number[];
 };
 
+/**
+ * Actuals come only from Infor. With no posted Infor invoices for the closed
+ * months, actuals are $0 through the last closed EST month, never workbook values.
+ */
+function emptyInforGoalActuals(year: number): InforGoalActuals | null {
+  const currentYear = estYear();
+  const throughMonth = year < currentYear ? 12 : year > currentYear ? 0 : estMonthIndex();
+  if (throughMonth < 1) return null;
+  return {
+    throughMonth,
+    dataThru: new Date(Date.UTC(year, throughMonth, 0)).toISOString().slice(0, 10),
+    revenueByMonth: Array.from({ length: 12 }, () => 0),
+    quantityByMonth: Array.from({ length: 12 }, () => 0),
+  };
+}
+
 function sumByMonth(values: number[], months: number[]): number {
   return months.reduce((sum, month) => sum + (Number(values[month - 1]) || 0), 0);
 }
@@ -915,7 +931,10 @@ export function applyMonthlyRevenueGoals(params: {
 }): { goalUpdate: GoalUpdateSnapshot | null; pyramid: PyramidSnapshot | null } {
   const months = params.goalUpdate?.monthlyRevenueGoals || emptyMonthlyRevenueGoals();
   const useMonthly = hasMonthlyRevenueGoals(months);
-  const infor = params.inforActuals && params.inforActuals.throughMonth >= 1 ? params.inforActuals : null;
+  const infor =
+    params.inforActuals && params.inforActuals.throughMonth >= 1
+      ? params.inforActuals
+      : emptyInforGoalActuals(params.year);
   const workbookMonth = resolveGoalMonthNumber({
     monthLabel: params.pyramid?.monthLabel || params.pyramid?.revenue?.monthLabel || null,
     dataThru: params.dataThru || null,
@@ -951,7 +970,15 @@ export function applyMonthlyRevenueGoals(params: {
   const inforRevenue = infor ? periodActuals(infor.revenueByMonth, infor.throughMonth) : null;
   const baseRows = inforRevenue
     ? base.rows.map((row) => overlayInforGoalRow(row, inforRevenue.YTD, inforRevenue.QTD, sameQuarter))
-    : base.rows;
+    : base.rows.map((row) => ({
+        ...row,
+        ytdActual: null,
+        goalVsActualYtd: null,
+        pctYtdVsGoal: null,
+        quarterYtd: null,
+        goalVsActualQtd: null,
+        pctQtdVsGoal: null,
+      }));
   const goalUpdate: GoalUpdateSnapshot = {
     ...base,
     year: base.year || params.year,
