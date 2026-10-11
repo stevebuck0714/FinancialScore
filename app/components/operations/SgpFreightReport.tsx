@@ -58,8 +58,6 @@ type FreightSortKey =
   | 'unitWeight'
   | 'unitCost'
   | 'currentUnitCost'
-  | 'htsCode'
-  | 'countryOfOrigin'
   | 'productCode'
   | 'costType'
   | 'costMethod'
@@ -77,8 +75,6 @@ const TEXT_SORT_KEYS = new Set<FreightSortKey>([
   'vendorCoo',
   'shipmentType',
   'revision',
-  'htsCode',
-  'countryOfOrigin',
   'productCode',
   'costType',
   'costMethod',
@@ -111,7 +107,13 @@ const SORT_COLUMNS: Array<{
     width: 76,
   },
   { key: 'percentOfContainer', label: '% of\nContainer', align: 'right', title: 'CBM ÷ order multiple ÷ CBMs', width: 68 },
-  { key: 'vendorCoo', label: 'Current\nVendor\nCOO', editable: true, title: 'From the vendor address in Infor.', width: 72 },
+  {
+    key: 'vendorCoo',
+    label: 'Current\nVendor\nCOO',
+    editable: true,
+    title: 'Defaults to the vendor address in Infor. Enter a code to override it (for example, when the vendor makes the item in another country); clear it to go back to Infor.',
+    width: 72,
+  },
   { key: 'shipmentType', label: 'Shipment\nType', width: 72 },
   { key: 'item', label: 'Item', width: 88 },
   { key: 'revision', label: 'Rev', width: 40 },
@@ -129,12 +131,16 @@ const SORT_COLUMNS: Array<{
   { key: 'unitWeight', label: 'Unit\nWeight', align: 'right', editable: true, width: 64 },
   { key: 'unitCost', label: 'Unit\nCost', align: 'right', editable: true, width: 64 },
   { key: 'currentUnitCost', label: 'Current\nUnit Cost', align: 'right', editable: true, width: 72 },
-  { key: 'htsCode', label: 'HTS\nCode', width: 88 },
-  { key: 'countryOfOrigin', label: 'Country\nOf Origin', width: 72 },
   { key: 'productCode', label: 'Product\nCode', width: 64 },
   { key: 'costType', label: 'Cost\nType', width: 60 },
   { key: 'costMethod', label: 'Cost\nMethod', width: 64 },
-  { key: 'plannerCode', label: 'Planner\nCode', width: 64 },
+  {
+    key: 'plannerCode',
+    label: 'Planner\nCode',
+    editable: true,
+    title: 'Defaults to Infor. Enter a code to override it; clear it to go back to Infor.',
+    width: 72,
+  },
   { key: 'ratePerDay', label: 'Rate/\nDay', align: 'right', width: 52 },
   { key: 'leadTime', label: 'Lead\nTime', align: 'right', width: 52 },
   { key: 'materialStatus', label: 'Material\nStatus', width: 68 },
@@ -154,6 +160,8 @@ function commaText(value: number | null | undefined, fractionDigits = 0): string
   const digits = Number.isInteger(numeric) ? 0 : fractionDigits;
   return numeric.toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
 }
+
+const TEXT_FIELDS = new Set<EditableFreightField>(['vendorCoo', 'plannerCode']);
 
 const COUNT_KEYS = new Set<FreightSortKey>([
   'qtyOnHand',
@@ -209,13 +217,16 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
   const [edits, setEdits] = useState<Record<string, CompanyItemFreightPatch>>({});
   const [assumptions, setAssumptions] = useState<SgpFreightAssumptions>(DEFAULT_SGP_FREIGHT_ASSUMPTIONS);
   const [assumptionsDirty, setAssumptionsDirty] = useState(false);
+  const [includeInactive, setIncludeInactive] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedCompanyId) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/operational-data/sgp-freight?companyId=${encodeURIComponent(selectedCompanyId)}`);
+      const params = new URLSearchParams({ companyId: selectedCompanyId });
+      if (includeInactive) params.set('includeInactive', '1');
+      const response = await fetch(`/api/operational-data/sgp-freight?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.ok === false) {
         throw new Error(payload?.error || 'Failed to load SGP Freight');
@@ -230,7 +241,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
     } finally {
       setLoading(false);
     }
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, includeInactive]);
 
   useEffect(() => {
     void load();
@@ -308,7 +319,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
       next.cbmIsManual = false;
     }
     if (edit?.vendorCoo !== undefined) {
-      next.shipmentType = deriveShipmentType(null, next.vendorCoo);
+      next.shipmentType = deriveShipmentType(null, next.vendorCoo || row.inforVendorCoo);
     }
     const calculated = calcItemFreight({
       cbm: next.cbm,
@@ -332,7 +343,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
   };
 
   const updateField = (row: CompanyItemFreightRow, key: EditableFreightField, value: string) => {
-    const parsed = key === 'vendorCoo' ? value.trim().toUpperCase() || null : parseNumber(value);
+    const parsed = TEXT_FIELDS.has(key) ? value.trim().toUpperCase() || null : parseNumber(value);
     setEdits((prev) => ({
       ...prev,
       [row.id]: {
@@ -359,6 +370,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
           companyId: selectedCompanyId,
           items: patches,
           assumptions: assumptionsDirty ? assumptions : undefined,
+          includeInactive,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -394,14 +406,19 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
   const renderValue = (row: CompanyItemFreightRow, column: (typeof SORT_COLUMNS)[number]) => {
     const current = displayRow(row);
     const field = column.key as EditableFreightField;
-    if (column.editable && field === 'vendorCoo' && !row.inforFields.includes(field)) {
+    if (field === 'vendorCoo' || field === 'plannerCode') {
+      const inforValue = field === 'vendorCoo' ? row.inforVendorCoo : row.inforPlannerCode;
+      const draft = edits[row.id]?.[field];
+      const overridden =
+        draft !== undefined ? Boolean(draft) && draft !== inforValue : row.overriddenFields.includes(field);
       return (
         <input
-          value={current.vendorCoo || ''}
+          value={draft !== undefined ? draft || '' : current[field] || ''}
           onChange={(event) => updateField(row, field, event.target.value)}
-          placeholder="e.g. CN"
+          placeholder={inforValue || (field === 'vendorCoo' ? 'e.g. CN' : '')}
+          title={overridden ? `Override. Infor: ${inforValue || 'blank'}` : inforValue ? 'From Infor' : undefined}
           maxLength={12}
-          style={inputStyle}
+          style={overridden ? { ...inputStyle, background: '#fef3c7', borderColor: '#f59e0b' } : inputStyle}
         />
       );
     }
@@ -442,7 +459,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
     <div>
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}>
-          Item values come from Infor, and vendor COO comes from the vendor address in Infor. Where Infor has no value, the cell is editable for manual entry. Change the rate and shipment assumptions above the table to recalculate % of container and estimated freight.
+          Item values come from Infor, and vendor COO comes from the vendor address in Infor. Where Infor has no value, the cell is editable for manual entry. Vendor COO and planner code can always be overridden (highlighted); clear the cell to go back to Infor. Change the rate and shipment assumptions above the table to recalculate % of container and estimated freight.
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {onOpenInfo ? (
@@ -490,6 +507,15 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
               {selectedVendor.vendorId}
             </span>
           ) : null}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#334155', whiteSpace: 'nowrap' }}>
+            <input
+              type="checkbox"
+              checked={includeInactive}
+              disabled={loading || saving || dirty}
+              onChange={(event) => setIncludeInactive(event.target.checked)}
+            />
+            Show inactive items
+          </label>
         </div>
       </div>
       {error ? <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div> : null}
@@ -656,7 +682,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
             {sortedItems.length === 0 && (
               <tr>
                 <td colSpan={SORT_COLUMNS.length} style={{ padding: 24, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
-                  {loading ? 'Loading…' : 'No active Infor items with a primary vendor were found.'}
+                  {loading ? 'Loading…' : 'No Infor items with a primary vendor were found.'}
                 </td>
               </tr>
             )}

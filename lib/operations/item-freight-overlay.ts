@@ -26,9 +26,24 @@ export const EDITABLE_FREIGHT_FIELDS = [
   'unitWeight',
   'unitCost',
   'currentUnitCost',
+  'plannerCode',
 ] as const;
 
 export type EditableFreightField = (typeof EDITABLE_FREIGHT_FIELDS)[number];
+
+/** Text fields where a user-entered value overrides Infor; clearing it falls back to Infor. */
+export const OVERRIDE_FREIGHT_FIELDS = ['vendorCoo', 'plannerCode'] as const;
+
+type OverrideFreightField = (typeof OVERRIDE_FREIGHT_FIELDS)[number];
+
+const OVERRIDE_FALLBACK_COLUMNS: Record<OverrideFreightField, string> = {
+  vendorCoo: 'spreadsheetVendorCoo',
+  plannerCode: 'plannerCode',
+};
+
+function isOverrideField(field: EditableFreightField): field is OverrideFreightField {
+  return (OVERRIDE_FREIGHT_FIELDS as readonly string[]).includes(field);
+}
 
 // Infor reports these as 0 when the item master has no value.
 const ZERO_IS_BLANK = new Set<EditableFreightField>([
@@ -43,7 +58,8 @@ const ZERO_IS_BLANK = new Set<EditableFreightField>([
 ]);
 
 const FIELD_COLUMNS: Record<EditableFreightField, string> = {
-  vendorCoo: 'spreadsheetVendorCoo',
+  vendorCoo: 'vendorCooOverride',
+  plannerCode: 'plannerCodeOverride',
   qtyOnHand: 'spreadsheetQtyOnHand',
   quantityOrdered: 'quantityOrdered',
   orderMultiple: 'orderMultiple',
@@ -100,6 +116,10 @@ export type CompanyItemFreightRow = {
   inInfor: boolean;
   /** Editable fields whose value comes from Infor; these are read-only on the page. */
   inforFields: EditableFreightField[];
+  /** Override fields where the user-entered value is replacing Infor's. */
+  overriddenFields: OverrideFreightField[];
+  inforVendorCoo: string | null;
+  inforPlannerCode: string | null;
   identitySource: string;
   userEditedAt: string | null;
   updatedAt: string;
@@ -125,6 +145,7 @@ export type CompanyItemFreightPatch = {
   unitWeight?: number | null;
   unitCost?: number | null;
   currentUnitCost?: number | null;
+  plannerCode?: string | null;
 };
 
 type FreightDbRow = {
@@ -163,6 +184,8 @@ type FreightDbRow = {
   nonNettableStock: number | null;
   safetyStock: number | null;
   allocatedQty: number | null;
+  vendorCooOverride: string | null;
+  plannerCodeOverride: string | null;
   identitySource: string | null;
   userEditedAt: Date | null;
   updatedAt: Date;
@@ -231,6 +254,8 @@ export async function ensureCompanyItemFreightTable(): Promise<void> {
       await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "safetyStock" DOUBLE PRECISION`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "allocatedQty" DOUBLE PRECISION`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "manualEdits" JSONB`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "vendorCooOverride" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "CompanyItemFreight" ADD COLUMN IF NOT EXISTS "plannerCodeOverride" TEXT`);
       await prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "CompanyItemFreightSettings" (
           "companyId" TEXT NOT NULL,
@@ -421,20 +446,29 @@ async function loadCsiItemFacts(companyId: string): Promise<Map<string, CsiItemF
   return result;
 }
 
-/** Latest Infor vendor master (SLVendors) name and address country per vendor. */
-async function loadVendorAddresses(companyId: string): Promise<Map<string, { vendorName: string | null; country: string | null }>> {
-  const rows = await prisma.$queryRaw<Array<{ vendorId: string; vendorName: string | null; country: string | null }>>`
+type VendorAddress = { vendorName: string | null; country: string | null; status: string | null };
+
+/** Latest Infor vendor master (SLVendors) name, address country and status per vendor. */
+async function loadVendorAddresses(companyId: string): Promise<Map<string, VendorAddress>> {
+  const rows = await prisma.$queryRaw<Array<{ vendorId: string } & VendorAddress>>`
     SELECT DISTINCT ON (TRIM("vendorId"))
       TRIM("vendorId") AS "vendorId",
       "vendorName",
-      NULLIF(TRIM("country"), '') AS "country"
+      NULLIF(TRIM("country"), '') AS "country",
+      NULLIF(TRIM("status"), '') AS "status"
     FROM "VendorSnapshot"
     WHERE "companyId" = ${companyId}
     ORDER BY TRIM("vendorId"), "snapshotDate" DESC
   `.catch(() => []);
-  const result = new Map<string, { vendorName: string | null; country: string | null }>();
-  for (const row of rows) result.set(row.vendorId, { vendorName: row.vendorName, country: row.country });
+  const result = new Map<string, VendorAddress>();
+  for (const row of rows) result.set(row.vendorId, { vendorName: row.vendorName, country: row.country, status: row.status });
   return result;
+}
+
+const INACTIVE_STATUSES = new Set(['O', 'I']);
+
+function isInactiveStatus(value: string | null | undefined): boolean {
+  return INACTIVE_STATUSES.has(String(value || '').trim().toUpperCase());
 }
 
 function inforNumber(field: EditableFreightField, value: number | null | undefined): number | null {
@@ -483,9 +517,14 @@ function serializeFreight(
     cbm = calcCbmFromInches(heightIn, widthIn, lengthIn) ?? asNullableNumber(row.cbm);
   }
 
+  const overriddenFields: OverrideFreightField[] = [];
   const inforCoo = vendorCooCode(vendor?.country);
-  if (inforCoo) inforFields.push('vendorCoo');
-  const vendorCoo = inforCoo || vendorCooCode(row.spreadsheetVendorCoo);
+  const cooOverride = vendorCooCode(row.vendorCooOverride);
+  if (cooOverride) overriddenFields.push('vendorCoo');
+  const vendorCoo = cooOverride || inforCoo || vendorCooCode(row.spreadsheetVendorCoo);
+  const inforPlannerCode = firstText(csi?.plannerCode);
+  const plannerOverride = firstText(row.plannerCodeOverride);
+  if (plannerOverride) overriddenFields.push('plannerCode');
   const shipmentType = deriveShipmentType(null, vendorCoo);
   const calculated = calcItemFreight({ cbm, shipmentType, unitCost, currentUnitCost, orderMultiple, assumptions });
 
@@ -519,7 +558,7 @@ function serializeFreight(
     productCode: firstText(csi?.productCode, row.productCode),
     costType: firstText(csi?.costType, row.costType),
     costMethod: firstText(csi?.costMethod, row.costMethod),
-    plannerCode: firstText(csi?.plannerCode, row.plannerCode),
+    plannerCode: firstText(plannerOverride, inforPlannerCode, row.plannerCode),
     ratePerDay: firstNumber(csi?.ratePerDay, asNullableNumber(row.ratePerDay)),
     leadTime: firstNumber(csi?.leadTime, asNullableNumber(row.leadTime)),
     materialStatus: firstText(csi?.materialStatus, row.materialStatus),
@@ -531,6 +570,9 @@ function serializeFreight(
     allocatedQty: firstNumber(csi?.allocatedQty, asNullableNumber(row.allocatedQty)),
     inInfor: Boolean(csi),
     inforFields,
+    overriddenFields,
+    inforVendorCoo: inforCoo,
+    inforPlannerCode,
     identitySource: csi ? 'infor' : row.identitySource || 'manual',
     userEditedAt: toIso(row.userEditedAt),
     updatedAt: toIso(row.updatedAt) || new Date().toISOString(),
@@ -574,6 +616,8 @@ function emptyFreightRow(companyId: string, itemSku: string): FreightDbRow {
     nonNettableStock: null,
     safetyStock: null,
     allocatedQty: null,
+    vendorCooOverride: null,
+    plannerCodeOverride: null,
     identitySource: 'infor',
     userEditedAt: null,
     updatedAt: new Date(),
@@ -642,11 +686,12 @@ export async function updateCompanyItemFreightSettings(
 
 /**
  * Rows are built from the Infor item master plus any stored row. `scope: 'page'` limits the
- * result to what the SGP Freight page lists: non-obsolete items that have a primary vendor.
+ * result to what the SGP Freight page lists: items that have a primary vendor, excluding
+ * items whose Infor item or vendor status is "O" or "I" unless `includeInactive` is set.
  */
 export async function listCompanyItemFreight(
   companyId: string,
-  options: { scope?: 'all' | 'page' } = {}
+  options: { scope?: 'all' | 'page'; includeInactive?: boolean } = {}
 ): Promise<CompanyItemFreightRow[]> {
   await ensureCompanyItemFreightTable();
   const rows = await prisma.$queryRaw<FreightDbRow[]>`
@@ -658,7 +703,7 @@ export async function listCompanyItemFreight(
       "htsCode", "countryOfOrigin",
       "spreadsheetQtyOnHand", "productCode", "costType", "costMethod", "plannerCode",
       "ratePerDay", "leadTime", "materialStatus", "reason", "lastChange", "sheetUser",
-      "nonNettableStock", "safetyStock", "allocatedQty", "identitySource",
+      "nonNettableStock", "safetyStock", "allocatedQty", "vendorCooOverride", "plannerCodeOverride", "identitySource",
       "userEditedAt", "updatedAt"
     FROM "CompanyItemFreight"
     WHERE "companyId" = ${companyId}
@@ -683,11 +728,11 @@ export async function listCompanyItemFreight(
     const csi = csiByItem.get(key) || null;
     const inforVendor = vendorByItem.get(key);
     const vendorId = firstText(inforVendor?.vendorId, stored.spreadsheetVendorId);
+    const address = vendorId ? vendorAddresses.get(vendorId) : undefined;
     if (pageOnly) {
       if (!vendorId) continue;
-      if (String(csi?.materialStatus || '').trim().toUpperCase() === 'O') continue;
+      if (!options.includeInactive && (isInactiveStatus(csi?.materialStatus) || isInactiveStatus(address?.status))) continue;
     }
-    const address = vendorId ? vendorAddresses.get(vendorId) : undefined;
     const vendorName = inforVendor
       ? firstText(inforVendor.vendorName !== inforVendor.vendorId ? inforVendor.vendorName : null, address?.vendorName, inforVendor.vendorId)
       : firstText(stored.spreadsheetVendorName, address?.vendorName, vendorId);
@@ -728,10 +773,14 @@ export async function updateCompanyItemFreight(
         skipped.push({ itemSku: row.itemSku, field });
         continue;
       }
-      assignments.push({
-        column: FIELD_COLUMNS[field],
-        value: field === 'vendorCoo' ? vendorCooCode(raw) : asNullableNumber(raw),
-      });
+      if (isOverrideField(field)) {
+        const value = field === 'vendorCoo' ? vendorCooCode(raw) : firstText(raw == null ? null : String(raw));
+        assignments.push({ column: FIELD_COLUMNS[field], value });
+        // Clearing removes the stored fallback too, so the cell shows Infor's value or stays blank.
+        if (value == null) assignments.push({ column: OVERRIDE_FALLBACK_COLUMNS[field], value: null });
+      } else {
+        assignments.push({ column: FIELD_COLUMNS[field], value: asNullableNumber(raw) });
+      }
       editedFields.push(field);
     }
     if (!assignments.length) continue;

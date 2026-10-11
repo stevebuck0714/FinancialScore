@@ -12887,7 +12887,7 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'This lists every active Infor item that has a primary vendor. Item values come from the Infor item master (SLItems), the vendor comes from Infor item vendors (SLItemVends), and the vendor COO comes from the vendor address in Infor (SLVendors). Where Infor has no value, the cell can be entered manually; Infor replaces the manual value as soon as it supplies one.',
+              'This lists every Infor item that has a primary vendor; items whose Infor item status or vendor status is O or I are hidden unless Show inactive items is checked. Item values come from the Infor item master (SLItems), the vendor comes from Infor item vendors (SLItemVends), and the vendor COO comes from the vendor address in Infor (SLVendors). Where Infor has no value, the cell can be entered manually; Infor replaces the manual value as soon as it supplies one. Vendor COO and planner code can always be overridden, for example when the vendor makes an item in a different country; an override wins over Infor until the cell is cleared. HTS codes are on Duties and Tariffs.',
           },
           {
             heading: 'How it is calculated',

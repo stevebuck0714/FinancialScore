@@ -68,8 +68,9 @@ export async function GET(request: NextRequest) {
     if (denied) return denied;
 
     await ensureCompanyItemFreightTable();
+    const includeInactive = request.nextUrl.searchParams.get('includeInactive') === '1';
     const [items, assumptions] = await Promise.all([
-      listCompanyItemFreight(companyId, { scope: 'page' }),
+      listCompanyItemFreight(companyId, { scope: 'page', includeInactive }),
       getCompanyItemFreightSettings(companyId),
     ]);
     return NextResponse.json({
@@ -117,7 +118,7 @@ export async function PATCH(request: NextRequest) {
     }
     scheduleOperationalCacheWarmupAfterSave(request, companyId, 'sgp-freight');
     const [items, assumptions] = await Promise.all([
-      listCompanyItemFreight(companyId, { scope: 'page' }),
+      listCompanyItemFreight(companyId, { scope: 'page', includeInactive: body.includeInactive === true }),
       getCompanyItemFreightSettings(companyId),
     ]);
     return NextResponse.json({
