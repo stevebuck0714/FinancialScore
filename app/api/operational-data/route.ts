@@ -59,6 +59,7 @@ import {
   getPlatosClosetProductsPayload,
   getPlatosClosetSalesPageSummary,
   hasPlatosClosetMonthlyFacts,
+  isPlatosClosetSourceEnabled,
 } from '@/lib/operational/platos-closet-monthly-facts';
 import {
   getRetailSubcategoryHistoryProductsPayload,
@@ -3951,6 +3952,7 @@ export async function GET(request: NextRequest) {
 
     const hasPlatosFacts =
       (type === 'products' || type === 'inventory') &&
+      (await isPlatosClosetSourceEnabled(companyId)) &&
       ((await ensurePlatosClosetMonthlyFacts(companyId)) || (await hasPlatosClosetMonthlyFacts(companyId)));
 
     const hasRetailSubcategoryHistory =

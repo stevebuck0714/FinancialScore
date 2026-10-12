@@ -31,7 +31,7 @@ import {
 } from '@/lib/operations/construction-mock-data';
 import { getBambooHrHiringPayload } from '@/lib/operations/bamboohr-workforce-reports';
 import { buildIsolvedBureauOpsPayload } from '@/lib/operational/isolved-bureau-ops-mock';
-import { ensurePlatosClosetMonthlyFacts } from '@/lib/operational/platos-closet-monthly-facts';
+import { ensurePlatosClosetMonthlyFacts, isPlatosClosetSourceEnabled } from '@/lib/operational/platos-closet-monthly-facts';
 import { presentCompanyJson } from '@/lib/currency/api-response';
 
 const PLATOS_CLOSET_SOURCE_CODE = 'PLATOS_CLOSET_STORE_VISIT';
@@ -1429,7 +1429,8 @@ async function buildPlatosProductDimensionChartPreview(
   const metricSql = platosMetricSql(metricConfig.column.key, metricConfig.aggregation);
   if (!metricSql) return null;
 
-  const hasFacts = await ensurePlatosClosetMonthlyFacts(String(config.companyId));
+  const companyId = String(config.companyId);
+  const hasFacts = (await isPlatosClosetSourceEnabled(companyId)) && (await ensurePlatosClosetMonthlyFacts(companyId));
   if (!hasFacts) return null;
 
   const filters = normalizeDatasetFilters(dataset, Array.isArray(config?.filters) ? config.filters : []);

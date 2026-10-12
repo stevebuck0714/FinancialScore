@@ -13,7 +13,7 @@ import { calculateEbitda } from '@/lib/financial/ebitda';
 import { createModelText } from '@/lib/openai-helpers';
 import { searchExternalWeb } from '@/lib/ask-corelytics/externalSearch';
 import { buildExternalQueryPlan } from '@/lib/ask-corelytics/externalQueryBuilder';
-import { getPlatosClosetAiContext } from '@/lib/operational/platos-closet-monthly-facts';
+import { getPlatosClosetAiContext, isPlatosClosetSourceEnabled } from '@/lib/operational/platos-closet-monthly-facts';
 import {
   buildConstructionBriefingFacts,
   getExecBriefingModuleProfile,
@@ -2635,11 +2635,13 @@ export async function runAskCorelyticsLegacy(
       : [];
     const industryGroupName = benchmarks.find((b) => b.industryName)?.industryName || null;
     const ratioSnapshot = buildRatioSnapshot(latestMonth, benchmarks);
-    const platosClosetWorkbookContext = await getPlatosClosetAiContext({
-      companyId,
-      endDate: now,
-      months: 36,
-    });
+    const platosClosetWorkbookContext = (await isPlatosClosetSourceEnabled(companyId))
+      ? await getPlatosClosetAiContext({
+          companyId,
+          endDate: now,
+          months: 36,
+        })
+      : null;
 
     const monthlyChanges = latestMonth && prevMonth
       ? {

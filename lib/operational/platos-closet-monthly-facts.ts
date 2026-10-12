@@ -1,9 +1,18 @@
 import { Prisma } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
+import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
 import { parsePlatosClosetWorkbook, type ParsedWorkbookSummary } from '@/lib/operational/platos-closet-parser';
 
 const SOURCE_CODE = 'PLATOS_CLOSET_STORE_VISIT';
+
+export async function isPlatosClosetSourceEnabled(companyId: string): Promise<boolean> {
+  try {
+    return Boolean(await getOperationalSystemConnection(companyId, 'SPREADSHEET_UPLOAD', SOURCE_CODE));
+  } catch {
+    return false;
+  }
+}
 
 type MonthlyFactRow = {
   monthKey: string;
