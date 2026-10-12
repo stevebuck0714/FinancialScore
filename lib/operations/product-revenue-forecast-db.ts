@@ -385,7 +385,12 @@ export async function upsertForecastLines(params: {
         ? {
             ...line,
             forecastQty: mergeLockedMonthQty(line.forecastQty, existing.forecastQty, year),
-            sgpForecastQty: mergeLockedMonthQty(line.sgpForecastQty, existing.sgpForecastQty, year),
+            // Empty stored SGP displays as the forecast, so closed months keep that, not zeros.
+            sgpForecastQty: mergeLockedMonthQty(
+              line.sgpForecastQty,
+              normalizeAdjustedQtyMap(existing.sgpForecastQty, normalizeMonthQtyMap(existing.forecastQty)),
+              year
+            ),
             adjustedQty: mergeLockedMonthQty(line.adjustedQty, existing.adjustedQty, year),
           }
         : line;
