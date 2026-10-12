@@ -105,6 +105,22 @@ const SGP_2026_MONTHLY_REVENUE_GOALS: MonthlyRevenueGoalMonth[] = [
   { month: 12, baseline: 988592, growth: 1186489, stretch: 1607395 },
 ];
 
+// Locked 2026 SGP volume (signed off 2026-10-10), rounded to whole units.
+const SGP_2026_MONTHLY_VOLUME_BASELINE = [
+  1816628, 2970478, 2065137, 1691098, 1618236, 1968386,
+  2756266, 1680586, 2143362, 4313508, 3250828, 2415145,
+];
+const SGP_2026_MONTHLY_VOLUME_GOALS: MonthlyRevenueGoalMonth[] = SGP_2026_MONTHLY_VOLUME_BASELINE.map(
+  (units, index) => ({ month: index + 1, baseline: units, growth: units, stretch: units })
+);
+
+function resolveVolumeGoals(raw: unknown, nextYear: number): MonthlyRevenueGoalMonth[] {
+  const months = normalizeMonthlyRevenueGoals(raw);
+  if (hasMonthlyRevenueGoals(months)) return months;
+  if (nextYear === 2026) return SGP_2026_MONTHLY_VOLUME_GOALS.map((row) => ({ ...row }));
+  return months;
+}
+
 function resolveMonthlyGoals(raw: unknown, nextYear: number): MonthlyRevenueGoalMonth[] {
   const incoming = Array.isArray(raw) ? (raw as MonthlyRevenueGoalMonth[]) : [];
   if (hasMonthlyRevenueGoals(incoming)) return incoming.map((row) => ({ ...row }));
@@ -323,8 +339,14 @@ export default function ProductGoalUpdateReport({
     const derived = deriveMonthlyRevenueGoalsByYear({ monthsByYear: next, growthPctByYear: nextPct, sgpBaseline: nextSgp });
     const volumeSource = rawVolumeByYear && typeof rawVolumeByYear === 'object' ? (rawVolumeByYear as Record<string, unknown>) : {};
     const nextVolume = Object.fromEntries(
-      MONTHLY_GOAL_YEARS.map((goalYear) => [goalYear, normalizeMonthlyRevenueGoals(volumeSource[String(goalYear)])])
+      MONTHLY_GOAL_YEARS.map((goalYear) => [goalYear, resolveVolumeGoals(volumeSource[String(goalYear)], goalYear)])
     ) as GoalsByYear;
+    for (const goalYear of MONTHLY_GOAL_YEARS) {
+      const persisted = normalizeMonthlyRevenueGoals(volumeSource[String(goalYear)]);
+      if (!hasMonthlyRevenueGoals(persisted) && hasMonthlyRevenueGoals(nextVolume[goalYear]) && !nextDirty.includes(goalYear)) {
+        nextDirty.push(goalYear);
+      }
+    }
     const nextVolumePct = readGrowthPctByYear(rawVolumeGrowthPctByYear);
     const derivedVolume = deriveMonthlyRevenueGoalsByYear({
       monthsByYear: nextVolume,
@@ -493,7 +515,7 @@ export default function ProductGoalUpdateReport({
         const savedVolume = payload.monthlyVolumeGoalsByYear as Record<string, unknown>;
         setVolumeState(
           Object.fromEntries(
-            MONTHLY_GOAL_YEARS.map((goalYear) => [goalYear, normalizeMonthlyRevenueGoals(savedVolume[String(goalYear)])])
+            MONTHLY_GOAL_YEARS.map((goalYear) => [goalYear, resolveVolumeGoals(savedVolume[String(goalYear)], goalYear)])
           ) as GoalsByYear,
           readGrowthPctByYear(payload.volumeGoalGrowthPctByYear)
         );
@@ -796,7 +818,7 @@ export default function ProductGoalUpdateReport({
               <span style={{ fontSize: 12, color: '#b45309' }}>Unsaved changes</span>
             ) : null}
           </div>
-          <p style={{ margin: '0 0 8px', color: '#475569', fontSize: 12, lineHeight: 1.45, maxWidth: 720 }}>
+          <p style={{ margin: '0 0 8px', color: '#475569', fontSize: 12, lineHeight: 1.45 }}>
             Monthly Baseline, Growth, and Stretch goals. {SGP_BASELINE_GOAL_YEAR} Baseline is the {SGP_BASELINE_GOAL_YEAR} SGP
             {' '}(SGP volume × SGP price) and updates automatically once the {SGP_BASELINE_GOAL_YEAR} SGP budget is locked
             {sgpBaselineLocked ? ' (locked now)' : ' (not locked yet, so it can still be typed)'}. A % growth over{' '}
@@ -830,7 +852,7 @@ export default function ProductGoalUpdateReport({
             </h4>
             <span style={{ fontSize: 12, color: '#64748b' }}>Saved with SGP Revenue Goals.</span>
           </div>
-          <p style={{ margin: '0 0 8px', color: '#475569', fontSize: 12, lineHeight: 1.45, maxWidth: 720 }}>
+          <p style={{ margin: '0 0 8px', color: '#475569', fontSize: 12, lineHeight: 1.45 }}>
             The same goals in units. {SGP_BASELINE_GOAL_YEAR} Baseline is the {SGP_BASELINE_GOAL_YEAR} SGP volume and updates
             automatically once the {SGP_BASELINE_GOAL_YEAR} SGP budget is locked
             {sgpVolumeLocked ? ' (locked now)' : ' (not locked yet, so it can still be typed)'}. The % growth inputs work the
