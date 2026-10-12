@@ -43,16 +43,27 @@ import {
 import { buildShippingCalendar } from '@/lib/operations/product-shipping-days';
 import {
   applyMonthlyRevenueGoals,
+  deriveMonthlyRevenueGoalsByYear,
+  emptyGoalGrowthPct,
   emptyGoalUpdateSnapshot,
+  emptyMonthlyRevenueGoals,
   hasGoalDashboardData,
+  hasGoalGrowthPct,
+  hasMonthlyRevenueGoals,
   mergeGoalUpdateSnapshots,
+  MONTHLY_GOAL_YEARS,
+  normalizeGoalGrowthPct,
   normalizeGoalUpdateSnapshot,
   normalizeMonthlyRevenueGoals,
   normalizePyramidSnapshot,
+  sameMonthlyRevenueGoals,
+  sgpVolumeBaseline,
   type GoalUpdateSnapshot,
   type InforGoalActuals,
+  type MonthlyRevenueGoalGrowthPct,
   type MonthlyRevenueGoalMonth,
   type PyramidSnapshot,
+  type SgpBaselineGoals,
 } from '@/lib/operations/product-goal-update';
 
 export { assertProductsForecastAccess, asForecastYear, asOptionalIsoDay };
@@ -625,6 +636,10 @@ export async function saveProductMonthlyRevenueGoals(params: {
   companyId: string;
   year: number;
   months: unknown;
+  /** Omit any of these to keep the stored value. */
+  growthPct?: unknown;
+  volumeMonths?: unknown;
+  volumeGrowthPct?: unknown;
 }): Promise<{
   year: number;
   dataThru: string | null;
@@ -635,10 +650,27 @@ export async function saveProductMonthlyRevenueGoals(params: {
   const existing = await loadProductGoalUpdateRaw(params);
   const monthlyRevenueGoals = normalizeMonthlyRevenueGoals(params.months);
   const base = existing.goalUpdate || emptyGoalUpdateSnapshot(params.year);
+  const goalGrowthPct =
+    params.growthPct === undefined ? base.goalGrowthPct : normalizeGoalGrowthPct(params.growthPct);
+  const monthlyVolumeGoals =
+    params.volumeMonths === undefined ? base.monthlyVolumeGoals : normalizeMonthlyRevenueGoals(params.volumeMonths);
+  const volumeGoalGrowthPct =
+    params.volumeGrowthPct === undefined
+      ? base.volumeGoalGrowthPct
+      : normalizeGoalGrowthPct(params.volumeGrowthPct);
+  const {
+    goalGrowthPct: _previousPct,
+    monthlyVolumeGoals: _previousVolume,
+    volumeGoalGrowthPct: _previousVolumePct,
+    ...baseWithoutOptional
+  } = base;
   const goalUpdate: GoalUpdateSnapshot = {
-    ...base,
+    ...baseWithoutOptional,
     year: base.year || params.year,
     monthlyRevenueGoals,
+    ...(hasGoalGrowthPct(goalGrowthPct) ? { goalGrowthPct } : {}),
+    ...(hasMonthlyRevenueGoals(monthlyVolumeGoals) ? { monthlyVolumeGoals } : {}),
+    ...(hasGoalGrowthPct(volumeGoalGrowthPct) ? { volumeGoalGrowthPct } : {}),
   };
   await upsertProductGoalUpdate({
     companyId: params.companyId,
@@ -665,31 +697,141 @@ export function parseForecastYears(value: unknown): number[] {
   return [...new Set(years)].sort((a, b) => a - b);
 }
 
+export type ProductMonthlyGoalsByYear = {
+  monthlyGoalsByYear: Record<number, MonthlyRevenueGoalMonth[]>;
+  goalGrowthPctByYear: Record<number, MonthlyRevenueGoalGrowthPct>;
+  monthlyVolumeGoalsByYear: Record<number, MonthlyRevenueGoalMonth[]>;
+  volumeGoalGrowthPctByYear: Record<number, MonthlyRevenueGoalGrowthPct>;
+};
+
 export async function loadProductMonthlyGoalsByYear(params: {
   companyId: string;
   years: number[];
-}): Promise<Record<number, MonthlyRevenueGoalMonth[]>> {
+}): Promise<ProductMonthlyGoalsByYear> {
   const snapshots = await Promise.all(
-    params.years.map((year) => loadProductGoalUpdate({ companyId: params.companyId, year }))
+    params.years.map((year) => loadProductGoalUpdateRaw({ companyId: params.companyId, year }))
   );
-  return Object.fromEntries(snapshots.map((snapshot) => [snapshot.year, snapshot.monthlyRevenueGoals]));
+  const byYear = <T,>(pick: (goalUpdate: GoalUpdateSnapshot | null) => T) =>
+    Object.fromEntries(snapshots.map((snapshot) => [snapshot.year, pick(snapshot.goalUpdate)])) as Record<number, T>;
+  return {
+    monthlyGoalsByYear: byYear((goals) => goals?.monthlyRevenueGoals || emptyMonthlyRevenueGoals()),
+    goalGrowthPctByYear: byYear((goals) => goals?.goalGrowthPct || emptyGoalGrowthPct()),
+    monthlyVolumeGoalsByYear: byYear((goals) => goals?.monthlyVolumeGoals || emptyMonthlyRevenueGoals()),
+    volumeGoalGrowthPctByYear: byYear((goals) => goals?.volumeGoalGrowthPct || emptyGoalGrowthPct()),
+  };
 }
 
+function readPctByYear(
+  yearNumbers: number[],
+  incoming: Record<string, unknown> | null | undefined,
+  stored: Record<number, MonthlyRevenueGoalGrowthPct> | undefined
+): Record<number, MonthlyRevenueGoalGrowthPct> {
+  return Object.fromEntries(
+    yearNumbers.map((year) => [
+      year,
+      incoming ? normalizeGoalGrowthPct(incoming[String(year)]) : stored?.[year] || emptyGoalGrowthPct(),
+    ])
+  );
+}
+
+/**
+ * Saves typed goals and growth percentages for dollars and volume, storing
+ * derived columns (SGP Baseline, percentage growth) as their computed monthly
+ * values so Goal Update and Pyramid read them like typed goals.
+ */
 export async function saveProductMonthlyRevenueGoalsByYear(params: {
   companyId: string;
   years: Record<string, unknown>;
-}): Promise<Record<number, MonthlyRevenueGoalMonth[]>> {
+  growthPctByYear?: Record<string, unknown> | null;
+  volumeYears?: Record<string, unknown> | null;
+  volumeGrowthPctByYear?: Record<string, unknown> | null;
+  sgpBaseline: SgpBaselineGoals | null;
+}): Promise<ProductMonthlyGoalsByYear> {
   const yearNumbers = parseForecastYears(Object.keys(params.years));
-  const snapshots = await Promise.all(
+  const stored =
+    params.growthPctByYear && params.volumeYears && params.volumeGrowthPctByYear
+      ? null
+      : await loadProductMonthlyGoalsByYear({ companyId: params.companyId, years: yearNumbers });
+  const growthPctByYear = readPctByYear(yearNumbers, params.growthPctByYear, stored?.goalGrowthPctByYear);
+  const volumeGrowthPctByYear = readPctByYear(
+    yearNumbers,
+    params.volumeGrowthPctByYear,
+    stored?.volumeGoalGrowthPctByYear
+  );
+  const derived = deriveMonthlyRevenueGoalsByYear({
+    monthsByYear: Object.fromEntries(
+      yearNumbers.map((year) => [year, normalizeMonthlyRevenueGoals(params.years[String(year)])])
+    ),
+    growthPctByYear,
+    sgpBaseline: params.sgpBaseline,
+  });
+  const derivedVolume = deriveMonthlyRevenueGoalsByYear({
+    monthsByYear: Object.fromEntries(
+      yearNumbers.map((year) => [
+        year,
+        params.volumeYears
+          ? normalizeMonthlyRevenueGoals(params.volumeYears[String(year)])
+          : stored?.monthlyVolumeGoalsByYear[year] || emptyMonthlyRevenueGoals(),
+      ])
+    ),
+    growthPctByYear: volumeGrowthPctByYear,
+    sgpBaseline: sgpVolumeBaseline(params.sgpBaseline),
+  });
+  await Promise.all(
     yearNumbers.map((year) =>
       saveProductMonthlyRevenueGoals({
         companyId: params.companyId,
         year,
-        months: params.years[String(year)],
+        months: derived[year],
+        growthPct: growthPctByYear[year],
+        volumeMonths: derivedVolume[year],
+        volumeGrowthPct: volumeGrowthPctByYear[year],
       })
     )
   );
-  return Object.fromEntries(snapshots.map((snapshot) => [snapshot.year, snapshot.monthlyRevenueGoals]));
+  return {
+    monthlyGoalsByYear: derived,
+    goalGrowthPctByYear: growthPctByYear,
+    monthlyVolumeGoalsByYear: derivedVolume,
+    volumeGoalGrowthPctByYear: volumeGrowthPctByYear,
+  };
+}
+
+/**
+ * Re-applies SGP Baseline and growth percentages to the stored dollar and
+ * volume goals, e.g. after the SGP budget for the Baseline year is signed off.
+ */
+export async function refreshDerivedProductMonthlyGoals(params: {
+  companyId: string;
+  sgpBaseline: SgpBaselineGoals | null;
+}): Promise<void> {
+  const years = [...MONTHLY_GOAL_YEARS];
+  const stored = await loadProductMonthlyGoalsByYear({ companyId: params.companyId, years });
+  const derived = deriveMonthlyRevenueGoalsByYear({
+    monthsByYear: stored.monthlyGoalsByYear,
+    growthPctByYear: stored.goalGrowthPctByYear,
+    sgpBaseline: params.sgpBaseline,
+  });
+  const derivedVolume = deriveMonthlyRevenueGoalsByYear({
+    monthsByYear: stored.monthlyVolumeGoalsByYear,
+    growthPctByYear: stored.volumeGoalGrowthPctByYear,
+    sgpBaseline: sgpVolumeBaseline(params.sgpBaseline),
+  });
+  const changedYears = years.filter(
+    (year) =>
+      !sameMonthlyRevenueGoals(stored.monthlyGoalsByYear[year], derived[year]) ||
+      !sameMonthlyRevenueGoals(stored.monthlyVolumeGoalsByYear[year], derivedVolume[year])
+  );
+  await Promise.all(
+    changedYears.map((year) =>
+      saveProductMonthlyRevenueGoals({
+        companyId: params.companyId,
+        year,
+        months: derived[year],
+        volumeMonths: derivedVolume[year],
+      })
+    )
+  );
 }
 
 export async function persistParsedRevenueWorkbook(params: {

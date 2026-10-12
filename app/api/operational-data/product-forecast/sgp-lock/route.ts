@@ -4,7 +4,12 @@ import {
   assertProductsForecastAccess,
   ensureProductRevenueForecastTables,
 } from '@/lib/operations/product-revenue-forecast-db';
-import { ensureProductRevenueTables } from '@/lib/operations/product-revenue-actual-db';
+import {
+  ensureProductRevenueTables,
+  refreshDerivedProductMonthlyGoals,
+} from '@/lib/operations/product-revenue-actual-db';
+import { SGP_BASELINE_GOAL_YEAR } from '@/lib/operations/product-goal-update';
+import { loadSgpBaselineGoals } from '@/lib/operations/product-goal-sgp-baseline';
 import {
   buildSgpBudgetSummary,
   canManageSgpBudget,
@@ -77,6 +82,13 @@ export async function POST(request: NextRequest) {
     if (denied) return denied;
     await Promise.all([ensureProductRevenueTables(), ensureProductRevenueForecastTables()]);
     const lock = await lockSgpBudget({ companyId, year, note });
+    if (year === SGP_BASELINE_GOAL_YEAR) {
+      try {
+        await refreshDerivedProductMonthlyGoals({ companyId, sgpBaseline: await loadSgpBaselineGoals(companyId) });
+      } catch (error) {
+        console.error('[sgp-lock] SGP Revenue/Volume Goals Baseline refresh failed', error);
+      }
+    }
     return NextResponse.json({ ok: true, year, lock, canManage: true });
   } catch (error) {
     return errorResponse(error, 'Failed to lock SGP budget');

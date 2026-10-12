@@ -27,6 +27,9 @@ export type MonthlyRevenueGoalMonth = {
   stretch: number | null;
 };
 
+/** Percent values (5 = 5%). Null leaves that column as typed monthly values. */
+export type MonthlyRevenueGoalGrowthPct = Record<MonthlyRevenueGoalKey, number | null>;
+
 export type GoalUpdateSnapshot = {
   year: number | null;
   quarter: number | null;
@@ -34,7 +37,30 @@ export type GoalUpdateSnapshot = {
   shippingDaysRemainingQtd: number | null;
   rows: GoalScenarioRow[];
   monthlyRevenueGoals: MonthlyRevenueGoalMonth[];
+  goalGrowthPct?: MonthlyRevenueGoalGrowthPct;
+  /** Same Baseline / Growth / Stretch shape as revenue, in units. */
+  monthlyVolumeGoals?: MonthlyRevenueGoalMonth[];
+  volumeGoalGrowthPct?: MonthlyRevenueGoalGrowthPct;
 };
+
+export const MONTHLY_GOAL_YEARS = [2026, 2027, 2028, 2029, 2030] as const;
+/** Baseline for this year is the signed-off SGP; later years grow from the year before. */
+export const SGP_BASELINE_GOAL_YEAR = 2027;
+
+export type SgpBaselineGoals = {
+  year: number;
+  locked: boolean;
+  /** SGP dollars by month. */
+  months: number[] | null;
+  /** SGP units by month. */
+  volumeMonths?: number[] | null;
+};
+
+/** The same SGP Baseline, pointed at SGP units for the volume goals. */
+export function sgpVolumeBaseline(baseline: SgpBaselineGoals | null): SgpBaselineGoals | null {
+  if (!baseline) return null;
+  return { year: baseline.year, locked: baseline.locked, months: baseline.volumeMonths ?? null };
+}
 
 export type PyramidMetric = {
   actual: number | null;
@@ -545,10 +571,21 @@ export function normalizeGoalUpdateSnapshot(raw: unknown): GoalUpdateSnapshot | 
   });
   const rows = GOAL_SCENARIOS.map((scenario) => byScenario.get(scenario) || emptyGoalRow(scenario));
   const monthlyRevenueGoals = normalizeMonthlyRevenueGoals(value.monthlyRevenueGoals);
+  const goalGrowthPct = normalizeGoalGrowthPct(value.goalGrowthPct);
+  const monthlyVolumeGoals = normalizeMonthlyRevenueGoals(value.monthlyVolumeGoals);
+  const volumeGoalGrowthPct = normalizeGoalGrowthPct(value.volumeGoalGrowthPct);
   const hasValues = rows.some(
     (row) => row.annualGoal != null || row.ytdActual != null || row.quarterGoal != null || row.quarterYtd != null
   );
-  if (!hasValues && value.year == null && value.quarter == null && !hasMonthlyRevenueGoals(monthlyRevenueGoals)) {
+  if (
+    !hasValues &&
+    value.year == null &&
+    value.quarter == null &&
+    !hasMonthlyRevenueGoals(monthlyRevenueGoals) &&
+    !hasGoalGrowthPct(goalGrowthPct) &&
+    !hasMonthlyRevenueGoals(monthlyVolumeGoals) &&
+    !hasGoalGrowthPct(volumeGoalGrowthPct)
+  ) {
     return null;
   }
   return {
@@ -558,7 +595,97 @@ export function normalizeGoalUpdateSnapshot(raw: unknown): GoalUpdateSnapshot | 
     shippingDaysRemainingQtd: asInteger(value.shippingDaysRemainingQtd),
     rows,
     monthlyRevenueGoals,
+    ...(hasGoalGrowthPct(goalGrowthPct) ? { goalGrowthPct } : {}),
+    ...(hasMonthlyRevenueGoals(monthlyVolumeGoals) ? { monthlyVolumeGoals } : {}),
+    ...(hasGoalGrowthPct(volumeGoalGrowthPct) ? { volumeGoalGrowthPct } : {}),
   };
+}
+
+export function emptyGoalGrowthPct(): MonthlyRevenueGoalGrowthPct {
+  return { baseline: null, growth: null, stretch: null };
+}
+
+export function normalizeGoalGrowthPct(raw: unknown): MonthlyRevenueGoalGrowthPct {
+  const value = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    baseline: asNullableNumber(value.baseline),
+    growth: asNullableNumber(value.growth),
+    stretch: asNullableNumber(value.stretch),
+  };
+}
+
+export function hasGoalGrowthPct(pct: MonthlyRevenueGoalGrowthPct | null | undefined): boolean {
+  return Boolean(pct && (pct.baseline != null || pct.growth != null || pct.stretch != null));
+}
+
+/**
+ * Columns a year derives instead of taking typed values. The SGP year's
+ * Baseline follows the signed-off SGP while it is locked; its Growth and
+ * Stretch grow from that Baseline. Later years grow each column from the
+ * same column of the year before.
+ */
+export function derivedGoalColumns(
+  year: number,
+  pct: MonthlyRevenueGoalGrowthPct | null | undefined,
+  sgpBaselineLocked: boolean
+): Record<MonthlyRevenueGoalKey, boolean> {
+  if (year === SGP_BASELINE_GOAL_YEAR) {
+    return { baseline: sgpBaselineLocked, growth: pct?.growth != null, stretch: pct?.stretch != null };
+  }
+  if (year > SGP_BASELINE_GOAL_YEAR) {
+    return { baseline: pct?.baseline != null, growth: pct?.growth != null, stretch: pct?.stretch != null };
+  }
+  return { baseline: false, growth: false, stretch: false };
+}
+
+function grow(value: number | null | undefined, pct: number): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value * (1 + pct / 100));
+}
+
+export function deriveMonthlyRevenueGoalsByYear(params: {
+  monthsByYear: Record<number, MonthlyRevenueGoalMonth[]>;
+  growthPctByYear: Record<number, MonthlyRevenueGoalGrowthPct | null | undefined>;
+  sgpBaseline: SgpBaselineGoals | null;
+}): Record<number, MonthlyRevenueGoalMonth[]> {
+  const years = Object.keys(params.monthsByYear)
+    .map(Number)
+    .filter((year) => Number.isInteger(year))
+    .sort((a, b) => a - b);
+  const result: Record<number, MonthlyRevenueGoalMonth[]> = {};
+  const sgpLocked = Boolean(params.sgpBaseline?.locked && params.sgpBaseline.months);
+  for (const year of years) {
+    const stored = normalizeMonthlyRevenueGoals(params.monthsByYear[year]);
+    const pct = params.growthPctByYear[year] || emptyGoalGrowthPct();
+    const derived = derivedGoalColumns(year, pct, sgpLocked);
+    const previous = result[year - 1];
+    result[year] = stored.map((row, index) => {
+      const next = { ...row };
+      if (year === SGP_BASELINE_GOAL_YEAR) {
+        if (derived.baseline) next.baseline = Math.round(Number(params.sgpBaseline?.months?.[index]) || 0);
+        if (derived.growth) next.growth = grow(next.baseline, pct.growth!);
+        if (derived.stretch) next.stretch = grow(next.baseline, pct.stretch!);
+      } else if (year > SGP_BASELINE_GOAL_YEAR) {
+        for (const key of ['baseline', 'growth', 'stretch'] as const) {
+          if (derived[key]) next[key] = previous ? grow(previous[index]?.[key], pct[key]!) : null;
+        }
+      }
+      return next;
+    });
+  }
+  return result;
+}
+
+export function sameMonthlyRevenueGoals(
+  left: MonthlyRevenueGoalMonth[] | null | undefined,
+  right: MonthlyRevenueGoalMonth[] | null | undefined
+): boolean {
+  const a = normalizeMonthlyRevenueGoals(left);
+  const b = normalizeMonthlyRevenueGoals(right);
+  return a.every(
+    (row, index) =>
+      row.baseline === b[index].baseline && row.growth === b[index].growth && row.stretch === b[index].stretch
+  );
 }
 
 function normalizeMetric(raw: unknown): PyramidMetric {
@@ -771,7 +898,18 @@ export function mergeGoalUpdateSnapshots(
   const monthly = hasMonthlyRevenueGoals(existing?.monthlyRevenueGoals)
     ? existing?.monthlyRevenueGoals || emptyMonthlyRevenueGoals()
     : incoming?.monthlyRevenueGoals || existing?.monthlyRevenueGoals || emptyMonthlyRevenueGoals();
-  if (incoming) return { ...incoming, monthlyRevenueGoals: monthly };
+  const goalGrowthPct = existing?.goalGrowthPct ?? incoming?.goalGrowthPct;
+  const monthlyVolumeGoals = existing?.monthlyVolumeGoals ?? incoming?.monthlyVolumeGoals;
+  const volumeGoalGrowthPct = existing?.volumeGoalGrowthPct ?? incoming?.volumeGoalGrowthPct;
+  if (incoming) {
+    return {
+      ...incoming,
+      monthlyRevenueGoals: monthly,
+      ...(goalGrowthPct ? { goalGrowthPct } : {}),
+      ...(monthlyVolumeGoals ? { monthlyVolumeGoals } : {}),
+      ...(volumeGoalGrowthPct ? { volumeGoalGrowthPct } : {}),
+    };
+  }
   if (existing) return { ...existing, monthlyRevenueGoals: monthly };
   if (!hasMonthlyRevenueGoals(monthly)) return null;
   return { ...emptyGoalUpdateSnapshot(), monthlyRevenueGoals: monthly };

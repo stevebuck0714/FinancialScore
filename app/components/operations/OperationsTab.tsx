@@ -13236,7 +13236,7 @@ export default function OperationsTab({
           {
             heading: 'Where the numbers come from',
             body: [
-              'SGP Baseline, Growth, and Stretch are the monthly revenue goals typed on Goal Update for each year in the range.',
+              'SGP Baseline, Growth, and Stretch are the monthly SGP Revenue Goals on Goal Update for each year in the range.',
               'Forecasted is the original forecast dollars from Monthly Revenue and Forecast - ADJ is the adjusted forecast, so the two can be tracked against each other.',
               'Actuals is booked revenue for the same month. Actuals stop at each year\'s Data thru month so an in-progress month is not drawn as a drop.',
             ],
