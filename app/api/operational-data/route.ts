@@ -2398,55 +2398,54 @@ async function buildDailyApSeriesByAgingRule(
        ) matched
        GROUP BY voucher, dt
      ),
-     event_open AS (
-       SELECT
-         ds.d AS snapshot_date,
-         vc.voucher,
-         COALESCE(SUM(CASE WHEN e.dt <= ds.d THEN e.amt ELSE 0 END), 0)::float8 AS event_net
-       FROM date_series ds
-       JOIN voucher_creates vc
-        ON vc.created_at <= ds.d
-       LEFT JOIN event_daily e ON e.voucher = vc.voucher
-       GROUP BY ds.d, vc.voucher
+     -- A voucher's open amount only changes on days it has activity, so
+     -- running totals at those change points, held until the next one, give
+     -- the same daily figure as re-summing its history for every day without
+     -- multiplying every voucher ever created by every day in the range.
+     voucher_changes AS (
+       SELECT voucher, dt, SUM(event_amt)::float8 AS event_amt, SUM(paid_amt)::float8 AS paid_amt, SUM(tp_amt)::float8 AS tp_amt
+       FROM (
+         SELECT voucher, dt, amt AS event_amt, 0::float8 AS paid_amt, 0::float8 AS tp_amt FROM event_daily
+         UNION ALL
+         SELECT voucher, dt, 0, amt, 0 FROM payment_by_voucher_day
+         UNION ALL
+         SELECT voucher, dt, 0, 0, amt FROM type_p_daily
+       ) c
+       GROUP BY voucher, dt
      ),
-     pay_open AS (
+     voucher_running AS (
        SELECT
-         ds.d AS snapshot_date,
-         vc.voucher,
-         COALESCE(SUM(CASE WHEN p.dt <= ds.d THEN p.amt ELSE 0 END), 0)::float8 AS paid_amt
-       FROM date_series ds
-       JOIN voucher_creates vc
-        ON vc.created_at <= ds.d
-       LEFT JOIN payment_by_voucher_day p ON p.voucher = vc.voucher
-       GROUP BY ds.d, vc.voucher
+         voucher,
+         dt,
+         LEAD(dt) OVER w AS next_dt,
+         SUM(event_amt) OVER w AS event_net,
+         SUM(paid_amt) OVER w AS paid_amt,
+         SUM(tp_amt) OVER w AS paid_in_events
+       FROM voucher_changes
+       WINDOW w AS (PARTITION BY voucher ORDER BY dt)
      ),
-     type_p_open AS (
+     voucher_segments AS (
        SELECT
-         ds.d AS snapshot_date,
-         vc.voucher,
-         COALESCE(SUM(CASE WHEN t.dt <= ds.d THEN t.amt ELSE 0 END), 0)::float8 AS paid_in_events
-       FROM date_series ds
-       JOIN voucher_creates vc
-        ON vc.created_at <= ds.d
-       LEFT JOIN type_p_daily t ON t.voucher = vc.voucher
-       GROUP BY ds.d, vc.voucher
+         vr.voucher,
+         GREATEST(vr.dt, vc.created_at) AS from_dt,
+         vr.next_dt AS to_dt,
+         GREATEST(vr.event_net - GREATEST(vr.paid_amt - vr.paid_in_events, 0), 0) AS open_amt
+       FROM voucher_running vr
+       JOIN voucher_creates vc ON vc.voucher = vr.voucher
+       WHERE vr.next_dt IS NULL OR vr.next_dt > vc.created_at
      ),
      daily_voucher AS (
        SELECT
-         eo.snapshot_date,
-         eo.voucher,
-         GREATEST(
-           eo.event_net
-           - GREATEST(COALESCE(po.paid_amt, 0) - COALESCE(tpo.paid_in_events, 0), 0),
-           0
-         ) AS open_per_voucher,
-         (eo.snapshot_date - vd.due_date::date)::int AS days_past_due
-       FROM event_open eo
-       JOIN voucher_due vd ON vd.voucher = eo.voucher
-       LEFT JOIN pay_open po
-         ON po.snapshot_date = eo.snapshot_date AND po.voucher = eo.voucher
-       LEFT JOIN type_p_open tpo
-         ON tpo.snapshot_date = eo.snapshot_date AND tpo.voucher = eo.voucher
+         ds.d AS snapshot_date,
+         vs.voucher,
+         vs.open_amt AS open_per_voucher,
+         (ds.d - vd.due_date::date)::int AS days_past_due
+       FROM voucher_segments vs
+       JOIN date_series ds
+         ON ds.d >= vs.from_dt
+        AND (vs.to_dt IS NULL OR ds.d < vs.to_dt)
+       JOIN voucher_due vd ON vd.voucher = vs.voucher
+       WHERE vs.open_amt > 0
      ),
      daily_buckets AS (
        SELECT
@@ -2970,19 +2969,35 @@ async function buildDailyArSeriesByAgingRule(
          AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
          AND "eventDate" <= $4::date
      ),
-     daily AS (
-       SELECT ds.d AS snapshot_date, ic.cust_num, ic.inv_num,
-              ic.created_at, ic.invoiced_at, ic.due_at,
-              SUM(e."normalizedAmount") AS open_per_invoice
-       FROM date_series ds
-       JOIN invoice_creates ic
-         ON ic.created_at > (ds.d - INTERVAL '${aging} days')
-        AND ic.created_at <= ds.d
-       LEFT JOIN events e
+     -- An invoice's net only changes on its event days. Running totals at
+     -- those days, held until the next one, reproduce the per-day sum without
+     -- crossing every invoice with every day. Zero-net days are dropped: they
+     -- add nothing to the credit pool or the open buckets below.
+     invoice_running AS (
+       SELECT ic.cust_num, ic.inv_num, ic.created_at, ic.invoiced_at, ic.due_at,
+              e.dt,
+              LEAD(e.dt) OVER w AS next_dt,
+              SUM(e.amt) OVER w AS net
+       FROM invoice_creates ic
+       JOIN (
+         SELECT cust_num, inv_num, dt, SUM("normalizedAmount") AS amt
+         FROM events
+         GROUP BY cust_num, inv_num, dt
+       ) e
          ON e.inv_num = ic.inv_num
         AND e.cust_num IS NOT DISTINCT FROM ic.cust_num
-        AND e.dt <= ds.d
-       GROUP BY ds.d, ic.cust_num, ic.inv_num, ic.created_at, ic.invoiced_at, ic.due_at
+       WINDOW w AS (PARTITION BY ic.cust_num, ic.inv_num ORDER BY e.dt)
+     ),
+     daily AS (
+       SELECT ds.d AS snapshot_date, ir.cust_num, ir.inv_num,
+              ir.created_at, ir.invoiced_at, ir.due_at,
+              ir.net AS open_per_invoice
+       FROM invoice_running ir
+       JOIN date_series ds
+         ON ds.d >= GREATEST(ir.dt, ir.created_at)
+        AND (ir.next_dt IS NULL OR ds.d < ir.next_dt)
+        AND ir.created_at > (ds.d - INTERVAL '${aging} days')
+       WHERE ir.net <> 0
      ),
      -- Mirror the invoice-detail read: pool each customer's credit balance for
      -- the day and consume it oldest-first, so a reduction attached to the

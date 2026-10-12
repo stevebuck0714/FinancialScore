@@ -118,7 +118,9 @@ const NON_REORDERABLE_OPERATIONAL_SECTION_KEY =
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
-const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+// Daily trend bars are 1-2px wide, so muted tones wash out against white.
+const AR_TREND_COLORS = ['#1d4ed8', '#0f766e', '#ca8a04', '#c2410c', '#7e22ce'];
+const AGING_UNAVAILABLE_COLOR = '#475569';
 // A nightly feed normally trails the ledger by a day; flagging that as an
 // exception reads like a fault. Disclose only a lag long enough to matter.
 const AP_LEDGER_LAG_DISCLOSURE_DAYS = 2;
@@ -7616,7 +7618,7 @@ export default function OperationsTab({
           canReorder={canManageReportLayout}
           isSaving={savingReportLayout}
           onMove={moveStandardReport}
-          style={getReportPanelStyle('arAgingTrend', {})}
+          style={getReportPanelStyle('arAgingTrend', { gridColumn: '1 / -1', minWidth: 0 })}
         >
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
@@ -7626,7 +7628,7 @@ export default function OperationsTab({
             As of: {arAsOfLabel} | Coverage: {arCoverageLabel}
           </div>
           <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={chartData}>
+            <BarChart data={chartData} barCategoryGap={chartData.length > 60 ? 0 : '10%'}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis
                 dataKey="month"
@@ -7641,7 +7643,7 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              {chartHasUnavailableAging && <Bar dataKey="Books AR (aging unavailable)" fill="#64748b" />}
+              {chartHasUnavailableAging && <Bar dataKey="Books AR (aging unavailable)" stackId="a" fill={AGING_UNAVAILABLE_COLOR} />}
               <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="Open AR 1-30" stackId="a" fill={AR_TREND_COLORS[1]} />
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
@@ -8771,7 +8773,7 @@ export default function OperationsTab({
             As of: {apAsOfLabel} | Coverage: {apCoverageLabel}
           </div>
           <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={chartData}>
+            <BarChart data={chartData} barCategoryGap={chartData.length > 60 ? 0 : '10%'}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
               <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={formatAxisMoney} />
@@ -8800,7 +8802,9 @@ export default function OperationsTab({
                 }}
               />
               <Legend />
-              <Bar dataKey="Books AP (aging unavailable)" fill="#64748b" />
+              {chartData.some((row: any) => row['Books AP (aging unavailable)'] != null) && (
+                <Bar dataKey="Books AP (aging unavailable)" stackId="a" fill={AGING_UNAVAILABLE_COLOR} />
+              )}
               <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="1-30 Days" stackId="a" fill={AR_TREND_COLORS[1]} />
               <Bar dataKey="31-60 Days" stackId="a" fill={AR_TREND_COLORS[2]} />
@@ -8873,11 +8877,16 @@ export default function OperationsTab({
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          {/* AP Summary Table */}
+          {/* Bill Summary Table */}
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-              AP Summary Table
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
+              Bill Summary Table
             </h3>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px', lineHeight: 1.4 }}>
+              Open vendor bills by vendor and age, from the accounting system&apos;s bill records. The total can differ
+              from Total AP, which is the balance-sheet AP account and also carries accruals, such as goods received
+              but not yet billed or duty and tariff charges, and journal entries that are not bills.
+            </p>
             {apVendors.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>

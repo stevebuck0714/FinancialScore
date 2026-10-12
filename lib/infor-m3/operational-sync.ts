@@ -7897,12 +7897,26 @@ async function saveAPTransactionFacts(
     // Atlantic carried 436 such vouchers worth $2.7M dated 2022 through May
     // 2023, while every year with payment coverage reconciled to zero. Hold
     // the event store to the window where both sides of the ledger exist.
-    if (!resolvedDate || resolvedDate.getTime() < AP_MIN_BILL_DATE.getTime()) continue;
+    // The floor bounds vouchers only: a prepayment can be dated well before
+    // the voucher it settles (Atlantic voucher 13521 was paid 2022-09-09 and
+    // billed 2023-08-31), and dropping it leaves that voucher open forever.
+    // Settlements only count against a voucher that exists, so admitting them
+    // cannot reopen pre-floor history.
+    if (!resolvedDate) continue;
+    if (!isPaymentLike && resolvedDate.getTime() < AP_MIN_BILL_DATE.getTime()) continue;
     const eventDate = startOfUtcDay(resolvedDate);
 
-    // Payments/credits must reduce AP even when CSI sends a positive InvAmt/AmtPaid.
+    // A negative AmtPaid is a voided payment or a refund on a credit voucher
+    // and raises AP; forcing every payment negative left 63 Atlantic vouchers
+    // over-settled by $221K. Credits still always reduce AP.
     const normalizedAmount =
-      transType === 'p' || transType === 'c' ? -Math.abs(invAmt) : sign * invAmt;
+      transType === 'p'
+        ? Number.isFinite(paidAmtRaw) && paidAmtRaw !== 0
+          ? -paidAmtRaw
+          : -Math.abs(invAmt)
+        : transType === 'c'
+        ? -Math.abs(invAmt)
+        : sign * invAmt;
 
     rows.push({
       companyId,

@@ -142,7 +142,7 @@ function evaluateCharts(datasets: Record<DatasetKey, DatasetStatus>): ChartReadi
     // AP
     { tab: 'AP Aging', chart: 'AP Aging Trend', required: [{ key: 'apAging', requirement: 'multiDate' }] },
     { tab: 'AP Aging', chart: 'Unpaid Bills Amount by Vendor', required: [{ key: 'apOpenBills', requirement: 'nonZeroRows' }] },
-    { tab: 'AP Aging', chart: 'AP Summary Table', required: [{ key: 'apOpenBills', requirement: 'nonZeroRows' }] },
+    { tab: 'AP Aging', chart: 'Bill Summary Table', required: [{ key: 'apOpenBills', requirement: 'nonZeroRows' }] },
     { tab: 'AP Aging', chart: 'Unpaid Bills', required: [{ key: 'apOpenBills', requirement: 'nonZeroRows' }] },
     { tab: 'AP Aging', chart: 'Paid Bills by Vendor', required: [{ key: 'apPayments', requirement: 'nonZeroRows' }] },
     { tab: 'AP Aging', chart: 'Last 12 Month Bills Paid', required: [{ key: 'apPayments', requirement: 'nonZeroRows' }] },

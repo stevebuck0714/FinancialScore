@@ -229,7 +229,10 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
     const eventDate = type === 'P'
       ? distDate || recordDate
       : distDate || invoiceDate || recordDate;
-    if (!eventDate || eventDate.getTime() < AP_MIN_BILL_DATE.getTime()) continue;
+    // Settlements may predate the voucher they settle (prepayments); the
+    // orphan filter below already drops those whose voucher is out of range.
+    if (!eventDate) continue;
+    if (!['P', 'A'].includes(type) && eventDate.getTime() < AP_MIN_BILL_DATE.getTime()) continue;
     if (eventDate.getTime() > maxEventDate.getTime()) continue;
 
     const paidAmount = number(record, ['AmtPaid']);
@@ -241,7 +244,8 @@ function buildFactRows(companyId: string, rawRows: RawApRecord[]) {
     if (type === 'P' && (paidAmount === null || paidAmount === 0)) continue;
     const amount = type === 'P' ? paidAmount : invoiceAmount ?? (type === 'A' ? paidAmount : null);
     if (amount === null || amount === 0) continue;
-    const normalizedAmount = type === 'P' || type === 'C' ? -Math.abs(amount) : amount;
+    // A negative AmtPaid is a void or a refund on a credit voucher and raises AP.
+    const normalizedAmount = type === 'P' ? -amount : type === 'C' ? -Math.abs(amount) : amount;
     const transaction: ApTransactionRow = {
       companyId, eventDate, recordDate, apAcct: text(record, ['ApAcct']),
       vendorId: text(record, ['VendNum', 'vendorId']),
