@@ -62,8 +62,7 @@ const IDENTITY_COLUMNS: Array<{
 }> = [
   { key: 'itemSku', label: 'APR P/N', widthCh: 12, sortable: true },
   { key: 'customerPartNumber', label: 'Customer P/N', widthCh: 12, sortable: true },
-  // Infor corporate customer, else the customer name.
-  { key: 'customerGroup', label: 'Group', widthCh: 8, readOnly: true },
+  { key: 'customerGroup', label: 'Group', widthCh: 8 },
   { key: 'team', label: 'TEAM', widthCh: 5, compact: true },
   { key: 'csr', label: 'CSR', widthCh: 3, compact: true },
 ];
@@ -372,6 +371,11 @@ export default function ProductRevenueForecastReport({
 
   const updateLine = (id: string, patch: Partial<ForecastLine>) => {
     setLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+    markDirty();
+  };
+
+  const updateCustomerGroup = (customerGroup: string) => {
+    setLines((prev) => prev.map((line) => ({ ...line, customerGroup })));
     markDirty();
   };
 
@@ -900,7 +904,13 @@ export default function ProductRevenueForecastReport({
                             value={line[column.key]}
                             title={line[column.key] || undefined}
                             readOnly={column.readOnly}
-                            onChange={column.readOnly ? undefined : (event) => updateLine(line.id, { [column.key]: event.target.value })}
+                            onChange={
+                              column.readOnly
+                                ? undefined
+                                : column.key === 'customerGroup'
+                                  ? (event) => updateCustomerGroup(event.target.value)
+                                  : (event) => updateLine(line.id, { [column.key]: event.target.value })
+                            }
                             style={{
                               ...identityInputStyle,
                               padding: column.compact ? '5px 4px' : identityInputStyle.padding,

@@ -19,7 +19,7 @@ import {
   type VendorForecastLinePatch,
 } from '@/lib/operations/vendor-monthly-forecast-db';
 import { ensureVendorForecastFromInfor } from '@/lib/operations/vendor-forecast-infor';
-import { loadInforCustomerGroups, withInforCustomerGroups } from '@/lib/operations/infor-customer-groups';
+import { loadCustomerGroups, withCustomerGroups } from '@/lib/operations/customer-groups';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       vendorId: vendorId || undefined,
       vendorName: vendorName || undefined,
     });
-    const customerGroups = await loadInforCustomerGroups(companyId);
+    const customerGroups = await loadCustomerGroups(companyId);
 
     return NextResponse.json({
       year,
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       inforSourceDate,
       vendors: vendorPayload,
       lines: withCsiShippedActuals(
-        withInforCustomerGroups(lines.map(serializeVendorForecastLine), customerGroups),
+        withCustomerGroups(lines.map(serializeVendorForecastLine), customerGroups),
         shipped
       ),
     });
@@ -153,7 +153,7 @@ export async function PUT(request: NextRequest) {
       dataThru: resolveVendorDataThru(settings?.dataThru, shipped.asOf),
       inforSourceDate: settings?.inforSourceDate ? settings.inforSourceDate.toISOString().slice(0, 10) : null,
       lines: withCsiShippedActuals(
-        withInforCustomerGroups(saved.map(serializeVendorForecastLine), await loadInforCustomerGroups(companyId)),
+        withCustomerGroups(saved.map(serializeVendorForecastLine), await loadCustomerGroups(companyId)),
         shipped
       ),
     });

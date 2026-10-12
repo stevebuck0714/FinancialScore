@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
-import { loadInforCustomerGroups, resolveCustomerGroup } from '@/lib/operations/infor-customer-groups';
+import { loadCustomerGroups, resolveCustomerGroup } from '@/lib/operations/customer-groups';
 import {
   ensureCustomerOrderLineFilledTables,
   isTrulyOpenSql,
@@ -170,7 +170,7 @@ async function loadCustomerLineIdentity(params: {
     // Forecast table is optional for Raw Data.
   }
 
-  const groups = await loadInforCustomerGroups(params.companyId);
+  const groups = await loadCustomerGroups(params.companyId);
   return { byItem, customerGroup: resolveCustomerGroup(groups, params.customerId, params.customerName) };
 }
 

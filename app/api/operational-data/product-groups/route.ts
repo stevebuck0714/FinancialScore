@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { asForecastYear, assertProductsForecastAccess, ensureProductRevenueTables } from '@/lib/operations/product-revenue-actual-db';
-import { loadInforCustomerGroups, resolveCustomerGroup } from '@/lib/operations/infor-customer-groups';
+import { loadCustomerGroups, resolveCustomerGroup } from '@/lib/operations/customer-groups';
 import { loadProductGroupDataset } from '@/lib/operations/product-group-reports';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
 import { ATLANTIC_PRECISION_COMPANY_ID } from '@/lib/operations/product-group-report-warmup';
@@ -67,7 +67,7 @@ async function buildGroupReportPayload(companyId: string, year: number) {
       select: { year: true, customerId: true, customerName: true, actualRevenue: true },
       orderBy: [{ year: 'asc' }, { customerName: 'asc' }],
     }),
-    loadInforCustomerGroups(companyId),
+    loadCustomerGroups(companyId),
   ]);
   const historyByGroup = new Map<string, { key: string; label: string; values: Record<string, number>; total: number }>();
   const monthKeys = new Set<string>();

@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { loadInforCustomerGroups, withInforCustomerGroups } from '@/lib/operations/infor-customer-groups';
+import { loadCustomerGroups, withCustomerGroups } from '@/lib/operations/customer-groups';
 import {
   FORECAST_MONTHS,
   actualsClosedThrough,
@@ -1151,8 +1151,8 @@ export async function loadRevenueDataset(params: {
 
   const includeLines = Boolean(customerId || customerName || params.includeAllLines);
   const dataThru = shipped.actuals.ok ? actualsClosedThrough(year, shipped.actuals.asOf) : null;
-  // Stored groups stay as price keys; displayed groups come from Infor.
-  const customerGroups = includeLines ? await loadInforCustomerGroups(companyId) : new Map<string, string>();
+  // Prices match on each row's stored group; the displayed group is the customer's one group.
+  const customerGroups = includeLines ? await loadCustomerGroups(companyId) : new Map<string, string>();
   return {
     year,
     catalogSourceYear,
@@ -1165,7 +1165,7 @@ export async function loadRevenueDataset(params: {
       : allLines.length,
     totals: summarizeRevenueLines(includeLines ? scoped : allLines, dataThru),
     lines: includeLines
-      ? withInforCustomerGroups(scoped, customerGroups).map((line) => serializeJoinedRevenueLine(line, dataThru))
+      ? withCustomerGroups(scoped, customerGroups).map((line) => serializeJoinedRevenueLine(line, dataThru))
       : [],
   };
 }

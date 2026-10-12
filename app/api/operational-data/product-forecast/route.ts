@@ -22,7 +22,7 @@ import {
   loadProductForecastLinesWithCatalog,
 } from '@/lib/operations/product-catalog-carryforward';
 
-import { loadInforCustomerGroups, withInforCustomerGroups } from '@/lib/operations/infor-customer-groups';
+import { loadCustomerGroups, saveCustomerGroup, withCustomerGroups } from '@/lib/operations/customer-groups';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
 import { getActiveSgpBudgetLock } from '@/lib/operations/product-sgp-budget-lock';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
           customerName,
         });
         const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
-        const customerGroups = await loadInforCustomerGroups(companyId);
+        const customerGroups = await loadCustomerGroups(companyId);
 
         return {
           year,
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
           dataThru,
           customers: customerPayload,
           lines: forecastLinesWithActuals(
-            withInforCustomerGroups(lines.map(serializeForecastLine), customerGroups),
+            withCustomerGroups(lines.map(serializeForecastLine), customerGroups),
             actualQty,
             dataThru
           ),
@@ -152,10 +152,14 @@ export async function PUT(request: NextRequest) {
     }
 
     const rawLines = Array.isArray(body.lines) ? body.lines : [];
-    // Group is read-only on the page (Infor corporate customer), so saves keep the stored price-key group.
+    const customerGroup =
+      asText(body.customerGroup) ||
+      rawLines.map((raw) => asText((raw as Record<string, unknown>)?.customerGroup)).find(Boolean) ||
+      '';
+    // A customer has one group, so every row takes the customer's group.
     const lines = rawLines.map((raw, index) => ({
       ...normalizeForecastLineInput(raw as ProductRevenueForecastLineInput, { customerId, customerName }, index),
-      customerGroup: null,
+      customerGroup: customerGroup || null,
     }));
     if (lines.some((line) => !line.itemSku)) {
       return NextResponse.json({ error: 'Every row needs an APR P/N before saving.' }, { status: 400 });
@@ -171,6 +175,9 @@ export async function PUT(request: NextRequest) {
       sgpLocked: Boolean(sgpLock),
       lines,
     });
+    if (customerId && customerGroup) {
+      await saveCustomerGroup({ companyId, customerId, customerGroup });
+    }
     scheduleOperationalCacheWarmupAfterSave(request, companyId, 'product-forecast');
 
     const saved = await loadProductForecastLinesWithCatalog({
@@ -186,14 +193,14 @@ export async function PUT(request: NextRequest) {
       customerName,
     });
     const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
-    const customerGroups = await loadInforCustomerGroups(companyId);
+    const customerGroups = await loadCustomerGroups(companyId);
 
     return NextResponse.json({
       ok: true,
       year,
       dataThru,
       lines: forecastLinesWithActuals(
-        withInforCustomerGroups(saved.map(serializeForecastLine), customerGroups),
+        withCustomerGroups(saved.map(serializeForecastLine), customerGroups),
         actualQty,
         dataThru
       ),

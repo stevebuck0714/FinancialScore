@@ -90,7 +90,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Select a customer before saving rows.' }, { status: 400 });
     }
 
-    // Group is read-only on the page (Infor corporate customer), so saves keep the stored price-key group.
+    // Group is read-only here and set on the Volume Forecast page, so saves keep the stored group.
     const lines = rawLines.map((raw, index) => ({
       ...normalizeRevenueLineInput(raw as ProductRevenueLineInput, { customerId, customerName }, index),
       customerGroup: null,
