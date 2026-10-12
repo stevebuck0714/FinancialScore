@@ -8340,7 +8340,6 @@ export async function GET(request: NextRequest) {
             FROM aged
             GROUP BY 1
             ORDER BY "totalDue" DESC
-            LIMIT 25
           `;
           unpaidByVendor = vendorAgingRows.map((row) => ({
             vendorName: String(row.vendorName || 'Unknown Vendor'),
@@ -8620,7 +8619,7 @@ export async function GET(request: NextRequest) {
                 totalDue,
               }))
               .sort((a, b) => b.totalDue - a.totalDue);
-            if (!unpaidByVendor.length) unpaidByVendor = derived.slice(0, 25);
+            if (!unpaidByVendor.length) unpaidByVendor = derived;
             if (!vendorBills.length) {
               vendorBills = derived.slice(0, 500).map((row, idx) => ({
                 vendorName: row.vendorName,
@@ -9030,8 +9029,7 @@ export async function GET(request: NextRequest) {
                 acc.totalDue += amount;
               }
               unpaidByVendor = Array.from(vendorTotals.values())
-                .sort((a, b) => b.totalDue - a.totalDue)
-                .slice(0, 25) as any;
+                .sort((a, b) => b.totalDue - a.totalDue) as any;
 
               const vouchersByAmount = [...openVouchers].sort(
                 (a, b) => Number(b.openBalance || 0) - Number(a.openBalance || 0)

@@ -975,6 +975,7 @@ export default function OperationsTab({
   const [selectedInvoiceCustomer, setSelectedInvoiceCustomer] = useState('All');
   const [apSummaryPage, setApSummaryPage] = useState(1);
   const [unpaidBillsPage, setUnpaidBillsPage] = useState(1);
+  const [unpaidBillsSort, setUnpaidBillsSort] = useState<{ key: 'vendorName' | 'date' | 'dueDate' | 'amountDue'; dir: 'asc' | 'desc' }>({ key: 'amountDue', dir: 'desc' });
   const [demandSortKey, setDemandSortKey] = useState<'customer' | 'bookingsMtd' | 'bookingsQtd' | 'bookingsYtd' | 'backlogTotal' | 'backlog60' | 'shareBacklog' | 'trend'>('backlogTotal');
   const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
   const [customerDateRangeSaveStatus, setCustomerDateRangeSaveStatus] = useState<string | null>(null);
@@ -8536,6 +8537,28 @@ export default function OperationsTab({
       { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0, totalDue: 0 }
     );
     const unpaidBillsTotalDue = unpaidBills.reduce((sum, row) => sum + Number(row.amountDue || 0), 0);
+    const UNPAID_BILLS_PAGE_SIZE = 15;
+    const unpaidBillsPageCount = Math.max(1, Math.ceil(unpaidBills.length / UNPAID_BILLS_PAGE_SIZE));
+    const sortedUnpaidBills = [...unpaidBills].sort((a: any, b: any) => {
+      const { key, dir } = unpaidBillsSort;
+      const factor = dir === 'asc' ? 1 : -1;
+      if (key === 'amountDue') return (Number(a.amountDue || 0) - Number(b.amountDue || 0)) * factor;
+      const left = String(a[key] || '');
+      const right = String(b[key] || '');
+      if (!left && right) return 1;
+      if (left && !right) return -1;
+      return left.localeCompare(right, undefined, { sensitivity: 'base' }) * factor;
+    });
+    const toggleUnpaidBillsSort = (key: 'vendorName' | 'date' | 'dueDate' | 'amountDue') => {
+      setUnpaidBillsSort((current) =>
+        current.key === key
+          ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+          : { key, dir: key === 'amountDue' ? 'desc' : 'asc' }
+      );
+      setUnpaidBillsPage(1);
+    };
+    const unpaidBillsSortIndicator = (key: 'vendorName' | 'date' | 'dueDate' | 'amountDue') =>
+      unpaidBillsSort.key === key ? (unpaidBillsSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
     const paidBills = (summary?.paidBills || [])
       .map((row: any) => ({
         vendorName: row.vendorName || row.vendor,
@@ -8681,7 +8704,7 @@ export default function OperationsTab({
         </h2>
 
         {/* KPI Cards */}
-        {summary && (
+        {summary && isSectionEnabled('apSummaryCards') && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '24px' }}>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total AP</div>
@@ -8765,6 +8788,14 @@ export default function OperationsTab({
         )}
 
         {/* AP Aging Trend Chart */}
+        {isSectionEnabled('apAgingTrend') && (
+        <OperationalReportPanel
+          reportKey="apAgingTrend"
+          canReorder={canManageReportLayout}
+          isSaving={savingReportLayout}
+          onMove={moveStandardReport}
+          style={getReportPanelStyle('apAgingTrend', { gridColumn: '1 / -1', minWidth: 0 })}
+        >
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             AP Aging Trend
@@ -8813,8 +8844,18 @@ export default function OperationsTab({
             </BarChart>
           </ResponsiveContainer>
         </div>
+        </OperationalReportPanel>
+        )}
 
         {/* Unpaid Bills by Vendor (Top 10) */}
+        {isSectionEnabled('apUnpaidByVendor') && (
+        <OperationalReportPanel
+          reportKey="apUnpaidByVendor"
+          canReorder={canManageReportLayout}
+          isSaving={savingReportLayout}
+          onMove={moveStandardReport}
+          style={getReportPanelStyle('apUnpaidByVendor', { gridColumn: '1 / -1', minWidth: 0 })}
+        >
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>
             Unpaid Bills Amount by Vendor (Top 10)
@@ -8875,9 +8916,19 @@ export default function OperationsTab({
             </div>
           )}
         </div>
+        </OperationalReportPanel>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
           {/* Bill Summary Table */}
+          {isSectionEnabled('apBillSummary') && (
+          <OperationalReportPanel
+            reportKey="apBillSummary"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('apBillSummary', { minWidth: 0 })}
+          >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
               Bill Summary Table
@@ -8994,8 +9045,18 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
+          )}
 
           {/* Unpaid Bills */}
+          {isSectionEnabled('apUnpaidBills') && (
+          <OperationalReportPanel
+            reportKey="apUnpaidBills"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('apUnpaidBills', { minWidth: 0 })}
+          >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Unpaid Bills
@@ -9005,10 +9066,21 @@ export default function OperationsTab({
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
-                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
-                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
-                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                      {([
+                        ['vendorName', 'Vendor', 'left'],
+                        ['date', 'Date', 'left'],
+                        ['dueDate', 'Due Date', 'left'],
+                        ['amountDue', 'Amount Due', 'right'],
+                      ] as const).map(([key, label, align]) => (
+                        <th
+                          key={key}
+                          onClick={() => toggleUnpaidBillsSort(key)}
+                          aria-sort={unpaidBillsSort.key === key ? (unpaidBillsSort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                          style={{ textAlign: align, padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                        >
+                          {label}{unpaidBillsSortIndicator(key)}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -9020,8 +9092,8 @@ export default function OperationsTab({
                         {formatCurrency(unpaidBillsTotalDue)}
                       </td>
                     </tr>
-                    {unpaidBills
-                      .slice((unpaidBillsPage - 1) * 8, unpaidBillsPage * 8)
+                    {sortedUnpaidBills
+                      .slice((unpaidBillsPage - 1) * UNPAID_BILLS_PAGE_SIZE, unpaidBillsPage * UNPAID_BILLS_PAGE_SIZE)
                       .map((row, index) => (
                         <tr key={`${row.vendorName}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
@@ -9043,8 +9115,8 @@ export default function OperationsTab({
             {unpaidBills.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
                 <span>
-                  {Math.min((unpaidBillsPage - 1) * 8 + 1, unpaidBills.length)}-
-                  {Math.min(unpaidBillsPage * 8, unpaidBills.length)} of {unpaidBills.length}
+                  {Math.min((unpaidBillsPage - 1) * UNPAID_BILLS_PAGE_SIZE + 1, unpaidBills.length)}-
+                  {Math.min(unpaidBillsPage * UNPAID_BILLS_PAGE_SIZE, unpaidBills.length)} of {unpaidBills.length}
                 </span>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -9061,14 +9133,14 @@ export default function OperationsTab({
                     Prev
                   </button>
                   <button
-                    onClick={() => setUnpaidBillsPage((page) => Math.min(Math.ceil(unpaidBills.length / 8), page + 1))}
-                    disabled={unpaidBillsPage >= Math.ceil(unpaidBills.length / 8)}
+                    onClick={() => setUnpaidBillsPage((page) => Math.min(unpaidBillsPageCount, page + 1))}
+                    disabled={unpaidBillsPage >= unpaidBillsPageCount}
                     style={{
                       padding: '4px 8px',
                       borderRadius: '6px',
                       border: '1px solid #e2e8f0',
-                      background: unpaidBillsPage >= Math.ceil(unpaidBills.length / 8) ? '#f1f5f9' : 'white',
-                      cursor: unpaidBillsPage >= Math.ceil(unpaidBills.length / 8) ? 'not-allowed' : 'pointer'
+                      background: unpaidBillsPage >= unpaidBillsPageCount ? '#f1f5f9' : 'white',
+                      cursor: unpaidBillsPage >= unpaidBillsPageCount ? 'not-allowed' : 'pointer'
                     }}
                   >
                     Next
@@ -9077,10 +9149,20 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
           {/* Paid Bills Table */}
+          {isSectionEnabled('apPaidByVendor') && (
+          <OperationalReportPanel
+            reportKey="apPaidByVendor"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('apPaidByVendor', { minWidth: 0 })}
+          >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Paid Bills by Vendor
@@ -9120,8 +9202,18 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
+          )}
 
           {/* Last 12 Month Bills Paid */}
+          {isSectionEnabled('apPaidLast12Months') && (
+          <OperationalReportPanel
+            reportKey="apPaidLast12Months"
+            canReorder={canManageReportLayout}
+            isSaving={savingReportLayout}
+            onMove={moveStandardReport}
+            style={getReportPanelStyle('apPaidLast12Months', { minWidth: 0 })}
+          >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Last 12 Month Bills Paid
@@ -9165,6 +9257,8 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          </OperationalReportPanel>
+          )}
         </div>
 
         {(isSectionEnabled('apPaymentCadenceTrend') || isSectionEnabled('apPastDueRiskQueue')) && (

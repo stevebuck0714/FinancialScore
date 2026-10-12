@@ -37,8 +37,16 @@ export function orderSortableReportItems<TItem extends SortableReportItem<unknow
     includedIds.add(id);
   }
 
+  // Reports missing from the saved order keep their page position: each lands
+  // right after the report that precedes it on the page.
+  let previousId: string | null = null;
   for (const item of suppliedItems) {
-    if (!includedIds.has(item.id)) ordered.push(item);
+    if (!includedIds.has(item.id)) {
+      const anchorIndex = previousId ? ordered.findIndex((entry) => entry.id === previousId) : -1;
+      ordered.splice(anchorIndex + 1, 0, item);
+      includedIds.add(item.id);
+    }
+    previousId = item.id;
   }
 
   return ordered;
