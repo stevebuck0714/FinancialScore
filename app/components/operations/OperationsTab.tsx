@@ -1088,6 +1088,7 @@ export default function OperationsTab({
   const [residentialAttachGoals, setResidentialAttachGoals] = useState({ mortgagePct: '49', titlePct: '58', insurancePct: '35' });
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('');
   const [wholesaleRawItemSearch, setWholesaleRawItemSearch] = useState('');
+  const [wholesaleRawOrderSearch, setWholesaleRawOrderSearch] = useState('');
   const [wholesaleRawCustomers, setWholesaleRawCustomers] = useState<WholesaleRawCustomerOption[]>([]);
   const [wholesaleRawCustomersLoading, setWholesaleRawCustomersLoading] = useState(false);
   const [wholesaleRawCustomerLines, setWholesaleRawCustomerLines] = useState<any[]>([]);
@@ -10771,9 +10772,18 @@ export default function OperationsTab({
       .map((row) => row.isoDate)
       .sort((a, b) => a.localeCompare(b))[0] || '';
     const wholesaleRawItemSearchTerm = wholesaleRawItemSearch.trim().toLowerCase();
-    const matchesWholesaleRawItemSearch = (row: { item: string }) =>
-      !wholesaleRawItemSearchTerm || row.item.toLowerCase().includes(wholesaleRawItemSearchTerm);
-    const wholesaleRawFilteredRows = wholesaleRawItemSearchTerm
+    const wholesaleRawOrderSearchTerm = wholesaleRawOrderSearch.trim().toLowerCase();
+    const isWholesaleRawSearchActive = Boolean(wholesaleRawItemSearchTerm || wholesaleRawOrderSearchTerm);
+    const wholesaleRawSearchDescription = [
+      wholesaleRawItemSearchTerm ? `item "${wholesaleRawItemSearch.trim()}"` : '',
+      wholesaleRawOrderSearchTerm ? `order "${wholesaleRawOrderSearch.trim()}"` : '',
+    ]
+      .filter(Boolean)
+      .join(' and ');
+    const matchesWholesaleRawItemSearch = (row: { item: string; order?: string }) =>
+      (!wholesaleRawItemSearchTerm || row.item.toLowerCase().includes(wholesaleRawItemSearchTerm)) &&
+      (!wholesaleRawOrderSearchTerm || String(row.order || '').toLowerCase().includes(wholesaleRawOrderSearchTerm));
+    const wholesaleRawFilteredRows = isWholesaleRawSearchActive
       ? wholesaleRawBaseRows.filter(matchesWholesaleRawItemSearch)
       : wholesaleRawBaseRows;
     const wholesaleRawTextSortKeys = new Set<WholesaleRawSortKey>([
@@ -10853,7 +10863,7 @@ export default function OperationsTab({
         })
         .filter((row) => row.isoDate)
     );
-    const wholesaleRawFilledFilteredRows = wholesaleRawItemSearchTerm
+    const wholesaleRawFilledFilteredRows = isWholesaleRawSearchActive
       ? wholesaleRawFilledBaseRows.filter(matchesWholesaleRawItemSearch)
       : wholesaleRawFilledBaseRows;
     const sortedWholesaleRawFilledRows = [...wholesaleRawFilledFilteredRows].sort((a, b) => {
@@ -11784,7 +11794,7 @@ export default function OperationsTab({
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
         { key: 'qty', label: 'Qty ordered', align: 'right', width: '72px', maxWidth: '86px', render: (row) => formatRawQty(row.qty) },
         { key: 'qtyShipped', label: 'Qty shipped', align: 'right', width: '76px', maxWidth: '90px', render: (row) => (row.qtyShipped == null || !Number.isFinite(Number(row.qtyShipped)) ? '' : formatRawQty(row.qtyShipped)) },
-        { key: 'unitPrice', label: 'Unit Price', align: 'right', render: (row) => formatCurrencyWithCents(row.unitPrice) },
+        { key: 'unitPrice', label: 'Unit Price', align: 'right', render: (row) => formatMoney(Number(row.unitPrice || 0), { currency: moneyCurrency, locale: moneyLocale, decimals: 4 }) },
         { key: 'revenue', label: 'Revenue', align: 'right', render: (row) => formatCurrencyWithCents(row.revenue) },
       ];
       const openRawColumns: typeof rawColumns = [
@@ -11816,8 +11826,8 @@ export default function OperationsTab({
         ? 'Loading open order lines...'
         : wholesaleRawLinesError
         ? wholesaleRawLinesError
-        : wholesaleRawItemSearchTerm
-        ? `No open order lines match item "${wholesaleRawItemSearch.trim()}".`
+        : isWholesaleRawSearchActive
+        ? `No open order lines match ${wholesaleRawSearchDescription}.`
         : 'No open order lines match the selected customer.';
 
       const statusChip = (label: 'Open' | 'Filled') => (
@@ -11870,6 +11880,14 @@ export default function OperationsTab({
               placeholder="Search Item ID"
               aria-label="Search Item ID"
               style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '200px', background: 'white' }}
+            />
+            <input
+              type="search"
+              value={wholesaleRawOrderSearch}
+              onChange={(event) => setWholesaleRawOrderSearch(event.target.value)}
+              placeholder="Search Order #"
+              aria-label="Search Order #"
+              style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '160px', background: 'white' }}
             />
             </div>
           </div>
@@ -12086,8 +12104,8 @@ export default function OperationsTab({
                               ? 'Loading filled order lines...'
                               : wholesaleRawFilledError
                               ? wholesaleRawFilledError
-                              : wholesaleRawItemSearchTerm
-                              ? `No filled order lines match item "${wholesaleRawItemSearch.trim()}".`
+                              : isWholesaleRawSearchActive
+                              ? `No filled order lines match ${wholesaleRawSearchDescription}.`
                               : 'No filled order lines are stored for this customer in the loaded window.'}
                           </td>
                         </tr>
