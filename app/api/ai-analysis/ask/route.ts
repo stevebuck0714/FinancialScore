@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { getOpenAiClient, isUsingGateway } from '@/lib/ai-gateway';
-import { runAskDataAgent } from '@/lib/ask-corelytics/agent';
+import { runAskDataAgent, type AskPartialAnswer } from '@/lib/ask-corelytics/agent';
+import { listAskDatasets } from '@/lib/ask-corelytics/data-tools';
 import { appendTurnToThread } from '@/lib/ask-corelytics/threads';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
@@ -2386,7 +2387,7 @@ async function generateAskJson(params: {
 
 export async function runAskCorelyticsLegacy(
   request: NextRequest,
-  options?: { onProgress?: (message: string) => void },
+  options?: { onProgress?: (message: string) => void; onPartialAnswer?: (partial: AskPartialAnswer | null) => void },
 ) {
   const requestStartedAt = Date.now();
   const progress = (message: string) => {
@@ -2394,6 +2395,13 @@ export async function runAskCorelyticsLegacy(
       options?.onProgress?.(message);
     } catch {
       // Progress is best-effort; a closed client stream must not break the answer.
+    }
+  };
+  const partialAnswer = (partial: AskPartialAnswer | null) => {
+    try {
+      options?.onPartialAnswer?.(partial);
+    } catch {
+      // Partial answers are best-effort, like progress.
     }
   };
   try {
@@ -2457,6 +2465,13 @@ export async function runAskCorelyticsLegacy(
     const now = new Date();
     const useExternalSources = uiMode === 'document' ? false : shouldUseExternalSources(question, useExternalSourcesOverride);
     const requestedCount = parseRequestedCount(question);
+    const agentDatasetsPromise =
+      uiMode === 'default' && !useExternalSources
+        ? listAskDatasets(companyId).catch((error) => {
+            console.error('AI Analysis ask: failed to preload datasets', error);
+            return null;
+          })
+        : null;
     const start35 = new Date(now.getTime() - 35 * DAY_MS);
     const [cashDaily, arDaily, apDaily, customersDaily] = await Promise.all([
       prisma.cashSnapshot.findMany({
@@ -2995,10 +3010,12 @@ export async function runAskCorelyticsLegacy(
           companyName: companyName || company?.name || '',
           question,
           contextSummary: internalSummary,
+          datasets: agentDatasetsPromise ? await agentDatasetsPromise : null,
           conversationContext,
           sources: sourcesWithDoc,
           deadlineMs: requestStartedAt + ASK_AGENT_BUDGET_MS,
           onProgress: progress,
+          onPartialAnswer: partialAnswer,
         });
         if (agentAnswer) {
           console.log('AI Analysis ask: data agent answered', {
@@ -3018,6 +3035,7 @@ export async function runAskCorelyticsLegacy(
           });
         }
       } catch (agentError) {
+        partialAnswer(null);
         console.error('AI Analysis ask: data agent failed, using single-prompt fallback', agentError);
       }
     }
@@ -3237,8 +3255,9 @@ export async function runAskCorelyticsLegacy(
 }
 
 /**
- * With `stream: true` in the body, responds with NDJSON: `progress` and `heartbeat`
- * lines while the answer is built, then one `result` line carrying the HTTP status
+ * With `stream: true` in the body, responds with NDJSON: `progress`, `partial` (answer text
+ * so far, or `reset: true` to clear it) and `heartbeat` lines while the answer is built,
+ * then one `result` line carrying the HTTP status
  * and the same payload the non-streaming response would return.
  */
 export async function POST(request: NextRequest) {
@@ -3259,7 +3278,10 @@ export async function POST(request: NextRequest) {
         }
       };
       const heartbeat = setInterval(() => send({ type: 'heartbeat' }), 10_000);
-      runAskAndSave(request, body, (message) => send({ type: 'progress', message }))
+      runAskAndSave(request, body, {
+        onProgress: (message) => send({ type: 'progress', message }),
+        onPartialAnswer: (partial) => send(partial ? { type: 'partial', ...partial } : { type: 'partial', reset: true }),
+      })
         .then(async (response) => {
           const payload = await response.json().catch(() => null);
           send({ type: 'result', status: response.status, payload: payload ?? { error: 'Failed to read Ask Corelytics answer' } });
@@ -3293,8 +3315,12 @@ export async function POST(request: NextRequest) {
   });
 }
 
-async function runAskAndSave(request: NextRequest, body: any, onProgress?: (message: string) => void): Promise<Response> {
-  const response = await runAskCorelyticsLegacy(request, { onProgress });
+async function runAskAndSave(
+  request: NextRequest,
+  body: any,
+  callbacks?: { onProgress?: (message: string) => void; onPartialAnswer?: (partial: AskPartialAnswer | null) => void },
+): Promise<Response> {
+  const response = await runAskCorelyticsLegacy(request, callbacks);
   const shouldSave = body?.saveToThread === true && String(body?.mode || '').toLowerCase() !== 'document';
   if (!shouldSave || !response.ok) return response;
 

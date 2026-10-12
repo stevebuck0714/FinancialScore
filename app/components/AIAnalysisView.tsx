@@ -128,6 +128,7 @@ export default function AIAnalysisView(props: {
   const [askQuestion, setAskQuestion] = useState('');
   const [askLoading, setAskLoading] = useState(false);
   const [askProgress, setAskProgress] = useState<{ message: string; startedAt: number } | null>(null);
+  const [askPartial, setAskPartial] = useState<{ shortAnswer: string; longAnswer: string } | null>(null);
   const [askClock, setAskClock] = useState(0);
   const [askError, setAskError] = useState<string | null>(null);
   const [askResponse, setAskResponse] = useState<AskResponse | null>(null);
@@ -572,6 +573,7 @@ export default function AIAnalysisView(props: {
     } else {
       setAskLoading(true);
       setAskProgress({ message: 'Sending question', startedAt: Date.now() });
+      setAskPartial(null);
       setAskError(null);
       setAskResponse(null);
       askAbortRef.current = controller;
@@ -613,6 +615,12 @@ export default function AIAnalysisView(props: {
           }
           if (event?.type === 'progress' && event.message) {
             setAskProgress((prev) => ({ message: String(event.message), startedAt: prev?.startedAt ?? Date.now() }));
+          } else if (event?.type === 'partial') {
+            setAskPartial(
+              event.reset || !event.shortAnswer
+                ? null
+                : { shortAnswer: String(event.shortAnswer), longAnswer: String(event.longAnswer || '') },
+            );
           } else if (event?.type === 'result') {
             result = { status: Number(event.status) || 500, payload: event.payload };
           }
@@ -682,6 +690,7 @@ export default function AIAnalysisView(props: {
       } else {
         setAskLoading(false);
         setAskProgress(null);
+        setAskPartial(null);
         if (askAbortRef.current === controller) askAbortRef.current = null;
       }
     }
@@ -951,6 +960,21 @@ export default function AIAnalysisView(props: {
         <div role="status" aria-live="polite" style={{ fontSize: '13px', color: '#0369a1', display: 'flex', gap: '8px', alignItems: 'center' }}>
           <span>{askProgress.message}…</span>
           <span style={{ color: '#64748b' }}>{askElapsedSec}s</span>
+        </div>
+      )}
+      {askLoading && askPartial && (
+        <div style={{ display: 'grid', gap: '10px', padding: '12px', background: 'white', border: '1px solid #bae6fd', borderRadius: '10px' }}>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 800, color: '#0369a1', marginBottom: '4px' }}>Short answer</div>
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>{askPartial.shortAnswer}</div>
+          </div>
+          {askPartial.longAnswer && (
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0369a1', marginBottom: '4px' }}>Long answer</div>
+              <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{askPartial.longAnswer}</div>
+            </div>
+          )}
+          <div style={{ fontSize: '12px', color: '#64748b' }}>Still writing; supporting bullets appear when the answer is complete.</div>
         </div>
       )}
       {isFollowUp && (
