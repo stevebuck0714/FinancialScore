@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditLog } from '@/lib/audit-logger';
 import { askThreadErrorResponse, listShareCandidates } from '@/lib/ask-corelytics/threads';
+import { sendAskThreadSharedEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,54 @@ async function listShares(threadId: string) {
     sharedTurnCount: share.sharedTurnCount,
     message: share.message,
   }));
+}
+
+async function notifyShareRecipients(params: {
+  request: NextRequest;
+  threadId: string;
+  companyId: string;
+  sharedByUserId: string;
+  sharedByEmail: string;
+  recipientUserIds: string[];
+  questionCount: number;
+  sharedAt: Date;
+  message: string;
+}) {
+  try {
+    const [thread, company, sharer, recipients] = await Promise.all([
+      prisma.askThread.findUnique({ where: { id: params.threadId }, select: { title: true } }),
+      prisma.company.findUnique({ where: { id: params.companyId }, select: { name: true } }),
+      prisma.user.findUnique({ where: { id: params.sharedByUserId }, select: { name: true, email: true } }),
+      prisma.user.findMany({
+        where: { id: { in: params.recipientUserIds } },
+        select: { name: true, email: true },
+      }),
+    ]);
+    const baseUrl = String(
+      process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || params.request.nextUrl.origin || 'http://localhost:3002'
+    ).replace(/\/+$/, '');
+    const sharedByNameOrEmail = sharer?.name?.trim() || sharer?.email || params.sharedByEmail;
+
+    await Promise.all(
+      recipients
+        .filter((recipient) => recipient.email)
+        .map((recipient) =>
+          sendAskThreadSharedEmail({
+            to: recipient.email,
+            recipientName: recipient.name || recipient.email,
+            sharedByNameOrEmail,
+            companyName: company?.name || 'your company',
+            threadTitle: thread?.title || 'Untitled thread',
+            questionCount: params.questionCount,
+            sharedAt: params.sharedAt,
+            message: params.message,
+            openLink: `${baseUrl}/?view=ai-analysis`,
+          }),
+        ),
+    );
+  } catch (error) {
+    console.error('Failed to send Ask Corelytics share notification emails:', error);
+  }
 }
 
 export async function GET(_request: NextRequest, ctx: RouteContext) {
@@ -129,6 +178,18 @@ export async function POST(request: NextRequest, ctx: RouteContext) {
         sharedTurnCount: thread._count.turns,
         messageLength: message.length,
       },
+    });
+
+    await notifyShareRecipients({
+      request,
+      threadId: thread.id,
+      companyId: thread.companyId,
+      sharedByUserId: context.userId,
+      sharedByEmail: context.email,
+      recipientUserIds: requested,
+      questionCount: thread._count.turns,
+      sharedAt: now,
+      message,
     });
 
     return NextResponse.json({ turnCount: thread._count.turns, shares: await listShares(thread.id) });

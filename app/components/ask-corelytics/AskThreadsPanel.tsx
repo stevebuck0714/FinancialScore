@@ -364,7 +364,8 @@ export function ShareThreadDialog(props: { threadId: string; onClose: () => void
           <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>Share thread</div>
           <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: '1.45' }}>
             People get a read-only copy of the {questionCount(turnCount)} in this thread as of now, in their Shared with me list. They can
-            continue it in their own thread. Questions you add later are only included if you share again.
+            continue it in their own thread. Questions you add later are only included if you share again. They&apos;ll get an email letting
+            them know.
           </div>
         </div>
 

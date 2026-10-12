@@ -1165,6 +1165,105 @@ export async function sendWelcomeUserEmail({
   }
 }
 
+interface AskThreadSharedEmailProps {
+  to: string;
+  recipientName: string;
+  sharedByNameOrEmail: string;
+  companyName: string;
+  threadTitle: string;
+  questionCount: number;
+  sharedAt: Date;
+  message?: string | null;
+  openLink: string;
+}
+
+export async function sendAskThreadSharedEmail({
+  to,
+  recipientName,
+  sharedByNameOrEmail,
+  companyName,
+  threadTitle,
+  questionCount,
+  sharedAt,
+  message,
+  openLink,
+}: AskThreadSharedEmailProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping Ask Corelytics share email');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const safeRecipient = escapeHtml(recipientName || to);
+  const safeSharedBy = escapeHtml(sharedByNameOrEmail);
+  const safeCompany = escapeHtml(companyName);
+  const safeTitle = escapeHtml(threadTitle || 'Untitled thread');
+  const safeLink = escapeHtml(openLink);
+  const safeSharedAt = escapeHtml(formatEstDateTime(sharedAt));
+  const questionsLabel = `${questionCount} ${questionCount === 1 ? 'question' : 'questions'}`;
+  const trimmedMessage = String(message || '').trim();
+  const messageBlock = trimmedMessage
+    ? `
+          <table cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 16px;border-collapse:separate;background:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #1F70C1;border-radius:6px;">
+            <tr><td style="padding:12px 16px;color:#334155;font-size:14px;white-space:pre-wrap;">${escapeHtml(trimmedMessage)}</td></tr>
+          </table>`
+    : '';
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: [to],
+      subject: `${sharedByNameOrEmail} shared an Ask Corelytics thread with you - ${companyName}`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Ask Corelytics thread shared</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="680" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:22px 26px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;color:#1e293b;font-size:22px;">An Ask Corelytics thread was shared with you</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">${safeSharedBy} shared a thread for <strong>${safeCompany}</strong>.</p>
+        </td></tr>
+        <tr><td style="padding:20px 26px;">
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;">Hello ${safeRecipient},</p>
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 16px;border-collapse:separate;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+            <tr><td style="padding:12px 16px;color:#475569;font-size:13px;line-height:1.6;">
+              <strong style="color:#0f172a;">Thread:</strong> ${safeTitle}<br />
+              <strong style="color:#0f172a;">Includes:</strong> ${questionsLabel}<br />
+              <strong style="color:#0f172a;">Shared:</strong> ${safeSharedAt}
+            </td></tr>
+          </table>${messageBlock}
+          <p style="margin:0 0 14px;color:#334155;font-size:14px;">
+            Open Ask Corelytics and look under <strong>Shared with me</strong> to read it or continue it in your own thread.
+          </p>
+          <p style="margin:0 0 16px;">
+            <a href="${safeLink}" style="display:inline-block;padding:12px 18px;background:#1F70C1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
+              Open Ask Corelytics
+            </a>
+          </p>
+          <p style="margin:0 0 8px;color:#64748b;font-size:13px;word-break:break-all;">
+            Or paste this link into your browser:<br />
+            <a href="${safeLink}" style="color:#2563eb;text-decoration:none;">${safeLink}</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) throw new Error(`Failed to send email: ${error.message}`);
+    return { success: true, data };
+  } catch (sendError) {
+    console.error('❌ Error sending Ask Corelytics share email:', sendError);
+    return { success: false, error: sendError };
+  }
+}
+
 // Support ticket props
 interface SupportTicketProps {
   subject: string;
