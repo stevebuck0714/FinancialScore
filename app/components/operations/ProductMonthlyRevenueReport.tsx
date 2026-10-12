@@ -143,14 +143,6 @@ function stickyIdentityStyle(index: number, header: boolean): React.CSSPropertie
   };
 }
 
-const qtyInputStyle: React.CSSProperties = {
-  ...inputStyle,
-  width: '100%',
-  minWidth: 0,
-  textAlign: 'right',
-  padding: '5px 2px',
-};
-
 function currentYear(): number {
   return new Date().getFullYear();
 }
@@ -346,18 +338,6 @@ export default function ProductMonthlyRevenueReport({
     setNotice(null);
   };
 
-  const updateMonthRevenue = (id: string, month: ForecastMonth, raw: string) => {
-    const parsed = raw === '' ? 0 : Math.round(Number(raw));
-    const value = Number.isFinite(parsed) ? parsed : 0;
-    setLines((prev) =>
-      prev.map((line) => {
-        if (line.id !== id) return line;
-        return { ...line, actualRevenue: { ...line.actualRevenue, [String(month)]: value } };
-      })
-    );
-    markDirty();
-  };
-
   const handleCustomerChange = (nextKey: string) => {
     if (dirty && !window.confirm('You have unsaved changes. Switch customer without saving?')) return;
     setCustomerKey(nextKey);
@@ -460,20 +440,6 @@ export default function ProductMonthlyRevenueReport({
     minWidth: MONTH_METRIC_COL_PX,
     maxWidth: MONTH_METRIC_COL_PX,
     boxSizing: 'border-box',
-  };
-  const monthInputCellStyle: React.CSSProperties = {
-    padding: 2,
-    borderTop: '1px solid #c7d2fe',
-    background: MONTH_COL_CELL_BG,
-    width: MONTH_METRIC_COL_PX,
-    minWidth: MONTH_METRIC_COL_PX,
-    maxWidth: MONTH_METRIC_COL_PX,
-    boxSizing: 'border-box',
-  };
-  const monthQtyInputStyle: React.CSSProperties = {
-    ...qtyInputStyle,
-    background: '#f5f7ff',
-    borderColor: '#c7d2fe',
   };
   const priorHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
@@ -874,16 +840,7 @@ export default function ProductMonthlyRevenueReport({
                   <td style={monthCellStyle}>
                     {fmtMoney(qtyValue(line.estimatedAdjusted, selectedMonth))}
                   </td>
-                  <td style={monthInputCellStyle}>
-                    <input
-                      type="number"
-                      step="1"
-                      value={Math.round(monthQty(line.actualRevenue, selectedMonth)) || 0}
-                      onChange={(event) => updateMonthRevenue(line.id, selectedMonth, event.target.value)}
-                      style={monthQtyInputStyle}
-                      aria-label={`${monthName} Actual`}
-                    />
-                  </td>
+                  <td style={monthCellStyle}>{fmtMoney(monthQty(line.actualRevenue, selectedMonth))}</td>
                   <td style={monthCellStyle}>
                     {fmtPct(pctRevenueShipped(
                       monthQty(line.actualRevenue, selectedMonth),
