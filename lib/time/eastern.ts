@@ -85,7 +85,10 @@ function lastWeekdayOfMonth(year: number, month: number, weekday: number): strin
   return date.toISOString().slice(0, 10);
 }
 
-/** US federal holidays observed by US QuickBooks Desktop business-day processing. */
+/**
+ * US federal holidays treated as non-business days for every company.
+ * Columbus Day and Veterans Day are excluded because clients work them.
+ */
 export function isUsFederalHoliday(estDate: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(estDate.trim());
   if (!match) return false;
@@ -98,8 +101,6 @@ export function isUsFederalHoliday(estDate: string): boolean {
     observedFederalHoliday(year, 6, 19), // Juneteenth
     observedFederalHoliday(year, 7, 4), // Independence Day
     nthWeekdayOfMonth(year, 9, 1, 1), // Labor Day
-    nthWeekdayOfMonth(year, 10, 1, 2), // Columbus Day
-    observedFederalHoliday(year, 11, 11), // Veterans Day
     nthWeekdayOfMonth(year, 11, 4, 4), // Thanksgiving Day
     observedFederalHoliday(year, 12, 25), // Christmas Day
   ]);
