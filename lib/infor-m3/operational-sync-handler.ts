@@ -241,8 +241,6 @@ function buildUsFederalHolidaySet(fromDate: Date, toDate: Date): Set<string> {
     add(observed(year, 5, 19));
     add(observed(year, 6, 4));
     add(nthWeekdayOfMonthUtc(year, 8, 1, 1));
-    add(nthWeekdayOfMonthUtc(year, 9, 1, 2));
-    add(observed(year, 10, 11));
     add(nthWeekdayOfMonthUtc(year, 10, 4, 4));
     add(observed(year, 11, 25));
   }
