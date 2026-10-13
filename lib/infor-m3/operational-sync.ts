@@ -10914,20 +10914,24 @@ export async function syncInforM3OperationalData(
                         .filter((hash) => hash.length > 0)
                     )
                   );
-                  const existingSameRunRecordCount =
-                    sourceRecordHashes.length > 0
-                      ? await (prisma as any).inforRawRecord.count({
-                          where: {
-                            companyId,
-                            platform: 'INFOR_M3',
-                            syncRunId,
-                            businessDate: snapshotDate,
-                            miProgram: row.miProgram || null,
-                            transaction: req.transaction || null,
-                            sourceRecordHash: { in: sourceRecordHashes },
-                          },
-                        })
-                      : 0;
+                  // Postgres caps a prepared statement at 32,767 bind variables.
+                  const hashCountBatchSize = 10000;
+                  let existingSameRunRecordCount = 0;
+                  for (let hashOffset = 0; hashOffset < sourceRecordHashes.length; hashOffset += hashCountBatchSize) {
+                    existingSameRunRecordCount += Number(
+                      (await (prisma as any).inforRawRecord.count({
+                        where: {
+                          companyId,
+                          platform: 'INFOR_M3',
+                          syncRunId,
+                          businessDate: snapshotDate,
+                          miProgram: row.miProgram || null,
+                          transaction: req.transaction || null,
+                          sourceRecordHash: { in: sourceRecordHashes.slice(hashOffset, hashOffset + hashCountBatchSize) },
+                        },
+                      })) || 0
+                    );
+                  }
                   const reusedSameRunRecords =
                     existingSameRunRecordCount >= sourceRecordHashes.length && sourceRecordHashes.length > 0;
                   if (reusedSameRunRecords) {
