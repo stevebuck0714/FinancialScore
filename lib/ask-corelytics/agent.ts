@@ -3,6 +3,7 @@ import type OpenAI from 'openai';
 import { getAiProviderOptions, isUsingGateway, resolveModelName } from '@/lib/ai-gateway';
 import { formatEstDate } from '@/lib/time/eastern';
 import { ASK_DATA_TOOL_DEFINITIONS, executeAskDataTool } from '@/lib/ask-corelytics/data-tools';
+import { recordAskUsage } from '@/lib/ask-corelytics/usage-log';
 
 type Source = { url: string; title?: string; publishedDate?: string | null; snippet?: string };
 
@@ -33,6 +34,43 @@ function askReasoningEffort(): (typeof REASONING_EFFORTS)[number] | null {
   if (!isUsingGateway()) return null;
   const value = String(process.env.ASK_REASONING_EFFORT || '').trim().toLowerCase();
   return (REASONING_EFFORTS as readonly string[]).includes(value) ? (value as (typeof REASONING_EFFORTS)[number]) : null;
+}
+
+const MIN_TABLE_ROWS = 3;
+const MIDNIGHT_UTC_SUFFIX = /^(\d{4}-\d{2}-\d{2})T00:00:00(?:\.0+)?Z$/;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function compactJsonValue(value: unknown): unknown {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : Number(value.toPrecision(12));
+  if (typeof value === 'string') return value.match(MIDNIGHT_UTC_SUFFIX)?.[1] ?? value;
+  if (Array.isArray(value)) {
+    const items = value.map(compactJsonValue);
+    if (items.length < MIN_TABLE_ROWS || !items.every(isPlainObject)) return items;
+    const columns = [...new Set(items.flatMap((item) => Object.keys(item as Record<string, unknown>)))];
+    return { columns, rows: items.map((item) => columns.map((column) => (item as Record<string, unknown>)[column] ?? null)) };
+  }
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, raw] of Object.entries(value)) {
+      if (raw === null || raw === '') continue;
+      out[key] = compactJsonValue(raw);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Serializes data for the model without dropping information: omits null/empty fields,
+ * trims float noise (554510.3900000001), shortens midnight-UTC timestamps to dates, and
+ * turns arrays of 3+ objects into { columns, rows } so field names are not repeated per row.
+ */
+function toModelJson(value: unknown): string {
+  const plain = JSON.parse(JSON.stringify(value ?? null, (_key, v) => (typeof v === 'bigint' ? Number(v) : v)));
+  return JSON.stringify(compactJsonValue(plain));
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
@@ -190,7 +228,6 @@ function buildAgentContext(summary: Record<string, unknown>): Record<string, unk
   const sector = s.sectorOperationalContext || {};
   const monthlyTotals = Array.isArray(s.monthlyTotalsHistory) ? s.monthlyTotalsHistory : [];
   return {
-    generatedAt: s.generatedAt,
     company: s.company,
     sector: {
       sectorCategory: sector.profile?.sectorCategory ?? null,
@@ -289,8 +326,10 @@ type StreamedRound = {
   finishReason: string | null;
   usage:
     | (OpenAI.Completions.CompletionUsage & {
-        prompt_tokens_details?: { cached_tokens?: number };
+        prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
         completion_tokens_details?: { reasoning_tokens?: number };
+        cache_creation_input_tokens?: number;
+        cost?: number;
       })
     | null;
 };
@@ -371,8 +410,13 @@ export async function runAskDataAgent(params: {
   const tools = datasetsPreloaded
     ? ASK_DATA_TOOL_DEFINITIONS.filter((tool) => tool.function.name !== 'list_datasets')
     : ASK_DATA_TOOL_DEFINITIONS;
-  const contextJson = JSON.stringify(buildAgentContext(params.contextSummary)).slice(0, MAX_CONTEXT_CHARS);
+  const contextJson = toModelJson(buildAgentContext(params.contextSummary)).slice(0, MAX_CONTEXT_CHARS);
   const thread = toThreadMessages(params.conversationContext);
+  // The system message must be byte-identical across questions for the same company and day so
+  // the provider prompt cache is reused; anything per-question or per-thread goes in user messages.
+  const questionText = thread.messages.length > 0
+    ? `Follow-up question: ${question}\n\nResolve references like "that", "it", "those", "same period", or "why" against the earlier turns in this conversation. Re-query data as needed rather than repeating earlier numbers unverified.`
+    : `Question: ${question}`;
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
@@ -381,18 +425,15 @@ export async function runAskDataAgent(params: {
         '',
         'Background context (company profile, sector rules, latest months, KPI ratios vs industry benchmarks). Use the tools for anything beyond this:',
         contextJson,
-        ...(datasetsPreloaded ? ['', 'list_datasets result:', JSON.stringify(params.datasets)] : []),
-        ...(thread.runningSummary
-          ? ['', 'Summary of older turns in this thread:', thread.runningSummary]
-          : []),
+        ...(datasetsPreloaded ? ['', 'list_datasets result:', toModelJson(params.datasets)] : []),
       ].join('\n'),
     },
     ...thread.messages,
     {
       role: 'user',
-      content: thread.messages.length > 0
-        ? `Follow-up question: ${question}\n\nResolve references like "that", "it", "those", "same period", or "why" against the earlier turns in this conversation. Re-query data as needed rather than repeating earlier numbers unverified.`
-        : `Question: ${question}`,
+      content: thread.runningSummary
+        ? `Summary of older turns in this thread:\n${thread.runningSummary}\n\n${questionText}`
+        : questionText,
     },
   ];
 
@@ -405,19 +446,40 @@ export async function runAskDataAgent(params: {
   let llmMsTotal = 0;
   let toolMsTotal = 0;
   let firstAnswerTextMs: number | null = null;
+  let toolResultChars = 0;
+  const usageTotals = { promptTokens: 0, cachedPromptTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0 };
+  let gatewayCostUsd: number | null = null;
   const logSummary = (outcome: string, rounds: number) => {
+    const totalMs = Date.now() - agentStartedAt;
     console.log('Ask agent: finished', {
       outcome,
       model,
       reasoningEffort: reasoningEffort || 'default',
       datasetsPreloaded,
       contextChars: contextJson.length,
+      toolResultChars,
       rounds,
       toolCalls,
+      ...usageTotals,
+      gatewayCostUsd,
       llmMs: llmMsTotal,
       toolMs: toolMsTotal,
       firstAnswerTextMs,
-      totalMs: Date.now() - agentStartedAt,
+      totalMs,
+    });
+    void recordAskUsage({
+      companyId,
+      model,
+      reasoningEffort,
+      outcome,
+      rounds,
+      toolCalls,
+      ...usageTotals,
+      gatewayCostUsd,
+      questionChars: question.length,
+      contextChars: contextJson.length,
+      toolResultChars,
+      totalMs,
     });
   };
 
@@ -460,15 +522,24 @@ export async function runAskDataAgent(params: {
     const llmMs = Date.now() - llmStartedAt;
     llmMsTotal += llmMs;
 
+    const usage = result.usage;
+    const cacheWriteTokens = usage?.prompt_tokens_details?.cache_write_tokens ?? usage?.cache_creation_input_tokens ?? null;
     const roundLog = {
       round: round + 1,
       llmMs,
-      promptTokens: result.usage?.prompt_tokens ?? null,
-      cachedPromptTokens: result.usage?.prompt_tokens_details?.cached_tokens ?? null,
-      completionTokens: result.usage?.completion_tokens ?? null,
-      reasoningTokens: result.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+      promptTokens: usage?.prompt_tokens ?? null,
+      cachedPromptTokens: usage?.prompt_tokens_details?.cached_tokens ?? null,
+      cacheWriteTokens,
+      completionTokens: usage?.completion_tokens ?? null,
+      reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? null,
       finishReason: result.finishReason,
     };
+    usageTotals.promptTokens += roundLog.promptTokens ?? 0;
+    usageTotals.cachedPromptTokens += roundLog.cachedPromptTokens ?? 0;
+    usageTotals.cacheWriteTokens += cacheWriteTokens ?? 0;
+    usageTotals.completionTokens += roundLog.completionTokens ?? 0;
+    usageTotals.reasoningTokens += roundLog.reasoningTokens ?? 0;
+    if (typeof usage?.cost === 'number') gatewayCostUsd = (gatewayCostUsd ?? 0) + usage.cost;
 
     if (result.toolCalls.length > 0) {
       if (partialShown) emitPartial(null);
@@ -492,7 +563,8 @@ export async function runAskDataAgent(params: {
           toolCalls += 1;
           const callStartedAt = Date.now();
           const toolResult = await executeAskDataTool(companyId, call.function.name, call.function.arguments);
-          let content = JSON.stringify(toolResult);
+          let content = toModelJson(toolResult);
+          toolResultChars += Math.min(content.length, MAX_TOOL_RESULT_CHARS);
           toolTimings.push({ name: call.function.name, dataset: described[index].dataset, ms: Date.now() - callStartedAt, chars: content.length });
           if (content.length > MAX_TOOL_RESULT_CHARS) {
             content = `${content.slice(0, MAX_TOOL_RESULT_CHARS)}... [truncated; narrow the query with filters, groupBy, or a smaller limit]`;
