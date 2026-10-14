@@ -9918,7 +9918,7 @@ export default function SiteAdminDashboard(props: any) {
                                               />
                                             </div>
                                             {/* Subscription Pricing */}
-                                            <div style={{ gridRow: 'span 8', padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <div style={{ gridRow: 'span 9', padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
                                               {editing ? (
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -13722,7 +13722,7 @@ export default function SiteAdminDashboard(props: any) {
                                     />
                                   </div>
                                   {/* Subscription Pricing */}
-                                  <div style={{ gridRow: 'span 8', padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
+                                  <div style={{ gridRow: 'span 9', padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
                                     {editing ? (
                                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
