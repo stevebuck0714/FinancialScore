@@ -11,8 +11,10 @@ import {
   isValidLineItem,
   type SdeBucket,
 } from '@/lib/sde/adjustment-line-items';
+import { loadQbdGlMonthlyByAccount, loadQboReportMonthlyByAccount } from '@/lib/sde/account-monthly-sources';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const VALID_BUCKETS = SDE_BUCKETS;
 const BUCKET_LABELS = SDE_BUCKET_LABELS;
@@ -510,10 +512,33 @@ export async function GET(request: NextRequest) {
     // (QuickBooks / Xero / Sage / CSV_FILE) parse FinancialRecord.rawData.
     // Defensive fallback: if the GL probe is empty (e.g. an Infor company
     // that has only ingested rawData so far), still try the CSV path.
+    // QuickBooks companies synced through the connectors never store the
+    // rawData.accounts list, so read their own per-account sources first:
+    // QBD from the General Ledger Detail report pages, QBO from the
+    // monthly-column P&L / Balance Sheet reports on the latest record.
     let monthlyByAccount = new Map<string, Map<string, number>>();
+    let monthlySource: 'gl_transaction_fact' | 'qbd_general_ledger' | 'qbo_reports' | 'rawdata_trial_balance' = 'rawdata_trial_balance';
     if (!isRawDataSystem) {
       monthlyByAccount = await loadGlMonthlyByAccount(companyId, start, end);
+      if (monthlyByAccount.size > 0) monthlySource = 'gl_transaction_fact';
+    } else if (accountingSystem === 'QUICKBOOKS_DESKTOP' || accountingSystem === 'QUICKBOOKS_ENTERPRISE') {
+      monthlyByAccount = await loadQbdGlMonthlyByAccount(companyId, ltmMonths);
+      if (monthlyByAccount.size > 0) monthlySource = 'qbd_general_ledger';
+    } else if (accountingSystem === 'QUICKBOOKS') {
+      const latestRecord = await withPrismaReconnectRetry(
+        () =>
+          prisma.financialRecord.findFirst({
+            where: { companyId },
+            orderBy: { createdAt: 'desc' },
+            select: { rawData: true },
+          }),
+        'sde-ebitda-adjustments.qboLatestRecord',
+      );
+      monthlyByAccount = loadQboReportMonthlyByAccount(latestRecord?.rawData, ltmMonths, nameLookupKeys);
+      if (monthlyByAccount.size > 0) monthlySource = 'qbo_reports';
     }
+    // QBD General Ledger values are period movement only, never month-end balances.
+    const monthlyHasBsBalances = monthlySource !== 'qbd_general_ledger';
     if (monthlyByAccount.size === 0) {
       monthlyByAccount = await loadCsvMonthlyByAccount(companyId, ltmMonths);
     }
@@ -653,7 +678,7 @@ export async function GET(request: NextRequest) {
       } else if (monthMap) {
         if (isBs) {
           // Raw-data path: the per-month value IS the closing balance.
-          ltmRaw = normalizeNumber(monthMap.get(asOfMonthKey) ?? 0);
+          if (monthlyHasBsBalances) ltmRaw = normalizeNumber(monthMap.get(asOfMonthKey) ?? 0);
         } else {
           for (const m of ltmMonths) ltmRaw += normalizeNumber(monthMap.get(m) ?? 0);
         }
@@ -685,11 +710,9 @@ export async function GET(request: NextRequest) {
         accountingSystem,
         asOfMonth,
         ltmWindow: { start: ltmMonths[0], end: ltmMonths[ltmMonths.length - 1], months: ltmMonths },
-        sourceUsed: isRawDataSystem
-          ? 'rawdata_trial_balance'
-          : monthlyByAccount.size > 0
-            ? 'gl_transaction_fact'
-            : 'rawdata_fallback',
+        sourceUsed: isRawDataSystem || monthlySource !== 'rawdata_trial_balance'
+          ? monthlySource
+          : 'rawdata_fallback',
         bsSource: isRawDataSystem
           ? 'rawdata_period_close'
           : bsBalancesByAccount.size > 0
