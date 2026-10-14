@@ -1,0 +1,22 @@
+---
+description: Match existing layouts before adding or moving UI so the same data and controls live in one consistent place
+alwaysApply: true
+---
+
+# UI layout consistency
+
+Before adding, moving, or duplicating any UI, look at how the same kind of thing is already laid out elsewhere in the app and match it.
+
+## Required
+
+- Find the closest existing equivalents first (for example, other operational source cards, other Site Admin containers, other report tables) and copy their structure, placement, labels, and styling.
+- Each piece of data or control has **one** home. Do not show the same control in two places (for example, sync schedule in both the source list and the connection container).
+- New sources/integrations follow the existing pattern for their kind. Example: operational sources use the connection container (credentials, frequency, sync time) beside the Data Domains container; ad hoc date range syncs live only in the source's row in the Operational System Integration list.
+- Keep labels identical across equivalents (same field names, same button names, same order).
+- If the existing pattern itself is inconsistent, point it out and ask which pattern to follow before building.
+
+## Do not
+
+- Invent a new placement or layout for something that already has an established one.
+- Leave a control in its old location after adding it somewhere new.
+- Ship UI that differs from its siblings without telling the user why.

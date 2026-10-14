@@ -5870,13 +5870,11 @@ export default function SiteAdminDashboard(props: any) {
         {selectedSources.length > 0 && (
           <div style={{ display: 'grid', gap: '8px' }}>
             {selectedSources.map((source) => {
-              const frequency = String(source.syncFrequency || 'manual');
-              const autoSync = Boolean(source.autoSync) && frequency !== 'manual';
               const scheduleEnabled = Boolean(source.scheduleEnabled);
               return (
                 <div
                   key={`${companyId}-selected-source-${source.sourceCode}`}
-                  style={{ display: 'grid', gridTemplateColumns: scheduleEnabled ? 'minmax(180px, 1.3fr) repeat(4, minmax(110px, auto))' : 'minmax(180px, 1fr) auto', gap: '8px', alignItems: 'end', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px', fontSize: '12px', color: '#334155' }}
+                  style={{ display: 'grid', gridTemplateColumns: scheduleEnabled ? 'minmax(180px, 240px) 1fr auto' : 'minmax(180px, 1fr) auto', gap: '8px', alignItems: 'start', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px', fontSize: '12px', color: '#334155' }}
                 >
                   <div>
                     <div style={{ fontWeight: 700, color: '#1e293b' }}>{source.label}</div>
@@ -5886,60 +5884,10 @@ export default function SiteAdminDashboard(props: any) {
                     {!scheduleEnabled ? <div style={{ color: '#64748b', marginTop: '2px' }}>Manual upload source. Scheduling is handled by user imports.</div> : null}
                     {source.errorMessage ? <div style={{ color: '#b91c1c', marginTop: '2px' }}>{source.errorMessage}</div> : null}
                   </div>
-                  {scheduleEnabled && <label style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', color: '#475569' }}>
-                    <span style={{ fontWeight: 600 }}>Auto Sync</span>
-                    <select
-                      value={autoSync ? 'YES' : 'NO'}
-                      onChange={(e) =>
-                        updateOperationalSourceScheduleState(companyId, source.sourceCode, {
-                          autoSync: e.target.value === 'YES',
-                          syncFrequency: e.target.value === 'YES' && frequency === 'manual' ? 'daily' : frequency,
-                        })
-                      }
-                      disabled={savingOperationalSourceCompanyId === companyId}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px', background: 'white' }}
-                    >
-                      <option value="YES">On</option>
-                      <option value="NO">Off</option>
-                    </select>
-                  </label>}
-                  {scheduleEnabled && <label style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', color: '#475569' }}>
-                    <span style={{ fontWeight: 600 }}>Frequency</span>
-                    <select
-                      value={frequency}
-                      onChange={(e) =>
-                        updateOperationalSourceScheduleState(companyId, source.sourceCode, {
-                          syncFrequency: e.target.value,
-                          autoSync: e.target.value !== 'manual',
-                        })
-                      }
-                      disabled={savingOperationalSourceCompanyId === companyId}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px', background: 'white' }}
-                    >
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
-                      <option value="manual">Manual</option>
-                    </select>
-                  </label>}
-                  {scheduleEnabled && <label style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', color: '#475569' }}>
-                    <span style={{ fontWeight: 600 }}>Time</span>
-                    <input
-                      type="time"
-                      value={source.syncTime || '08:00'}
-                      onChange={(e) => updateOperationalSourceScheduleState(companyId, source.sourceCode, { syncTime: e.target.value })}
-                      disabled={savingOperationalSourceCompanyId === companyId}
-                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px', fontSize: '12px', background: 'white' }}
-                    />
-                  </label>}
+                  {scheduleEnabled && (
+                    <OperationalDateRangeSync companyId={companyId} sourceCode={source.sourceCode} />
+                  )}
                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                    {scheduleEnabled && <button
-                      onClick={() => saveOperationalSourceSchedule(companyId, source.sourceCode)}
-                      disabled={savingOperationalSourceCompanyId === companyId}
-                      style={{ padding: '8px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: savingOperationalSourceCompanyId === companyId ? 'not-allowed' : 'pointer' }}
-                    >
-                      Save Schedule
-                    </button>}
                     <button
                       onClick={() => removeOperationalSource(companyId, source.sourceCode)}
                       disabled={savingOperationalSourceCompanyId === companyId}
@@ -6059,12 +6007,6 @@ export default function SiteAdminDashboard(props: any) {
             Configure the BambooHR connection and sync schedule here. Connect checks the employee directory and enables scheduled syncs; sync test reads enabled domains and reports counts without importing employee records.
           </div>
         </div>
-
-        {isConnected ? (
-          <div style={{ marginBottom: '8px' }}>
-            <OperationalDateRangeSync companyId={companyId} sourceCode="BAMBOOHR_STANDARD" />
-          </div>
-        ) : null}
 
         {probeResults ? (
           <div style={{ marginBottom: '8px', padding: '8px', background: '#faf5ff', border: '1px solid #d8b4fe', borderRadius: '6px' }}>
