@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto';
 import prisma from '@/lib/prisma';
 import { isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
-import { APP_TIME_ZONE, isEstBusinessDay } from '@/lib/time/eastern';
+import { APP_TIME_ZONE, formatEstDate, isEstBusinessDay, previousEstCalendarDate } from '@/lib/time/eastern';
 
 const QBD_AUTO_QUEUE_TIME_ZONE = APP_TIME_ZONE;
 const QBD_AUTO_QUEUE_DUE_LOOKBACK_HOURS = 4;
+const QBD_PRIOR_MONTH_GL_REPULL_DAYS = 10;
 
 const QBD_MAX_OVERLAP_DAYS = 31;
 
@@ -287,7 +288,28 @@ type AutoFinancialJobSpec = {
   windowIndex: number;
 };
 
-function buildAutoFinancialJobSpecs(startDate: string, endDate: string, requestNames: string[]) {
+/**
+ * General Ledger window for the nightly pull: month-to-date through yesterday (EST),
+ * widened to the full prior month early in a new month. Single-day pulls missed
+ * weekend/holiday dates and anything entered or backdated after a day was pulled.
+ */
+function qbdGeneralLedgerWindow(targetDate: string, now: Date): { startDate: string; endDate: string } {
+  const yesterday = previousEstCalendarDate(now);
+  const endDate = yesterday > targetDate ? yesterday : targetDate;
+  const monthStart = new Date(`${endDate.slice(0, 7)}-01T00:00:00.000Z`);
+  const todayDayOfMonth = Number(formatEstDate(now).slice(8, 10));
+  if (todayDayOfMonth <= QBD_PRIOR_MONTH_GL_REPULL_DAYS) {
+    monthStart.setUTCMonth(monthStart.getUTCMonth() - 1);
+  }
+  return { startDate: dateKey(monthStart), endDate };
+}
+
+function buildAutoFinancialJobSpecs(
+  startDate: string,
+  endDate: string,
+  requestNames: string[],
+  generalLedgerWindow: { startDate: string; endDate: string },
+) {
   const unique = Array.from(new Set(requestNames));
   const monthlyRequests = unique.filter((requestName) => requestName === 'GeneralDetailReportQuery');
   const agingSnapshotRequests = unique.filter((requestName) => QBD_AGING_SNAPSHOT_REQUESTS.has(requestName));
@@ -323,7 +345,7 @@ function buildAutoFinancialJobSpecs(startDate: string, endDate: string, requestN
     ),
     ...monthlyRequests.map((requestName) => ({
       requestName,
-      dateRange: queuedDateRange,
+      dateRange: { ...queuedDateRange, ...generalLedgerWindow },
       windowIndex: 0,
     })),
     ...businessDayDateRanges.flatMap((range) =>
@@ -340,8 +362,17 @@ function buildAutoFinancialJobSpecs(startDate: string, endDate: string, requestN
     ),
   ];
 
+  // The session range drives which months the post-sync rebuild refreshes.
+  const sessionDateRange = monthlyRequests.length > 0
+    ? {
+        ...queuedDateRange,
+        startDate: generalLedgerWindow.startDate < startDate ? generalLedgerWindow.startDate : startDate,
+        endDate: generalLedgerWindow.endDate > endDate ? generalLedgerWindow.endDate : endDate,
+      }
+    : queuedDateRange;
+
   return {
-    queuedDateRange,
+    queuedDateRange: sessionDateRange,
     enabledRequests: unique,
     jobSpecs,
   };
@@ -380,6 +411,7 @@ async function queueCompanyQbdFinancialJobs(params: {
     startDate,
     params.targetDate,
     requestNames,
+    qbdGeneralLedgerWindow(params.targetDate, new Date()),
   );
   if (jobSpecs.length === 0) {
     return {

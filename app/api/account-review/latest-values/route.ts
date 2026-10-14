@@ -290,25 +290,53 @@ async function loadQbdGeneralLedgerRecordsForMonth(
 ): Promise<Record<string, unknown>[]> {
   if (!targetMonth) return loadQbdPageRecords(companyId, 'GeneralDetailReportQuery');
   const monthPrefix = `${targetMonth}%`;
+  // Overlapping GL pulls repeat the same days; keep each txn date from the most
+  // recent batch that contains it (same rule as the QBD monthly rebuild).
   const rows = await withPrismaReconnectRetry(
     () => prisma.$queryRaw<Array<{ item: unknown }>>`
-      SELECT x AS item
-      FROM "QuickBooksDesktopBackfillPage" p
-      CROSS JOIN LATERAL jsonb_array_elements(
-        CASE WHEN jsonb_typeof(p."payload") = 'array' THEN p."payload" ELSE '[]'::jsonb END
-      ) WITH ORDINALITY AS e(x, ord)
-      WHERE p."companyId" = ${companyId}
-        AND p."requestName" = 'GeneralDetailReportQuery'
-        AND x->>'rowKind' = 'DataRow'
-        AND EXISTS (
-          SELECT 1
-          FROM jsonb_array_elements(
-            CASE WHEN jsonb_typeof(x->'colData') = 'array' THEN x->'colData' ELSE '[]'::jsonb END
-          ) c
-          WHERE (c->>'colID' = '3' OR lower(regexp_replace(COALESCE(c->>'colTitle', ''), '[^a-zA-Z]', '', 'g')) IN ('txndate', 'date'))
-            AND c->>'value' LIKE ${monthPrefix}
-        )
-      ORDER BY p."jobId", p."pageNumber", e.ord
+      WITH month_rows AS (
+        SELECT
+          x AS item,
+          p."batchId" AS "batchId",
+          p."createdAt" AS "createdAt",
+          p."jobId" AS "jobId",
+          p."pageNumber" AS "pageNumber",
+          e.ord AS ord,
+          (
+            SELECT c->>'value'
+            FROM jsonb_array_elements(
+              CASE WHEN jsonb_typeof(x->'colData') = 'array' THEN x->'colData' ELSE '[]'::jsonb END
+            ) c
+            WHERE (c->>'colID' = '3' OR lower(regexp_replace(COALESCE(c->>'colTitle', ''), '[^a-zA-Z]', '', 'g')) IN ('txndate', 'date'))
+              AND c->>'value' LIKE ${monthPrefix}
+            LIMIT 1
+          ) AS "txnDate"
+        FROM "QuickBooksDesktopBackfillPage" p
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE WHEN jsonb_typeof(p."payload") = 'array' THEN p."payload" ELSE '[]'::jsonb END
+        ) WITH ORDINALITY AS e(x, ord)
+        WHERE p."companyId" = ${companyId}
+          AND p."requestName" = 'GeneralDetailReportQuery'
+          AND x->>'rowKind' = 'DataRow'
+      ),
+      dated AS (
+        SELECT * FROM month_rows WHERE "txnDate" IS NOT NULL
+      ),
+      latest_batch_by_date AS (
+        SELECT DISTINCT ON ("txnDate") "txnDate", "batchId"
+        FROM (
+          SELECT "txnDate", "batchId", MAX("createdAt") AS "lastSeen"
+          FROM dated
+          GROUP BY "txnDate", "batchId"
+        ) batch_dates
+        ORDER BY "txnDate", "lastSeen" DESC
+      )
+      SELECT d.item
+      FROM dated d
+      JOIN latest_batch_by_date l
+        ON l."txnDate" = d."txnDate"
+       AND l."batchId" IS NOT DISTINCT FROM d."batchId"
+      ORDER BY d."jobId", d."pageNumber", d.ord
     `,
     'account-review.latest-values.loadQbdGeneralLedgerRecordsForMonth',
   );
