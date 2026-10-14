@@ -50,7 +50,7 @@ import PayrollBureauOpsViews from './PayrollBureauOpsViews';
 import PayrollBureauExecutiveScorecard, {
   PAYROLL_BUREAU_EXECUTIVE_CHART_KEYS,
 } from './PayrollBureauExecutiveScorecard';
-import HubSpotSalesTab from './HubSpotSalesTab';
+import CrmSalesTab from './CrmSalesTab';
 import CapTableView from '../cap-table/CapTableView';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile } from '@/lib/operations/sector-mock-data';
@@ -68,11 +68,12 @@ import {
   isAtlanticPrecisionCompany,
   isCogentScientificCompany,
   isCompanySpecificReportForSector,
+  isCompanySpecificReportKey,
   resolveAssignedCompanyReportKeys,
 } from '@/lib/operations/company-specific-reports';
 import ProductGroupReports from './ProductGroupReports';
 import InforNewIdentitiesAlert from './InforNewIdentitiesAlert';
-import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
+import { isCrmSalesTabSwitchedOn, isOperationalModuleAllowed, withCrmSalesTab } from '@/lib/operations/operational-dashboard-access';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import {
   DEFAULT_SGP_OPERATING_EXPENSE_PCT,
@@ -1006,8 +1007,7 @@ export default function OperationsTab({
   const [grossMarginHistoryRollup, setGrossMarginHistoryRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('monthly');
   const [grossMarginHistoryStartDate, setGrossMarginHistoryStartDate] = useState('');
   const [grossMarginHistoryEndDate, setGrossMarginHistoryEndDate] = useState('');
-  const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
-  const [smartCardsLoading, setSmartCardsLoading] = useState(false);
+  const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);  const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
   const [priceCostSearchTerm, setPriceCostSearchTerm] = useState('');
   const [priceCostTableExpanded, setPriceCostTableExpanded] = useState(true);
@@ -1533,6 +1533,7 @@ export default function OperationsTab({
     if (!normalized) return true;
     if (
       normalized === 'hubspot_sales' &&
+      !isCrmSalesTabSwitchedOn(operationalHubSections) &&
       String(industrySectorCategory || '').trim() !== '54' &&
       !isCogentScientificCompany(selectedCompanyId, companyName)
     ) return false;
@@ -1670,7 +1671,7 @@ export default function OperationsTab({
       : resolvedModulesWithGroups;
   const resolvedModules = Array.from(
     new Set([
-      ...resolvedModulesWithProjections,
+      ...withCrmSalesTab(resolvedModulesWithProjections, isCrmSalesTabSwitchedOn(operationalHubSections)),
       ...companyCustomTabKeys.map((key) => resolveModuleKey(key)).filter(Boolean),
     ])
   ).filter((module) => module !== 'groups' || isAtlanticCompany);
@@ -30260,11 +30261,23 @@ Strategies to Improve the CCC
     );
 
     if (moduleKey === 'hubspot_sales') {
+      const salesCompanyReportKeys = new Set(
+        getAssignedCompanyCatalogReports({
+          companyId: selectedCompanyId,
+          companyName,
+          sectorCategory: industrySectorCategory,
+          hubConfig: companyOperationalHubConfig,
+          sections: operationalHubSections,
+          tabKey: 'hubspot_sales',
+        }).map((report) => report.key)
+      );
       return (
-        <HubSpotSalesTab
+        <CrmSalesTab
           selectedCompanyId={selectedCompanyId}
-          useMockData={String(industrySectorCategory || '').trim() === '54'}
-          operationalHubSections={operationalHubSections}
+          isSectionEnabled={(sectionKey) =>
+            isSectionEnabled(sectionKey) &&
+            (!isCompanySpecificReportKey(sectionKey) || salesCompanyReportKeys.has(sectionKey))
+          }
           canReorderReports={canManageReportLayout}
           isSavingReportLayout={savingReportLayout}
           reportOrder={getOperationalHubReportOrder(companyOperationalHubConfig, 'hubspot_sales')}

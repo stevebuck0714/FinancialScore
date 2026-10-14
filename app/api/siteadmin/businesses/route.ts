@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export async function GET() {
   try {
@@ -11,8 +12,13 @@ export async function GET() {
       }
     }
 
-    const rows = await prisma.$queryRaw<Array<{ id: string; name: string }>>`
-      SELECT id, name
+    const rows = await prisma.$queryRaw<Array<{
+      id: string;
+      name: string;
+      industrySector: string | null;
+      industrySectorCategory: string | null;
+    }>>`
+      SELECT id, name, "industrySector", "industrySectorCategory"
       FROM "Company"
       WHERE "consultantId" IS NULL
         AND COALESCE(name, '') NOT LIKE '% (DELETED)%'
@@ -23,6 +29,8 @@ export async function GET() {
       companies: (rows || []).map((row) => ({
         id: row.id,
         name: row.name,
+        industrySector: row.industrySector,
+        industrySectorCategory: resolveCompanyIndustrySectorCategory(row),
         consultantId: null,
       })),
     });

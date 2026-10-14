@@ -40,8 +40,51 @@ export function getCompanyOperationalHubSections(company: OperationalHubCompanyL
   return sections && typeof sections === 'object' && !Array.isArray(sections) ? sections : {};
 }
 
+/** Module key of the CRM Sales tab (HubSpot, HighLevel, ...). */
+export const CRM_SALES_MODULE_KEY = 'hubspot_sales';
+export const CRM_SALES_TAB_SECTION_KEY = `tab:${CRM_SALES_MODULE_KEY}`;
+
+/** Sector sales tabs that the single CRM "Sales" tab replaces when it is on. */
+const CRM_SALES_REPLACED_MODULE_KEYS = ['sales', 'sales_pipeline'];
+
+export type OperationalHubTabOptions = {
+  /** Company has a CRM source selected, so the Sales tab is offered in any sector. */
+  hasCrmSource?: boolean;
+};
+
+/** Sales is switched on in tab customization automatically when a CRM source is added. */
+export function isCrmSalesTabSwitchedOn(sections: Record<string, any> | null | undefined): boolean {
+  return sections?.[CRM_SALES_TAB_SECTION_KEY] === true;
+}
+
+/**
+ * Puts the CRM Sales tab into a tab list, taking the place of any sector
+ * Sales / Sales Pipeline tab so the company only ever has one Sales tab.
+ */
+export function withCrmSalesTab(moduleKeys: string[], include: boolean): string[] {
+  if (!include) return moduleKeys;
+  const result: string[] = [];
+  let placed = false;
+  moduleKeys.forEach((key) => {
+    if (key === CRM_SALES_MODULE_KEY || CRM_SALES_REPLACED_MODULE_KEYS.includes(key)) {
+      if (!placed) result.push(CRM_SALES_MODULE_KEY);
+      placed = true;
+      return;
+    }
+    result.push(key);
+  });
+  if (placed) return result;
+  const trailingIdx = result.findIndex((key) => key === 'daily_financials' || key === 'loans');
+  return trailingIdx < 0
+    ? [...result, CRM_SALES_MODULE_KEY]
+    : [...result.slice(0, trailingIdx), CRM_SALES_MODULE_KEY, ...result.slice(trailingIdx)];
+}
+
 /** Tab categories offered by Site Admin tab customization for a company. */
-export function getOperationalHubTabCategories(company: OperationalHubCompanyLike | null | undefined): OperationalHubTabCategory[] {
+export function getOperationalHubTabCategories(
+  company: OperationalHubCompanyLike | null | undefined,
+  options: OperationalHubTabOptions = {}
+): OperationalHubTabCategory[] {
   const sectorCategory = String(company?.industrySectorCategory || '').trim();
   const isAtlanticCompany = isAtlanticPrecisionCompany(company?.id, company?.name);
   const customTabs = parseOperationalHubCustomTabs(getCompanyOperationalHubSettings(company)).filter((tab) => {
@@ -58,9 +101,10 @@ export function getOperationalHubTabCategories(company: OperationalHubCompanyLik
   })();
   const masterKeys = getSectorMasterTabKeys(sectorCategory);
   const extraKeys = liveKeys.filter((key) => !masterKeys.includes(key) && !customTabKeys.includes(key));
+  const includeCrmSales =
+    Boolean(options.hasCrmSource) || isCrmSalesTabSwitchedOn(getCompanyOperationalHubSections(company));
   const orderedKeys = [
-    ...masterKeys,
-    ...extraKeys,
+    ...withCrmSalesTab([...masterKeys, ...extraKeys], includeCrmSales),
     ...customTabKeys.filter((key) => !liveKeys.includes(key) && !masterKeys.includes(key)),
   ];
   const seen = new Set<string>();
@@ -75,6 +119,7 @@ export function getOperationalHubTabCategories(company: OperationalHubCompanyLik
       const customTab = customTabs.find((tab) => tab.key === moduleKey);
       const label =
         customTab?.label ||
+        (moduleKey === CRM_SALES_MODULE_KEY ? 'Sales' : null) ||
         (source === 'master' ? getSectorMasterTabLabel(sectorCategory, moduleKey) : null) ||
         getOperationalHubModuleLabel(moduleKey, sectorCategory);
       return { moduleKey, label, source };
@@ -91,11 +136,12 @@ export function isOperationalHubTabDefaultEnabled(moduleKey: string, companyId: 
 
 /** Tab categories switched on for the company in Site Admin tab customization. */
 export function getEnabledOperationalDashboardModulesForCompany(
-  company: OperationalHubCompanyLike | null | undefined
+  company: OperationalHubCompanyLike | null | undefined,
+  options: OperationalHubTabOptions = {}
 ): OperationalDashboardModuleAccess[] {
   const sections = getCompanyOperationalHubSections(company);
   return uniqueModules(
-    getOperationalHubTabCategories(company)
+    getOperationalHubTabCategories(company, options)
       .filter((tab) => {
         const explicit = sections[`tab:${tab.moduleKey}`];
         return explicit === undefined

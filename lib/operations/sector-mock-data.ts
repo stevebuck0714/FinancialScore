@@ -393,7 +393,7 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
     { key: 'ar', label: 'AR (subscriptions, billing, renewals)' },
     { key: 'ap', label: 'AP' },
     { key: 'product_platform', label: 'Product / Platform (usage, uptime, releases)' },
-    { key: 'sales_pipeline', label: 'Sales / Pipeline (new ARR, bookings)' },
+    { key: 'sales_pipeline', label: 'Sales (new ARR, bookings)' },
     { key: 'customers_accounts', label: 'Customers / Accounts (retention, churn)' },
     { key: 'support_success', label: 'Support / Success (tickets, time-to-resolve)' },
   ],
@@ -433,7 +433,7 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
     { key: 'projects_engagements', label: 'Projects / Engagements (delivery, margin)' },
     { key: 'time_utilization', label: 'Workforce / Time (census, hours, PTO)' },
     { key: 'hiring', label: 'Hiring / Onboarding' },
-    { key: 'hubspot_sales', label: 'Sales / Pipeline' },
+    { key: 'hubspot_sales', label: 'Sales' },
     { key: 'clients_customers', label: 'Clients / Customers (retention, expansion)' },
   ],
   '56': [

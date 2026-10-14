@@ -55,7 +55,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'sales', label: 'Sales', dataType: 'sales' },
   { key: 'orders_sales', label: 'Orders / Sales', dataType: 'customers' },
   { key: 'sales_transactions', label: 'Sales Transactions', dataType: 'customers' },
-  { key: 'sales_pipeline', label: 'Sales / Pipeline', dataType: 'customers' },
+  { key: 'sales_pipeline', label: 'Sales', dataType: 'customers' },
   { key: 'backlog_sales', label: 'Backlog / Sales', dataType: 'customers' },
   { key: 'leasing_sales', label: 'Leasing / Sales', dataType: 'customers' },
   { key: 'ticketing_sales', label: 'Ticketing / Sales', dataType: 'customers' },

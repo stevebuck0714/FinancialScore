@@ -6,13 +6,18 @@ import { RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsme
 import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 import { ISOLVED_PEOPLE_CLOUD_LABEL, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
 
-export type OperationalSourceProvider = 'BAMBOOHR' | 'HUBSPOT' | 'SPREADSHEET_UPLOAD' | 'ISOLVED';
+export type OperationalSourceProvider = 'BAMBOOHR' | 'HUBSPOT' | 'SPREADSHEET_UPLOAD' | 'ISOLVED' | 'HIGHLEVEL';
 
 export type OperationalSourceDefinition = {
   provider: OperationalSourceProvider;
   sourceCode: string;
   label: string;
+  /** Sectors that get this source's mock data in demo mode (and may select it, unless `allSectors`). */
   sectorCategories: readonly string[];
+  /** Any company may select this source, whatever its sector. */
+  allSectors?: boolean;
+  /** CRM app; adding it switches on the company's Sales tab. */
+  crm?: boolean;
 };
 
 /**
@@ -34,7 +39,8 @@ export const OPERATIONAL_SOURCE_DEFINITIONS = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'APPLIED_EPIC_INSURANCE_SERVICES', label: 'Applied Epic - Insurance Services', sectorCategories: ['53'] },
   { provider: 'ISOLVED', sourceCode: ISOLVED_PEOPLE_CLOUD_SOURCE_CODE, label: ISOLVED_PEOPLE_CLOUD_LABEL, sectorCategories: ['54'] },
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },
-  { provider: 'HUBSPOT', sourceCode: 'HUBSPOT_STANDARD', label: 'HubSpot', sectorCategories: ['54', '56'] },
+  { provider: 'HUBSPOT', sourceCode: 'HUBSPOT_STANDARD', label: 'HubSpot', sectorCategories: ['54', '56'], allSectors: true, crm: true },
+  { provider: 'HIGHLEVEL', sourceCode: 'HIGHLEVEL_STANDARD', label: 'HighLevel', sectorCategories: [], allSectors: true, crm: true },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL, sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', sectorCategories: ['45'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: 'Monthly Inventory Report', sectorCategories: ['45'] },
@@ -44,4 +50,16 @@ export type OperationalSourceCode = (typeof OPERATIONAL_SOURCE_DEFINITIONS)[numb
 
 export function getOperationalSourceDefinition(sourceCode: string): OperationalSourceDefinition | null {
   return OPERATIONAL_SOURCE_DEFINITIONS.find((source) => source.sourceCode === sourceCode) || null;
+}
+
+export function isCrmOperationalSourceCode(sourceCode: string | null | undefined): boolean {
+  return Boolean(getOperationalSourceDefinition(String(sourceCode || ''))?.crm);
+}
+
+export function isOperationalSourceSelectableForSector(
+  source: OperationalSourceDefinition,
+  industrySectorCategory: string | null | undefined
+): boolean {
+  if (source.allSectors) return true;
+  return source.sectorCategories.includes(String(industrySectorCategory || '').trim());
 }

@@ -8,6 +8,8 @@ import { DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS, RAMQUEST_TITLE_SOURCE_CODE } from 
 import { DEFAULT_RSMEANS_PM_DATA_DOMAINS, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { DEFAULT_BUILDOUT_CRE_DATA_DOMAINS, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 import { DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
+import { HIGHLEVEL_SOURCE_CODE } from '@/lib/highlevel';
+import { DEFAULT_HIGHLEVEL_DATA_DOMAINS } from '@/lib/crm/highlevel-sales';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +21,7 @@ type EditableDataDomain = {
 
 const SOURCE_PROVIDERS: Record<string, string> = {
   HUBSPOT_STANDARD: 'HUBSPOT',
+  [HIGHLEVEL_SOURCE_CODE]: 'HIGHLEVEL',
   ICE_ENCOMPASS: 'SPREADSHEET_UPLOAD',
   LANTRAX_PROFIT_POWER: 'SPREADSHEET_UPLOAD',
   FOODREADY_AI: 'SPREADSHEET_UPLOAD',
@@ -98,6 +101,7 @@ const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
   [RSMEANS_PM_SOURCE_CODE]: DEFAULT_RSMEANS_PM_DATA_DOMAINS,
   [BUILDOUT_CRE_SOURCE_CODE]: DEFAULT_BUILDOUT_CRE_DATA_DOMAINS,
   [ISOLVED_PEOPLE_CLOUD_SOURCE_CODE]: DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS,
+  [HIGHLEVEL_SOURCE_CODE]: DEFAULT_HIGHLEVEL_DATA_DOMAINS,
 };
 
 function normalizeSourceCode(value: unknown) {
@@ -124,7 +128,7 @@ function sanitizeDataDomains(value: unknown, sourceCode: string): EditableDataDo
     })
     .filter((row) => row.dataDomain || row.sourceObject);
 
-  if (sourceCode === 'HUBSPOT_STANDARD') {
+  if (sourceCode === 'HUBSPOT_STANDARD' || sourceCode === HIGHLEVEL_SOURCE_CODE) {
     const configuredDomains = new Set(rows.map((row) => row.dataDomain));
     return [
       ...rows,

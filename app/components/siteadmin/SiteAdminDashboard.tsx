@@ -7,6 +7,7 @@ import OperationalDataCoveragePanel from './OperationalDataCoveragePanel';
 import OperationalDateRangeSync from './OperationalDateRangeSync';
 import { US_STATES } from '@/app/constants';
 import { INDUSTRY_SECTORS } from '@/data/industrySectors';
+import { INDUSTRY_SECTORS as APP_INDUSTRY_SECTORS } from '@/lib/constants/company-options';
 import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
 import BillingDashboard from '@/app/components/billing/BillingDashboard';
@@ -42,6 +43,7 @@ import { collectSectorHubCatalog } from '@/lib/operations/sector-hub-catalog';
 import OperationalHubCustomizationCard from '@/app/components/siteadmin/OperationalHubCustomizationCard';
 import CompanyBrandingCard from '@/app/components/siteadmin/CompanyBrandingCard';
 import HubSpotIntegrationCard from '@/app/components/siteadmin/HubSpotIntegrationCard';
+import HighLevelIntegrationCard from '@/app/components/siteadmin/HighLevelIntegrationCard';
 import { DEFAULT_ALLOWED_SECTIONS } from '@/app/components/admin/CompanyDetailsTab';
 import { getSectorMasterTabLabel, getSectorMasterTabKeys } from '@/lib/operations/sector-master-tabs';
 import {
@@ -448,6 +450,21 @@ const HUB_TAB_SOURCE_LABEL: Record<HubTabSource, string> = {
   company: 'This company',
 };
 
+/** Company / Sector # / Sector Name columns shared by the Businesses header and rows. */
+const BUSINESS_TABLE_COLUMNS_STYLE: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(160px, 280px) 70px minmax(160px, 340px)',
+  alignItems: 'center',
+  columnGap: '12px',
+  whiteSpace: 'nowrap',
+};
+
+function getBusinessSectorInfo(company: any): { code: string; name: string } {
+  const code = String(company?.industrySectorCategory || '').trim();
+  const label = APP_INDUSTRY_SECTORS.find((sector) => sector.value === code)?.label || '';
+  return { code, name: code ? label.replace(/^\d+\s*-\s*/, '') : '' };
+}
+
 export default function SiteAdminDashboard(props: any) {
   const {
     siteAdminTab, setSiteAdminTab, consultants, companies, siteAdmins, setSiteAdmins,
@@ -508,6 +525,10 @@ export default function SiteAdminDashboard(props: any) {
   const [referralPartners, setReferralPartners] = React.useState<any[]>([]);
   const [standaloneBusinesses, setStandaloneBusinesses] = React.useState<any[]>([]);
   const [standaloneBusinessesLoading, setStandaloneBusinessesLoading] = React.useState(false);
+  const [businessSort, setBusinessSort] = React.useState<{ key: 'name' | 'sectorCode' | 'sectorName'; dir: 'asc' | 'desc' }>({
+    key: 'name',
+    dir: 'asc',
+  });
   const [siteAdminCreateBusy, setSiteAdminCreateBusy] = React.useState(false);
   const [siteAdminCreateError, setSiteAdminCreateError] = React.useState<string | null>(null);
   const [historicalRebuildRanges, setHistoricalRebuildRanges] = React.useState<Record<string, { startDate: string; endDate: string }>>({});
@@ -1145,6 +1166,20 @@ export default function SiteAdminDashboard(props: any) {
     );
   }, [companies, standaloneBusinesses]);
 
+  const sortedStandaloneBusinesses = React.useMemo(() => {
+    const compareText = (a: string, b: string) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    const direction = businessSort.dir === 'asc' ? 1 : -1;
+    return [...listedStandaloneBusinesses].sort((a: any, b: any) => {
+      const sectorA = getBusinessSectorInfo(a);
+      const sectorB = getBusinessSectorInfo(b);
+      const valueA = businessSort.key === 'name' ? String(a?.name || '') : sectorA[businessSort.key === 'sectorCode' ? 'code' : 'name'];
+      const valueB = businessSort.key === 'name' ? String(b?.name || '') : sectorB[businessSort.key === 'sectorCode' ? 'code' : 'name'];
+      if (!valueA !== !valueB) return valueA ? -1 : 1;
+      return compareText(valueA, valueB) * direction || compareText(String(a?.name || ''), String(b?.name || ''));
+    });
+  }, [listedStandaloneBusinesses, businessSort]);
+
   const isCorelyticsCompany = (company: any) => {
     const name = String(company?.name || '').trim().toLowerCase();
     return name.includes('financialscore') || name.includes('corelytics');
@@ -1580,7 +1615,11 @@ export default function SiteAdminDashboard(props: any) {
   const getOperationalHubTabCategoryOptions = (
     company: any
   ): Array<{ key: string; label: string; group: string; source: HubTabSource; moduleKey: string }> =>
-    getOperationalHubTabCategories(company).map((tab) => ({
+    getOperationalHubTabCategories(company, {
+      hasCrmSource:
+        isOperationalSourceSelected(String(company?.id || ''), 'HUBSPOT_STANDARD') ||
+        isOperationalSourceSelected(String(company?.id || ''), 'HIGHLEVEL_STANDARD'),
+    }).map((tab) => ({
       key: `tab:${tab.moduleKey}`,
       moduleKey: tab.moduleKey,
       label: tab.label,
@@ -7568,14 +7607,9 @@ export default function SiteAdminDashboard(props: any) {
                                   const editing = editingPricing[company.id];
                                   const activeCompanyDetailTab = companyDetailTabByCompany[company.id] || 'accounting';
                                   const expandCompanyPanel = () => {
-                                    setExpandedCompanyIds(prev => {
-                                      const isExpandedNow = prev.includes(company.id);
-                                      if (isExpandedNow) {
-                                        return prev;
-                                      }
-                                      hydrateSiteAdminCompanyIntegrations(company);
-                                      return [...prev, company.id];
-                                    });
+                                    if (Array.isArray(expandedCompanyIds) && expandedCompanyIds.includes(company.id)) return;
+                                    hydrateSiteAdminCompanyIntegrations(company);
+                                    setExpandedCompanyIds(prev => (prev.includes(company.id) ? prev : [...prev, company.id]));
                                   };
                                   
                                   return (
@@ -9584,6 +9618,7 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(company.id, company.name)}
                                             {isOperationalSourceSelected(company.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(company.id)}
                                             {isOperationalSourceSelected(company.id, 'HUBSPOT_STANDARD') && <HubSpotIntegrationCard companyId={company.id} />}
+                                            {isOperationalSourceSelected(company.id, 'HIGHLEVEL_STANDARD') && <HighLevelIntegrationCard companyId={company.id} />}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(company.id, company.name)}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(company.id)}
                                             {isOperationalSourceSelected(company.id, 'CREWTRACKS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'CREWTRACKS')}
@@ -10756,7 +10791,42 @@ export default function SiteAdminDashboard(props: any) {
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gap: '8px' }}>
-                      {listedStandaloneBusinesses
+                      <div style={{ ...BUSINESS_TABLE_COLUMNS_STYLE, padding: '0 9px' }}>
+                        {([
+                          { key: 'name', label: 'Company' },
+                          { key: 'sectorCode', label: 'Sector #' },
+                          { key: 'sectorName', label: 'Sector Name' },
+                        ] as const).map((column) => {
+                          const active = businessSort.key === column.key;
+                          return (
+                            <button
+                              key={column.key}
+                              type="button"
+                              onClick={() =>
+                                setBusinessSort((prev) => ({
+                                  key: column.key,
+                                  dir: prev.key === column.key && prev.dir === 'asc' ? 'desc' : 'asc',
+                                }))
+                              }
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                padding: 0,
+                                textAlign: 'left',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.04em',
+                                color: active ? '#1d4ed8' : '#64748b',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {column.label}{active ? (businessSort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {sortedStandaloneBusinesses
                         .map((businessCompany) => {
                         // Find the user associated with this company
                         const businessUser = users.find(u => u.companyId === businessCompany.id);
@@ -10786,9 +10856,10 @@ export default function SiteAdminDashboard(props: any) {
                         
                         return (
                           <div key={businessCompany.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isExpanded ? '6px' : '0' }}>
-                              <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: isExpanded ? '6px' : '0' }}>
+                              <div style={{ ...BUSINESS_TABLE_COLUMNS_STYLE, flex: 1, minWidth: 0 }}>
                                 <h5
+                                  title={businessCompany.name}
                                   onClick={async () => {
                                       const goAdminForCompany = (companyRecord: any) => {
                                         const record = companyRecord || businessCompany;
@@ -10831,14 +10902,32 @@ export default function SiteAdminDashboard(props: any) {
                                     lineHeight: '1.2',
                                     cursor: 'pointer',
                                     textDecoration: 'underline',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
                                   }}
                                   onMouseEnter={(e) => { e.currentTarget.style.color = '#5568d3'; }}
                                   onMouseLeave={(e) => { e.currentTarget.style.color = '#667eea'; }}
                                 >
                                   {businessCompany.name}
                                 </h5>
+                                {(() => {
+                                  const sector = getBusinessSectorInfo(businessCompany);
+                                  return (
+                                    <>
+                                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
+                                        {sector.code || '—'}
+                                      </span>
+                                      <span
+                                        title={sector.name}
+                                        style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                      >
+                                        {sector.name || 'Not set'}
+                                      </span>
+                                    </>
+                                  );
+                                })()}
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap', flexShrink: 0 }}>
                                 <div style={{ fontSize: '12px', fontWeight: '700', color: '#667eea' }}>
                                   {businessCompanyUsers.length} user{businessCompanyUsers.length !== 1 ? 's' : ''}
                                 </div>
@@ -10851,11 +10940,11 @@ export default function SiteAdminDashboard(props: any) {
                                         ...prev,
                                         [businessCompany.id]: tab.id,
                                       }));
+                                      if (!isExpanded) hydrateSiteAdminCompanyIntegrations(businessCompany);
                                       setExpandedBusinessIds((prev) => {
                                         if (prev.has(businessCompany.id)) return prev;
                                         const next = new Set(prev);
                                         next.add(businessCompany.id);
-                                        hydrateSiteAdminCompanyIntegrations(businessCompany);
                                         return next;
                                       });
                                     }}
@@ -10884,10 +10973,10 @@ export default function SiteAdminDashboard(props: any) {
                                       });
                                       return;
                                     }
+                                    hydrateSiteAdminCompanyIntegrations(businessCompany);
                                     setExpandedBusinessIds((prev) => {
                                       const next = new Set(prev);
                                       next.add(businessCompany.id);
-                                      hydrateSiteAdminCompanyIntegrations(businessCompany);
                                       return next;
                                     });
                                   }}
@@ -13333,6 +13422,7 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrOperationalIntegrationCard(businessCompany.id, businessCompany.name)}
                                   {isOperationalSourceSelected(businessCompany.id, 'BAMBOOHR_STANDARD') && renderBambooHrDataDomainsCard(businessCompany.id)}
                                   {isOperationalSourceSelected(businessCompany.id, 'HUBSPOT_STANDARD') && <HubSpotIntegrationCard companyId={businessCompany.id} />}
+                                  {isOperationalSourceSelected(businessCompany.id, 'HIGHLEVEL_STANDARD') && <HighLevelIntegrationCard companyId={businessCompany.id} />}
                                   {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'CREWTRACKS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'CREWTRACKS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'HILTI')}

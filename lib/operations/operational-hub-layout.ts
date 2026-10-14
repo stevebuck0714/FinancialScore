@@ -333,6 +333,23 @@ const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
   ],
 };
 
+/** Standard reports on the Sales tab for any connected CRM (HubSpot or HighLevel), in every sector. */
+export const CRM_SALES_STANDARD_REPORTS: OperationalHubReportDefinition[] = [
+  { key: 'crmPipelineSummary', label: 'Pipeline Summary', group: 'Sales' },
+  { key: 'crmPipelineByStage', label: 'Pipeline by Stage', group: 'Sales' },
+  { key: 'crmWonLostByMonth', label: 'Won vs. Lost by Month', group: 'Sales' },
+  { key: 'crmRepLeaderboard', label: 'Sales Rep Leaderboard', group: 'Sales' },
+  { key: 'crmLeadSourcePerformance', label: 'Lead Source Performance', group: 'Sales' },
+  { key: 'crmAgingOpportunities', label: 'Aging / Stale Opportunities', group: 'Sales' },
+  { key: 'hubspotEmployerMarketProfile', label: 'Company Industry Profile', group: 'Sales' },
+  { key: 'hubspotSalesActivityByOwner', label: 'Sales Activity by Owner', group: 'Sales' },
+  { key: 'hubspotSalesActivityStatus', label: 'Sales Activity Status', group: 'Sales' },
+  { key: 'hubspotActivityTimeline', label: 'Activity Timeline', group: 'Sales' },
+  { key: 'hubspotEmployerDirectory', label: 'Company Directory', group: 'Sales' },
+  { key: 'hubspotCandidateDirectory', label: 'Contact Directory', group: 'Sales' },
+  { key: 'hubspotSalesActivityDetail', label: 'Sales Activity Detail', group: 'Sales' },
+];
+
 const SECTOR_54_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
   todays_operations: [
     { key: 'bureauTodayKpis', label: "Today's Operations", group: "Today's Operations" },
@@ -441,6 +458,7 @@ function sectorModuleReportMap(sector: string): Record<string, OperationalHubRep
 }
 
 export function hasExplicitSectorModuleReports(sectorCategory: string | null | undefined, moduleKey: string): boolean {
+  if (String(moduleKey || '').trim() === 'hubspot_sales') return true;
   const map = sectorModuleReportMap(normalizeSector(sectorCategory));
   return Boolean(map && Object.prototype.hasOwnProperty.call(map, String(moduleKey || '').trim()));
 }
@@ -451,6 +469,7 @@ export function getOperationalHubDefaultReportsForModule(
 ): OperationalHubReportDefinition[] {
   const sector = normalizeSector(sectorCategory);
   if (moduleKey === 'cash') return STANDARD_CASH_REPORTS;
+  if (moduleKey === 'hubspot_sales') return CRM_SALES_STANDARD_REPORTS;
   if (sector === '23' && SECTOR_23_REPORTS_BY_MODULE[moduleKey]) {
     return SECTOR_23_REPORTS_BY_MODULE[moduleKey];
   }

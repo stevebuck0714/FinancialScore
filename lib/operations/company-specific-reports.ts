@@ -435,6 +435,13 @@ const ATLANTIC_ONLY_VENDOR_REPORT_KEYS = new Set([
   'vendorsSgpFreight',
 ]);
 
+const COGENT_ONLY_SALES_REPORT_KEYS = new Set([
+  'salesPipelineSummary',
+  'salesDealsByStage',
+  'salesRepLeaderboard',
+  'salesActivitySummary',
+]);
+
 const COGENT_ONLY_HIRING_REPORT_KEYS = new Set([
   'hiringOpenJobs',
   'hiringApplicantPipeline',
@@ -477,6 +484,7 @@ const COGENT_ONLY_UNIT_ECONOMICS_REPORT_KEYS = new Set([
 ]);
 
 const COGENT_ONLY_REPORT_KEYS = new Set([
+  ...COGENT_ONLY_SALES_REPORT_KEYS,
   ...COGENT_ONLY_HIRING_REPORT_KEYS,
   ...COGENT_ONLY_LABOR_REPORT_KEYS,
   ...COGENT_ONLY_REVENUE_REPORT_KEYS,

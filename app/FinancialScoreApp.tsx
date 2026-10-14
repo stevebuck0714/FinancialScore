@@ -5614,7 +5614,11 @@ function FinancialScorePage() {
         }
 
         if (usersResult.status === 'fulfilled' && Array.isArray(usersResult.value?.users)) {
-          setUsers(usersResult.value.users);
+          setUsers(usersResult.value.users.map((u: any) => ({
+            ...u,
+            role: String(u.role || '').toLowerCase(),
+            userType: u.userType ? String(u.userType).toLowerCase() : u.userType,
+          })));
         } else {
           console.error('Error loading users for businesses tab:', usersResult.status === 'rejected' ? usersResult.reason : 'Invalid users response payload');
         }

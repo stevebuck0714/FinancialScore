@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import {
@@ -11,16 +12,14 @@ import { DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS, ISOLVED_PEOPLE_CLOUD_SOURCE_
 import {
   OPERATIONAL_SOURCE_DEFINITIONS as SOURCE_DEFINITIONS,
   getOperationalSourceDefinition as getSourceDefinition,
+  isCrmOperationalSourceCode,
+  isOperationalSourceSelectableForSector as isSourceAvailableForSector,
   type OperationalSourceDefinition as SourceDefinition,
 } from '@/lib/operational/source-definitions';
+import { CRM_SALES_TAB_SECTION_KEY } from '@/lib/operations/operational-dashboard-access';
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 
 export const dynamic = 'force-dynamic';
-
-function isSourceAvailableForSector(source: SourceDefinition, industrySectorCategory: string | null | undefined): boolean {
-  const sectorCategory = String(industrySectorCategory || '').trim();
-  return source.sectorCategories.includes(sectorCategory);
-}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -39,7 +38,34 @@ function normalizePullTime(value: unknown): string {
 }
 
 function isApiScheduledSource(source: SourceDefinition | null): boolean {
-  return source?.provider === 'BAMBOOHR' || source?.provider === 'HUBSPOT' || source?.provider === 'ISOLVED';
+  return source?.provider === 'BAMBOOHR' || source?.provider === 'HUBSPOT' || source?.provider === 'ISOLVED' || source?.provider === 'HIGHLEVEL';
+}
+
+/** Turns the company's Sales tab on (CRM added) or back to its sector default (last CRM removed). */
+async function setCrmSalesTab(companyId: string, enabled: boolean) {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { userDefinedAllocations: true },
+  });
+  const uda = asRecord(company?.userDefinedAllocations);
+  const hub = asRecord(uda.operationalHub);
+  const sections = { ...asRecord(hub.sections) };
+  if (enabled) {
+    if (sections[CRM_SALES_TAB_SECTION_KEY] === true) return;
+    sections[CRM_SALES_TAB_SECTION_KEY] = true;
+  } else {
+    if (!(CRM_SALES_TAB_SECTION_KEY in sections)) return;
+    delete sections[CRM_SALES_TAB_SECTION_KEY];
+  }
+  await prisma.company.update({
+    where: { id: companyId },
+    data: {
+      userDefinedAllocations: {
+        ...uda,
+        operationalHub: { ...hub, sections, updatedAt: new Date().toISOString() },
+      } as Prisma.InputJsonValue,
+    },
+  });
 }
 
 async function getValidatedCompany(companyId: string) {
@@ -151,6 +177,7 @@ export async function POST(request: NextRequest) {
       },
       errorMessage: existing?.errorMessage || null,
     });
+    if (source.crm) await setCrmSalesTab(companyId, true);
 
     return NextResponse.json({ ok: true, companyId, sourceCode });
   } catch (error: any) {
@@ -238,6 +265,12 @@ export async function DELETE(request: NextRequest) {
     }
 
     await deleteOperationalSystemConnection(companyId, source.provider, source.sourceCode);
+    if (source.crm) {
+      const remaining = await listOperationalSystemConnections(companyId);
+      if (!remaining.some((connection) => isCrmOperationalSourceCode(connection.sourceCode))) {
+        await setCrmSalesTab(companyId, false);
+      }
+    }
 
     return NextResponse.json({ ok: true, companyId, sourceCode });
   } catch (error: any) {

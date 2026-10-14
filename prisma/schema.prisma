@@ -1451,6 +1451,7 @@ enum OperationalSystemProvider {
   HUBSPOT
   SPREADSHEET_UPLOAD
   ISOLVED
+  HIGHLEVEL
 }
 
 enum ConnectionStatus {
