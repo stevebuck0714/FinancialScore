@@ -5871,10 +5871,12 @@ export default function SiteAdminDashboard(props: any) {
           <div style={{ display: 'grid', gap: '8px' }}>
             {selectedSources.map((source) => {
               const scheduleEnabled = Boolean(source.scheduleEnabled);
+              const showDateRangeSync =
+                scheduleEnabled && !['BAMBOOHR_STANDARD', 'HUBSPOT_STANDARD', 'HIGHLEVEL_STANDARD'].includes(source.sourceCode);
               return (
                 <div
                   key={`${companyId}-selected-source-${source.sourceCode}`}
-                  style={{ display: 'grid', gridTemplateColumns: scheduleEnabled ? 'minmax(180px, 240px) 1fr auto' : 'minmax(180px, 1fr) auto', gap: '8px', alignItems: 'start', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px', fontSize: '12px', color: '#334155' }}
+                  style={{ display: 'grid', gridTemplateColumns: showDateRangeSync ? 'minmax(180px, 240px) 1fr auto' : 'minmax(180px, 1fr) auto', gap: '8px', alignItems: 'start', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px', fontSize: '12px', color: '#334155' }}
                 >
                   <div>
                     <div style={{ fontWeight: 700, color: '#1e293b' }}>{source.label}</div>
@@ -5884,7 +5886,7 @@ export default function SiteAdminDashboard(props: any) {
                     {!scheduleEnabled ? <div style={{ color: '#64748b', marginTop: '2px' }}>Manual upload source. Scheduling is handled by user imports.</div> : null}
                     {source.errorMessage ? <div style={{ color: '#b91c1c', marginTop: '2px' }}>{source.errorMessage}</div> : null}
                   </div>
-                  {scheduleEnabled && (
+                  {showDateRangeSync && (
                     <OperationalDateRangeSync companyId={companyId} sourceCode={source.sourceCode} />
                   )}
                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
@@ -5924,10 +5926,7 @@ export default function SiteAdminDashboard(props: any) {
       <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: 4 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
           <div>
-            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>BambooHR</h4>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>
-              BambooHR setup for <strong>{companyName}</strong>
-            </div>
+            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>BambooHR</h4>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
             <button
@@ -5968,6 +5967,10 @@ export default function SiteAdminDashboard(props: any) {
           </div>
         </div>
 
+        <div style={{ marginBottom: '8px' }}>
+          <OperationalDateRangeSync companyId={companyId} sourceCode="BAMBOOHR_STANDARD" compact />
+        </div>
+
         <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
             <div style={{ fontSize: '12px', fontWeight: '600', color: statusTheme.fg }}>{statusTheme.label}</div>
@@ -5999,13 +6002,6 @@ export default function SiteAdminDashboard(props: any) {
               {errorMessage}
             </div>
           ) : null}
-        </div>
-
-        <div style={{ marginBottom: '8px', padding: '8px', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: '6px' }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: '#155e75' }}>BambooHR operational connection</div>
-          <div style={{ fontSize: '12px', color: '#155e75' }}>
-            Configure the BambooHR connection and sync schedule here. Connect checks the employee directory and enables scheduled syncs; sync test reads enabled domains and reports counts without importing employee records.
-          </div>
         </div>
 
         {probeResults ? (

@@ -2,7 +2,30 @@
 
 import { useEffect, useState } from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
+import OperationalDateRangeSync from './OperationalDateRangeSync';
 type DataDomain = { dataDomain: string; sourceObject: string; enabled: boolean };
+
+/** Same button look as the BambooHR operational container. */
+const actionButton = (background: string, disabled: boolean) => ({
+  padding: '8px 12px',
+  background: disabled ? '#cbd5e1' : background,
+  color: disabled ? '#334155' : 'white',
+  border: 'none',
+  borderRadius: '6px',
+  fontSize: '12px',
+  fontWeight: 600,
+  cursor: disabled ? 'not-allowed' : 'pointer',
+});
+const disconnectButton = (disabled: boolean) => ({
+  padding: '5px 9px',
+  background: disabled ? '#cbd5e1' : 'white',
+  color: disabled ? '#334155' : '#b91c1c',
+  border: `1px solid ${disabled ? '#cbd5e1' : '#fecaca'}`,
+  borderRadius: '6px',
+  fontSize: '11px',
+  fontWeight: 700,
+  cursor: disabled ? 'not-allowed' : 'pointer',
+});
 
 export default function HubSpotIntegrationCard({ companyId }: { companyId: string }) {
   const [token, setToken] = useState('');
@@ -87,7 +110,13 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
     }
   };
 
+  const requireConnection = () => {
+    if (status === 'ACTIVE') return true;
+    setError('Connect HubSpot first: enter the Service Key and click Save.');
+    return false;
+  };
   const validateConnection = async () => {
+    if (!requireConnection()) return;
     try {
       setSaving(true);
       setError('');
@@ -106,6 +135,7 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
     }
   };
   const runSalesRead = async (mode: 'test' | 'sync') => {
+    if (!requireConnection()) return;
     try {
       setSaving(true);
       setError('');
@@ -154,13 +184,25 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', gridColumn: '1 / -1', order: 6 }}>
       <div style={{ padding: '16px', background: '#f8fafc', border: '1px solid #bae6fd', borderRadius: '8px' }}>
-        <h4 style={{ margin: '0 0 6px', color: '#0c4a6e' }}>HubSpot</h4>
-        <div style={{ margin: '0 0 12px', color: '#475569', fontSize: '13px', fontWeight: 600 }}>HubSpot operational connection setup</div>
-        <p style={{ margin: '0 0 14px', color: '#475569', fontSize: '12px' }}>HubSpot operational connection</p>
-        <div style={{ fontSize: '12px', color: status === 'ACTIVE' ? '#166534' : '#92400e', fontWeight: 700, marginBottom: '10px' }}>
-          {status === 'ACTIVE' ? `Connected${lastSyncAt ? ` · Last synced ${formatEstDateTime(lastSyncAt)}` : ''}` : 'Not connected'}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+          <h4 style={{ margin: 0, color: '#0c4a6e' }}>HubSpot</h4>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+            <button onClick={() => void saveConnection()} disabled={saving} style={actionButton('#334155', false)}>{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => void validateConnection()} disabled={saving} style={actionButton('#0ea5e9', saving)}>Revalidate</button>
+            <button onClick={() => void runSalesRead('test')} disabled={saving} style={actionButton('#16a34a', saving)}>Run Sync Test</button>
+            <button onClick={() => void runSalesRead('sync')} disabled={saving} style={actionButton('#0f766e', saving)}>Sync HubSpot Now</button>
+            <button onClick={probeDomains} disabled={saving} style={actionButton('#7c3aed', saving)}>Probe Domains</button>
+          </div>
         </div>
-        <p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '12px' }}>Configure the HubSpot connection and sync schedule here. Revalidate checks access to configured sales domains; Sales reports read the enabled domains directly from HubSpot.</p>
+        <div style={{ marginBottom: '10px' }}>
+          <OperationalDateRangeSync companyId={companyId} sourceCode="HUBSPOT_STANDARD" compact />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+          <div style={{ fontSize: '12px', color: status === 'ACTIVE' ? '#166534' : '#92400e', fontWeight: 700 }}>
+            {status === 'ACTIVE' ? `Connected${lastSyncAt ? ` · Last synced ${formatEstDateTime(lastSyncAt)}` : ''}` : 'Not connected'}
+          </div>
+          {status === 'ACTIVE' ? <button onClick={() => void disconnect()} disabled={saving} style={disconnectButton(saving)}>Disconnect</button> : null}
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))', gap: '12px', maxWidth: '760px' }}>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Service Key *<input type="password" autoComplete="new-password" value={token} onChange={(event) => setToken(event.target.value)} placeholder={status === 'ACTIVE' ? 'Leave blank to keep the current key' : 'pat-na1-…'} style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }} /></label>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Base URL<input value="https://api.hubapi.com" disabled style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: '#f1f5f9', marginTop: '5px' }} /></label>
@@ -169,14 +211,6 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Sync Time (EST)<input type="time" value={syncTime} onChange={(event) => setSyncTime(event.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }} /></label>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Initial Sync Start Date (YYYY-MM-DD)<input type="date" value={initialSyncStartDate} onChange={(event) => setInitialSyncStartDate(event.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }} /></label>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Incremental Sync *<select value={incrementalSync} onChange={(event) => setIncrementalSync(event.target.value as 'YES' | 'NO')} style={{ display: 'block', width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white', marginTop: '5px' }}><option value="YES">Yes</option><option value="NO">No</option></select></label>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
-          <button onClick={() => void saveConnection()} disabled={saving} style={{ padding: '8px 12px', background: saving ? '#94a3b8' : '#0284c7', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>{saving ? 'Saving…' : 'Save'}</button>
-          <button onClick={() => void validateConnection()} disabled={saving || status !== 'ACTIVE'} style={{ padding: '8px 12px', background: 'white', color: '#0369a1', border: '1px solid #7dd3fc', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>Revalidate</button>
-          <button onClick={() => void runSalesRead('test')} disabled={saving || status !== 'ACTIVE'} style={{ padding: '8px 12px', background: 'white', color: '#0369a1', border: '1px solid #7dd3fc', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>Run Sync Test</button>
-          <button onClick={() => void runSalesRead('sync')} disabled={saving || status !== 'ACTIVE'} style={{ padding: '8px 12px', background: 'white', color: '#0369a1', border: '1px solid #7dd3fc', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>Sync HubSpot Now</button>
-          <button onClick={probeDomains} disabled={saving} style={{ padding: '8px 12px', background: 'white', color: '#0369a1', border: '1px solid #7dd3fc', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>Probe Domains</button>
-          {status === 'ACTIVE' ? <button onClick={() => void disconnect()} disabled={saving} style={{ padding: '8px 12px', background: 'white', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>Disconnect</button> : null}
         </div>
       </div>
       <div style={{ padding: '16px', background: '#f8fafc', border: '1px solid #bae6fd', borderRadius: '8px' }}>

@@ -26,10 +26,13 @@ export default function OperationalDateRangeSync({
   companyId,
   sourceCode,
   onSynced,
+  compact = false,
 }: {
   companyId: string;
   sourceCode: string;
   onSynced?: () => void;
+  /** Only the date inputs, button and result (no title or explanatory text). */
+  compact?: boolean;
 }) {
   const [info, setInfo] = React.useState<SourceInfo | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -93,19 +96,23 @@ export default function OperationalDateRangeSync({
 
   return (
     <div style={{ fontSize: '12px', color: '#334155', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px', background: '#f8fafc' }}>
-      <div style={{ fontWeight: 700, marginBottom: '4px' }}>Nightly pull and date range sync</div>
-      <div style={{ color: '#64748b' }}>
-        {info.supportsLive
-          ? `Pulls automatically every night (recent days).${info.lastLiveRunAt ? ` Last live pull ${formatEstDateTime(info.lastLiveRunAt)}.` : ' No live pull yet.'}`
-          : 'This source has no live API pull.'}
-        {info.storedFrom && info.storedThrough ? ` Live data stored ${info.storedFrom} – ${info.storedThrough}.` : ''}
-      </div>
-      {info.historyNote && <div style={{ color: '#64748b', marginTop: '2px' }}>{info.historyNote}</div>}
+      {!compact && (
+        <>
+          <div style={{ fontWeight: 700, marginBottom: '4px' }}>Nightly pull and date range sync</div>
+          <div style={{ color: '#64748b' }}>
+            {info.supportsLive
+              ? `Pulls automatically every night (recent days).${info.lastLiveRunAt ? ` Last live pull ${formatEstDateTime(info.lastLiveRunAt)}.` : ' No live pull yet.'}`
+              : 'This source has no live API pull.'}
+            {info.storedFrom && info.storedThrough ? ` Live data stored ${info.storedFrom} – ${info.storedThrough}.` : ''}
+          </div>
+          {info.historyNote && <div style={{ color: '#64748b', marginTop: '2px' }}>{info.historyNote}</div>}
+        </>
+      )}
       {info.lastRunStatus === 'ERROR' && info.lastRunMessage && (
         <div style={{ color: '#b91c1c', marginTop: '2px' }}>Last run failed: {info.lastRunMessage}</div>
       )}
       {info.history === 'range' ? (
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px' }}>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: compact ? 0 : '6px' }}>
           <label>
             Start (EST){' '}
             <input type="date" value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} style={inputStyle} />
