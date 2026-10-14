@@ -776,6 +776,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             return !status || status === 'ACTIVE' || status === 'MATURING';
           })
           .reduce((sum: number, loan: any) => sum + Math.max(0, Number(loan?.loanAmount || 0)), 0);
+        const locLimitFromLoansPage = Boolean(loansPayload?.locFromLoanInstruments);
 
         const fetchLatestDailyFinancialSnapshot = async (): Promise<{
           asOfDay: string;
@@ -1009,7 +1010,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 ? Math.max(0.5, Math.min(30, Math.round(suggestedInventoryTurns * 100) / 100))
                 : DEFAULT_INPUTS.inventoryTurns,
             minCashBuffer: DEFAULT_INPUTS.minCashBuffer,
-            locLimit: locLoanAmount > 0 ? locLoanAmount : DEFAULT_INPUTS.locLimit,
+            locLimit: locLoanAmount > 0 || locLimitFromLoansPage ? locLoanAmount : DEFAULT_INPUTS.locLimit,
             locAprPct: DEFAULT_INPUTS.locAprPct,
           };
           const resolvedAverages: WeeklyDriver = {
@@ -1067,7 +1068,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           if (savedSettings) {
             const mergedInputs = normalizeInputs(savedSettings.inputs, seedInputs);
             const resolvedInputs =
-              locLoanAmount > 0
+              locLoanAmount > 0 || locLimitFromLoansPage
                 ? { ...mergedInputs, locLimit: locLoanAmount }
                 : mergedInputs;
             const shouldUseImportedWeekEndingBalances = Boolean(asOfDay);

@@ -640,6 +640,8 @@ export default function CovenantsTab({
       const loanIdNumber = accountId || instrumentKey || null;
       const lenderName = String(instrument?.terms?.lender || '').trim() || displayName;
       const loanType = mapInstrumentLoanType(instrument);
+      const mappedTarget = String(instrument?.targetField || '').trim().toLowerCase();
+      const hasExplicitTypeMapping = mappedTarget === 'ltd' || mappedTarget === 'loc';
       // Prefer facility commitment when the line is paid down to $0.
       const loanAmount = Math.abs(
         Number(
@@ -668,7 +670,8 @@ export default function CovenantsTab({
           String(existing.loanIdNumber || '').trim() !== String(loanIdNumber || '').trim() ||
           (String(existing.lenderName || '').trim().toLowerCase() === 'unknown' &&
             lenderName.toLowerCase() !== 'unknown') ||
-          (loanType === 'LINE_OF_CREDIT' && String(existing.status || '').toUpperCase() !== 'ACTIVE');
+          (loanType === 'LINE_OF_CREDIT' && String(existing.status || '').toUpperCase() !== 'ACTIVE') ||
+          (hasExplicitTypeMapping && String(existing.loanType || '').toUpperCase() !== loanType);
         if (needsUpdate) {
           try {
             const response = await fetch(`/api/loans/${existing.id}`, {

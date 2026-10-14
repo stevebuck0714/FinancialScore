@@ -146,7 +146,13 @@ async function loadLoans(companyId: string) {
       orderBy: { createdAt: 'desc' },
     });
     let operationsLocs: Array<{ loanType: string; status: string; loanAmount: number }> = [];
+    let hasGlLoanInstruments = false;
     try {
+      const instrumentCount = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+        `SELECT COUNT(*)::int AS "count" FROM "LoanInstrumentTerm" WHERE "companyId" = $1`,
+        companyId,
+      );
+      hasGlLoanInstruments = Number(instrumentCount?.[0]?.count || 0) > 0;
       const rows = await prisma.$queryRawUnsafe<Array<{ originalBalance: number | null }>>(
         `SELECT "originalBalance"::float8 AS "originalBalance"
          FROM "LoanInstrumentTerm" terms
@@ -176,11 +182,14 @@ async function loadLoans(companyId: string) {
       }));
     } catch {
       operationsLocs = [];
+      hasGlLoanInstruments = false;
     }
-    const forecastLoans = operationsLocs.length
+    // GL loan instruments (Loans page) are the LOC source of truth; covenant
+    // Loan rows can carry stale LINE_OF_CREDIT types from older syncs.
+    const forecastLoans = hasGlLoanInstruments || operationsLocs.length
       ? loans.filter((loan) => loan.loanType !== 'LINE_OF_CREDIT')
       : loans;
-    return { loans: [...forecastLoans, ...operationsLocs] };
+    return { loans: [...forecastLoans, ...operationsLocs], locFromLoanInstruments: hasGlLoanInstruments };
   } catch {
     return { loans: [] };
   }

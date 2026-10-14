@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
 interface Loan {
@@ -97,6 +97,7 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
   const [error, setError] = useState<string | null>(null);
   const [isAddingLoan, setIsAddingLoan] = useState(false);
   const [editingLoanId, setEditingLoanId] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   // Form state
   const [formData, setFormData] = useState<Partial<Loan>>({
@@ -127,6 +128,12 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
   useEffect(() => {
     fetchLoans();
   }, [companyId]);
+
+  // The form renders above the loan list, so a long list can hide it off-screen.
+  useEffect(() => {
+    if (!editingLoanId) return;
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [editingLoanId]);
 
   // Clear edit state whenever active company changes.
   useEffect(() => {
@@ -367,7 +374,7 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
 
       {/* Add/Edit Form */}
       {isAddingLoan && (
-        <form onSubmit={handleSubmit} style={{ marginBottom: '16px' }}>
+        <form ref={formRef} onSubmit={handleSubmit} style={{ marginBottom: '16px', scrollMarginTop: '16px' }}>
           <div style={{ background: 'white', borderRadius: '6px', padding: '10px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>
               {editingLoanId ? 'Edit Loan' : 'Add New Loan'}
