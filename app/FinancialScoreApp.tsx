@@ -1962,7 +1962,7 @@ function FinancialScorePage() {
   const viewToCompanySection = (view: string): string | null => {
     if (view === 'ai-analysis') return 'ask-corelytics';
     if (view === 'daily-alerts') return 'business-pulse';
-    if (view === 'operations') return 'operational-dashboard';
+    if (view === 'operations' || view === 'operations-cash-forecast') return 'operational-dashboard';
     if (view === 'dashboard') return 'financial-reports';
     if (view === 'kpis') return 'financial-reports';
     if (view === 'mda') return 'financial-reports';
@@ -2462,7 +2462,7 @@ function FinancialScorePage() {
       alert('Corelytics Score is disabled for this company.');
       return;
     }
-    if (view === 'operations' && !isOperationalReportingEnabledByAdmin) {
+    if ((view === 'operations' || view === 'operations-cash-forecast') && !isOperationalReportingEnabledByAdmin) {
       alert('Operational Reporting is disabled for this company.');
       return;
     }
@@ -2487,6 +2487,12 @@ function FinancialScorePage() {
       setCurrentView('financial-statements');
       return;
     }
+    if (view === 'operations-cash-forecast') {
+      setOperationsPrintConfig({ tab: 'forecast', forecastBasisTab: 'accrual-basis', forecastSubTab: 'cash-forecast' });
+      setCurrentView('operations');
+      return;
+    }
+    if (view === 'operations') setOperationsPrintConfig(null);
     setCurrentView(view as any);
   };
 

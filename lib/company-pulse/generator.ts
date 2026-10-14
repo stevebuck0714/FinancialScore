@@ -20,6 +20,7 @@ import {
   getSectorMetricCoverage,
   loadSectorMetricRows,
 } from '@/lib/company-pulse/sector-exceptions';
+import { buildCashForecastBufferAlerts } from '@/lib/company-pulse/cash-forecast-buffer';
 
 export type PulseReadinessStatus = 'ready' | 'partial' | 'missing';
 
@@ -754,6 +755,12 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         },
       });
     }
+  }
+
+  try {
+    alerts.push(...(await buildCashForecastBufferAlerts({ companyId, policy, money, nowIso })));
+  } catch (error: any) {
+    console.warn('Company Pulse 13-week forecast buffer check failed:', error?.message || error);
   }
 
   const orderedFinancialRows = [...dailyFinancialRows].sort(

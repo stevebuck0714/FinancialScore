@@ -20,6 +20,7 @@ export type PulsePolicyKey =
   | 'cash_open_critical.min_runway_weeks'
   | 'cash_open_critical.allow_proxy_runway'
   | 'cash_open_critical.min_consecutive_days'
+  | 'cash_forecast_buffer.warning_pct'
   | 'unresolved_findings.max_age_days_without_owner'
   | 'unresolved_findings.max_age_days_unacknowledged'
   | 'freshness.max_snapshot_age_hours'
@@ -257,6 +258,18 @@ const POLICY_DEFINITIONS = [
     min: 1,
     max: 60,
     defaultValue: 2,
+  },
+  {
+    key: 'cash_forecast_buffer.warning_pct',
+    label: '13-week forecast buffer warning margin %',
+    description:
+      'Warn when projected weekly cash (before line of credit draws) is within this percent above the Minimum Cash Buffer.',
+    section: 'Cash',
+    unit: 'percent',
+    step: 1,
+    min: 0,
+    max: 100,
+    defaultValue: 10,
   },
   {
     key: 'unresolved_findings.max_age_days_without_owner',
