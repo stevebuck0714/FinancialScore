@@ -39,7 +39,7 @@ function parseJsonObject(text: string): Record<string, unknown> {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth();
+    const authContext = await requireAuth();
     const body = (await request.json()) as InsightsPayload;
     const companyId = String(body?.companyId || '').trim();
     if (!companyId) {
@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
       model,
       temperature: 0.2,
       maxTokens: 1800,
+      usage: { feature: 'financial_score_insights', companyId, userId: authContext.userId, route: '/api/financial-score/insights' },
       messages: [
         {
           role: 'system',

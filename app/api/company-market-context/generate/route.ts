@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAiTransport, getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '@/data/industrySectors';
+import { type AiUsageTag, emptyAiUsageCounts, recordAiUsage, usageFromResponse } from '@/lib/ai-usage/record';
+import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 
 type CompetitorSearchScope = 'local' | 'state' | 'regional' | 'national';
 type ResearchDepth = 'standard' | 'deep';
@@ -208,7 +210,9 @@ async function callPerplexity(params: {
   system: string;
   prompt: string;
   maxTokens?: number;
+  usage: AiUsageTag;
 }): Promise<{ content: string; citations: string[] }> {
+  const model = 'sonar-pro';
   const response = await fetch('https://api.perplexity.ai/chat/completions', {
     method: 'POST',
     headers: {
@@ -216,7 +220,7 @@ async function callPerplexity(params: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'sonar-pro',
+      model,
       messages: [
         { role: 'system', content: params.system },
         { role: 'user', content: params.prompt },
@@ -227,6 +231,12 @@ async function callPerplexity(params: {
   });
 
   const result = await response.json();
+  void recordAiUsage({
+    tag: params.usage,
+    model: `perplexity/${model}`,
+    outcome: response.ok ? 'ok' : 'error',
+    counts: usageFromResponse(result) ?? emptyAiUsageCounts(),
+  });
   if (!response.ok) {
     throw new Error(result?.error?.message || 'Perplexity research request failed.');
   }
@@ -239,6 +249,19 @@ async function callPerplexity(params: {
   };
 }
 
+/** This route does not require auth, so usage is only attributed to a company the caller can access. */
+async function resolveMarketContextUsageTag(companyId: string): Promise<AiUsageTag> {
+  const tag: AiUsageTag = { feature: 'market_context', route: '/api/company-market-context/generate' };
+  try {
+    const context = await requireAuth();
+    tag.userId = context.userId;
+    if (companyId && (await validateCompanyAccess(companyId))) tag.companyId = companyId;
+  } catch {
+    // Unauthenticated callers are tracked without a company.
+  }
+  return tag;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const apiKey = process.env.PERPLEXITY_API_KEY;
@@ -247,6 +270,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const usageTag = await resolveMarketContextUsageTag(String(body?.companyId || '').trim());
     const companyName = String(body?.companyName || '').trim();
     const location = String(body?.location || '').trim();
     const website = String(body?.website || '').trim();
@@ -371,6 +395,7 @@ Based on public information, research competitive strengths, vulnerabilities, di
           apiKey,
           system: researchSystem,
           prompt: item.prompt,
+          usage: usageTag,
         })),
       })),
     );
@@ -489,6 +514,7 @@ Writing requirements:
           ],
           temperature: 0.2,
         maxTokens: researchDepth === 'deep' ? 7000 : 4500,
+        usage: usageTag,
         });
         parsed = extractJsonObject(synthesis.text);
         synthesisSources = Array.isArray(parsed?.sources)
@@ -506,6 +532,7 @@ Writing requirements:
           'You are a senior valuation analyst. Synthesize source-backed research into detailed, factual business overview and competitive landscape content. Return only JSON.',
         prompt: synthesisPrompt,
         maxTokens: researchDepth === 'deep' ? 7000 : 4500,
+        usage: usageTag,
       });
       parsed = extractJsonObject(fallback.content);
       synthesisSources = Array.isArray(parsed?.sources)

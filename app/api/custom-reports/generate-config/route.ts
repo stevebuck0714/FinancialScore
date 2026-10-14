@@ -789,7 +789,7 @@ function buildDevFallbackConfig(prompt: string, requestedType: ReportChartType, 
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth();
+    const authContext = await requireAuth();
 
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
@@ -885,6 +885,7 @@ export async function POST(request: NextRequest) {
         model,
         temperature: 0.1,
         maxTokens: 1200,
+        usage: { feature: 'custom_reports', companyId, userId: authContext.userId, route: '/api/custom-reports/generate-config' },
         messages: [
           {
             role: 'system',

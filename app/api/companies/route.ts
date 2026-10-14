@@ -1758,6 +1758,49 @@ export async function PATCH(request: NextRequest) {
       updateData.userDefinedAllocations = nextUDA;
     }
 
+    // AI usage pricing (stored in userDefinedAllocations.aiUsage)
+    const hasAiUsagePricingUpdate =
+      updateFields.aiMonthlyTokenAllowance !== undefined ||
+      updateFields.aiOveragePricePer1MTokens !== undefined;
+    if (hasAiUsagePricingUpdate) {
+      if (context.role !== 'SITEADMIN') {
+        return NextResponse.json(
+          { error: 'Only site admins can update AI usage pricing' },
+          { status: 403 },
+        );
+      }
+      const currentUDA =
+        updateData.userDefinedAllocations &&
+        typeof updateData.userDefinedAllocations === 'object' &&
+        !Array.isArray(updateData.userDefinedAllocations)
+          ? (updateData.userDefinedAllocations as Record<string, any>)
+          : (
+              existingCompany?.userDefinedAllocations &&
+              typeof existingCompany.userDefinedAllocations === 'object' &&
+              !Array.isArray(existingCompany.userDefinedAllocations)
+                ? (existingCompany.userDefinedAllocations as Record<string, any>)
+                : {}
+            );
+      const currentAiUsage =
+        currentUDA.aiUsage &&
+        typeof currentUDA.aiUsage === 'object' &&
+        !Array.isArray(currentUDA.aiUsage)
+          ? (currentUDA.aiUsage as Record<string, any>)
+          : {};
+      const nonNegative = (value: unknown, fallback: unknown) => {
+        const n = Number(value === undefined ? fallback : value);
+        return Number.isFinite(n) && n > 0 ? n : 0;
+      };
+      updateData.userDefinedAllocations = {
+        ...currentUDA,
+        aiUsage: {
+          ...currentAiUsage,
+          monthlyTokenAllowance: Math.floor(nonNegative(updateFields.aiMonthlyTokenAllowance, currentAiUsage.monthlyTokenAllowance)),
+          overagePricePer1MTokens: nonNegative(updateFields.aiOveragePricePer1MTokens, currentAiUsage.overagePricePer1MTokens),
+        },
+      };
+    }
+
     const hasOperationalHubConfigUpdate = updateFields.operationalHubConfig !== undefined;
     if (hasOperationalHubConfigUpdate) {
       if (context.role !== 'SITEADMIN') {

@@ -36,6 +36,7 @@ export async function GET(_request: NextRequest) {
       ],
       maxTokens: 80,
       temperature: 0,
+      usage: { feature: 'system_check', route: '/api/test-openai' },
     });
 
     const response = resp.text || 'No response';

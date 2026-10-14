@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getAiTransport, getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
+import type { AiUsageTag } from '@/lib/ai-usage/record';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { loadMonthlyFromDfs } from '@/lib/performance-analytics/monthly-from-dfs';
 import {
@@ -1535,9 +1536,7 @@ async function writeDailySummary(companyId: string, summaryDate: string, dataVer
 export async function GET(request: NextRequest) {
   try {
     const authorizedByCron = isCronAuthorized(request);
-    if (!authorizedByCron) {
-      await requireAuth();
-    }
+    const authContext = authorizedByCron ? null : await requireAuth();
 
     const companyId = request.nextUrl.searchParams.get('companyId') || '';
     if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
@@ -2248,11 +2247,19 @@ Return JSON only in this shape (example shows multiple sections—follow that pa
 Facts:
 ${JSON.stringify(facts, null, 2)}`;
 
+    const usageTag: AiUsageTag = {
+      feature: 'exec_briefing',
+      companyId,
+      userId: authContext?.userId ?? null,
+      route: '/api/pulse/exec-briefing',
+      billable: !authorizedByCron,
+    };
     const ai = await createModelText({
       openai: getOpenAiClient(),
       model,
       temperature: 0.2,
       maxTokens: 4500,
+      usage: usageTag,
       messages: [
         {
           role: 'system',
@@ -2288,6 +2295,7 @@ ${JSON.stringify(facts, null, 2)}`;
         model,
         temperature: 0,
         maxTokens: 4000,
+        usage: usageTag,
         messages: [
           {
             role: 'system',

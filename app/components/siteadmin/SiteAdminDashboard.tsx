@@ -676,6 +676,13 @@ export default function SiteAdminDashboard(props: any) {
   const [savingCustomReportsCompanyId, setSavingCustomReportsCompanyId] = React.useState<string | null>(null);
   const [savingFinancialScoreCompanyId, setSavingFinancialScoreCompanyId] = React.useState<string | null>(null);
   const [savingServiceAccessKey, setSavingServiceAccessKey] = React.useState<string | null>(null);
+  const [aiUsageSummary, setAiUsageSummary] = React.useState<{ month: string; companies: any[] } | null>(null);
+  const [aiUsageDetailByCompany, setAiUsageDetailByCompany] = React.useState<Record<string, any>>({});
+  const [aiUsageDetailOpenByCompany, setAiUsageDetailOpenByCompany] = React.useState<Record<string, boolean>>({});
+  const [editingAiUsagePricingByCompany, setEditingAiUsagePricingByCompany] = React.useState<
+    Record<string, { monthlyTokenAllowance: number; overagePricePer1MTokens: number }>
+  >({});
+  const [savingAiUsagePricingCompanyId, setSavingAiUsagePricingCompanyId] = React.useState<string | null>(null);
   const [editingDataRoomPricingByCompany, setEditingDataRoomPricingByCompany] = React.useState<
     Record<string, { monthly: number; quarterly: number; annual: number }>
   >({});
@@ -2559,6 +2566,287 @@ export default function SiteAdminDashboard(props: any) {
         >
           {enabled ? `Disable ${label}` : `Enable ${label}`}
         </button>
+      </div>
+    );
+  };
+
+  const getAiUsagePricing = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const aiUsage = uda?.aiUsage && typeof uda.aiUsage === 'object' && !Array.isArray(uda.aiUsage) ? uda.aiUsage : {};
+    return {
+      monthlyTokenAllowance: Number(aiUsage.monthlyTokenAllowance || 0),
+      overagePricePer1MTokens: Number(aiUsage.overagePricePer1MTokens || 0),
+    };
+  };
+
+  const loadAiUsageSummary = React.useCallback(async () => {
+    try {
+      const response = await fetch('/api/siteadmin/ai-usage', { cache: 'no-store' });
+      if (!response.ok) return;
+      setAiUsageSummary(await response.json());
+    } catch {
+      // Usage summary is informational; the rest of Site Admin works without it.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void loadAiUsageSummary();
+  }, [loadAiUsageSummary]);
+
+  const loadAiUsageDetail = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/siteadmin/ai-usage?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || 'Failed to load AI usage');
+      setAiUsageDetailByCompany((prev) => ({ ...prev, [companyId]: data }));
+    } catch (error: any) {
+      alert(error?.message || 'Failed to load AI usage');
+    }
+  };
+
+  const toggleAiUsageDetail = (companyId: string) => {
+    const open = !aiUsageDetailOpenByCompany[companyId];
+    setAiUsageDetailOpenByCompany((prev) => ({ ...prev, [companyId]: open }));
+    if (open) void loadAiUsageDetail(companyId);
+  };
+
+  const saveAiUsagePricing = async (
+    companyId: string,
+    pricing: { monthlyTokenAllowance: number; overagePricePer1MTokens: number },
+  ) => {
+    setSavingAiUsagePricingCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          aiMonthlyTokenAllowance: Number(pricing.monthlyTokenAllowance || 0),
+          aiOveragePricePer1MTokens: Number(pricing.overagePricePer1MTokens || 0),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save AI usage pricing');
+      }
+      const applyCompany = (items: any[]) =>
+        Array.isArray(items)
+          ? items.map((item: any) => (item.id === companyId ? { ...item, ...(data?.company || {}) } : item))
+          : items;
+      setCompanies(applyCompany);
+      setStandaloneBusinesses(applyCompany);
+      setEditingAiUsagePricingByCompany((prev) => {
+        const next = { ...prev };
+        delete next[companyId];
+        return next;
+      });
+      void loadAiUsageSummary();
+      if (aiUsageDetailOpenByCompany[companyId]) void loadAiUsageDetail(companyId);
+      alert('AI usage pricing saved.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to save AI usage pricing');
+    } finally {
+      setSavingAiUsagePricingCompanyId(null);
+    }
+  };
+
+  const formatAiUsageMonth = (month: string) => {
+    const [year, monthNumber] = String(month || '').split('-');
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return names[Number(monthNumber) - 1] ? `${names[Number(monthNumber) - 1]} ${year}` : month;
+  };
+
+  const formatTokenCount = (value: unknown) => Math.round(Number(value) || 0).toLocaleString('en-US');
+
+  const aiUsageAlertCompanies = (aiUsageSummary?.companies || [])
+    .filter((row: any) => row.usedPct !== null && row.usedPct >= 80)
+    .sort((a: any, b: any) => b.usedPct - a.usedPct);
+
+  const renderAiUsageCard = (company: any) => {
+    const pricing = getAiUsagePricing(company);
+    const editing = editingAiUsagePricingByCompany[company.id];
+    const saving = savingAiUsagePricingCompanyId === company.id;
+    const detailOpen = Boolean(aiUsageDetailOpenByCompany[company.id]);
+    const detail = aiUsageDetailByCompany[company.id];
+    const usage = (aiUsageSummary?.companies || []).find((row: any) => row.companyId === company.id);
+    const billableTokens = Number(usage?.billableTokens || 0);
+    const usedPct = pricing.monthlyTokenAllowance > 0 ? (billableTokens / pricing.monthlyTokenAllowance) * 100 : null;
+    const overageTokens = Math.max(0, billableTokens - pricing.monthlyTokenAllowance);
+    const overageCharge = Math.round((overageTokens / 1_000_000) * pricing.overagePricePer1MTokens * 100) / 100;
+    const statusColor = usedPct === null ? '#475569' : usedPct >= 100 ? '#dc2626' : usedPct >= 80 ? '#b45309' : '#475569';
+    const thStyle = { textAlign: 'left' as const, padding: '6px', color: '#475569' };
+    const tdStyle = { padding: '6px' };
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#fdf4ff', borderRadius: '6px', border: '1px solid #f5d0fe' }}>
+        <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#a21caf', margin: 0 }}>AI Usage</h6>
+        {editing ? (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', marginBottom: '8px' }}>
+              <div>
+                <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly Token Allowance</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="100000"
+                  value={editing.monthlyTokenAllowance}
+                  onChange={(e) =>
+                    setEditingAiUsagePricingByCompany((prev) => ({
+                      ...prev,
+                      [company.id]: { ...prev[company.id], monthlyTokenAllowance: parseInt(e.target.value, 10) || 0 },
+                    }))
+                  }
+                  style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Overage Price per 1M Tokens ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editing.overagePricePer1MTokens}
+                  onChange={(e) =>
+                    setEditingAiUsagePricingByCompany((prev) => ({
+                      ...prev,
+                      [company.id]: { ...prev[company.id], overagePricePer1MTokens: parseFloat(e.target.value) || 0 },
+                    }))
+                  }
+                  style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => saveAiUsagePricing(company.id, editing)}
+                disabled={saving}
+                style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: saving ? 'not-allowed' : 'pointer' }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setEditingAiUsagePricingByCompany((prev) => {
+                    const next = { ...prev };
+                    delete next[company.id];
+                    return next;
+                  });
+                }}
+                style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: '2px', fontSize: '13px', color: '#475569' }}>
+            <div style={{ color: statusColor }}>
+              <strong>{formatAiUsageMonth(aiUsageSummary?.month || '')} (EST):</strong>{' '}
+              {formatTokenCount(billableTokens)}
+              {pricing.monthlyTokenAllowance > 0 ? ` of ${formatTokenCount(pricing.monthlyTokenAllowance)} tokens (${Math.round(usedPct || 0)}%)` : ' tokens'}
+              {usedPct !== null && usedPct >= 100 ? ' | Over allowance' : usedPct !== null && usedPct >= 80 ? ' | Nearing allowance' : ''}
+            </div>
+            <div style={{ fontSize: '11px' }}>
+              <strong>Allowance:</strong> {pricing.monthlyTokenAllowance > 0 ? `${formatTokenCount(pricing.monthlyTokenAllowance)} tokens/month` : 'Not set'}
+              {' | '}<strong>Overage Price:</strong> ${pricing.overagePricePer1MTokens.toFixed(2)} per 1M tokens
+              {' | '}<strong>Overage:</strong> {formatTokenCount(overageTokens)} tokens, ${overageCharge.toFixed(2)}
+              {' | '}<strong>Our Cost:</strong> ${Number(usage?.costUsd || 0).toFixed(2)}
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', gridColumn: '3', gridRow: '1' }}>
+          <button
+            onClick={() => toggleAiUsageDetail(company.id)}
+            style={{ padding: '6px 12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+          >
+            {detailOpen ? 'Hide Usage' : 'Show Usage'}
+          </button>
+          {!editing && (
+            <button
+              onClick={() => setEditingAiUsagePricingByCompany((prev) => ({ ...prev, [company.id]: pricing }))}
+              style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+            >
+              Edit Pricing
+            </button>
+          )}
+        </div>
+        {detailOpen && (
+          <div style={{ gridColumn: '1 / -1', display: 'grid', gap: '10px', background: 'white', borderRadius: '6px', border: '1px solid #e2e8f0', padding: '8px' }}>
+            {!detail ? (
+              <div style={{ fontSize: '12px', color: '#64748b' }}>Loading usage...</div>
+            ) : (
+              <>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                    {formatAiUsageMonth(detail.months?.[0]?.month || '')} by Feature
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={thStyle}>Feature</th>
+                        <th style={thStyle}>Interactions</th>
+                        <th style={thStyle}>Billable Tokens</th>
+                        <th style={thStyle}>Total Tokens</th>
+                        <th style={thStyle}>Our Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detail.currentMonthByFeature || []).length === 0 ? (
+                        <tr><td style={{ ...tdStyle, color: '#64748b' }} colSpan={5}>No AI usage this month.</td></tr>
+                      ) : (
+                        detail.currentMonthByFeature.map((row: any) => (
+                          <tr key={row.feature} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={tdStyle}>{row.label}{row.billable ? '' : ' (not billed)'}</td>
+                            <td style={tdStyle}>{formatTokenCount(row.interactions)}</td>
+                            <td style={tdStyle}>{formatTokenCount(row.billableTokens)}</td>
+                            <td style={tdStyle}>{formatTokenCount(row.totalTokens)}</td>
+                            <td style={tdStyle}>${Number(row.costUsd || 0).toFixed(2)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Monthly History (EST)</div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={thStyle}>Month</th>
+                        <th style={thStyle}>Interactions</th>
+                        <th style={thStyle}>Billable Tokens</th>
+                        <th style={thStyle}>Allowance</th>
+                        <th style={thStyle}>Overage Tokens</th>
+                        <th style={thStyle}>Overage Charge</th>
+                        <th style={thStyle}>Our Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detail.months || []).map((row: any) => (
+                        <tr key={row.month} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={tdStyle}>{formatAiUsageMonth(row.month)}</td>
+                          <td style={tdStyle}>{formatTokenCount(row.interactions)}</td>
+                          <td style={tdStyle}>{formatTokenCount(row.billableTokens)}</td>
+                          <td style={tdStyle}>{row.allowance > 0 ? formatTokenCount(row.allowance) : 'Not set'}</td>
+                          <td style={tdStyle}>{formatTokenCount(row.overageTokens)}</td>
+                          <td style={tdStyle}>${Number(row.overageChargeUsd || 0).toFixed(2)}</td>
+                          <td style={tdStyle}>${Number(row.costUsd || 0).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>
+                    Overage uses the current allowance and price for every month. Our Cost is the provider cost; Industry Brief and system checks are tracked but not billed.
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -6823,6 +7111,21 @@ export default function SiteAdminDashboard(props: any) {
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
       <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Site Administration</h1>
+      {aiUsageAlertCompanies.length > 0 && (
+        <div style={{ marginBottom: '16px', padding: '10px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px' }}>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: '#9a3412', marginBottom: '4px' }}>
+            AI Usage Allowance Alerts ({formatAiUsageMonth(aiUsageSummary?.month || '')}, EST)
+          </div>
+          <div style={{ display: 'grid', gap: '2px', fontSize: '12px', color: '#475569' }}>
+            {aiUsageAlertCompanies.map((row: any) => (
+              <div key={row.companyId} style={{ color: row.usedPct >= 100 ? '#dc2626' : '#b45309' }}>
+                <strong>{row.companyName || row.companyId}</strong>: {formatTokenCount(row.billableTokens)} of {formatTokenCount(row.monthlyTokenAllowance)} tokens ({Math.round(row.usedPct)}%)
+                {row.usedPct >= 100 ? ` | Over allowance | Overage ${formatTokenCount(row.overageTokens)} tokens, $${Number(row.overageChargeUsd || 0).toFixed(2)}` : ' | Nearing allowance'}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Tab Navigation */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '2px solid #e2e8f0' }}>
@@ -10069,6 +10372,7 @@ export default function SiteAdminDashboard(props: any) {
                                             </div>
                                             {renderServiceAccessCard(company, 'operationalReporting', 'Operational Reporting', { background: '#f0fdfa', border: '#99f6e4', heading: '#0f766e' })}
                                             {renderServiceAccessCard(company, 'askCorelytics', 'Ask Corelytics', { background: '#eff6ff', border: '#bfdbfe', heading: '#1d4ed8' })}
+                                            {renderAiUsageCard(company)}
                                             {renderServiceAccessCard(company, 'expertAnalysis', 'Expert Analysis', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
                                             <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#5b21b6', margin: 0 }}>Valuation</h6>
@@ -13872,6 +14176,7 @@ export default function SiteAdminDashboard(props: any) {
                                   </div>
                                   {renderServiceAccessCard(businessCompany, 'operationalReporting', 'Operational Reporting', { background: '#f0fdfa', border: '#99f6e4', heading: '#0f766e' })}
                                   {renderServiceAccessCard(businessCompany, 'askCorelytics', 'Ask Corelytics', { background: '#eff6ff', border: '#bfdbfe', heading: '#1d4ed8' })}
+                                  {renderAiUsageCard(businessCompany)}
                                   {renderServiceAccessCard(businessCompany, 'expertAnalysis', 'Expert Analysis', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
                                   <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#5b21b6', margin: 0 }}>Valuation</h4>

@@ -3,6 +3,7 @@ import {
   getOpenAiClient,
   resolveModelName,
 } from '@/lib/ai-gateway';
+import { type AiUsageTag, addAiUsageCounts, emptyAiUsageCounts, recordAiUsage, usageFromResponse } from '@/lib/ai-usage/record';
 
 function getEmbeddingModel(): string {
   return process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
@@ -13,7 +14,7 @@ export type EmbedResult = {
   vectors: number[][];
 };
 
-export async function embedTexts(texts: string[]): Promise<EmbedResult> {
+export async function embedTexts(texts: string[], usage?: AiUsageTag): Promise<EmbedResult> {
   const model = resolveModelName(getEmbeddingModel());
   const openai = getOpenAiClient();
   const providerOptions = getAiProviderOptions();
@@ -21,17 +22,25 @@ export async function embedTexts(texts: string[]): Promise<EmbedResult> {
   // Batch to keep request sizes reasonable.
   const BATCH_SIZE = 64;
   const vectors: number[][] = [];
+  const usageCounts = emptyAiUsageCounts();
+  let outcome = 'error';
 
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts.slice(i, i + BATCH_SIZE).map((t) => String(t || '').slice(0, 12_000));
-    const resp = await openai.embeddings.create({
-      model,
-      input: batch,
-      ...(providerOptions ? ({ providerOptions } as Record<string, unknown>) : {}),
-    } as Parameters<typeof openai.embeddings.create>[0]);
-    for (const item of resp.data) {
-      vectors.push(item.embedding as unknown as number[]);
+  try {
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE).map((t) => String(t || '').slice(0, 12_000));
+      const resp = await openai.embeddings.create({
+        model,
+        input: batch,
+        ...(providerOptions ? ({ providerOptions } as Record<string, unknown>) : {}),
+      } as Parameters<typeof openai.embeddings.create>[0]);
+      addAiUsageCounts(usageCounts, usageFromResponse(resp));
+      for (const item of resp.data) {
+        vectors.push(item.embedding as unknown as number[]);
+      }
     }
+    outcome = 'ok';
+  } finally {
+    void recordAiUsage({ tag: usage ?? { feature: 'other' }, model, outcome, counts: usageCounts });
   }
 
   return { model, vectors };

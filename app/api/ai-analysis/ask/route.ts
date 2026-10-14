@@ -12,6 +12,7 @@ import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 import { retrieveDocumentChunks } from '@/lib/company-documents/retrieve-chunks';
 import { calculateEbitda } from '@/lib/financial/ebitda';
 import { createModelText } from '@/lib/openai-helpers';
+import type { AiUsageTag } from '@/lib/ai-usage/record';
 import { searchExternalWeb } from '@/lib/ask-corelytics/externalSearch';
 import { buildExternalQueryPlan } from '@/lib/ask-corelytics/externalQueryBuilder';
 import { getPlatosClosetAiContext, isPlatosClosetSourceEnabled } from '@/lib/operational/platos-closet-monthly-facts';
@@ -479,6 +480,7 @@ async function resolveStandaloneQuestion(params: {
   model: string;
   question: string;
   conversationContext: ConversationContext | null;
+  usage: AiUsageTag;
 }): Promise<string> {
   const { openai, model, question, conversationContext } = params;
   if (!conversationContext || conversationContext.recentTurns.length === 0) return question;
@@ -508,6 +510,7 @@ async function resolveStandaloneQuestion(params: {
       temperature: 0,
       maxTokens: 200,
       timeoutMs: 20_000,
+      usage: params.usage,
     });
     const rewritten = String(resp.text || '').replace(/^["'\s]+|["'\s]+$/g, '').trim();
     return rewritten && rewritten.length <= 600 ? rewritten : question;
@@ -2140,6 +2143,7 @@ async function generateAskJson(params: {
   mode: 'full' | 'compact';
   requestedCount: number | null;
   strictCitations?: boolean;
+  usage: AiUsageTag;
 }): Promise<{ parsed: AskOutput; finish_reason: string | null | undefined; contentPreview: string; contentLength: number }> {
   const { openai, model, companyName, question, internalSummary, sources, mode, requestedCount, strictCitations } = params;
   const hasDoc = !!(internalSummary as any)?.documentContext?.id;
@@ -2330,6 +2334,7 @@ async function generateAskJson(params: {
     ],
     temperature: 0.2,
     maxTokens: hasDoc ? 1400 : (mode === 'full' ? 2200 : 1400),
+    usage: params.usage,
   });
 
   const content = resp.text;
@@ -2373,6 +2378,7 @@ async function generateAskJson(params: {
       ],
       temperature: 0,
       maxTokens: 1600,
+      usage: params.usage,
     });
 
     parsed = safeJsonParse(repair.text) as AskOutput;
@@ -2405,7 +2411,7 @@ export async function runAskCorelyticsLegacy(
     }
   };
   try {
-    await requireAuth();
+    const authContext = await requireAuth();
 
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
@@ -2420,6 +2426,12 @@ export async function runAskCorelyticsLegacy(
       typeof useExternalSourcesRaw === 'boolean' ? useExternalSourcesRaw : false;
     const threadId = body?.threadId ? String(body.threadId).slice(0, 120) : '';
     const conversationContext = normalizeConversationContext(body?.conversationContext);
+    const usageTag: AiUsageTag = {
+      feature: uiMode === 'document' ? 'ask_document' : 'ask_data',
+      companyId,
+      userId: authContext.userId,
+      route: '/api/ai-analysis/ask',
+    };
 
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
@@ -2731,6 +2743,7 @@ export async function runAskCorelyticsLegacy(
         keywordLimit: 35,
         vectorLimit: 35,
         finalLimit: 18,
+        usage: { ...usageTag, feature: 'document_embeddings' },
       });
 
       if ((retrievedDocChunks?.chunks || []).length === 0) {
@@ -2949,7 +2962,7 @@ export async function runAskCorelyticsLegacy(
 
     const searchQuestion =
       useExternalSources && uiMode === 'default'
-        ? await resolveStandaloneQuestion({ openai, model: askModel, question, conversationContext })
+        ? await resolveStandaloneQuestion({ openai, model: askModel, question, conversationContext, usage: usageTag })
         : question;
 
     const externalQueryPlan = useExternalSources
@@ -3007,6 +3020,7 @@ export async function runAskCorelyticsLegacy(
           openai,
           model: askModel,
           companyId,
+          userId: authContext.userId,
           companyName: companyName || company?.name || '',
           question,
           contextSummary: internalSummary,
@@ -3059,6 +3073,7 @@ export async function runAskCorelyticsLegacy(
         sources: sourcesWithDoc,
         mode: 'full',
         requestedCount,
+        usage: usageTag,
       });
       parsed = first.parsed;
       finishReason = first.finish_reason;
@@ -3084,6 +3099,7 @@ export async function runAskCorelyticsLegacy(
         sources: sourcesWithDoc,
         mode: 'compact',
         requestedCount,
+        usage: usageTag,
       });
       parsed = second.parsed;
       finishReason = second.finish_reason;
@@ -3137,6 +3153,7 @@ export async function runAskCorelyticsLegacy(
         mode: 'compact',
         requestedCount,
         strictCitations: true,
+        usage: usageTag,
       });
       parsed = strictRetry.parsed;
       finishReason = strictRetry.finish_reason;

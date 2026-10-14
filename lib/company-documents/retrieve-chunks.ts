@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import type { AiUsageTag } from '@/lib/ai-usage/record';
 import { embedTexts } from './embeddings';
 
 export type RetrievedChunk = {
@@ -23,6 +24,7 @@ export async function retrieveDocumentChunks(params: {
   keywordLimit?: number;
   vectorLimit?: number;
   finalLimit?: number;
+  usage?: AiUsageTag;
 }): Promise<{ chunks: RetrievedChunk[]; debug: { keyword: number; vector: number } }> {
   const { documentId, question } = params;
   const keywordLimit = Math.max(0, Math.min(50, params.keywordLimit ?? 20));
@@ -66,7 +68,7 @@ export async function retrieveDocumentChunks(params: {
   const anchorQuery = anchorTerms.length ? anchorTerms.join(' ') : '';
 
   // Vector query embedding
-  const embedded = await embedTexts([expandedQuery]);
+  const embedded = await embedTexts([expandedQuery], params.usage);
   const queryVec = embedded.vectors[0];
   if (!queryVec || queryVec.length === 0) {
     throw new Error('Failed to embed query');

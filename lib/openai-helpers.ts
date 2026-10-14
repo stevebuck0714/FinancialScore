@@ -6,6 +6,14 @@ import {
   getAiProviderOptions,
   resolveModelName,
 } from '@/lib/ai-gateway';
+import {
+  type AiUsageCounts,
+  type AiUsageTag,
+  addAiUsageCounts,
+  emptyAiUsageCounts,
+  recordAiUsage,
+  usageFromResponse,
+} from '@/lib/ai-usage/record';
 
 type OpenAIChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
@@ -89,6 +97,7 @@ async function createResponsesTextViaFetch(params: {
   temperature: number;
   maxTokens?: number;
   timeoutMs?: number;
+  usageCounts?: AiUsageCounts;
 }): Promise<{ text: string; finishReason?: string | null }> {
   const apiKey = getApiKey();
   const baseUrl = getApiBaseUrl();
@@ -149,6 +158,7 @@ async function createResponsesTextViaFetch(params: {
     } catch {
       data = null;
     }
+    if (res.ok && params.usageCounts) addAiUsageCounts(params.usageCounts, usageFromResponse(data));
     const requestId =
       res.headers.get('x-request-id') ||
       res.headers.get('x-openai-request-id') ||
@@ -294,14 +304,40 @@ async function createResponsesTextViaFetch(params: {
  * We intentionally do NOT rely on structured output params here; callers can
  * enforce JSON via prompt + their own parsing.
  */
-export async function createModelText(params: {
+type CreateModelTextParams = {
   openai: OpenAI;
   model: string;
   messages: OpenAIChatMessage[];
   temperature?: number;
   maxTokens?: number; // chat max_tokens; mapped to responses max_output_tokens
   timeoutMs?: number;
-}): Promise<{ text: string; finishReason?: string | null; api: 'responses' | 'chat' }> {
+  /** Who/what to attribute token usage to. Untagged calls are recorded as non-billable "other". */
+  usage?: AiUsageTag;
+};
+
+export async function createModelText(
+  params: CreateModelTextParams,
+): Promise<{ text: string; finishReason?: string | null; api: 'responses' | 'chat' }> {
+  const usageCounts = emptyAiUsageCounts();
+  let outcome = 'error';
+  try {
+    const result = await createModelTextWithUsage(params, usageCounts);
+    outcome = 'ok';
+    return result;
+  } finally {
+    void recordAiUsage({
+      tag: params.usage ?? { feature: 'other' },
+      model: resolveModelName(params.model),
+      outcome,
+      counts: usageCounts,
+    });
+  }
+}
+
+async function createModelTextWithUsage(
+  params: CreateModelTextParams,
+  usageCounts: AiUsageCounts,
+): Promise<{ text: string; finishReason?: string | null; api: 'responses' | 'chat' }> {
   const { openai, model, messages, temperature = 0.2, maxTokens } = params;
   const timeoutMs = Math.max(1000, Math.min(180000, Math.floor(Number(params.timeoutMs || getOpenAiTimeoutMs()))));
 
@@ -327,6 +363,7 @@ export async function createModelText(params: {
       temperature,
       maxTokens,
       timeoutMs,
+      usageCounts,
     });
     return { text: r.text, finishReason: r.finishReason ?? null, api: 'responses' };
   } catch (e: unknown) {
@@ -366,6 +403,7 @@ export async function createModelText(params: {
     );
   }
 
+  addAiUsageCounts(usageCounts, usageFromResponse(completion));
   const text = completion.choices[0]?.message?.content ?? '';
   if (!text.trim()) throw new Error('Empty model response (chat)');
   const finishReason = completion.choices[0]?.finish_reason ?? null;

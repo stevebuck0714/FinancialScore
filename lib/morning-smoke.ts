@@ -274,6 +274,7 @@ export async function runMorningSmoke(options?: {
         temperature: 0,
         maxTokens: 40,
         timeoutMs: 45000,
+        usage: { feature: 'system_check', route: 'morning-smoke' },
       });
       const text = String(resp.text || '').trim();
       if (!text) {

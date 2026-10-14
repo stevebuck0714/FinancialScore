@@ -73,7 +73,10 @@ export async function indexCompanyDocument(params: {
       throw new Error('Chunking produced 0 chunks');
     }
 
-    const { model, vectors } = await embedTexts(chunks.map((c) => c.text));
+    const { model, vectors } = await embedTexts(
+      chunks.map((c) => c.text),
+      { feature: 'document_embeddings', companyId: doc.companyId, route: 'index-document' },
+    );
     if (vectors.length !== chunks.length) {
       throw new Error(`Embedding mismatch: chunks=${chunks.length} vectors=${vectors.length}`);
     }

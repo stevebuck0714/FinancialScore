@@ -540,7 +540,7 @@ export async function generateAndCacheDailyIndustryBrief(params: {
 
   const company = await loadIndustryBriefCompany(companyId);
   const financialFacts = await loadIndustryBriefFinancialFacts(companyId);
-  const aiConfig = getIndustryBriefAiConfig();
+  const aiConfig = { ...getIndustryBriefAiConfig(), companyId };
   const shell = buildDailyIndustryBriefShell({ company, financialFacts });
   shell.aiMetadata = {
     aiGenerated: true,

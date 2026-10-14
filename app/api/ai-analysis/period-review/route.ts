@@ -165,7 +165,7 @@ function safeJsonParse(rawContent: string): any {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth();
+    const authContext = await requireAuth();
 
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
@@ -485,6 +485,7 @@ export async function POST(request: NextRequest) {
       ],
       temperature: 0.2,
       maxTokens: 1400,
+      usage: { feature: 'period_review', companyId, userId: authContext.userId, route: '/api/ai-analysis/period-review' },
     });
 
     const content = resp.text || '';

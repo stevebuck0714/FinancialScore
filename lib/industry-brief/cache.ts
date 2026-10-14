@@ -75,7 +75,7 @@ export async function getCachedIndustryBriefSources(params: {
     if (cached?.records?.length) return cached;
   }
 
-  const records = await collectIndustryBriefSources(params.context);
+  const records = await collectIndustryBriefSources({ ...params.context, companyId: params.companyId });
   const bundle: IndustryBriefSourceBundle = {
     collectedAt: new Date().toISOString(),
     context: params.context,

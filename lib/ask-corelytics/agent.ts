@@ -3,7 +3,7 @@ import type OpenAI from 'openai';
 import { getAiProviderOptions, isUsingGateway, resolveModelName } from '@/lib/ai-gateway';
 import { formatEstDate } from '@/lib/time/eastern';
 import { ASK_DATA_TOOL_DEFINITIONS, executeAskDataTool } from '@/lib/ask-corelytics/data-tools';
-import { recordAskUsage } from '@/lib/ask-corelytics/usage-log';
+import { addAiUsageCounts, emptyAiUsageCounts, recordAiUsage, usageFromResponse } from '@/lib/ai-usage/record';
 
 type Source = { url: string; title?: string; publishedDate?: string | null; snippet?: string };
 
@@ -326,10 +326,8 @@ type StreamedRound = {
   finishReason: string | null;
   usage:
     | (OpenAI.Completions.CompletionUsage & {
-        prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+        prompt_tokens_details?: { cached_tokens?: number };
         completion_tokens_details?: { reasoning_tokens?: number };
-        cache_creation_input_tokens?: number;
-        cost?: number;
       })
     | null;
 };
@@ -377,6 +375,7 @@ export async function runAskDataAgent(params: {
   openai: OpenAI;
   model: string;
   companyId: string;
+  userId?: string | null;
   companyName: string;
   question: string;
   contextSummary: Record<string, unknown>;
@@ -447,8 +446,7 @@ export async function runAskDataAgent(params: {
   let toolMsTotal = 0;
   let firstAnswerTextMs: number | null = null;
   let toolResultChars = 0;
-  const usageTotals = { promptTokens: 0, cachedPromptTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0 };
-  let gatewayCostUsd: number | null = null;
+  const usageTotals = emptyAiUsageCounts();
   const logSummary = (outcome: string, rounds: number) => {
     const totalMs = Date.now() - agentStartedAt;
     console.log('Ask agent: finished', {
@@ -461,25 +459,25 @@ export async function runAskDataAgent(params: {
       rounds,
       toolCalls,
       ...usageTotals,
-      gatewayCostUsd,
       llmMs: llmMsTotal,
       toolMs: toolMsTotal,
       firstAnswerTextMs,
       totalMs,
     });
-    void recordAskUsage({
-      companyId,
+    void recordAiUsage({
+      tag: { feature: 'ask_data', companyId, userId: params.userId, route: '/api/ai-analysis/ask' },
       model,
-      reasoningEffort,
-      outcome,
-      rounds,
-      toolCalls,
-      ...usageTotals,
-      gatewayCostUsd,
-      questionChars: question.length,
-      contextChars: contextJson.length,
-      toolResultChars,
-      totalMs,
+      outcome: outcome === 'answered' ? 'ok' : outcome,
+      counts: usageTotals,
+      metadata: {
+        reasoningEffort: reasoningEffort || 'default',
+        rounds,
+        toolCalls,
+        questionChars: question.length,
+        contextChars: contextJson.length,
+        toolResultChars,
+        totalMs,
+      },
     });
   };
 
@@ -518,28 +516,25 @@ export async function runAskDataAgent(params: {
         partialShown = true;
         emitPartial(partial);
       },
-    );
+    ).catch((error) => {
+      logSummary('error', round);
+      throw error;
+    });
     const llmMs = Date.now() - llmStartedAt;
     llmMsTotal += llmMs;
 
-    const usage = result.usage;
-    const cacheWriteTokens = usage?.prompt_tokens_details?.cache_write_tokens ?? usage?.cache_creation_input_tokens ?? null;
+    const roundUsage = usageFromResponse({ usage: result.usage });
+    addAiUsageCounts(usageTotals, roundUsage);
     const roundLog = {
       round: round + 1,
       llmMs,
-      promptTokens: usage?.prompt_tokens ?? null,
-      cachedPromptTokens: usage?.prompt_tokens_details?.cached_tokens ?? null,
-      cacheWriteTokens,
-      completionTokens: usage?.completion_tokens ?? null,
-      reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens ?? null,
+      promptTokens: roundUsage?.promptTokens ?? null,
+      cachedPromptTokens: roundUsage?.cachedPromptTokens ?? null,
+      cacheWriteTokens: roundUsage?.cacheWriteTokens ?? null,
+      completionTokens: roundUsage?.completionTokens ?? null,
+      reasoningTokens: roundUsage?.reasoningTokens ?? null,
       finishReason: result.finishReason,
     };
-    usageTotals.promptTokens += roundLog.promptTokens ?? 0;
-    usageTotals.cachedPromptTokens += roundLog.cachedPromptTokens ?? 0;
-    usageTotals.cacheWriteTokens += cacheWriteTokens ?? 0;
-    usageTotals.completionTokens += roundLog.completionTokens ?? 0;
-    usageTotals.reasoningTokens += roundLog.reasoningTokens ?? 0;
-    if (typeof usage?.cost === 'number') gatewayCostUsd = (gatewayCostUsd ?? 0) + usage.cost;
 
     if (result.toolCalls.length > 0) {
       if (partialShown) emitPartial(null);

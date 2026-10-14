@@ -1,5 +1,6 @@
 import { getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
+import type { AiUsageTag } from '@/lib/ai-usage/record';
 import type {
   DailyIndustryBrief,
   GrowthOpportunity,
@@ -12,7 +13,12 @@ type IndustryBriefAiConfig = {
   transport: string;
   finalModel: string;
   scanModel: string;
+  companyId?: string;
 };
+
+function industryBriefUsageTag(config: IndustryBriefAiConfig): AiUsageTag {
+  return { feature: 'industry_brief', companyId: config.companyId ?? null, route: 'industry-brief' };
+}
 
 type FinancialFactInput = {
   revenueLastTwelveMonths: number;
@@ -599,6 +605,7 @@ async function repairFinalJson(params: {
   priorOutput: string;
   timeoutMs: number;
   validationError?: string;
+  usage: AiUsageTag;
 }): Promise<Record<string, unknown>> {
   const repaired = await withIndustryBriefTimeout(
     createModelText({
@@ -611,6 +618,7 @@ async function repairFinalJson(params: {
       temperature: 0.1,
       maxTokens: 3000,
       timeoutMs: params.timeoutMs + 5000,
+      usage: params.usage,
     }),
     'Industry Brief final JSON repair',
     'final',
@@ -685,6 +693,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
       temperature: 0.2,
       maxTokens: 3000,
       timeoutMs: timeoutMs + 5000,
+      usage: industryBriefUsageTag(params.config),
     }),
     'Industry Brief final AI synthesis',
     'final',
@@ -697,6 +706,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
       finalUserPrompt,
       priorOutput: result.text,
       timeoutMs,
+      usage: industryBriefUsageTag(params.config),
     });
   }
   let brief = mergeAiBrief(params.baseBrief, parsed, params.config, params.sourceRecords, 'final');
@@ -711,6 +721,7 @@ export async function synthesizeIndustryBriefWithAi(params: {
         priorOutput: JSON.stringify(parsed),
         timeoutMs,
         validationError: validationMessage,
+        usage: industryBriefUsageTag(params.config),
       });
     brief = mergeAiBrief(params.baseBrief, repairedParsed, params.config, params.sourceRecords, 'final');
     try {
@@ -749,6 +760,7 @@ export async function scanIndustryBriefSourcesWithAi(params: {
       temperature: 0.1,
       maxTokens: 6500,
       timeoutMs: timeoutMs + 5000,
+      usage: industryBriefUsageTag(params.config),
     }),
     'Industry Brief source classification',
     'scan',

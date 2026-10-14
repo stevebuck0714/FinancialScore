@@ -3,6 +3,7 @@ import { getAiTransport, getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
+import { type AiUsageTag, emptyAiUsageCounts, recordAiUsage, usageFromResponse } from '@/lib/ai-usage/record';
 
 export const maxDuration = 120;
 
@@ -66,7 +67,9 @@ async function callPerplexity(params: {
   prompt: string;
   maxTokens?: number;
   timeoutMs: number;
+  usage: AiUsageTag;
 }): Promise<{ content: string; citations: string[] }> {
+  const model = process.env.PERPLEXITY_MODEL || 'sonar-pro';
   const response = await fetch('https://api.perplexity.ai/chat/completions', {
     method: 'POST',
     signal: AbortSignal.timeout(params.timeoutMs),
@@ -75,7 +78,7 @@ async function callPerplexity(params: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: process.env.PERPLEXITY_MODEL || 'sonar-pro',
+      model,
       messages: [
         { role: 'system', content: params.system },
         { role: 'user', content: params.prompt },
@@ -86,6 +89,12 @@ async function callPerplexity(params: {
   });
 
   const data = await response.json();
+  void recordAiUsage({
+    tag: params.usage,
+    model: `perplexity/${model}`,
+    outcome: response.ok ? 'ok' : 'error',
+    counts: usageFromResponse(data) ?? emptyAiUsageCounts(),
+  });
   if (!response.ok) {
     throw new Error(data?.error?.message || data?.message || 'Perplexity research request failed.');
   }
@@ -173,10 +182,16 @@ export async function POST(request: NextRequest) {
   const deadline = startedAt + REQUEST_BUDGET_MS;
   const timings: Record<string, number> = {};
   try {
-    await requireAuth();
+    const authContext = await requireAuth();
 
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
+    const usageTag: AiUsageTag = {
+      feature: 'web_research',
+      companyId,
+      userId: authContext.userId,
+      route: '/api/ai-analysis/web-research',
+    };
     const companyName = String(body?.companyName || '').trim();
     const question = String(body?.question || '').trim();
     const searchName = String(body?.searchName || '').trim() || companyName;
@@ -278,6 +293,7 @@ Run a deep follow-up search using alternate terms, aliases, identity anchors, of
           prompt: item.prompt,
           maxTokens: researchDepth === 'deep' ? 2000 : 1500,
           timeoutMs: RESEARCH_CALL_TIMEOUT_MS,
+          usage: usageTag,
         })),
       })),
     );
@@ -384,6 +400,7 @@ Requirements:
           ],
           temperature: 0.2,
           maxTokens: researchDepth === 'deep' ? 4500 : 3500,
+          usage: usageTag,
         });
         parsed = extractJsonObject(synthesis.text);
       } catch (error) {
@@ -403,6 +420,7 @@ Requirements:
         prompt: synthesisPrompt,
         maxTokens: researchDepth === 'deep' ? 4500 : 3500,
         timeoutMs: remainingMs,
+        usage: usageTag,
       });
       parsed = extractJsonObject(fallback.content);
       citations.push(...fallback.citations);

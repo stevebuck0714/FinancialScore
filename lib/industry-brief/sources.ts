@@ -1,7 +1,9 @@
 import type { IndustryBriefSourceRecord } from '@/lib/industry-brief/types';
+import { emptyAiUsageCounts, recordAiUsage, usageFromResponse } from '@/lib/ai-usage/record';
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
 
 type CompanySourceContext = {
+  companyId?: string;
   name: string;
   industry: string;
   segment: string;
@@ -518,6 +520,7 @@ async function collectPerplexityScan(context: CompanySourceContext, kind: Perple
     retry ? 'Return 4 concise cited bullets.' : 'Return 5 concise cited bullets.',
   ].filter(Boolean).join('\n');
 
+  const perplexityModel = process.env.PERPLEXITY_MODEL || 'sonar-pro';
   const requestPerplexity = async (retry = false) => {
     const response = await fetchWithTimeout(
       'https://api.perplexity.ai/chat/completions',
@@ -528,7 +531,7 @@ async function collectPerplexityScan(context: CompanySourceContext, kind: Perple
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: process.env.PERPLEXITY_MODEL || 'sonar-pro',
+          model: perplexityModel,
           messages: [
             { role: 'system', content: 'You retrieve source-backed business evidence. Return concise cited facts only. Do not provide strategy or recommendations.' },
             { role: 'user', content: buildPrompt(retry) },
@@ -553,6 +556,12 @@ async function collectPerplexityScan(context: CompanySourceContext, kind: Perple
   }
 
   const data = await response.json();
+  void recordAiUsage({
+    tag: { feature: 'industry_brief', companyId: context.companyId ?? null, route: 'industry-brief' },
+    model: `perplexity/${perplexityModel}`,
+    outcome: response.ok ? 'ok' : 'error',
+    counts: usageFromResponse(data) ?? emptyAiUsageCounts(),
+  });
   if (!response.ok) {
     throw new Error(data?.error?.message || `Perplexity source scan failed with HTTP ${response.status}.`);
   }
