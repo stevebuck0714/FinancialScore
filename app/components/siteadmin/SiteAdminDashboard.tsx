@@ -5672,22 +5672,26 @@ export default function SiteAdminDashboard(props: any) {
     const statusTheme = getOperationalSourceStatusTheme(selectedSource?.status);
     const lastSyncAt = selectedSource?.lastSyncAt || null;
     const errorMessage = selectedSource?.errorMessage || null;
+    const syncLabel = sourceCode === ISOLVED_PEOPLE_CLOUD_SOURCE_CODE ? 'iSolved' : detail.label;
+    const connectorPending = () => alert(`${detail.label} connector is not built yet.`);
+    const actionButtonStyle = (background: string) => ({
+      padding: '8px 12px', background, color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+    });
 
     return (
       <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', gridColumn: '1 / 2', order: getOperationalSourceCardOrder(sourceCode, 0) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
-          <div>
-            <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{detail.label}</h4>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>
-              {detail.label} setup for <strong>{companyName}</strong>
-            </div>
+          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>{detail.label}</h4>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+            <button onClick={connectorPending} style={actionButtonStyle('#334155')}>Save</button>
+            <button onClick={connectorPending} style={actionButtonStyle('#0ea5e9')}>Connect</button>
+            <button onClick={connectorPending} style={actionButtonStyle('#16a34a')}>Run Sync Test</button>
+            <button onClick={connectorPending} style={actionButtonStyle('#0f766e')}>Sync {syncLabel} Now</button>
+            <button onClick={connectorPending} style={actionButtonStyle('#7c3aed')}>Probe Domains</button>
           </div>
-          <button
-            disabled
-            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
-          >
-            Save
-          </button>
+        </div>
+        <div style={{ marginBottom: '8px' }}>
+          <OperationalDateRangeSync companyId={companyId} sourceCode={sourceCode} compact />
         </div>
 
         <div style={{ marginBottom: '8px', padding: '8px', background: statusTheme.bg, border: `1px solid ${statusTheme.border}`, borderRadius: '6px' }}>
@@ -5696,13 +5700,6 @@ export default function SiteAdminDashboard(props: any) {
             {lastSyncAt ? `Last sync: ${formatEstDateTime(lastSyncAt)}` : `No ${detail.label} sync has been run for this company yet.`}
           </div>
           {errorMessage ? <div style={{ fontSize: '12px', color: statusTheme.fg, marginTop: '4px' }}>{errorMessage}</div> : null}
-        </div>
-
-        <div style={{ marginBottom: '8px', padding: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px' }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: '#1d4ed8' }}>{detail.label} operational connection</div>
-          <div style={{ fontSize: '12px', color: '#1d4ed8' }}>
-            {detail.description}
-          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
@@ -5871,12 +5868,10 @@ export default function SiteAdminDashboard(props: any) {
           <div style={{ display: 'grid', gap: '8px' }}>
             {selectedSources.map((source) => {
               const scheduleEnabled = Boolean(source.scheduleEnabled);
-              const showDateRangeSync =
-                scheduleEnabled && !['BAMBOOHR_STANDARD', 'HUBSPOT_STANDARD', 'HIGHLEVEL_STANDARD'].includes(source.sourceCode);
               return (
                 <div
                   key={`${companyId}-selected-source-${source.sourceCode}`}
-                  style={{ display: 'grid', gridTemplateColumns: showDateRangeSync ? 'minmax(180px, 240px) 1fr auto' : 'minmax(180px, 1fr) auto', gap: '8px', alignItems: 'start', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px', fontSize: '12px', color: '#334155' }}
+                  style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: '8px', alignItems: 'start', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px', fontSize: '12px', color: '#334155' }}
                 >
                   <div>
                     <div style={{ fontWeight: 700, color: '#1e293b' }}>{source.label}</div>
@@ -5886,9 +5881,6 @@ export default function SiteAdminDashboard(props: any) {
                     {!scheduleEnabled ? <div style={{ color: '#64748b', marginTop: '2px' }}>Manual upload source. Scheduling is handled by user imports.</div> : null}
                     {source.errorMessage ? <div style={{ color: '#b91c1c', marginTop: '2px' }}>{source.errorMessage}</div> : null}
                   </div>
-                  {showDateRangeSync && (
-                    <OperationalDateRangeSync companyId={companyId} sourceCode={source.sourceCode} />
-                  )}
                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                     <button
                       onClick={() => removeOperationalSource(companyId, source.sourceCode)}
