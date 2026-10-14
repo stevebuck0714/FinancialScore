@@ -8,6 +8,7 @@ import {
   buildQuickBooksDesktopAgingSummaryFromReport,
   buildQuickBooksDesktopFinancialPayload,
   buildQuickBooksDesktopOperationalPayload,
+  isOlderAsOfReportJob,
 } from '@/lib/quickbooks-desktop/backfill-payloads';
 import { scheduleQuickBooksDesktopInvoiceDetailTransform } from '@/lib/quickbooks-desktop/detail-transform';
 import { enqueueQuickBooksDesktopPostSyncJob } from '@/lib/quickbooks-desktop/post-sync-jobs';
@@ -1039,9 +1040,13 @@ async function loadBackfillJobResponse(jobId: string, requestName: string): Prom
 
 async function loadBackfillResponses(jobs: Record<string, QbdBackfillJob>): Promise<Record<string, QbwcResponseSet>> {
   const responses: Record<string, QbwcResponseSet> = {};
+  const responseEndDates: Record<string, string> = {};
   for (const job of Object.values(jobs).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))) {
     if (job.status !== 'completed') continue;
+    const endDate = String(job.dateRange?.endDate || '');
+    if (isOlderAsOfReportJob(job.requestName, responseEndDates[job.requestName], endDate)) continue;
     responses[job.requestName] = await loadBackfillJobResponse(job.id, job.requestName);
+    responseEndDates[job.requestName] = endDate;
   }
   return responses;
 }

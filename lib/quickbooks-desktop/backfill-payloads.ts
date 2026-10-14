@@ -75,6 +75,18 @@ const RET_TAG_BY_REQUEST: Record<string, string> = {
   APAgingSummaryReportQuery: "ReportRet",
 };
 
+const AS_OF_REPORT_REQUESTS = new Set(["BalanceSheetStandardReportQuery"]);
+
+/** Per-day as-of reports share one response slot; keep the latest as-of day. */
+export function isOlderAsOfReportJob(
+  requestName: string,
+  keptEndDate: string | undefined,
+  candidateEndDate: string,
+): boolean {
+  if (!AS_OF_REPORT_REQUESTS.has(requestName) || !keptEndDate) return false;
+  return candidateEndDate < keptEndDate;
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -343,10 +355,16 @@ export async function loadQuickBooksDesktopBackfillSession(
   if (jobs.length === 0) return null;
 
   const responses: Record<string, QbdResponseSet> = {};
+  const responseEndDates: Record<string, string> = {};
   for (const job of jobs) {
+    const endDate = String(asRecord(job.dateRange).endDate || "");
+    if (isOlderAsOfReportJob(job.requestName, responseEndDates[job.requestName], endDate)) {
+      continue;
+    }
     responses[job.requestName] = await loadQuickBooksDesktopBackfillResponse(
       job.id,
     );
+    responseEndDates[job.requestName] = endDate;
   }
 
   return {
@@ -401,6 +419,51 @@ export function buildQuickBooksDesktopFinancialPayload(
   return payload;
 }
 
+function isQbdCashAccount(account: Record<string, unknown>): boolean {
+  const type = String(account.AccountType || "").trim().toLowerCase();
+  if (type === "bank") return true;
+  // Expense/income accounts like "Cash Over/Under" are not cash.
+  if (type && type !== "othercurrentasset") return false;
+  const name = String(account.FullName || account.Name || "").toLowerCase();
+  return (
+    name.includes("cash") ||
+    name.includes("checking") ||
+    name.includes("savings")
+  );
+}
+
+function qbdBalanceSheetAsOfDate(
+  records: Array<Record<string, unknown>>,
+): string | null {
+  for (const record of records) {
+    const match = /^As of\s+(.+)$/i.exec(
+      String(record.reportSubtitle || "").trim(),
+    );
+    if (!match) continue;
+    const parsed = new Date(`${match[1].trim()} UTC`);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+function qbdBalanceSheetAmountsByAccount(
+  records: Array<Record<string, unknown>>,
+): Map<string, number> {
+  const amounts = new Map<string, number>();
+  for (const record of records) {
+    if (String(record.rowKind || "") !== "DataRow") continue;
+    const name = String(record.accountName || record.rowValue || "")
+      .trim()
+      .toLowerCase();
+    if (!name) continue;
+    const cols = asArray(record.colData);
+    const amountCol =
+      cols.find((col) => String(col.colID || "") === "2") || cols.at(-1);
+    amounts.set(name, (amounts.get(name) || 0) + toNumber(amountCol?.value));
+  }
+  return amounts;
+}
+
 export function buildQuickBooksDesktopOperationalPayload(
   session: QbdPayloadSession,
 ): QbDesktopOperationalPayload {
@@ -420,25 +483,29 @@ export function buildQuickBooksDesktopOperationalPayload(
   const asOfDate =
     qbdDate(session.dateRange.endDate) || new Date().toISOString().slice(0, 10);
 
+  // AccountRet Balance includes future-dated transactions; the Balance Sheet
+  // report is capped at its as-of date.
+  const balanceSheetRecords =
+    session.responses.BalanceSheetStandardReportQuery?.records || [];
+  const balanceSheetDate = qbdBalanceSheetAsOfDate(balanceSheetRecords);
+  const asOfBalances =
+    balanceSheetDate && balanceSheetDate <= asOfDate
+      ? qbdBalanceSheetAmountsByAccount(balanceSheetRecords)
+      : null;
+
   const cash = accounts
-    .filter((account) => {
-      const type = String(
-        account.AccountType || account.SpecialAccountType || "",
-      ).toLowerCase();
-      const name = String(account.FullName || account.Name || "").toLowerCase();
-      return (
-        type.includes("bank") ||
-        name.includes("cash") ||
-        name.includes("checking") ||
-        name.includes("savings")
-      );
-    })
-    .map((account) => ({
-      accountId: String(account.ListID || ""),
-      accountName: String(account.FullName || account.Name || "Cash Account"),
-      accountNumber: String(account.AccountNumber || "") || null,
-      cashBalance: toNumber(account.Balance || account.TotalBalance),
-    }));
+    .filter(isQbdCashAccount)
+    .map((account) => {
+      const accountName = String(account.FullName || account.Name || "Cash Account");
+      return {
+        accountId: String(account.ListID || ""),
+        accountName,
+        accountNumber: String(account.AccountNumber || "") || null,
+        cashBalance: asOfBalances
+          ? asOfBalances.get(accountName.trim().toLowerCase()) ?? 0
+          : toNumber(account.Balance || account.TotalBalance),
+      };
+    });
 
   const customerSalesById = new Map<
     string,

@@ -14,6 +14,7 @@ import {
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { formatMoney as formatMoneyShared } from '@/lib/format/currency';
 import { calculateEbitda } from '@/lib/financial/ebitda';
+import { formatEstDate } from '@/lib/time/eastern';
 import {
   buildSectorExceptionAlerts,
   getSectorMetricCoverage,
@@ -134,7 +135,8 @@ function pct(numerator: number, denominator: number): number {
 
 function dayOverDayPct(current: number, previous: number): number {
   if (!previous) return 0;
-  return ((current - previous) / previous) * 100;
+  // Absolute base keeps the sign aligned with the direction of change when previous is negative.
+  return ((current - previous) / Math.abs(previous)) * 100;
 }
 
 function startOfUtcDay(value: Date): Date {
@@ -321,8 +323,9 @@ async function loadCriticalFindings(companyId: string): Promise<FindingRow[]> {
 }
 
 async function loadLatestCashDates(companyId: string): Promise<Array<{ snapshotDate: Date; totalCash: number }>> {
+  const estToday = new Date(`${formatEstDate()}T00:00:00.000Z`);
   const rows = await prisma.cashSnapshot.findMany({
-    where: { companyId, frequency: 'daily' },
+    where: { companyId, frequency: 'daily', snapshotDate: { lte: estToday } },
     orderBy: { snapshotDate: 'desc' },
     take: 250,
   });
@@ -723,8 +726,9 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
     const cashDelta = latestCash.totalCash - priorCash.totalCash;
     const cashDeltaPct = dayOverDayPct(latestCash.totalCash, priorCash.totalCash);
     if (
-      cashDeltaPct <= policy['cash_daily_change.max_total_dod_pct'] ||
-      cashDelta <= policy['cash_daily_change.max_total_dod_amount']
+      cashDelta < 0 &&
+      (cashDeltaPct <= policy['cash_daily_change.max_total_dod_pct'] ||
+        cashDelta <= policy['cash_daily_change.max_total_dod_amount'])
     ) {
       const accounts = await loadLatestCashAccounts(companyId, latestCash.snapshotDate);
       alerts.push({
@@ -741,7 +745,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         bucket: 'attention',
         explainability: {
           triggerName: 'Cash Daily Deterioration',
-          formula: 'Cash DoD % = (latest total cash - prior total cash) / prior total cash * 100',
+          formula: 'Cash DoD % = (latest total cash - prior total cash) / |prior total cash| * 100',
           threshold: `cash DoD % <= ${policy['cash_daily_change.max_total_dod_pct']} or cash change <= ${policy['cash_daily_change.max_total_dod_amount']}`,
           reasonNow: `Latest ${money(latestCash.totalCash)}; previous ${money(priorCash.totalCash)}; delta ${cashDeltaPct.toFixed(1)}%`,
           policySource: 'Company Pulse policy',
