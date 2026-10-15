@@ -2690,14 +2690,18 @@ export default function SiteAdminDashboard(props: any) {
               <div>
                 <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly Token Allowance</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   min="0"
                   step="100000"
-                  value={editing.monthlyTokenAllowance}
+                  value={formatTokenCount(editing.monthlyTokenAllowance)}
                   onChange={(e) =>
                     setEditingAiUsagePricingByCompany((prev) => ({
                       ...prev,
-                      [company.id]: { ...prev[company.id], monthlyTokenAllowance: parseInt(e.target.value, 10) || 0 },
+                      [company.id]: {
+                        ...prev[company.id],
+                        monthlyTokenAllowance: parseInt(e.target.value.replace(/,/g, ''), 10) || 0,
+                      },
                     }))
                   }
                   style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
