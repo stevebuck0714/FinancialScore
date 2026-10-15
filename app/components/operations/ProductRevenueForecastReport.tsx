@@ -182,6 +182,7 @@ export default function ProductRevenueForecastReport({
   const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
   const [dataThru, setDataThru] = useState('');
   const [customerIdSearch, setCustomerIdSearch] = useState('');
+  const [customerIdSearchError, setCustomerIdSearchError] = useState<string | null>(null);
   const [customerKey, setCustomerKey] = useState('');
   const [customerGroup, setCustomerGroup] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -436,8 +437,15 @@ export default function ProductRevenueForecastReport({
     const matchingCustomer = customers.find(
       (customer) => customer.customerId.trim().toLowerCase() === nextCustomerId.trim().toLowerCase()
     );
-    if (matchingCustomer && matchingCustomer.key !== customerKey) {
-      handleCustomerChange(matchingCustomer.key);
+    if (matchingCustomer) {
+      setCustomerIdSearchError(null);
+      if (matchingCustomer.key !== customerKey) handleCustomerChange(matchingCustomer.key);
+    } else if (!nextCustomerId.trim()) {
+      setCustomerIdSearchError(null);
+    } else if (customers.length > 0) {
+      setCustomerIdSearchError('No matching customer ID.');
+      if (customerKey) handleCustomerChange('');
+      setCustomerGroup('');
     }
   };
 
@@ -659,6 +667,7 @@ export default function ProductRevenueForecastReport({
             placeholder="Search customer ID"
             style={{ ...inputStyle, width: 180 }}
           />
+          {customerIdSearchError && <span style={{ color: '#b91c1c', fontSize: 11, fontWeight: 600 }}>{customerIdSearchError}</span>}
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Customer Name

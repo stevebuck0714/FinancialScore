@@ -11628,6 +11628,23 @@ export default function OperationsTab({
           ...emphasis,
         };
       };
+      const findProductMarginCustomerById = (customerId: string) => {
+        const normalizedCustomerId = customerId.trim().toLowerCase();
+        if (!normalizedCustomerId) return null;
+        return productMarginCustomerGroups.find(
+          (group) =>
+            String(group.customerId || '').trim().toLowerCase() === normalizedCustomerId ||
+            group.rows.some(
+              (row: any) => String(row?.customerId || '').trim().toLowerCase() === normalizedCustomerId
+            )
+        ) || null;
+      };
+      const selectProductMarginCustomer = (customerId: string) => {
+        const matchingCustomer = findProductMarginCustomerById(customerId);
+        if (!matchingCustomer) return;
+        setProductMarginCustomerFilter(matchingCustomer.key);
+        setProductMarginCustomerGroupFilter('');
+      };
 
       if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleOrderLines)) {
         return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading wholesale product margin data...</div>;
@@ -11707,30 +11724,35 @@ export default function OperationsTab({
               >
                 {wholesaleProductsRefreshing ? 'Refreshing...' : 'Refresh Margin Data'}
               </button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', overflowX: 'auto', paddingBottom: '4px', marginBottom: '14px' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', fontWeight: 600, flex: '0 0 auto' }}>
+              Customer ID
               <input
                 type="search"
                 value={productMarginCustomerIdSearch}
                 onChange={(event) => {
                   const nextCustomerId = event.target.value;
                   setProductMarginCustomerIdSearch(nextCustomerId);
-                  const matchingCustomer = productMarginCustomerGroups.find(
-                    (group) =>
-                      String(group.customerId || '').trim().toLowerCase() === nextCustomerId.trim().toLowerCase()
-                  );
-                  if (matchingCustomer) {
-                    setProductMarginCustomerFilter(matchingCustomer.key);
-                    setProductMarginCustomerGroupFilter('');
-                  }
+                  selectProductMarginCustomer(nextCustomerId);
                 }}
-                placeholder="Search Customer ID"
+                onBlur={() => selectProductMarginCustomer(productMarginCustomerIdSearch)}
+                placeholder="Search customer ID"
                 aria-label="Search Customer ID"
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
               />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', fontWeight: 600, flex: '0 0 auto' }}>
+              Customer Name
               <select
                 value={productMarginCustomerFilter}
                 onChange={(event) => {
-                  setProductMarginCustomerFilter(event.target.value);
+                  const nextKey = event.target.value;
+                  setProductMarginCustomerFilter(nextKey);
                   setProductMarginCustomerGroupFilter('');
+                  const selectedCustomer = productMarginCustomerGroups.find((group) => group.key === nextKey);
+                  setProductMarginCustomerIdSearch(String(selectedCustomer?.customerId || ''));
                 }}
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '260px', background: 'white' }}
               >
@@ -11742,6 +11764,9 @@ export default function OperationsTab({
                   </option>
                 ))}
               </select>
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', fontWeight: 600, flex: '0 0 auto' }}>
+              Group Name
               <select
                 value={productMarginCustomerGroupFilter}
                 onChange={(event) => {
@@ -11749,7 +11774,6 @@ export default function OperationsTab({
                   setProductMarginCustomerFilter('');
                   setProductMarginCustomerIdSearch('');
                 }}
-                aria-label="Group Name"
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px', background: 'white' }}
               >
                 <option value="">Select a group</option>
@@ -11757,36 +11781,40 @@ export default function OperationsTab({
                   <option key={group} value={group}>{group}</option>
                 ))}
               </select>
-              {(['Expand Visible', 'Collapse Visible'] as const).map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  disabled={!canToggleVisibleProductMarginCustomers}
-                  title={canToggleVisibleProductMarginCustomers ? undefined : productMarginToggleDisabledReason}
-                  onClick={() => setVisibleCustomersExpanded(label === 'Expand Visible')}
-                  style={{
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    padding: '8px 10px',
-                    background: canToggleVisibleProductMarginCustomers ? '#fff' : '#f1f5f9',
-                    color: canToggleVisibleProductMarginCustomers ? '#334155' : '#94a3b8',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: canToggleVisibleProductMarginCustomers ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', fontWeight: 600, flex: '0 0 auto' }}>
+              Item #
               <input
                 type="search"
                 value={productMarginItemSearch}
                 onChange={(event) => setProductMarginItemSearch(event.target.value)}
-                placeholder="Search Item #"
+                placeholder="Search item #"
                 aria-label="Search Item #"
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
               />
-            </div>
+            </label>
+            {(['Expand Visible', 'Collapse Visible'] as const).map((label) => (
+              <button
+                key={label}
+                type="button"
+                disabled={!canToggleVisibleProductMarginCustomers}
+                title={canToggleVisibleProductMarginCustomers ? undefined : productMarginToggleDisabledReason}
+                onClick={() => setVisibleCustomersExpanded(label === 'Expand Visible')}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  background: canToggleVisibleProductMarginCustomers ? '#fff' : '#f1f5f9',
+                  color: canToggleVisibleProductMarginCustomers ? '#334155' : '#94a3b8',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: canToggleVisibleProductMarginCustomers ? 'pointer' : 'not-allowed',
+                  flex: '0 0 auto',
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           {!sortedVisibleProductMarginCustomerGroups.length ? (
