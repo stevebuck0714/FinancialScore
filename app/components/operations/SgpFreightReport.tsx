@@ -211,6 +211,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState('');
   const [sortKey, setSortKey] = useState<FreightSortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -491,6 +492,21 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
+          <input
+            type="search"
+            value={vendorIdSearch}
+            onChange={(event) => {
+              const nextVendorId = event.target.value;
+              setVendorIdSearch(nextVendorId);
+              const matchingVendor = vendorOptions.find(
+                (vendor) => vendor.vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
+              );
+              if (matchingVendor) setVendorFilter(matchingVendor.key);
+            }}
+            placeholder="Search Vendor ID"
+            aria-label="Search Vendor ID"
+            style={{ ...inputStyle, width: 180 }}
+          />
           <select
             value={selectedVendorKey}
             onChange={(event) => setVendorFilter(event.target.value)}

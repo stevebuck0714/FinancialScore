@@ -73,6 +73,7 @@ import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashb
 import { isActiveCustomerRow, loadActiveCustomerKeys } from '@/lib/accounting/active-customer-filter';
 import { isEstBusinessDay } from '@/lib/time/eastern';
 import { buildFiltechNormalizedProductRows, isFiltechDemoCompany } from '@/lib/demo-provisioning/filtech';
+import { loadCustomerGroups, resolveCustomerGroup } from '@/lib/operations/customer-groups';
 
 export const dynamic = 'force-dynamic';
 // A cold wholesale products report build exceeds 60s. Being killed at the old
@@ -92,7 +93,7 @@ const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
 const CUSTOMER_BACKLOG_MIN_ORDER_DATE = '2023-06-01';
 const WHOLESALE_PRODUCTS_REPORT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v10-compact-margin-cost-enrichment';
+const WHOLESALE_PRODUCTS_REPORT_SOURCE_VERSION = 'wholesale-products-report-90-day-v11-customer-groups';
 // The server cache TTL must not become a browser max-age. A stored HTTP response is
 // keyed only by URL, so it carries no dataVersion and can outlive a corrected payload
 // for the whole TTL without ever revalidating. Serve from DerivedApiCache instead.
@@ -9520,6 +9521,11 @@ export async function GET(request: NextRequest) {
           } catch (error) {
             console.warn('Compact wholesale margin HTS enrichment skipped:', error);
           }
+          const customerGroups = await loadCustomerGroups(companyId);
+          normalizedMarginRows = normalizedMarginRows.map((row) => ({
+            ...row,
+            customerGroup: resolveCustomerGroup(customerGroups, row.customerId, row.customerName),
+          }));
           return cacheOperationalPayload({
             records: [],
             summary: {

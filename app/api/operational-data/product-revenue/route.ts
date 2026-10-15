@@ -11,7 +11,8 @@ import {
   normalizeRevenueLineInput,
   upsertRevenueLines,
 } from '@/lib/operations/product-revenue-actual-db';
-import { workbookUpdatedDate } from '@/lib/operations/product-revenue-actual';
+import { summarizeRevenueLines, workbookUpdatedDate } from '@/lib/operations/product-revenue-actual';
+import { loadCustomerGroups, withCustomerGroups } from '@/lib/operations/customer-groups';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
     const year = asForecastYear(request.nextUrl.searchParams.get('year'));
     const customerId = String(request.nextUrl.searchParams.get('customerId') || '').trim();
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();
+    const customerGroup = String(request.nextUrl.searchParams.get('customerGroup') || '').trim();
     const refresh = ['1', 'true', 'yes'].includes(
       String(request.nextUrl.searchParams.get('refresh') || '').trim().toLowerCase()
     );
@@ -42,7 +44,7 @@ export async function GET(request: NextRequest) {
     const { payload } = await withProductReportCache({
       namespace: 'product-revenue-report',
       companyId,
-      keyParts: ['revenue', year, customerId, customerName],
+      keyParts: ['revenue', year, customerId, customerName, customerGroup],
       refresh,
       build: async () => {
         await ensureProductRevenueTables();
@@ -51,9 +53,19 @@ export async function GET(request: NextRequest) {
           year,
           customerId,
           customerName,
+          includeAllLines: Boolean(customerGroup),
         });
+        const customerGroups = await loadCustomerGroups(companyId);
+        const customers = withCustomerGroups(dataset.customers, customerGroups);
+        const lines = customerGroup
+          ? withCustomerGroups(dataset.lines, customerGroups).filter((line) => line.customerGroup === customerGroup)
+          : dataset.lines;
         return {
           ...dataset,
+          customers,
+          totals: customerGroup ? summarizeRevenueLines(lines, dataset.dataThru) : dataset.totals,
+          companyLineCount: customerGroup ? lines.length : dataset.companyLineCount,
+          lines,
           workbookUpdated: workbookUpdatedDate(dataset.dataThru),
         };
       },

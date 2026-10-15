@@ -116,13 +116,17 @@ function columnWidth(widthCh: number): string {
   return `${columnWidthPx(widthCh)}px`;
 }
 
-function stickyIdentityStyle(index: number, header: boolean): React.CSSProperties {
-  const column = IDENTITY_COLUMNS[index];
-  const isLast = index === IDENTITY_COLUMNS.length - 1;
+function stickyIdentityStyle(
+  index: number,
+  header: boolean,
+  columns: typeof IDENTITY_COLUMNS = IDENTITY_COLUMNS
+): React.CSSProperties {
+  const column = columns[index];
+  const isLast = index === columns.length - 1;
   const width = columnWidth(column.widthCh);
   return {
     position: 'sticky',
-    left: IDENTITY_COLUMN_LEFT_PX[index],
+    left: columns.slice(0, index).reduce((left, item) => left + columnWidthPx(item.widthCh), 0),
     width,
     minWidth: width,
     maxWidth: width,
@@ -210,6 +214,7 @@ export default function ProductMonthlyRevenueReport({
   const [dataThru, setDataThru] = useState('');
   const [customerIdSearch, setCustomerIdSearch] = useState('');
   const [customerKey, setCustomerKey] = useState('');
+  const [customerGroup, setCustomerGroup] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [lines, setLines] = useState<RevenueLine[]>([]);
   const [totals, setTotals] = useState<RevenueTotals>(emptyTotals());
@@ -228,6 +233,17 @@ export default function ProductMonthlyRevenueReport({
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
     [customers, customerKey]
+  );
+  const customerGroups = useMemo(
+    () => Array.from(new Set(customers.map((customer: CustomerOption & { customerGroup?: string }) => customer.customerGroup || '').filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [customers]
+  );
+  const groupScope = Boolean(customerGroup);
+  const visibleIdentityColumns = useMemo(
+    () => selectedCustomer && !groupScope
+      ? IDENTITY_COLUMNS.filter((column) => column.key !== 'customerGroup')
+      : IDENTITY_COLUMNS,
+    [groupScope, selectedCustomer]
   );
   const closed = useMemo(() => closedMonths(dataThru || null), [dataThru]);
   const monthName = FORECAST_MONTH_FULL_LABELS[selectedMonth];
@@ -282,7 +298,7 @@ export default function ProductMonthlyRevenueReport({
     if (!options?.keepDirty) setDirty(false);
   }, [mergeCustomers]);
 
-  const loadDataset = useCallback(async (nextYear = year, customer?: CustomerOption | null) => {
+  const loadDataset = useCallback(async (nextYear = year, customer?: CustomerOption | null, group = customerGroup) => {
     if (!selectedCompanyId) return;
     setLoading(true);
     setError(null);
@@ -291,7 +307,9 @@ export default function ProductMonthlyRevenueReport({
         companyId: selectedCompanyId,
         year: String(nextYear),
       });
-      if (customer) {
+      if (group) {
+        params.set('customerGroup', group);
+      } else if (customer) {
         params.set('customerId', customer.customerId);
         params.set('customerName', customer.customerName);
       }
@@ -317,17 +335,18 @@ export default function ProductMonthlyRevenueReport({
     } finally {
       setLoading(false);
     }
-  }, [applyPayload, mergeCustomers, selectedCompanyId]);
+  }, [applyPayload, customerGroup, mergeCustomers, selectedCompanyId]);
 
   useEffect(() => {
     setCustomerKey('');
+    setCustomerGroup('');
     setLines([]);
     setDirty(false);
   }, [selectedCompanyId]);
 
   useEffect(() => {
     void loadDataset(year, selectedCustomer);
-  }, [selectedCompanyId, year, selectedCustomer?.key, loadDataset]);
+  }, [customerGroup, selectedCompanyId, year, selectedCustomer?.key, loadDataset]);
 
   const markDirty = () => {
     setDirty(true);
@@ -404,8 +423,8 @@ export default function ProductMonthlyRevenueReport({
 
   const monthTotals = totals.months[selectedMonth] || { estimated: 0, adjusted: 0, ytd: 0 };
   const priorTotals = totals.months[previousMonth] || { estimated: 0, adjusted: 0, ytd: 0 };
-  const scopeLabel = selectedCustomer ? selectedCustomer.label : 'Company';
-  const skuCount = selectedCustomer ? totals.lineCount : companyLineCount || totals.lineCount;
+  const scopeLabel = groupScope ? `Group: ${customerGroup}` : selectedCustomer ? selectedCustomer.label : 'Company';
+  const skuCount = selectedCustomer || groupScope ? totals.lineCount : companyLineCount || totals.lineCount;
   const trendRows = useMemo(() => {
     if (selectedCustomer && lines.length > 0) {
       const months = FORECAST_MONTHS.reduce((acc, month) => {
@@ -562,6 +581,13 @@ export default function ProductMonthlyRevenueReport({
           </select>
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Group Name
+          <select value={customerGroup} onChange={(event) => setCustomerGroup(event.target.value)} style={{ ...inputStyle, minWidth: 220 }}>
+            <option value="">Select a group</option>
+            {customerGroups.map((group) => <option key={group} value={group}>{group}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Year
           <select
             value={year}
@@ -582,6 +608,7 @@ export default function ProductMonthlyRevenueReport({
               setDataThru(event.target.value);
               markDirty();
             }}
+            disabled={groupScope}
             style={{ ...inputStyle, width: 150 }}
           />
         </label>
@@ -636,15 +663,15 @@ export default function ProductMonthlyRevenueReport({
         <button
           type="button"
           onClick={() => void handleSave()}
-          disabled={saving || !dirty}
+          disabled={groupScope || saving || !dirty}
           style={{
             border: '1px solid #4338ca',
             borderRadius: 8,
             padding: '8px 14px',
-            background: saving || !dirty ? '#c7d2fe' : '#4f46e5',
+            background: groupScope || saving || !dirty ? '#c7d2fe' : '#4f46e5',
             color: '#ffffff',
             fontWeight: 700,
-            cursor: saving || !dirty ? 'not-allowed' : 'pointer',
+            cursor: groupScope || saving || !dirty ? 'not-allowed' : 'pointer',
             fontSize: 12,
           }}
         >
@@ -719,7 +746,7 @@ export default function ProductMonthlyRevenueReport({
         </div>
       </div>
 
-      {!selectedCustomer ? (
+      {!selectedCustomer && !groupScope ? (
         <div style={{ padding: '8px 0 24px', color: '#64748b', fontSize: 13 }}>
           Company totals above cover every SKU for these dates. Select a customer to enter monthly Actual $ by part.
         </div>
@@ -740,11 +767,11 @@ export default function ProductMonthlyRevenueReport({
               zIndex: 5,
             }}
           >
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>Customer</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>{groupScope ? 'Group' : 'Customer'}</div>
             <div
-              title={selectedCustomer.label}
+              title={groupScope ? customerGroup : selectedCustomer?.label}
               style={{
-                fontSize: 13,
+                fontSize: groupScope ? 13 : 16.25,
                 color: '#0f172a',
                 fontWeight: 600,
                 overflow: 'hidden',
@@ -752,12 +779,12 @@ export default function ProductMonthlyRevenueReport({
                 whiteSpace: 'nowrap',
               }}
             >
-              {selectedCustomer.label}
+              {groupScope ? `Group: ${customerGroup}` : selectedCustomer?.label}
             </div>
           </div>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: TABLE_MIN_WIDTH_PX, minWidth: TABLE_MIN_WIDTH_PX, fontSize: 12, tableLayout: 'fixed' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + columnWidthPx(PLANNED_COL_CH) + MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX, minWidth: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + columnWidthPx(PLANNED_COL_CH) + MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX, fontSize: 12, tableLayout: 'fixed' }}>
             <colgroup>
-              {IDENTITY_COLUMNS.map((column) => (
+              {visibleIdentityColumns.map((column) => (
                 <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
               ))}
               <col style={{ width: columnWidth(PLANNED_COL_CH) }} />
@@ -767,14 +794,14 @@ export default function ProductMonthlyRevenueReport({
             </colgroup>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {IDENTITY_COLUMNS.map((column, index) => (
+                {visibleIdentityColumns.map((column, index) => (
                   <th
                     key={column.key}
                     title={column.sortable ? `Sort by ${column.label}` : column.label}
                     align="left"
                     onClick={column.sortable ? () => toggleSort(column.key as 'itemSku' | 'customerPartNumber') : undefined}
                     style={{
-                      ...stickyIdentityStyle(index, true),
+                      ...stickyIdentityStyle(index, true, visibleIdentityColumns),
                       textAlign: 'left',
                       paddingTop: 8,
                       paddingBottom: 8,
@@ -807,12 +834,12 @@ export default function ProductMonthlyRevenueReport({
             <tbody>
               {sortedLines.map((line) => (
                 <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                  {IDENTITY_COLUMNS.map((column, index) => (
+                  {visibleIdentityColumns.map((column, index) => (
                     <td
                       key={column.key}
                       title={line[column.key] || undefined}
                       style={{
-                        ...stickyIdentityStyle(index, false),
+                        ...stickyIdentityStyle(index, false, visibleIdentityColumns),
                         paddingTop: 6,
                         paddingBottom: 6,
                         borderTop: '1px solid #e2e8f0',
@@ -874,8 +901,8 @@ export default function ProductMonthlyRevenueReport({
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={18} style={{ padding: 16, color: '#64748b' }}>
-                    No revenue rows for this customer yet. Import the workbook, or add the part on Monthly Forecast first.
+                  <td colSpan={visibleIdentityColumns.length + 13} style={{ padding: 16, color: '#64748b' }}>
+                    No revenue rows for this {groupScope ? 'group' : 'customer'} yet. Import the workbook, or add the part on Monthly Forecast first.
                   </td>
                 </tr>
               )}
@@ -887,7 +914,7 @@ export default function ProductMonthlyRevenueReport({
         open={chartOpen}
         onClose={() => setChartOpen(false)}
         title={`Monthly Revenue trend · ${year}`}
-        subtitle={`${selectedCustomer ? selectedCustomer.label : 'All customers'}. Dollars by month: Forecast, Forecast - ADJ, and Actual.`}
+        subtitle={`${groupScope ? `Group: ${customerGroup}` : selectedCustomer ? selectedCustomer.label : 'All customers'}. Dollars by month: Forecast, Forecast - ADJ, and Actual.`}
         unit="money"
         rows={trendRows}
         loading={loading && !selectedCustomer}

@@ -168,6 +168,7 @@ export default function VendorMonthlyForecastReport({
 }: VendorMonthlyForecastReportProps) {
   const [year, setYear] = useState(currentYear());
   const [dataThru, setDataThru] = useState('');
+  const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorKey, setVendorKey] = useState('');
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [lines, setLines] = useState<ForecastLine[]>([]);
@@ -306,6 +307,26 @@ export default function VendorMonthlyForecastReport({
     if (dirty && !window.confirm('You have unsaved changes. Switch vendor without saving?')) return;
     setVendorKey(nextKey);
   };
+
+  const handleVendorIdSearchChange = (nextVendorId: string) => {
+    setVendorIdSearch(nextVendorId);
+    const matchingVendor = vendors.find(
+      (vendor) => vendor.vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
+    );
+    if (matchingVendor && matchingVendor.key !== vendorKey) {
+      handleVendorChange(matchingVendor.key);
+    }
+  };
+
+  useEffect(() => {
+    if (dirty) return;
+    const matchingVendor = vendors.find(
+      (vendor) => vendor.vendorId.trim().toLowerCase() === vendorIdSearch.trim().toLowerCase()
+    );
+    if (vendorIdSearch.trim() && matchingVendor && matchingVendor.key !== vendorKey) {
+      setVendorKey(matchingVendor.key);
+    }
+  }, [dirty, vendorIdSearch, vendorKey, vendors]);
 
   const handleYearChange = (nextYear: number) => {
     if (dirty && !window.confirm('You have unsaved changes. Switch year without saving?')) return;
@@ -477,7 +498,17 @@ export default function VendorMonthlyForecastReport({
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
-          Vendor
+          Vendor ID
+          <input
+            type="search"
+            value={vendorIdSearch}
+            onChange={(event) => handleVendorIdSearchChange(event.target.value)}
+            placeholder="Search vendor ID"
+            style={{ ...inputStyle, width: 180 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Vendor Name
           <select
             value={vendorKey}
             onChange={(event) => handleVendorChange(event.target.value)}

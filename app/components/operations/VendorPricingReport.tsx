@@ -107,6 +107,7 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [savedSignatures, setSavedSignatures] = useState<Map<string, string>>(() => new Map());
@@ -258,6 +259,21 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
       </p>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        <input
+          type="search"
+          value={vendorIdSearch}
+          onChange={(event) => {
+            const nextVendorId = event.target.value;
+            setVendorIdSearch(nextVendorId);
+            const matchingVendor = vendorOptions.find(
+              ([vendorId]) => vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
+            );
+            if (matchingVendor) setVendorFilter(matchingVendor[0]);
+          }}
+          placeholder="Search Vendor ID"
+          aria-label="Search Vendor ID"
+          style={{ ...inputStyle, width: 180, padding: '7px 8px' }}
+        />
         <select
           value={vendorFilter}
           onChange={(event) => setVendorFilter(event.target.value)}

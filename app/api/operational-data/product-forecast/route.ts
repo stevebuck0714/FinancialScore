@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
     const year = asForecastYear(request.nextUrl.searchParams.get('year'));
     const customerId = String(request.nextUrl.searchParams.get('customerId') || '').trim();
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();
+    const customerGroup = String(request.nextUrl.searchParams.get('customerGroup') || '').trim();
     const includeTotals = String(request.nextUrl.searchParams.get('includeTotals') || '') === '1';
     const refresh = ['1', 'true', 'yes'].includes(
       String(request.nextUrl.searchParams.get('refresh') || '').trim().toLowerCase()
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
     const { payload } = await withProductReportCache({
       namespace: 'product-forecast-report',
       companyId,
-      keyParts: ['forecast', year, customerId, customerName, includeTotals ? 'totals' : 'no-totals'],
+      keyParts: ['forecast', year, customerId, customerName, customerGroup, includeTotals ? 'totals' : 'no-totals'],
       refresh,
       build: async () => {
         await ensureProductRevenueForecastTables();
@@ -72,8 +73,10 @@ export async function GET(request: NextRequest) {
           companyId,
           year
         );
+        const customerGroups = await loadCustomerGroups(companyId);
+        const customers = withCustomerGroups(customerPayload, customerGroups);
 
-        if (!customerId && !customerName) {
+        if (!customerId && !customerName && !customerGroup) {
           const actualQty = await loadProductActualQty({ companyId, year });
           const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
           let totals = null;
@@ -87,7 +90,7 @@ export async function GET(request: NextRequest) {
             year,
             catalogSourceYear,
             dataThru,
-            customers: customerPayload,
+            customers,
             totals,
             lines: [],
           };
@@ -96,25 +99,25 @@ export async function GET(request: NextRequest) {
         const lines = await loadProductForecastLinesWithCatalog({
           companyId,
           year,
-          customerId,
-          customerName,
+          customerId: customerGroup ? undefined : customerId,
+          customerName: customerGroup ? undefined : customerName,
         });
         const actualQty = await loadProductActualQty({
           companyId,
           year,
-          customerId,
-          customerName,
+          customerId: customerGroup ? undefined : customerId,
+          customerName: customerGroup ? undefined : customerName,
         });
         const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
-        const customerGroups = await loadCustomerGroups(companyId);
+        const groupedLines = withCustomerGroups(lines.map(serializeForecastLine), customerGroups);
 
         return {
           year,
           catalogSourceYear,
           dataThru,
-          customers: customerPayload,
+          customers,
           lines: forecastLinesWithActuals(
-            withCustomerGroups(lines.map(serializeForecastLine), customerGroups),
+            customerGroup ? groupedLines.filter((line) => line.customerGroup === customerGroup) : groupedLines,
             actualQty,
             dataThru
           ),

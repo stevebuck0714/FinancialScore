@@ -151,12 +151,16 @@ function columnWidth(widthCh: number): string {
   return `${columnWidthPx(widthCh)}px`;
 }
 
-function stickyIdentityStyle(index: number, header: boolean): React.CSSProperties {
-  const isLast = index === IDENTITY_COLUMNS.length - 1;
-  const width = columnWidth(IDENTITY_COLUMNS[index].widthCh);
+function stickyIdentityStyle(
+  index: number,
+  header: boolean,
+  columns: typeof IDENTITY_COLUMNS = IDENTITY_COLUMNS
+): React.CSSProperties {
+  const isLast = index === columns.length - 1;
+  const width = columnWidth(columns[index].widthCh);
   return {
     position: 'sticky',
-    left: IDENTITY_COLUMN_LEFT_PX[index],
+    left: columns.slice(0, index).reduce((left, item) => left + columnWidthPx(item.widthCh), 0),
     width,
     minWidth: width,
     maxWidth: width,
@@ -236,6 +240,7 @@ export default function ProductRevenueRollupReport({
   const [dataThru, setDataThru] = useState('');
   const [customerIdSearch, setCustomerIdSearch] = useState('');
   const [customerKey, setCustomerKey] = useState('');
+  const [customerGroup, setCustomerGroup] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [lines, setLines] = useState<RevenueLine[]>([]);
   const [totals, setTotals] = useState<RevenueTotals>(emptyTotals());
@@ -248,6 +253,17 @@ export default function ProductRevenueRollupReport({
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
     [customers, customerKey]
+  );
+  const customerGroups = useMemo(
+    () => Array.from(new Set(customers.map((customer: CustomerOption & { customerGroup?: string }) => customer.customerGroup || '').filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [customers]
+  );
+  const groupScope = Boolean(customerGroup);
+  const visibleIdentityColumns = useMemo(
+    () => selectedCustomer && !groupScope
+      ? IDENTITY_COLUMNS.filter((column) => column.key !== 'customerGroup')
+      : IDENTITY_COLUMNS,
+    [groupScope, selectedCustomer]
   );
   const closed = useMemo(() => closedMonths(dataThru || null), [dataThru]);
   const updated = workbookUpdatedDate(dataThru || null);
@@ -268,7 +284,7 @@ export default function ProductRevenueRollupReport({
     return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, []);
 
-  const loadDataset = useCallback(async (nextYear = year, customer?: CustomerOption | null) => {
+  const loadDataset = useCallback(async (nextYear = year, customer?: CustomerOption | null, group = customerGroup) => {
     if (!selectedCompanyId) return;
     setLoading(true);
     setError(null);
@@ -277,7 +293,9 @@ export default function ProductRevenueRollupReport({
         companyId: selectedCompanyId,
         year: String(nextYear),
       });
-      if (customer) {
+      if (group) {
+        params.set('customerGroup', group);
+      } else if (customer) {
         params.set('customerId', customer.customerId);
         params.set('customerName', customer.customerName);
       }
@@ -308,16 +326,17 @@ export default function ProductRevenueRollupReport({
     } finally {
       setLoading(false);
     }
-  }, [mergeCustomers, selectedCompanyId]);
+  }, [customerGroup, mergeCustomers, selectedCompanyId]);
 
   useEffect(() => {
     setCustomerKey('');
+    setCustomerGroup('');
     setLines([]);
   }, [selectedCompanyId]);
 
   useEffect(() => {
     void loadDataset(year, selectedCustomer);
-  }, [selectedCompanyId, year, selectedCustomer?.key, loadDataset]);
+  }, [customerGroup, selectedCompanyId, year, selectedCustomer?.key, loadDataset]);
 
   const handleCustomerIdSearchChange = (nextCustomerId: string) => {
     setCustomerIdSearch(nextCustomerId);
@@ -338,8 +357,8 @@ export default function ProductRevenueRollupReport({
     }
   }, [customerIdSearch, customerKey, customers]);
 
-  const scopeLabel = selectedCustomer ? selectedCustomer.label : 'Company';
-  const skuCount = selectedCustomer ? totals.lineCount : companyLineCount || totals.lineCount;
+  const scopeLabel = groupScope ? `Group: ${customerGroup}` : selectedCustomer ? selectedCustomer.label : 'Company';
+  const skuCount = selectedCustomer || groupScope ? totals.lineCount : companyLineCount || totals.lineCount;
 
   const quarterGroupHeaderStyle = (quarter: ForecastQuarter): React.CSSProperties => {
     const shade = QUARTER_SHADES[quarter];
@@ -457,6 +476,13 @@ export default function ProductRevenueRollupReport({
                 {customer.label}{customer.lineCount ? ` (${customer.lineCount})` : ''}
               </option>
             ))}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Group Name
+          <select value={customerGroup} onChange={(event) => setCustomerGroup(event.target.value)} style={{ ...inputStyle, minWidth: 220 }}>
+            <option value="">Select a group</option>
+            {customerGroups.map((group) => <option key={group} value={group}>{group}</option>)}
           </select>
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
@@ -616,7 +642,7 @@ export default function ProductRevenueRollupReport({
         </div>
       </div>
 
-      {!selectedCustomer ? (
+      {!selectedCustomer && !groupScope ? (
         <div style={{ padding: '8px 0 24px', color: '#64748b', fontSize: 13 }}>
           Company totals above cover every SKU for these dates. Select a customer to see the part rollup.
         </div>
@@ -637,11 +663,11 @@ export default function ProductRevenueRollupReport({
               zIndex: 5,
             }}
           >
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>Customer</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>{groupScope ? 'Group' : 'Customer'}</div>
             <div
-              title={selectedCustomer.label}
+              title={groupScope ? customerGroup : selectedCustomer?.label}
               style={{
-                fontSize: 13,
+                fontSize: groupScope ? 13 : 16.25,
                 color: '#0f172a',
                 fontWeight: 600,
                 overflow: 'hidden',
@@ -649,25 +675,25 @@ export default function ProductRevenueRollupReport({
                 whiteSpace: 'nowrap',
               }}
             >
-              {selectedCustomer.label}
+              {groupScope ? `Group: ${customerGroup}` : selectedCustomer?.label}
             </div>
           </div>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 1706, fontSize: 12, tableLayout: 'fixed' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + 1706, fontSize: 12, tableLayout: 'fixed' }}>
             <colgroup>
-              {IDENTITY_COLUMNS.map((column) => (
+              {visibleIdentityColumns.map((column) => (
                 <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
               ))}
             </colgroup>
             <thead>
               <tr>
-                {IDENTITY_COLUMNS.map((column, index) => (
+                {visibleIdentityColumns.map((column, index) => (
                   <th
                     key={column.key}
                     rowSpan={2}
                     title={column.label}
                     align="left"
                     style={{
-                      ...stickyIdentityStyle(index, true),
+                      ...stickyIdentityStyle(index, true, visibleIdentityColumns),
                       textAlign: 'left',
                       paddingTop: 8,
                       paddingBottom: 8,
@@ -726,12 +752,12 @@ export default function ProductRevenueRollupReport({
             <tbody>
               {lines.map((line) => (
                 <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                  {IDENTITY_COLUMNS.map((column, index) => (
+                  {visibleIdentityColumns.map((column, index) => (
                     <td
                       key={column.key}
                       title={line[column.key] || undefined}
                       style={{
-                        ...stickyIdentityStyle(index, false),
+                        ...stickyIdentityStyle(index, false, visibleIdentityColumns),
                         paddingTop: 6,
                         paddingBottom: 6,
                         borderTop: '1px solid #e2e8f0',
@@ -781,8 +807,8 @@ export default function ProductRevenueRollupReport({
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={33} style={{ padding: 16, color: '#64748b' }}>
-                    No revenue rows for this customer yet. Save Monthly Forecast and Monthly Revenue for this customer, then return here.
+                  <td colSpan={visibleIdentityColumns.length + 30} style={{ padding: 16, color: '#64748b' }}>
+                    No revenue rows for this {groupScope ? 'group' : 'customer'} yet. Save Monthly Forecast and Monthly Revenue for this customer, then return here.
                   </td>
                 </tr>
               )}

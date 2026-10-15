@@ -714,10 +714,13 @@ export async function GET(request: NextRequest) {
 
     const view = String(request.nextUrl.searchParams.get('view') || 'lines').trim().toLowerCase();
     if (view === 'customers') {
-      const customers = (await loadProductRawCustomers(companyId)).slice(0, MAX_CUSTOMERS);
+      const [customers, groups] = await Promise.all([
+        loadProductRawCustomers(companyId),
+        loadCustomerGroups(companyId),
+      ]);
 
       return NextResponse.json({
-        customers: customers.map((row) => {
+        customers: customers.slice(0, MAX_CUSTOMERS).map((row) => {
           const customerId = String(row.customerId || '').trim();
           const customerName = String(row.customerName || '').trim();
           return {
@@ -725,6 +728,7 @@ export async function GET(request: NextRequest) {
             customerName,
             key: `${customerId}||${customerName}`,
             label: customerName || customerId || 'Unknown customer',
+            customerGroup: resolveCustomerGroup(groups, customerId, customerName),
           };
         }),
       });
@@ -732,8 +736,120 @@ export async function GET(request: NextRequest) {
 
     const customerId = String(request.nextUrl.searchParams.get('customerId') || '').trim();
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();
-    if (!customerId && !customerName) {
+    const customerGroup = String(request.nextUrl.searchParams.get('customerGroup') || '').trim();
+    if (!customerId && !customerName && !customerGroup) {
       return NextResponse.json({ error: 'Select a customer before loading raw order lines.' }, { status: 400 });
+    }
+
+    if (customerGroup) {
+      const [customers, groups] = await Promise.all([
+        loadProductRawCustomers(companyId),
+        loadCustomerGroups(companyId),
+      ]);
+      const groupCustomers = customers
+        .filter((row) => resolveCustomerGroup(groups, row.customerId, row.customerName) === customerGroup)
+        .slice(0, MAX_CUSTOMERS);
+      if (groupCustomers.length === 0) {
+        return NextResponse.json({
+          openRecords: [],
+          filledRecords: [],
+          openAsOf: null,
+          window: null,
+          nextOlderWindow: null,
+          historyFloor: HISTORY_FLOOR,
+          truncated: false,
+          hasMoreOlder: false,
+        });
+      }
+
+      const windowKind = String(request.nextUrl.searchParams.get('window') || 'recent').trim().toLowerCase();
+      const wantsFilled = view === 'filled' || (view !== 'open' && windowKind === 'older');
+      if (!wantsFilled) {
+        const customerResults = await Promise.all(groupCustomers.map(async (customer) => {
+          const [open, lineIdentity] = await Promise.all([
+            loadOpenLines({ companyId, customerId: customer.customerId, customerName: customer.customerName }),
+            loadCustomerLineIdentity({ companyId, customerId: customer.customerId, customerName: customer.customerName }),
+          ]);
+          return {
+            openAsOf: open.openAsOf,
+            records: open.rows
+              .map((row) => mapOrderLineRecord(row, 'open'))
+              .map((row) => applyLineIdentity(row, lineIdentity)),
+          };
+        }));
+        const openAsOf = customerResults
+          .map((result) => result.openAsOf)
+          .filter((value): value is Date => Boolean(value))
+          .sort((left, right) => right.getTime() - left.getTime())[0] || null;
+        return NextResponse.json({
+          openRecords: customerResults.flatMap((result) => result.records),
+          filledRecords: [],
+          openAsOf: openAsOf ? isoDay(openAsOf) : null,
+          window: null,
+          nextOlderWindow: null,
+          historyFloor: HISTORY_FLOOR,
+          truncated: false,
+          hasMoreOlder: false,
+        });
+      }
+
+      await ensureCustomerOrderLineFilledTables();
+      const beforeParam = String(request.nextUrl.searchParams.get('before') || '').trim();
+      const recentEnd = utcMidnightForEstDate(previousEstCalendarDate());
+      const recentStart = addUtcMonths(recentEnd, -RECENT_MONTHS);
+      let startDate = recentStart;
+      let endDate = recentEnd;
+      let kind: 'recent' | 'older' = 'recent';
+      if (windowKind === 'older') {
+        const before = parseIsoDay(beforeParam) || recentStart;
+        const olderWindow = olderWindowBefore(before);
+        if (!olderWindow) {
+          return NextResponse.json({
+            openRecords: [],
+            filledRecords: [],
+            window: { kind: 'older', startDate: HISTORY_FLOOR, endDate: isoDay(before) },
+            nextOlderWindow: null,
+            historyFloor: HISTORY_FLOOR,
+            truncated: false,
+            hasMoreOlder: false,
+          });
+        }
+        startDate = olderWindow.startDate;
+        endDate = olderWindow.endDate;
+        kind = 'older';
+      }
+      const endExclusive = addUtcDays(utcDay(endDate), 1);
+      const nextOlderWindow = olderWindowBefore(startDate);
+      const customerResults = await Promise.all(groupCustomers.map(async (customer) => {
+        const [openBook, lineIdentity] = await Promise.all([
+          resolveCustomerOpenBook({ companyId, customerId: customer.customerId, customerName: customer.customerName }),
+          loadCustomerLineIdentity({ companyId, customerId: customer.customerId, customerName: customer.customerName }),
+        ]);
+        const rows = await loadFilledLines({
+          companyId,
+          customerId: customer.customerId,
+          customerName: customer.customerName,
+          openBook,
+          startDate,
+          endExclusive,
+        });
+        return rows
+          .map((row) => mapOrderLineRecord(row, 'filled'))
+          .map((row) => applyLineIdentity(row, lineIdentity));
+      }));
+      const filledRecords = customerResults.flat();
+      const truncated = filledRecords.length > MAX_UNIQUE_LINES;
+      return NextResponse.json({
+        openRecords: [],
+        filledRecords: truncated ? filledRecords.slice(0, MAX_UNIQUE_LINES) : filledRecords,
+        window: { kind, startDate: isoDay(startDate), endDate: isoDay(endDate) },
+        nextOlderWindow: nextOlderWindow
+          ? { startDate: isoDay(nextOlderWindow.startDate), endDate: isoDay(nextOlderWindow.endDate) }
+          : null,
+        historyFloor: HISTORY_FLOOR,
+        truncated,
+        hasMoreOlder: Boolean(nextOlderWindow),
+      });
     }
 
     const windowKind = String(request.nextUrl.searchParams.get('window') || 'recent').trim().toLowerCase();

@@ -265,6 +265,7 @@ type WholesaleRawCustomerOption = {
   customerId: string;
   customerName: string;
   label: string;
+  customerGroup?: string;
 };
 type ForecastSubTab = 'income-statement-forecast' | 'cash-forecast' | 'graphs' | 'residential-revenue-forecast';
 
@@ -1070,6 +1071,7 @@ export default function OperationsTab({
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('');
+  const [productMarginCustomerGroupFilter, setProductMarginCustomerGroupFilter] = useState('');
   const [productMarginCustomerIdSearch, setProductMarginCustomerIdSearch] = useState('');
   const [productMarginItemSearch, setProductMarginItemSearch] = useState('');
   const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
@@ -1088,6 +1090,7 @@ export default function OperationsTab({
   const [residentialOfficeMonthlyGoals, setResidentialOfficeMonthlyGoals] = useState<Record<string, { salesVolumeGoal: string; unitsGoal: string }>>({});
   const [residentialAttachGoals, setResidentialAttachGoals] = useState({ mortgagePct: '49', titlePct: '58', insurancePct: '35' });
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('');
+  const [wholesaleRawCustomerGroupFilter, setWholesaleRawCustomerGroupFilter] = useState('');
   const [wholesaleRawCustomerIdSearch, setWholesaleRawCustomerIdSearch] = useState('');
   const [wholesaleRawItemSearch, setWholesaleRawItemSearch] = useState('');
   const [wholesaleRawOrderSearch, setWholesaleRawOrderSearch] = useState('');
@@ -1113,6 +1116,7 @@ export default function OperationsTab({
   const [wholesaleRawFilledSortKey, setWholesaleRawFilledSortKey] = useState<WholesaleRawSortKey>('isoDate');
   const [wholesaleRawFilledSortDir, setWholesaleRawFilledSortDir] = useState<'asc' | 'desc'>('desc');
   const [vendorPricingVendorFilter, setVendorPricingVendorFilter] = useState('all');
+  const [vendorPricingVendorIdSearch, setVendorPricingVendorIdSearch] = useState('');
   const [vendorPricingSearchTerm, setVendorPricingSearchTerm] = useState('');
   const [vendorPricingMismatchOnly, setVendorPricingMismatchOnly] = useState(false);
   const [vendorPricingExpanded, setVendorPricingExpanded] = useState<Set<string>>(() => new Set());
@@ -2488,6 +2492,8 @@ export default function OperationsTab({
 
   const selectedWholesaleRawCustomer =
     wholesaleRawCustomers.find((customer) => customer.key === wholesaleRawCustomerFilter) || null;
+  const selectedWholesaleRawCustomerGroup = wholesaleRawCustomerGroupFilter || null;
+  const hasWholesaleRawCustomerScope = Boolean(selectedWholesaleRawCustomer || selectedWholesaleRawCustomerGroup);
 
   const resetWholesaleRawLines = () => {
     setWholesaleRawCustomerLines([]);
@@ -2538,15 +2544,19 @@ export default function OperationsTab({
     window?: 'recent' | 'older';
     before?: string;
   }) => {
-    if (!selectedWholesaleRawCustomer) {
+    if (!hasWholesaleRawCustomerScope) {
       throw new Error('Select a customer before loading raw order lines.');
     }
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       view: options.view,
-      customerId: selectedWholesaleRawCustomer.customerId,
-      customerName: selectedWholesaleRawCustomer.customerName,
     });
+    if (selectedWholesaleRawCustomerGroup) {
+      params.set('customerGroup', selectedWholesaleRawCustomerGroup);
+    } else if (selectedWholesaleRawCustomer) {
+      params.set('customerId', selectedWholesaleRawCustomer.customerId);
+      params.set('customerName', selectedWholesaleRawCustomer.customerName);
+    }
     if (options.view === 'filled') {
       params.set('window', options.window || 'recent');
       if (options.window === 'older' && options.before) {
@@ -2581,7 +2591,7 @@ export default function OperationsTab({
   };
 
   const loadWholesaleRawRecentWindow = async () => {
-    if (!selectedWholesaleRawCustomer) {
+    if (!hasWholesaleRawCustomerScope) {
       resetWholesaleRawLines();
       return;
     }
@@ -2616,7 +2626,7 @@ export default function OperationsTab({
   };
 
   const loadWholesaleRawFilledWindow = async () => {
-    if (!selectedWholesaleRawCustomer || wholesaleRawFilledLoading) return;
+    if (!hasWholesaleRawCustomerScope || wholesaleRawFilledLoading) return;
     setWholesaleRawFilledLoading(true);
     setWholesaleRawFilledRequested(true);
     setWholesaleRawFilledError(null);
@@ -2636,7 +2646,7 @@ export default function OperationsTab({
   };
 
   const loadWholesaleRawOlderWindow = async () => {
-    if (!selectedWholesaleRawCustomer || !wholesaleRawWindowStart || wholesaleRawFilledLoading) return;
+    if (!hasWholesaleRawCustomerScope || !wholesaleRawWindowStart || wholesaleRawFilledLoading) return;
     setWholesaleRawFilledLoading(true);
     setWholesaleRawFilledError(null);
     try {
@@ -2883,7 +2893,7 @@ export default function OperationsTab({
 
     window.addEventListener('operational-data-updated', handleOperationalDataUpdated);
     return () => window.removeEventListener('operational-data-updated', handleOperationalDataUpdated);
-  }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, shouldLoadWholesaleProductsReport, activeTab, productReportView, isWholesaleRawViewActive, selectedWholesaleRawCustomer?.key]);
+  }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, shouldLoadWholesaleProductsReport, activeTab, productReportView, isWholesaleRawViewActive, selectedWholesaleRawCustomer?.key, selectedWholesaleRawCustomerGroup]);
 
   useEffect(() => {
     if (!shouldLoadWholesaleProductsReport) {
@@ -3013,6 +3023,7 @@ export default function OperationsTab({
 
   useEffect(() => {
     setWholesaleRawCustomerFilter('');
+    setWholesaleRawCustomerGroupFilter('');
     setWholesaleRawCustomers([]);
     resetWholesaleRawLines();
   }, [selectedCompanyId]);
@@ -3041,12 +3052,12 @@ export default function OperationsTab({
 
   useEffect(() => {
     if (!isWholesaleRawViewActive) return;
-    if (!selectedWholesaleRawCustomer) {
+    if (!hasWholesaleRawCustomerScope) {
       resetWholesaleRawLines();
       return;
     }
     void loadWholesaleRawRecentWindow();
-  }, [isWholesaleRawViewActive, selectedCompanyId, selectedWholesaleRawCustomer?.key]);
+  }, [isWholesaleRawViewActive, selectedCompanyId, selectedWholesaleRawCustomer?.key, selectedWholesaleRawCustomerGroup]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;
@@ -10620,9 +10631,132 @@ export default function OperationsTab({
         })
         .sort((a, b) => String(a.customerName).localeCompare(String(b.customerName), undefined, { sensitivity: 'base', numeric: true }));
     })();
+    const productMarginCustomerGroupNames = Array.from(
+      new Set(
+        productMarginCustomerGroups
+          .map((group) => String(group.customerGroup || '').trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    const aggregateProductMarginCustomerGroup = (customerGroup: string, groups: any[]) => {
+      const aggregate = {
+        key: `group||${customerGroup}`,
+        customerKey: `group||${customerGroup}`,
+        customerGroup,
+        customerId: '',
+        customerName: customerGroup,
+        rows: [] as any[],
+        quantity: 0,
+        revenue: 0,
+        materialCost: 0,
+        tariff: 0,
+        duties: 0,
+        freight: 0,
+        operatingExpenses: 0,
+        purchaseOrderIds: new Set<string>(),
+      };
+      const rowsByItem = new Map<string, any>();
+      for (const group of groups) {
+        aggregate.quantity += Number(group.quantity || 0);
+        aggregate.revenue += Number(group.revenue || 0);
+        aggregate.materialCost += Number(group.materialCost || 0);
+        aggregate.tariff += Number(group.tariff || 0);
+        aggregate.duties += Number(group.duties || 0);
+        aggregate.freight += Number(group.freight || 0);
+        aggregate.operatingExpenses += Number(group.operatingExpenses || 0);
+        group.purchaseOrderIds?.forEach((purchaseOrderId: string) => aggregate.purchaseOrderIds.add(purchaseOrderId));
+        for (const row of group.rows || []) {
+          const itemKey = [row.aprPartNumber, row.customerPartNumber, row.item].join('||');
+          const item = rowsByItem.get(itemKey) || {
+            ...row,
+            key: `group||${customerGroup}||${itemKey}`,
+            customerKey: aggregate.customerKey,
+            customerGroup,
+            customerId: '',
+            customerName: customerGroup,
+            quantity: 0,
+            revenue: 0,
+            materialCostTotal: 0,
+            tariffTotal: 0,
+            dutiesTotal: 0,
+            freightTotal: 0,
+            operatingExpensesTotal: 0,
+            purchaseOrderIds: new Set<string>(),
+          };
+          item.quantity += Number(row.quantity || 0);
+          item.revenue += Number(row.revenue || 0);
+          item.materialCostTotal += Number(row.materialCostTotal || 0);
+          item.tariffTotal += Number(row.tariffTotal || 0);
+          item.dutiesTotal += Number(row.dutiesTotal || 0);
+          item.freightTotal += Number(row.freightTotal || 0);
+          item.operatingExpensesTotal += Number(row.operatingExpensesTotal || 0);
+          row.purchaseOrderIds?.forEach((purchaseOrderId: string) => item.purchaseOrderIds.add(purchaseOrderId));
+          rowsByItem.set(itemKey, item);
+        }
+      }
+      const toPerPiece = (total: number, quantity: number) => (quantity > 0 ? total / quantity : null);
+      aggregate.rows = Array.from(rowsByItem.values()).map((row) => {
+        const quantity = Number(row.quantity || 0);
+        const currentPrice = toPerPiece(Number(row.revenue || 0), quantity);
+        const materialCost = toPerPiece(Number(row.materialCostTotal || 0), quantity);
+        const tariffPerPiece = toPerPiece(Number(row.tariffTotal || 0), quantity);
+        const dutiesPerPiece = toPerPiece(Number(row.dutiesTotal || 0), quantity);
+        const freightPerPiece = toPerPiece(Number(row.freightTotal || 0), quantity);
+        const operatingExpensesPerPiece = sgpOperatingExpenseDollars(materialCost, productMarginOpexPct);
+        const currentCostOfSales =
+          (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
+        const fullyLoadedCost = currentCostOfSales + (operatingExpensesPerPiece || 0);
+        const netProfit = currentPrice == null ? null : currentPrice - fullyLoadedCost;
+        return {
+          ...row,
+          currentPrice,
+          materialCost,
+          tariffPerPiece,
+          dutiesPerPiece,
+          freightPerPiece,
+          currentCostOfSales,
+          operatingExpensesPerPiece,
+          fullyLoadedCost,
+          netProfit,
+          netProfitPct: currentPrice && netProfit != null ? (netProfit / currentPrice) * 100 : null,
+          grossMarginPct: currentPrice && currentPrice !== 0 ? ((currentPrice - currentCostOfSales) / currentPrice) * 100 : null,
+          purchaseOrderCount: row.purchaseOrderIds.size,
+        };
+      });
+      const currentPrice = toPerPiece(aggregate.revenue, aggregate.quantity);
+      const materialCost = toPerPiece(aggregate.materialCost, aggregate.quantity);
+      const tariffPerPiece = toPerPiece(aggregate.tariff, aggregate.quantity);
+      const dutiesPerPiece = toPerPiece(aggregate.duties, aggregate.quantity);
+      const freightPerPiece = toPerPiece(aggregate.freight, aggregate.quantity);
+      const operatingExpensesPerPiece = sgpOperatingExpenseDollars(materialCost, productMarginOpexPct);
+      const currentCostOfSales =
+        (materialCost || 0) + (tariffPerPiece || 0) + (dutiesPerPiece || 0) + (freightPerPiece || 0);
+      const fullyLoadedCost = currentCostOfSales + (operatingExpensesPerPiece || 0);
+      const netProfit = currentPrice == null ? null : currentPrice - fullyLoadedCost;
+      return {
+        ...aggregate,
+        currentPrice,
+        materialCost,
+        tariffPerPiece,
+        dutiesPerPiece,
+        freightPerPiece,
+        currentCostOfSales,
+        operatingExpensesPerPiece,
+        fullyLoadedCost,
+        netProfit,
+        netProfitPct: currentPrice && netProfit != null ? (netProfit / currentPrice) * 100 : null,
+        grossMarginPct: currentPrice && currentPrice !== 0 ? ((currentPrice - currentCostOfSales) / currentPrice) * 100 : null,
+        purchaseOrderCount: aggregate.purchaseOrderIds.size,
+      };
+    };
     const productMarginItemSearchTerm = productMarginItemSearch.trim().toLowerCase();
     const visibleProductMarginCustomerGroups = (
-      productMarginCustomerFilter === 'all'
+      productMarginCustomerGroupFilter
+        ? [aggregateProductMarginCustomerGroup(
+            productMarginCustomerGroupFilter,
+            productMarginCustomerGroups.filter((group) => group.customerGroup === productMarginCustomerGroupFilter)
+          )]
+        : productMarginCustomerFilter === 'all'
         ? productMarginCustomerGroups
         : productMarginCustomerGroups.filter((group) => group.key === productMarginCustomerFilter)
     )
@@ -11583,7 +11717,10 @@ export default function OperationsTab({
                     (group) =>
                       String(group.customerId || '').trim().toLowerCase() === nextCustomerId.trim().toLowerCase()
                   );
-                  if (matchingCustomer) setProductMarginCustomerFilter(matchingCustomer.key);
+                  if (matchingCustomer) {
+                    setProductMarginCustomerFilter(matchingCustomer.key);
+                    setProductMarginCustomerGroupFilter('');
+                  }
                 }}
                 placeholder="Search Customer ID"
                 aria-label="Search Customer ID"
@@ -11591,7 +11728,10 @@ export default function OperationsTab({
               />
               <select
                 value={productMarginCustomerFilter}
-                onChange={(event) => setProductMarginCustomerFilter(event.target.value)}
+                onChange={(event) => {
+                  setProductMarginCustomerFilter(event.target.value);
+                  setProductMarginCustomerGroupFilter('');
+                }}
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '260px', background: 'white' }}
               >
                 <option value="">Select a customer</option>
@@ -11602,6 +11742,23 @@ export default function OperationsTab({
                   </option>
                 ))}
               </select>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#334155' }}>
+                Group Name
+                <select
+                  value={productMarginCustomerGroupFilter}
+                  onChange={(event) => {
+                    setProductMarginCustomerGroupFilter(event.target.value);
+                    setProductMarginCustomerFilter('');
+                    setProductMarginCustomerIdSearch('');
+                  }}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px', background: 'white' }}
+                >
+                  <option value="">Select a group</option>
+                  {productMarginCustomerGroupNames.map((group) => (
+                    <option key={group} value={group}>{group}</option>
+                  ))}
+                </select>
+              </label>
               {(['Expand Visible', 'Collapse Visible'] as const).map((label) => (
                 <button
                   key={label}
@@ -11839,8 +11996,8 @@ export default function OperationsTab({
       ];
 
       const formatWindowDate = (isoDate: string) => (isoDate ? formatRawDate(isoDate) : 'N/A');
-      const emptyMessage = !selectedWholesaleRawCustomer
-        ? 'Select a customer to load open order lines.'
+      const emptyMessage = !hasWholesaleRawCustomerScope
+        ? 'Select a customer or group to load open order lines.'
         : wholesaleRawLinesLoading
         ? 'Loading open order lines...'
         : wholesaleRawLinesError
@@ -11885,7 +12042,10 @@ export default function OperationsTab({
                   (customer) =>
                     String(customer.customerId || '').trim().toLowerCase() === nextCustomerId.trim().toLowerCase()
                 );
-                if (matchingCustomer) setWholesaleRawCustomerFilter(matchingCustomer.key);
+                if (matchingCustomer) {
+                  setWholesaleRawCustomerFilter(matchingCustomer.key);
+                  setWholesaleRawCustomerGroupFilter('');
+                }
               }}
               placeholder="Search Customer ID"
               aria-label="Search Customer ID"
@@ -11893,7 +12053,10 @@ export default function OperationsTab({
             />
             <select
               value={wholesaleRawCustomerFilter}
-              onChange={(event) => setWholesaleRawCustomerFilter(event.target.value)}
+              onChange={(event) => {
+                setWholesaleRawCustomerFilter(event.target.value);
+                setWholesaleRawCustomerGroupFilter('');
+              }}
               disabled={wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0}
               style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '260px', background: 'white' }}
             >
@@ -11908,6 +12071,26 @@ export default function OperationsTab({
                 </option>
               ))}
             </select>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#334155' }}>
+              Group Name
+              <select
+                value={wholesaleRawCustomerGroupFilter}
+                onChange={(event) => {
+                  setWholesaleRawCustomerGroupFilter(event.target.value);
+                  setWholesaleRawCustomerFilter('');
+                  setWholesaleRawCustomerIdSearch('');
+                }}
+                disabled={wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px', background: 'white' }}
+              >
+                <option value="">Select a group</option>
+                {Array.from(
+                  new Set(wholesaleRawCustomers.map((customer) => String(customer.customerGroup || '').trim()).filter(Boolean))
+                )
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((group) => <option key={group} value={group}>{group}</option>)}
+              </select>
+            </label>
             <input
               type="search"
               value={wholesaleRawItemSearch}
@@ -11930,7 +12113,9 @@ export default function OperationsTab({
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
             <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#1e40af' }}>
               Open orders
-              {selectedWholesaleRawCustomer ? ` · ${selectedWholesaleRawCustomer.label}` : ''}
+              {selectedWholesaleRawCustomerGroup
+                ? ` · Group: ${selectedWholesaleRawCustomerGroup}`
+                : selectedWholesaleRawCustomer ? ` · ${selectedWholesaleRawCustomer.label}` : ''}
             </h4>
             <div style={{ fontSize: 12, color: '#475569' }}>
               {wholesaleRawVisibleRows.length.toLocaleString()} shown
@@ -12019,16 +12204,16 @@ export default function OperationsTab({
                 <button
                   type="button"
                   onClick={() => { void loadWholesaleRawFilledWindow(); }}
-                  disabled={!selectedWholesaleRawCustomer || wholesaleRawFilledLoading || wholesaleRawLinesLoading}
+                  disabled={!hasWholesaleRawCustomerScope || wholesaleRawFilledLoading || wholesaleRawLinesLoading}
                   title="Load the last 2 years of filled orders"
                   style={{
                     border: '1px solid #cbd5e1',
                     borderRadius: '8px',
                     padding: '8px 10px',
                     fontSize: '12px',
-                    background: !selectedWholesaleRawCustomer || wholesaleRawFilledLoading || wholesaleRawLinesLoading ? '#f8fafc' : '#fff',
+                    background: !hasWholesaleRawCustomerScope || wholesaleRawFilledLoading || wholesaleRawLinesLoading ? '#f8fafc' : '#fff',
                     color: '#334155',
-                    cursor: !selectedWholesaleRawCustomer || wholesaleRawFilledLoading || wholesaleRawLinesLoading ? 'not-allowed' : 'pointer',
+                    cursor: !hasWholesaleRawCustomerScope || wholesaleRawFilledLoading || wholesaleRawLinesLoading ? 'not-allowed' : 'pointer',
                     fontWeight: 700,
                   }}
                 >
@@ -12038,7 +12223,7 @@ export default function OperationsTab({
                 <button
                   type="button"
                   onClick={() => { void loadWholesaleRawOlderWindow(); }}
-                  disabled={!selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading || !wholesaleRawWindowStart}
+                  disabled={!hasWholesaleRawCustomerScope || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading || !wholesaleRawWindowStart}
                   title={
                     !wholesaleRawHasMoreOlder
                       ? `History loaded through ${wholesaleRawHistoryFloor}`
@@ -12049,9 +12234,9 @@ export default function OperationsTab({
                     borderRadius: '8px',
                     padding: '8px 10px',
                     fontSize: '12px',
-                    background: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading ? '#f8fafc' : '#fff',
+                    background: !hasWholesaleRawCustomerScope || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading ? '#f8fafc' : '#fff',
                     color: '#334155',
-                    cursor: !selectedWholesaleRawCustomer || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading ? 'not-allowed' : 'pointer',
+                    cursor: !hasWholesaleRawCustomerScope || !wholesaleRawHasMoreOlder || wholesaleRawFilledLoading ? 'not-allowed' : 'pointer',
                     fontWeight: 700,
                   }}
                 >
@@ -12064,8 +12249,8 @@ export default function OperationsTab({
             </div>
             {!wholesaleRawFilledRequested ? (
               <div style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
-                {!selectedWholesaleRawCustomer
-                  ? 'Select a customer, then click Load filled to open this table.'
+                {!hasWholesaleRawCustomerScope
+                  ? 'Select a customer or group, then click Load filled to open this table.'
                   : 'Filled order lines are not loaded until you click Load filled.'}
               </div>
             ) : (
@@ -12226,6 +12411,21 @@ export default function OperationsTab({
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                type="search"
+                value={vendorPricingVendorIdSearch}
+                onChange={(event) => {
+                  const nextVendorId = event.target.value;
+                  setVendorPricingVendorIdSearch(nextVendorId);
+                  const matchingVendor = vendorPricingVendorOptions.find(
+                    (vendor) => vendor.key.split('||')[0].trim().toLowerCase() === nextVendorId.trim().toLowerCase()
+                  );
+                  if (matchingVendor) setVendorPricingVendorFilter(matchingVendor.key);
+                }}
+                placeholder="Search Vendor ID"
+                aria-label="Search Vendor ID"
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
+              />
               <select
                 value={vendorPricingVendorFilter}
                 onChange={(event) => setVendorPricingVendorFilter(event.target.value)}

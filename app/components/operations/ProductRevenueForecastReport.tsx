@@ -97,14 +97,18 @@ function columnWidth(widthCh: number): string {
   return `${columnWidthPx(widthCh)}px`;
 }
 
-function stickyIdentityStyle(index: number, header: boolean): React.CSSProperties {
-  const column = IDENTITY_COLUMNS[index];
-  const isLast = index === IDENTITY_COLUMNS.length - 1;
+function stickyIdentityStyle(
+  index: number,
+  header: boolean,
+  columns: typeof IDENTITY_COLUMNS = IDENTITY_COLUMNS
+): React.CSSProperties {
+  const column = columns[index];
+  const isLast = index === columns.length - 1;
   const width = columnWidth(column.widthCh);
   const inputPadX = column.compact ? 4 : 7;
   return {
     position: 'sticky',
-    left: IDENTITY_COLUMN_LEFT_PX[index],
+    left: columns.slice(0, index).reduce((left, item) => left + columnWidthPx(item.widthCh), 0),
     width,
     minWidth: width,
     maxWidth: width,
@@ -179,6 +183,7 @@ export default function ProductRevenueForecastReport({
   const [dataThru, setDataThru] = useState('');
   const [customerIdSearch, setCustomerIdSearch] = useState('');
   const [customerKey, setCustomerKey] = useState('');
+  const [customerGroup, setCustomerGroup] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [lines, setLines] = useState<ForecastLine[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
@@ -200,6 +205,17 @@ export default function ProductRevenueForecastReport({
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
     [customers, customerKey]
+  );
+  const customerGroups = useMemo(
+    () => Array.from(new Set(customers.map((customer: CustomerOption & { customerGroup?: string }) => customer.customerGroup || '').filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [customers]
+  );
+  const groupScope = Boolean(customerGroup);
+  const visibleIdentityColumns = useMemo(
+    () => selectedCustomer && !groupScope
+      ? IDENTITY_COLUMNS.filter((column) => column.key !== 'customerGroup')
+      : IDENTITY_COLUMNS,
+    [groupScope, selectedCustomer]
   );
   const monthName = FORECAST_MONTH_FULL_LABELS[selectedMonth];
   const previousMonth = (selectedMonth === 1 ? 12 : selectedMonth - 1) as ForecastMonth;
@@ -282,17 +298,20 @@ export default function ProductRevenueForecastReport({
     }
   }, [loadCsiCustomers, mergeCustomers, selectedCompanyId, year]);
 
-  const loadLines = useCallback(async (customer: CustomerOption, nextYear = year, options?: { keepDirty?: boolean }) => {
-    if (!selectedCompanyId || !customer) return;
+  const loadLines = useCallback(async (customer: CustomerOption | null, group = customerGroup, nextYear = year, options?: { keepDirty?: boolean }) => {
+    if (!selectedCompanyId || (!customer && !group)) return;
     setLoadingLines(true);
     setError(null);
     try {
       const params = new URLSearchParams({
         companyId: selectedCompanyId,
         year: String(nextYear),
-        customerId: customer.customerId,
-        customerName: customer.customerName,
       });
+      if (group) params.set('customerGroup', group);
+      else if (customer) {
+        params.set('customerId', customer.customerId);
+        params.set('customerName', customer.customerName);
+      }
       const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to load forecast rows');
@@ -306,10 +325,11 @@ export default function ProductRevenueForecastReport({
     } finally {
       setLoadingLines(false);
     }
-  }, [selectedCompanyId, year]);
+  }, [customerGroup, selectedCompanyId, year]);
 
   useEffect(() => {
     setCustomerKey('');
+    setCustomerGroup('');
     setLines([]);
     setDirty(false);
   }, [selectedCompanyId]);
@@ -321,13 +341,13 @@ export default function ProductRevenueForecastReport({
   }, [selectedCompanyId, year, loadCustomers]);
 
   useEffect(() => {
-    if (!selectedCustomer) {
+    if (!selectedCustomer && !customerGroup) {
       setLines([]);
       setDirty(false);
       return;
     }
     void loadLines(selectedCustomer);
-  }, [selectedCustomer?.key, loadLines]);
+  }, [customerGroup, selectedCustomer?.key, loadLines]);
 
   const loadCompanyMonthTotals = useCallback(async () => {
     if (!selectedCompanyId) return;
@@ -406,6 +426,11 @@ export default function ProductRevenueForecastReport({
     setCustomerKey(nextKey);
   };
 
+  const handleGroupChange = (nextGroup: string) => {
+    if (dirty && !window.confirm('You have unsaved changes. Switch group without saving?')) return;
+    setCustomerGroup(nextGroup);
+  };
+
   const handleCustomerIdSearchChange = (nextCustomerId: string) => {
     setCustomerIdSearch(nextCustomerId);
     const matchingCustomer = customers.find(
@@ -432,7 +457,7 @@ export default function ProductRevenueForecastReport({
   };
 
   const handleSave = async () => {
-    if (!selectedCompanyId || !selectedCustomer) return;
+    if (!selectedCompanyId || !selectedCustomer || groupScope) return;
     if (lines.some((line) => !String(line.itemSku || '').trim())) {
       setError('Every row needs an APR P/N before saving.');
       return;
@@ -508,12 +533,12 @@ export default function ProductRevenueForecastReport({
   const trendRows = useMemo(
     () =>
       buildProductMonthlyTrendRows(
-        selectedCustomer ? summarizeForecastQtyMonths(lines) : companyMonthTotals || summarizeForecastQtyMonths([]),
+        selectedCustomer || groupScope ? summarizeForecastQtyMonths(lines) : companyMonthTotals || summarizeForecastQtyMonths([]),
         year
       ),
-    [companyMonthTotals, lines, selectedCustomer, year]
+    [companyMonthTotals, groupScope, lines, selectedCustomer, year]
   );
-  const trendScopeLabel = selectedCustomer ? selectedCustomer.label : 'All customers';
+  const trendScopeLabel = groupScope ? `Group: ${customerGroup}` : selectedCustomer ? selectedCustomer.label : 'All customers';
 
   const monthHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
@@ -654,6 +679,20 @@ export default function ProductRevenueForecastReport({
           </select>
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Group Name
+          <select
+            value={customerGroup}
+            onChange={(event) => handleGroupChange(event.target.value)}
+            disabled={loadingCustomers && customers.length === 0}
+            style={{ ...inputStyle, minWidth: 220 }}
+          >
+            <option value="">Select a group</option>
+            {customerGroups.map((group) => (
+              <option key={group} value={group}>{group}</option>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Year
           <select
             value={year}
@@ -674,6 +713,7 @@ export default function ProductRevenueForecastReport({
               setDataThru(event.target.value);
               markDirty();
             }}
+            disabled={groupScope}
             style={{ ...inputStyle, width: 150 }}
           />
         </label>
@@ -728,15 +768,15 @@ export default function ProductRevenueForecastReport({
         <button
           type="button"
           onClick={() => void handleSave()}
-          disabled={!selectedCustomer || saving || !dirty}
+          disabled={!selectedCustomer || groupScope || saving || !dirty}
           style={{
             border: '1px solid #4338ca',
             borderRadius: 8,
             padding: '8px 14px',
-            background: !selectedCustomer || saving || !dirty ? '#c7d2fe' : '#4f46e5',
+            background: !selectedCustomer || groupScope || saving || !dirty ? '#c7d2fe' : '#4f46e5',
             color: '#ffffff',
             fontWeight: 700,
-            cursor: !selectedCustomer || saving || !dirty ? 'not-allowed' : 'pointer',
+            cursor: !selectedCustomer || groupScope || saving || !dirty ? 'not-allowed' : 'pointer',
             fontSize: 12,
           }}
         >
@@ -758,9 +798,9 @@ export default function ProductRevenueForecastReport({
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}
 
-      {!selectedCustomer ? (
+      {!selectedCustomer && !groupScope ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
-          Select a customer first. You can then type Group / TEAM / CSR on each row, enter
+          Select a customer or group first. You can then type Group / TEAM / CSR on each row, enter
           Planned or MTO and monthly quantities, and save. Import the workbook once to load all customers.
         </div>
       ) : loadingLines ? (
@@ -821,11 +861,11 @@ export default function ProductRevenueForecastReport({
                 zIndex: 5,
               }}
             >
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>Customer</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>{groupScope ? 'Group' : 'Customer'}</div>
               <div
-                title={selectedCustomer.label}
+                title={groupScope ? customerGroup : selectedCustomer?.label}
                 style={{
-                  fontSize: 13,
+                  fontSize: groupScope ? 13 : 16.25,
                   color: '#0f172a',
                   fontWeight: 600,
                   overflow: 'hidden',
@@ -833,12 +873,12 @@ export default function ProductRevenueForecastReport({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {selectedCustomer.label}
+                {groupScope ? `Group: ${customerGroup}` : selectedCustomer?.label}
               </div>
             </div>
-            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: TABLE_MIN_WIDTH_PX, fontSize: 12, tableLayout: 'fixed' }}>
+            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + columnWidthPx(PLANNED_COL_CH) + MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX, fontSize: 12, tableLayout: 'fixed' }}>
               <colgroup>
-                {IDENTITY_COLUMNS.map((column) => (
+                {visibleIdentityColumns.map((column) => (
                   <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
                 ))}
                 <col style={{ width: columnWidth(PLANNED_COL_CH) }} />
@@ -848,14 +888,14 @@ export default function ProductRevenueForecastReport({
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  {IDENTITY_COLUMNS.map((column, index) => (
+                  {visibleIdentityColumns.map((column, index) => (
                     <th
                       key={column.key}
                       title={column.sortable ? `Sort by ${column.label}` : column.label}
                       align="left"
                       onClick={column.sortable ? () => toggleSort(column.key as 'itemSku' | 'customerPartNumber') : undefined}
                       style={{
-                        ...stickyIdentityStyle(index, true),
+                        ...stickyIdentityStyle(index, true, visibleIdentityColumns),
                         textAlign: 'left',
                         paddingTop: 8,
                         paddingBottom: 8,
@@ -910,12 +950,12 @@ export default function ProductRevenueForecastReport({
                 {sortedLines.map((line) => {
                   return (
                     <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                      {IDENTITY_COLUMNS.map((column, index) => (
+                      {visibleIdentityColumns.map((column, index) => (
                         <td
                           key={column.key}
                           title={line[column.key] || undefined}
                           style={{
-                            ...stickyIdentityStyle(index, false),
+                            ...stickyIdentityStyle(index, false, visibleIdentityColumns),
                             paddingTop: 6,
                             paddingBottom: 6,
                             borderTop: '1px solid #e2e8f0',
@@ -924,9 +964,9 @@ export default function ProductRevenueForecastReport({
                           <input
                             value={line[column.key]}
                             title={line[column.key] || undefined}
-                            readOnly={column.readOnly}
+                            readOnly={column.readOnly || groupScope}
                             onChange={
-                              column.readOnly
+                              column.readOnly || groupScope
                                 ? undefined
                                 : column.key === 'customerGroup'
                                   ? (event) => updateCustomerGroup(event.target.value)
@@ -935,7 +975,7 @@ export default function ProductRevenueForecastReport({
                             style={{
                               ...identityInputStyle,
                               padding: column.compact ? '5px 4px' : identityInputStyle.padding,
-                              ...(column.readOnly ? { background: '#f8fafc', color: '#475569', cursor: 'default' } : {}),
+                              ...(column.readOnly || groupScope ? { background: '#f8fafc', color: '#475569', cursor: 'default' } : {}),
                             }}
                           />
                         </td>
@@ -953,6 +993,7 @@ export default function ProductRevenueForecastReport({
                         <select
                           value={line.productionType}
                           onChange={(event) => updateLine(line.id, { productionType: event.target.value })}
+                          disabled={groupScope}
                           style={{ ...inputStyle, padding: '5px 2px' }}
                         >
                           <option value="" />
@@ -985,7 +1026,7 @@ export default function ProductRevenueForecastReport({
                           typedAdjustedMonthQty(line.forecastQty, previousMonth, line.adjustedQty)
                         ))}
                       </td>
-                      {canEditSgp ? (
+                      {canEditSgp && !groupScope ? (
                         <td style={{ ...monthInputCellStyle, borderLeft: '2px solid #c7d2fe' }}>
                           <input
                             type="number"
@@ -1000,7 +1041,7 @@ export default function ProductRevenueForecastReport({
                           {fmtQty(qtyValue(sgpQty(line), selectedMonth))}
                         </td>
                       )}
-                      {canEditSelectedMonth ? (
+                      {canEditSelectedMonth && !groupScope ? (
                         <td style={monthInputCellStyle}>
                           <input
                             type="number"
@@ -1015,7 +1056,7 @@ export default function ProductRevenueForecastReport({
                           {fmtQty(qtyValue(line.forecastQty, selectedMonth))}
                         </td>
                       )}
-                      {canEditSelectedMonth ? (
+                      {canEditSelectedMonth && !groupScope ? (
                         <td style={monthInputCellStyle}>
                           <input
                             type="number"
@@ -1050,8 +1091,8 @@ export default function ProductRevenueForecastReport({
                 })}
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={18} style={{ padding: 16, color: '#64748b' }}>
-                      No forecast rows for this customer yet. Import the workbook to load customers and parts, then save.
+                    <td colSpan={visibleIdentityColumns.length + 13} style={{ padding: 16, color: '#64748b' }}>
+                      No forecast rows for this {groupScope ? 'group' : 'customer'} yet. Import the workbook to load customers and parts, then save.
                     </td>
                   </tr>
                 )}
@@ -1067,7 +1108,7 @@ export default function ProductRevenueForecastReport({
         subtitle={`${trendScopeLabel}. Units by month: Forecast, Forecast - ADJ, and Actual.`}
         unit="qty"
         rows={trendRows}
-        loading={!selectedCustomer && (loadingCompanyTotals || !companyMonthTotals)}
+        loading={!selectedCustomer && !groupScope && (loadingCompanyTotals || !companyMonthTotals)}
       />
     </div>
   );

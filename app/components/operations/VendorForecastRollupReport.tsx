@@ -156,6 +156,7 @@ export default function VendorForecastRollupReport({
 }: VendorForecastRollupReportProps) {
   const [year, setYear] = useState(currentYear());
   const [dataThru, setDataThru] = useState('');
+  const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorKey, setVendorKey] = useState('');
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [lines, setLines] = useState<ForecastLine[]>([]);
@@ -236,6 +237,25 @@ export default function VendorForecastRollupReport({
     }
     void loadLines(selectedVendor);
   }, [selectedVendor?.key, loadLines]);
+
+  const handleVendorIdSearchChange = (nextVendorId: string) => {
+    setVendorIdSearch(nextVendorId);
+    const matchingVendor = vendors.find(
+      (vendor) => vendor.vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
+    );
+    if (matchingVendor && matchingVendor.key !== vendorKey) {
+      setVendorKey(matchingVendor.key);
+    }
+  };
+
+  useEffect(() => {
+    const matchingVendor = vendors.find(
+      (vendor) => vendor.vendorId.trim().toLowerCase() === vendorIdSearch.trim().toLowerCase()
+    );
+    if (vendorIdSearch.trim() && matchingVendor && matchingVendor.key !== vendorKey) {
+      setVendorKey(matchingVendor.key);
+    }
+  }, [vendorIdSearch, vendorKey, vendors]);
 
   const totals = useMemo(() => {
     return lines.reduce(
@@ -384,7 +404,17 @@ export default function VendorForecastRollupReport({
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
-          Vendor
+          Vendor ID
+          <input
+            type="search"
+            value={vendorIdSearch}
+            onChange={(event) => handleVendorIdSearchChange(event.target.value)}
+            placeholder="Search vendor ID"
+            style={{ ...inputStyle, width: 180 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Vendor Name
           <select
             value={vendorKey}
             onChange={(event) => setVendorKey(event.target.value)}

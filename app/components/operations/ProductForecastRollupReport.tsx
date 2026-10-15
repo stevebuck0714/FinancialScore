@@ -98,12 +98,16 @@ function columnWidth(widthCh: number): string {
   return `${columnWidthPx(widthCh)}px`;
 }
 
-function stickyIdentityStyle(index: number, header: boolean): React.CSSProperties {
-  const isLast = index === IDENTITY_COLUMNS.length - 1;
-  const width = columnWidth(IDENTITY_COLUMNS[index].widthCh);
+function stickyIdentityStyle(
+  index: number,
+  header: boolean,
+  columns: typeof IDENTITY_COLUMNS = IDENTITY_COLUMNS
+): React.CSSProperties {
+  const isLast = index === columns.length - 1;
+  const width = columnWidth(columns[index].widthCh);
   return {
     position: 'sticky',
-    left: IDENTITY_COLUMN_LEFT_PX[index],
+    left: columns.slice(0, index).reduce((left, item) => left + columnWidthPx(item.widthCh), 0),
     width,
     minWidth: width,
     maxWidth: width,
@@ -153,6 +157,7 @@ export default function ProductForecastRollupReport({
   const [dataThru, setDataThru] = useState('');
   const [customerIdSearch, setCustomerIdSearch] = useState('');
   const [customerKey, setCustomerKey] = useState('');
+  const [customerGroup, setCustomerGroup] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [lines, setLines] = useState<ForecastLine[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
@@ -163,6 +168,17 @@ export default function ProductForecastRollupReport({
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
     [customers, customerKey]
+  );
+  const customerGroups = useMemo(
+    () => Array.from(new Set(customers.map((customer: CustomerOption & { customerGroup?: string }) => customer.customerGroup || '').filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [customers]
+  );
+  const groupScope = Boolean(customerGroup);
+  const visibleIdentityColumns = useMemo(
+    () => selectedCustomer && !groupScope
+      ? IDENTITY_COLUMNS.filter((column) => column.key !== 'customerGroup')
+      : IDENTITY_COLUMNS,
+    [groupScope, selectedCustomer]
   );
   const mergeCustomers = useCallback((csi: CustomerOption[], forecast: CustomerOption[]) => {
     const byKey = new Map<string, CustomerOption>();
@@ -218,17 +234,20 @@ export default function ProductForecastRollupReport({
     }
   }, [loadCsiCustomers, mergeCustomers, selectedCompanyId, year]);
 
-  const loadLines = useCallback(async (customer: CustomerOption, nextYear = year) => {
-    if (!selectedCompanyId || !customer) return;
+  const loadLines = useCallback(async (customer: CustomerOption | null, group = customerGroup, nextYear = year) => {
+    if (!selectedCompanyId || (!customer && !group)) return;
     setLoadingLines(true);
     setError(null);
     try {
       const params = new URLSearchParams({
         companyId: selectedCompanyId,
         year: String(nextYear),
-        customerId: customer.customerId,
-        customerName: customer.customerName,
       });
+      if (group) params.set('customerGroup', group);
+      else if (customer) {
+        params.set('customerId', customer.customerId);
+        params.set('customerName', customer.customerName);
+      }
       const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to load forecast rows');
@@ -240,10 +259,11 @@ export default function ProductForecastRollupReport({
     } finally {
       setLoadingLines(false);
     }
-  }, [selectedCompanyId, year]);
+  }, [customerGroup, selectedCompanyId, year]);
 
   useEffect(() => {
     setCustomerKey('');
+    setCustomerGroup('');
     setLines([]);
   }, [selectedCompanyId]);
 
@@ -253,12 +273,12 @@ export default function ProductForecastRollupReport({
   }, [selectedCompanyId, year, loadCustomers]);
 
   useEffect(() => {
-    if (!selectedCustomer) {
+    if (!selectedCustomer && !customerGroup) {
       setLines([]);
       return;
     }
     void loadLines(selectedCustomer);
-  }, [selectedCustomer?.key, loadLines]);
+  }, [customerGroup, selectedCustomer?.key, loadLines]);
 
   const handleCustomerIdSearchChange = (nextCustomerId: string) => {
     setCustomerIdSearch(nextCustomerId);
@@ -429,6 +449,13 @@ export default function ProductForecastRollupReport({
           </select>
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Group Name
+          <select value={customerGroup} onChange={(event) => setCustomerGroup(event.target.value)} style={{ ...inputStyle, minWidth: 220 }}>
+            <option value="">Select a group</option>
+            {customerGroups.map((group) => <option key={group} value={group}>{group}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Year
           <select
             value={year}
@@ -458,7 +485,7 @@ export default function ProductForecastRollupReport({
       )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
 
-      {!selectedCustomer ? (
+      {!selectedCustomer && !groupScope ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
           Select a customer first. Quarter and annual columns are calculated from Monthly Forecast.
         </div>
@@ -489,11 +516,11 @@ export default function ProductForecastRollupReport({
                 zIndex: 5,
               }}
             >
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>Customer</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>{groupScope ? 'Group' : 'Customer'}</div>
               <div
-                title={selectedCustomer.label}
+                title={groupScope ? customerGroup : selectedCustomer?.label}
                 style={{
-                  fontSize: 13,
+                  fontSize: groupScope ? 13 : 16.25,
                   color: '#0f172a',
                   fontWeight: 600,
                   overflow: 'hidden',
@@ -501,25 +528,25 @@ export default function ProductForecastRollupReport({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {selectedCustomer.label}
+                {groupScope ? `Group: ${customerGroup}` : selectedCustomer?.label}
               </div>
             </div>
-            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 1680, fontSize: 12, tableLayout: 'fixed' }}>
+            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + 1680, fontSize: 12, tableLayout: 'fixed' }}>
               <colgroup>
-                {IDENTITY_COLUMNS.map((column) => (
+                {visibleIdentityColumns.map((column) => (
                   <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
                 ))}
               </colgroup>
               <thead>
                 <tr>
-                  {IDENTITY_COLUMNS.map((column, index) => (
+                  {visibleIdentityColumns.map((column, index) => (
                     <th
                       key={column.key}
                       rowSpan={2}
                       title={column.label}
                       align="left"
                       style={{
-                        ...stickyIdentityStyle(index, true),
+                        ...stickyIdentityStyle(index, true, visibleIdentityColumns),
                         textAlign: 'left',
                         paddingTop: 8,
                         paddingBottom: 8,
@@ -580,12 +607,12 @@ export default function ProductForecastRollupReport({
                   const ytdActual = ytdActualQty(line.actualQty, dataThru || null);
                   return (
                     <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                      {IDENTITY_COLUMNS.map((column, index) => (
+                      {visibleIdentityColumns.map((column, index) => (
                         <td
                           key={column.key}
                           title={line[column.key] || undefined}
                           style={{
-                            ...stickyIdentityStyle(index, false),
+                            ...stickyIdentityStyle(index, false, visibleIdentityColumns),
                             paddingTop: 6,
                             paddingBottom: 6,
                             borderTop: '1px solid #e2e8f0',
@@ -622,8 +649,8 @@ export default function ProductForecastRollupReport({
                 })}
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={29} style={{ padding: 16, color: '#64748b' }}>
-                      No forecast rows for this customer yet. Import the workbook on Monthly Forecast, then return here.
+                    <td colSpan={visibleIdentityColumns.length + 26} style={{ padding: 16, color: '#64748b' }}>
+                      No forecast rows for this {groupScope ? 'group' : 'customer'} yet. Import the workbook on Monthly Forecast, then return here.
                     </td>
                   </tr>
                 )}

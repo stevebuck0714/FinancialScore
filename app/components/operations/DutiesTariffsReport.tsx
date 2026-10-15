@@ -200,6 +200,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   const [missingHtsCount, setMissingHtsCount] = useState(0);
   const [sortKey, setSortKey] = useState<DutySortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState(ALL_VENDORS_KEY);
   const [asOfDate, setAsOfDate] = useState(formatEstDate);
   const [refreshing, setRefreshing] = useState(false);
@@ -560,6 +561,21 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
               How this works
             </button>
           ) : null}
+          <input
+            type="search"
+            value={vendorIdSearch}
+            onChange={(event) => {
+              const nextVendorId = event.target.value;
+              setVendorIdSearch(nextVendorId);
+              const matchingVendor = vendorOptions.find(
+                (vendor) => vendor.vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
+              );
+              if (matchingVendor) setVendorFilter(matchingVendor.key);
+            }}
+            placeholder="Search Vendor ID"
+            aria-label="Search Vendor ID"
+            style={{ ...inputStyle, width: 180 }}
+          />
           <select
             value={effectiveVendorFilter}
             onChange={(event) => setVendorFilter(event.target.value)}
