@@ -94,10 +94,17 @@ export function getOperationalHubTabCategories(
   const customTabKeys = customTabs.map((tab) => tab.key);
   const liveKeys = (() => {
     const keys = getOperationalHubDefaultModuleKeys(sectorCategory);
-    if (!isAtlanticCompany || keys.includes('groups')) return keys;
-    const productsIdx = keys.findIndex((module) => module === 'products_skus' || module === 'products');
-    if (productsIdx < 0) return [...keys, 'groups'];
-    return [...keys.slice(0, productsIdx + 1), 'groups', ...keys.slice(productsIdx + 1)];
+    if (!isAtlanticCompany) return keys;
+    const withGroups = (() => {
+      if (keys.includes('groups')) return keys;
+      const productsIdx = keys.findIndex((module) => module === 'products_skus' || module === 'products');
+      if (productsIdx < 0) return [...keys, 'groups'];
+      return [...keys.slice(0, productsIdx + 1), 'groups', ...keys.slice(productsIdx + 1)];
+    })();
+    if (sectorCategory !== '42' || withGroups.includes('projections')) return withGroups;
+    const inventoryIdx = withGroups.findIndex((module) => module === 'inventory');
+    if (inventoryIdx < 0) return [...withGroups, 'projections'];
+    return [...withGroups.slice(0, inventoryIdx + 1), 'projections', ...withGroups.slice(inventoryIdx + 1)];
   })();
   const masterKeys = getSectorMasterTabKeys(sectorCategory);
   const extraKeys = liveKeys.filter((key) => !masterKeys.includes(key) && !customTabKeys.includes(key));
@@ -212,7 +219,7 @@ export function isOperationalModuleAllowed(rawAccess: unknown, moduleKey: string
   if (!normalizedModuleKey) return true;
   // Group is an Atlantic reporting view of product data, not a separately
   // configurable access-right. It follows the existing Products permission.
-  if (normalizedModuleKey === 'groups' || normalizedModuleKey === 'projections') {
+  if (normalizedModuleKey === 'groups') {
     return access.includes(normalizedModuleKey) || access.includes('products_skus') || access.includes('products');
   }
   return access.includes(normalizedModuleKey);
