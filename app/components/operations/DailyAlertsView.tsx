@@ -2979,7 +2979,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                     { id: 'weekly' as BriefingPeriod, label: 'Weekly' },
                     { id: 'monthly' as BriefingPeriod, label: 'Monthly' },
                     { id: 'quarterly' as BriefingPeriod, label: 'Quarterly' },
-                    { id: 'annual' as BriefingPeriod, label: 'Annual' },
                   ]).map((tab) => (
                     <button
                       key={tab.id}
@@ -3000,22 +2999,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   ))}
                 </div>
               </div>
-              <button
-                onClick={() => loadExecBriefing(true)}
-                disabled={execBriefingLoading}
-                style={{
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  color: 'white',
-                  background: execBriefingLoading ? '#94a3b8' : '#2751d0',
-                  border: '1px solid #2751d0',
-                  borderRadius: '8px',
-                  padding: '7px 11px',
-                  cursor: execBriefingLoading ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {execBriefingLoading ? 'Generating...' : 'Refresh Briefing'}
-              </button>
             </div>
 
             {briefingPeriod === 'daily' &&

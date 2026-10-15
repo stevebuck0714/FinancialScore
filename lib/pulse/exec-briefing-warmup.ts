@@ -64,7 +64,7 @@ export async function warmDailyExecutiveBriefingCache(
   }
 
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || 240000));
-  const defaultPeriods: BriefingPeriod[] = ['daily', 'weekly', 'monthly', 'quarterly', 'annual'];
+  const defaultPeriods: BriefingPeriod[] = ['daily', 'weekly', 'monthly', 'quarterly'];
   const periods: BriefingPeriod[] = options.periods?.length ? options.periods : defaultPeriods;
   const warmPeriod = async (period: BriefingPeriod): Promise<WarmDailyExecutiveBriefingResult> => {
     const url = new URL('/api/pulse/exec-briefing', baseUrl);
