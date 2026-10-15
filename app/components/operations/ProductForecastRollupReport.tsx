@@ -151,6 +151,7 @@ export default function ProductForecastRollupReport({
   const [year, setYear] = useState(currentYear());
   const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
   const [dataThru, setDataThru] = useState('');
+  const [customerIdSearch, setCustomerIdSearch] = useState('');
   const [customerKey, setCustomerKey] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [lines, setLines] = useState<ForecastLine[]>([]);
@@ -163,7 +164,6 @@ export default function ProductForecastRollupReport({
     () => customers.find((customer) => customer.key === customerKey) || null,
     [customers, customerKey]
   );
-
   const mergeCustomers = useCallback((csi: CustomerOption[], forecast: CustomerOption[]) => {
     const byKey = new Map<string, CustomerOption>();
     [...csi, ...forecast].forEach((customer) => {
@@ -259,6 +259,25 @@ export default function ProductForecastRollupReport({
     }
     void loadLines(selectedCustomer);
   }, [selectedCustomer?.key, loadLines]);
+
+  const handleCustomerIdSearchChange = (nextCustomerId: string) => {
+    setCustomerIdSearch(nextCustomerId);
+    const matchingCustomer = customers.find(
+      (customer) => customer.customerId.trim().toLowerCase() === nextCustomerId.trim().toLowerCase()
+    );
+    if (matchingCustomer && matchingCustomer.key !== customerKey) {
+      setCustomerKey(matchingCustomer.key);
+    }
+  };
+
+  useEffect(() => {
+    const matchingCustomer = customers.find(
+      (customer) => customer.customerId.trim().toLowerCase() === customerIdSearch.trim().toLowerCase()
+    );
+    if (customerIdSearch.trim() && matchingCustomer && matchingCustomer.key !== customerKey) {
+      setCustomerKey(matchingCustomer.key);
+    }
+  }, [customerIdSearch, customerKey, customers]);
 
   const totals = useMemo(() => {
     return lines.reduce(
@@ -382,7 +401,17 @@ export default function ProductForecastRollupReport({
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
-          Customer
+          Customer ID
+          <input
+            type="search"
+            value={customerIdSearch}
+            onChange={(event) => handleCustomerIdSearchChange(event.target.value)}
+            placeholder="Search customer ID"
+            style={{ ...inputStyle, width: 180 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Customer Name
           <select
             value={customerKey}
             onChange={(event) => setCustomerKey(event.target.value)}

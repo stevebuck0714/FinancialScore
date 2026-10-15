@@ -1070,6 +1070,7 @@ export default function OperationsTab({
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('');
+  const [productMarginCustomerIdSearch, setProductMarginCustomerIdSearch] = useState('');
   const [productMarginItemSearch, setProductMarginItemSearch] = useState('');
   const [expandedProductMarginCustomers, setExpandedProductMarginCustomers] = useState<Record<string, boolean>>({});
   const [productMarginSortKey, setProductMarginSortKey] = useState<ProductMarginSortKey>('customerName');
@@ -1087,6 +1088,7 @@ export default function OperationsTab({
   const [residentialOfficeMonthlyGoals, setResidentialOfficeMonthlyGoals] = useState<Record<string, { salesVolumeGoal: string; unitsGoal: string }>>({});
   const [residentialAttachGoals, setResidentialAttachGoals] = useState({ mortgagePct: '49', titlePct: '58', insurancePct: '35' });
   const [wholesaleRawCustomerFilter, setWholesaleRawCustomerFilter] = useState('');
+  const [wholesaleRawCustomerIdSearch, setWholesaleRawCustomerIdSearch] = useState('');
   const [wholesaleRawItemSearch, setWholesaleRawItemSearch] = useState('');
   const [wholesaleRawOrderSearch, setWholesaleRawOrderSearch] = useState('');
   const [wholesaleRawCustomers, setWholesaleRawCustomers] = useState<WholesaleRawCustomerOption[]>([]);
@@ -11571,6 +11573,22 @@ export default function OperationsTab({
               >
                 {wholesaleProductsRefreshing ? 'Refreshing...' : 'Refresh Margin Data'}
               </button>
+              <input
+                type="search"
+                value={productMarginCustomerIdSearch}
+                onChange={(event) => {
+                  const nextCustomerId = event.target.value;
+                  setProductMarginCustomerIdSearch(nextCustomerId);
+                  const matchingCustomer = productMarginCustomerGroups.find(
+                    (group) =>
+                      String(group.customerId || '').trim().toLowerCase() === nextCustomerId.trim().toLowerCase()
+                  );
+                  if (matchingCustomer) setProductMarginCustomerFilter(matchingCustomer.key);
+                }}
+                placeholder="Search Customer ID"
+                aria-label="Search Customer ID"
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
+              />
               <select
                 value={productMarginCustomerFilter}
                 onChange={(event) => setProductMarginCustomerFilter(event.target.value)}
@@ -11857,6 +11875,22 @@ export default function OperationsTab({
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <input
+              type="search"
+              value={wholesaleRawCustomerIdSearch}
+              onChange={(event) => {
+                const nextCustomerId = event.target.value;
+                setWholesaleRawCustomerIdSearch(nextCustomerId);
+                const matchingCustomer = wholesaleRawCustomers.find(
+                  (customer) =>
+                    String(customer.customerId || '').trim().toLowerCase() === nextCustomerId.trim().toLowerCase()
+                );
+                if (matchingCustomer) setWholesaleRawCustomerFilter(matchingCustomer.key);
+              }}
+              placeholder="Search Customer ID"
+              aria-label="Search Customer ID"
+              style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '180px', background: 'white', color: '#0f172a' }}
+            />
             <select
               value={wholesaleRawCustomerFilter}
               onChange={(event) => setWholesaleRawCustomerFilter(event.target.value)}

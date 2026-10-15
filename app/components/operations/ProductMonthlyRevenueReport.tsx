@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   FORECAST_MONTH_FULL_LABELS,
   FORECAST_MONTHS,
-  STATUS_FLAG_OPTIONS,
   PRODUCTION_TYPE_OPTIONS,
   closedMonths,
   monthQty,
@@ -42,7 +41,6 @@ type RevenueLine = {
   team: string;
   csr: string;
   productionType: string;
-  statusFlag: string;
   actualRevenue: MonthQtyMap;
   sgpForecastEstimated: MonthQtyMap;
   estimated: MonthQtyMap;
@@ -95,7 +93,6 @@ const MONTH_COL_CELL_BG = '#eef2ff';
 const MONTH_METRIC_COL_PX = 68;
 const MONTH_METRIC_COL_COUNT = 12;
 const PLANNED_COL_CH = 6;
-const STATUS_COL_CH = 5;
 
 function columnWidthPx(widthCh: number): number {
   return widthCh * CHAR_PX + IDENTITY_CELL_EXTRA_PX;
@@ -113,7 +110,6 @@ const IDENTITY_COLUMNS_WIDTH_PX = IDENTITY_COLUMNS.reduce(
 const TABLE_MIN_WIDTH_PX =
   IDENTITY_COLUMNS_WIDTH_PX +
   columnWidthPx(PLANNED_COL_CH) +
-  columnWidthPx(STATUS_COL_CH) +
   MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX;
 
 function columnWidth(widthCh: number): string {
@@ -212,6 +208,7 @@ export default function ProductMonthlyRevenueReport({
   const [year, setYear] = useState(currentYear());
   const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
   const [dataThru, setDataThru] = useState('');
+  const [customerIdSearch, setCustomerIdSearch] = useState('');
   const [customerKey, setCustomerKey] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [lines, setLines] = useState<RevenueLine[]>([]);
@@ -232,7 +229,6 @@ export default function ProductMonthlyRevenueReport({
     () => customers.find((customer) => customer.key === customerKey) || null,
     [customers, customerKey]
   );
-
   const closed = useMemo(() => closedMonths(dataThru || null), [dataThru]);
   const monthName = FORECAST_MONTH_FULL_LABELS[selectedMonth];
   const previousMonth = (selectedMonth === 1 ? 12 : selectedMonth - 1) as ForecastMonth;
@@ -342,6 +338,26 @@ export default function ProductMonthlyRevenueReport({
     if (dirty && !window.confirm('You have unsaved changes. Switch customer without saving?')) return;
     setCustomerKey(nextKey);
   };
+
+  const handleCustomerIdSearchChange = (nextCustomerId: string) => {
+    setCustomerIdSearch(nextCustomerId);
+    const matchingCustomer = customers.find(
+      (customer) => customer.customerId.trim().toLowerCase() === nextCustomerId.trim().toLowerCase()
+    );
+    if (matchingCustomer && matchingCustomer.key !== customerKey) {
+      handleCustomerChange(matchingCustomer.key);
+    }
+  };
+
+  useEffect(() => {
+    if (dirty) return;
+    const matchingCustomer = customers.find(
+      (customer) => customer.customerId.trim().toLowerCase() === customerIdSearch.trim().toLowerCase()
+    );
+    if (customerIdSearch.trim() && matchingCustomer && matchingCustomer.key !== customerKey) {
+      setCustomerKey(matchingCustomer.key);
+    }
+  }, [customerIdSearch, customerKey, customers, dirty]);
 
   const handleYearChange = (nextYear: number) => {
     if (dirty && !window.confirm('You have unsaved changes. Switch year without saving?')) return;
@@ -521,7 +537,17 @@ export default function ProductMonthlyRevenueReport({
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
-          Customer
+          Customer ID
+          <input
+            type="search"
+            value={customerIdSearch}
+            onChange={(event) => handleCustomerIdSearchChange(event.target.value)}
+            placeholder="Search customer ID"
+            style={{ ...inputStyle, width: 180 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Customer Name
           <select
             value={customerKey}
             onChange={(event) => handleCustomerChange(event.target.value)}
@@ -735,7 +761,6 @@ export default function ProductMonthlyRevenueReport({
                 <col key={column.key} style={{ width: columnWidth(column.widthCh) }} />
               ))}
               <col style={{ width: columnWidth(PLANNED_COL_CH) }} />
-              <col style={{ width: columnWidth(STATUS_COL_CH) }} />
               {Array.from({ length: MONTH_METRIC_COL_COUNT }, (_, index) => (
                 <col key={`metric-${index}`} style={{ width: MONTH_METRIC_COL_PX }} />
               ))}
@@ -764,9 +789,6 @@ export default function ProductMonthlyRevenueReport({
                 ))}
                 <th style={{ textAlign: 'right', padding: '8px 2px', color: '#334155', background: '#f8fafc', fontSize: 11, fontWeight: 700, verticalAlign: 'bottom', width: columnWidth(6), minWidth: columnWidth(6), maxWidth: columnWidth(6), boxSizing: 'border-box', whiteSpace: 'normal', lineHeight: 1.2 }}>
                   Planned<br />MTO
-                </th>
-                <th style={{ textAlign: 'right', padding: '8px 2px', color: '#334155', background: '#f8fafc', fontSize: 11, fontWeight: 700, verticalAlign: 'bottom', width: columnWidth(5), minWidth: columnWidth(5), maxWidth: columnWidth(5), boxSizing: 'border-box', whiteSpace: 'normal', lineHeight: 1.2 }}>
-                  LOST / OBS<br />NEW
                 </th>
                 <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>SGP Forecast<br />{previousMonthName}<br />&nbsp;</th>
                 <th style={priorHeaderStyle}>Forecasted<br />{previousMonthName}<br />&nbsp;</th>
@@ -802,11 +824,6 @@ export default function ProductMonthlyRevenueReport({
                   <td style={{ padding: 4, borderTop: '1px solid #e2e8f0', width: columnWidth(6), minWidth: columnWidth(6), maxWidth: columnWidth(6), boxSizing: 'border-box' }}>
                     {PRODUCTION_TYPE_OPTIONS.includes(line.productionType as any) || line.productionType
                       ? line.productionType || '—'
-                      : '—'}
-                  </td>
-                  <td style={{ padding: 4, borderTop: '1px solid #e2e8f0', textAlign: 'right', width: columnWidth(5), minWidth: columnWidth(5), maxWidth: columnWidth(5), boxSizing: 'border-box' }}>
-                    {STATUS_FLAG_OPTIONS.includes(line.statusFlag as any) || line.statusFlag
-                      ? line.statusFlag || '—'
                       : '—'}
                   </td>
                   <td style={{ ...priorCellStyle, borderLeft: '1px solid #e2e8f0' }}>
@@ -857,7 +874,7 @@ export default function ProductMonthlyRevenueReport({
               ))}
               {lines.length === 0 && (
                 <tr>
-                  <td colSpan={17} style={{ padding: 16, color: '#64748b' }}>
+                  <td colSpan={18} style={{ padding: 16, color: '#64748b' }}>
                     No revenue rows for this customer yet. Import the workbook, or add the part on Monthly Forecast first.
                   </td>
                 </tr>
