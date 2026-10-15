@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
           billableTokens,
           totalTokens: Number(row.totalTokens),
           costUsd: Number(row.costUsd),
+          billableCostUsd: Number(row.billableCostUsd),
           ...pricing,
           usedPct: pricing.monthlyTokenAllowance > 0 ? (billableTokens / pricing.monthlyTokenAllowance) * 100 : null,
           ...computeOverage(billableTokens, pricing),

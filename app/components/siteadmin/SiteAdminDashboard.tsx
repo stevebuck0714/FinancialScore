@@ -2754,7 +2754,8 @@ export default function SiteAdminDashboard(props: any) {
               <strong>Allowance:</strong> {pricing.monthlyTokenAllowance > 0 ? `${formatTokenCount(pricing.monthlyTokenAllowance)} tokens/month` : 'Not set'}
               {' | '}<strong>Overage Price:</strong> ${pricing.overagePricePer1MTokens.toFixed(2)} per 1M tokens
               {' | '}<strong>Overage:</strong> {formatTokenCount(overageTokens)} tokens, ${overageCharge.toFixed(2)}
-              {' | '}<strong>Our Cost:</strong> ${Number(usage?.costUsd || 0).toFixed(2)}
+              {' | '}<strong>Billable Cost:</strong> ${Number(usage?.billableCostUsd || 0).toFixed(2)}
+              {' | '}<strong>Total Cost:</strong> ${Number(usage?.costUsd || 0).toFixed(2)}
             </div>
           </div>
         )}
@@ -2791,12 +2792,13 @@ export default function SiteAdminDashboard(props: any) {
                         <th style={thStyle}>Interactions</th>
                         <th style={thStyle}>Billable Tokens</th>
                         <th style={thStyle}>Total Tokens</th>
-                        <th style={thStyle}>Our Cost</th>
+                        <th style={thStyle}>Billable Cost</th>
+                        <th style={thStyle}>Total Cost</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(detail.currentMonthByFeature || []).length === 0 ? (
-                        <tr><td style={{ ...tdStyle, color: '#64748b' }} colSpan={5}>No AI usage this month.</td></tr>
+                        <tr><td style={{ ...tdStyle, color: '#64748b' }} colSpan={6}>No AI usage this month.</td></tr>
                       ) : (
                         detail.currentMonthByFeature.map((row: any) => (
                           <tr key={row.feature} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -2804,6 +2806,7 @@ export default function SiteAdminDashboard(props: any) {
                             <td style={tdStyle}>{formatTokenCount(row.interactions)}</td>
                             <td style={tdStyle}>{formatTokenCount(row.billableTokens)}</td>
                             <td style={tdStyle}>{formatTokenCount(row.totalTokens)}</td>
+                            <td style={tdStyle}>${Number(row.billableCostUsd || 0).toFixed(2)}</td>
                             <td style={tdStyle}>${Number(row.costUsd || 0).toFixed(2)}</td>
                           </tr>
                         ))
@@ -2822,7 +2825,8 @@ export default function SiteAdminDashboard(props: any) {
                         <th style={thStyle}>Allowance</th>
                         <th style={thStyle}>Overage Tokens</th>
                         <th style={thStyle}>Overage Charge</th>
-                        <th style={thStyle}>Our Cost</th>
+                        <th style={thStyle}>Billable Cost</th>
+                        <th style={thStyle}>Total Cost</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2834,13 +2838,14 @@ export default function SiteAdminDashboard(props: any) {
                           <td style={tdStyle}>{row.allowance > 0 ? formatTokenCount(row.allowance) : 'Not set'}</td>
                           <td style={tdStyle}>{formatTokenCount(row.overageTokens)}</td>
                           <td style={tdStyle}>${Number(row.overageChargeUsd || 0).toFixed(2)}</td>
+                          <td style={tdStyle}>${Number(row.billableCostUsd || 0).toFixed(2)}</td>
                           <td style={tdStyle}>${Number(row.costUsd || 0).toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                   <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>
-                    Overage uses the current allowance and price for every month. Our Cost is the provider cost; Industry Brief and system checks are tracked but not billed.
+                    Overage uses the current allowance and price for every month. Billable Cost is our provider cost for billable usage; Total Cost also includes usage that is tracked but not billed (scheduled briefings, Industry Brief, system checks).
                   </div>
                 </div>
               </>

@@ -12,6 +12,7 @@ export type AiUsageMonth = {
   billableTokens: number;
   totalTokens: number;
   costUsd: number;
+  billableCostUsd: number;
   allowance: number;
   overageTokens: number;
   overageChargeUsd: number;
@@ -25,6 +26,7 @@ export type AiUsageFeatureRow = {
   billableTokens: number;
   totalTokens: number;
   costUsd: number;
+  billableCostUsd: number;
 };
 
 export function readAiUsagePricing(userDefinedAllocations: unknown): AiUsagePricing {
@@ -57,7 +59,7 @@ function shiftMonth(month: string, delta: number): string {
   return date.toISOString().slice(0, 7);
 }
 
-type MonthRow = { month: string; interactions: number; billableTokens: number; totalTokens: number; costUsd: number };
+type MonthRow = { month: string; interactions: number; billableTokens: number; totalTokens: number; costUsd: number; billableCostUsd: number };
 
 /** Current EST month totals for every company with usage. */
 export async function loadCurrentMonthAiUsageByCompany(): Promise<Array<MonthRow & { companyId: string }>> {
@@ -69,7 +71,8 @@ export async function loadCurrentMonthAiUsageByCompany(): Promise<Array<MonthRow
       COUNT(*)::int AS interactions,
       COALESCE(SUM(CASE WHEN "billable" THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
       COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
-      COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd"
+      COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
+      COALESCE(SUM(CASE WHEN "billable" THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
     FROM "AiUsageEvent"
     WHERE "companyId" IS NOT NULL
       AND to_char("createdAt" AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM') = ${month}
@@ -90,7 +93,8 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
         COUNT(*)::int AS interactions,
         COALESCE(SUM(CASE WHEN "billable" THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
         COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
-        COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd"
+        COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
+        COALESCE(SUM(CASE WHEN "billable" THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
       FROM "AiUsageEvent"
       WHERE "companyId" = ${companyId}
         AND ("createdAt" AT TIME ZONE ${APP_TIME_ZONE}) >= ${`${firstMonth}-01`}::timestamp
@@ -102,7 +106,8 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
         COUNT(*)::int AS interactions,
         COALESCE(SUM(CASE WHEN "billable" THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
         COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
-        COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd"
+        COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
+        COALESCE(SUM(CASE WHEN "billable" THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
       FROM "AiUsageEvent"
       WHERE "companyId" = ${companyId}
         AND to_char("createdAt" AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM') = ${current}
@@ -123,6 +128,7 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
       billableTokens,
       totalTokens: Number(row?.totalTokens ?? 0),
       costUsd: Number(row?.costUsd ?? 0),
+      billableCostUsd: Number(row?.billableCostUsd ?? 0),
       allowance: pricing.monthlyTokenAllowance,
       ...computeOverage(billableTokens, pricing),
     });
@@ -137,6 +143,7 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
       billableTokens: Number(row.billableTokens),
       totalTokens: Number(row.totalTokens),
       costUsd: Number(row.costUsd),
+      billableCostUsd: Number(row.billableCostUsd),
     })),
   };
 }
