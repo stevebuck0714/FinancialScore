@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     // Generate a secure reset token
     const resetToken = generateSecureToken();
-    const resetExpires = new Date(Date.now() + 3600000); // 1 hour from now
+    const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
 
     // Store token in database
     await prisma.user.update({

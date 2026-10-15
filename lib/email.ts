@@ -200,7 +200,7 @@ function getPasswordResetEmailHTML(userName: string, resetLink: string): string 
               
               <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid #e2e8f0;">
                 <p style="margin: 0 0 10px 0; color: #64748b; font-size: 14px; line-height: 1.6;">
-                  <strong>This link will expire in 1 hour</strong> for security reasons.
+                  <strong>This link will expire in 24 hours</strong> for security reasons.
                 </p>
                 
                 <p style="margin: 0; color: #64748b; font-size: 14px; line-height: 1.6;">
