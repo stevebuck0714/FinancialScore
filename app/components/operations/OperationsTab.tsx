@@ -11742,23 +11742,21 @@ export default function OperationsTab({
                   </option>
                 ))}
               </select>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#334155' }}>
-                Group Name
-                <select
-                  value={productMarginCustomerGroupFilter}
-                  onChange={(event) => {
-                    setProductMarginCustomerGroupFilter(event.target.value);
-                    setProductMarginCustomerFilter('');
-                    setProductMarginCustomerIdSearch('');
-                  }}
-                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px', background: 'white' }}
-                >
-                  <option value="">Select a group</option>
-                  {productMarginCustomerGroupNames.map((group) => (
-                    <option key={group} value={group}>{group}</option>
-                  ))}
-                </select>
-              </label>
+              <select
+                value={productMarginCustomerGroupFilter}
+                onChange={(event) => {
+                  setProductMarginCustomerGroupFilter(event.target.value);
+                  setProductMarginCustomerFilter('');
+                  setProductMarginCustomerIdSearch('');
+                }}
+                aria-label="Group Name"
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px', background: 'white' }}
+              >
+                <option value="">Select a group</option>
+                {productMarginCustomerGroupNames.map((group) => (
+                  <option key={group} value={group}>{group}</option>
+                ))}
+              </select>
               {(['Expand Visible', 'Collapse Visible'] as const).map((label) => (
                 <button
                   key={label}
@@ -12071,26 +12069,24 @@ export default function OperationsTab({
                 </option>
               ))}
             </select>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#334155' }}>
-              Group Name
-              <select
-                value={wholesaleRawCustomerGroupFilter}
-                onChange={(event) => {
-                  setWholesaleRawCustomerGroupFilter(event.target.value);
-                  setWholesaleRawCustomerFilter('');
-                  setWholesaleRawCustomerIdSearch('');
-                }}
-                disabled={wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0}
-                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px', background: 'white' }}
-              >
-                <option value="">Select a group</option>
-                {Array.from(
-                  new Set(wholesaleRawCustomers.map((customer) => String(customer.customerGroup || '').trim()).filter(Boolean))
-                )
-                  .sort((a, b) => a.localeCompare(b))
-                  .map((group) => <option key={group} value={group}>{group}</option>)}
-              </select>
-            </label>
+            <select
+              value={wholesaleRawCustomerGroupFilter}
+              onChange={(event) => {
+                setWholesaleRawCustomerGroupFilter(event.target.value);
+                setWholesaleRawCustomerFilter('');
+                setWholesaleRawCustomerIdSearch('');
+              }}
+              disabled={wholesaleRawCustomersLoading && wholesaleRawCustomers.length === 0}
+              aria-label="Group Name"
+              style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px', background: 'white' }}
+            >
+              <option value="">Select a group</option>
+              {Array.from(
+                new Set(wholesaleRawCustomers.map((customer) => String(customer.customerGroup || '').trim()).filter(Boolean))
+              )
+                .sort((a, b) => a.localeCompare(b))
+                .map((group) => <option key={group} value={group}>{group}</option>)}
+            </select>
             <input
               type="search"
               value={wholesaleRawItemSearch}
