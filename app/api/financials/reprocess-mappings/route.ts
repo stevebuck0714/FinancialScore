@@ -1942,6 +1942,24 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
   const sourceRunId = `qbd-reprocess-${Date.now()}`;
   const importDate = formatEstDate();
   const futureRowsDeleted = await deleteQbdDailyRowsAfterImportDate(companyId, importDate, monthKey);
+  const monthRange = monthKey
+    ? {
+        gte: new Date(`${monthKey}-01T00:00:00.000Z`),
+        lt: new Date(Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)), 1)),
+      }
+    : undefined;
+  // Weekends and holidays are kept only when they carry P&L activity, so GL
+  // entries posted on those dates are not dropped from daily or monthly totals.
+  const existingNonBusinessDates = new Set(
+    (await prisma.dailyFinancialSnapshot.findMany({
+      where: { companyId, frequency: 'daily', ...(monthRange ? { snapshotDate: monthRange } : {}) },
+      select: { snapshotDate: true },
+    }))
+      .map((row) => qbdDateKey(row.snapshotDate.toISOString()))
+      .filter((dateKey): dateKey is string => Boolean(dateKey && !isEstBusinessDay(dateKey))),
+  );
+  const hasPnlActivity = (row: Record<string, unknown>) =>
+    ['revenue', 'cogsTotal', 'expense'].some((field) => Math.abs(qbdNumber(row[field])) > 0.005);
   const parsedRows = rows
     .map((row) => {
       const rawDate = qbdString(row.snapshotDate);
@@ -1949,7 +1967,11 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
       if (!dateKey) return null;
       if (monthKey && dateKey.slice(0, 7) !== monthKey) return null;
       if (dateKey > importDate) return null;
-      if (!isEstBusinessDay(dateKey)) return null;
+      if (!isEstBusinessDay(dateKey)) {
+        const keepForPnl = scope.canUpdatePnl && hasPnlActivity(row);
+        const keepExistingForBalanceSheet = !scope.canUpdatePnl && existingNonBusinessDates.has(dateKey);
+        if (!keepForPnl && !keepExistingForBalanceSheet) return null;
+      }
       const snapshotDate = new Date(`${dateKey}T00:00:00.000Z`);
       if (Number.isNaN(snapshotDate.getTime())) return null;
       const numericFields = Object.fromEntries(
@@ -1971,6 +1993,26 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
   if (!parsedRows.length) {
     return { rowsWritten: 0, rowsDeleted: futureRowsDeleted, startDate: null, endDate: null };
   }
+
+  let staleNonBusinessRowsDeleted = 0;
+  if (scope.canUpdatePnl && monthRange) {
+    const keptDates = new Set(parsedRows.map((row) => row.snapshotDate.toISOString().slice(0, 10)));
+    const staleDates = Array.from(existingNonBusinessDates)
+      .filter((dateKey) => !keptDates.has(dateKey))
+      .map((dateKey) => new Date(`${dateKey}T00:00:00.000Z`));
+    if (staleDates.length) {
+      const deleted = await prisma.dailyFinancialSnapshot.deleteMany({
+        where: {
+          companyId,
+          frequency: 'daily',
+          sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
+          snapshotDate: { in: staleDates },
+        },
+      });
+      staleNonBusinessRowsDeleted = deleted.count;
+    }
+  }
+  const rowsDeleted = futureRowsDeleted + staleNonBusinessRowsDeleted;
 
   const sortedDates = parsedRows.map((row) => row.snapshotDate).sort((a, b) => a.getTime() - b.getTime());
   const startDate = sortedDates[0];
@@ -2025,7 +2067,8 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
       metadata: {
         source: QBD_DAILY_FINANCIAL_SOURCE,
         rowsBuilt: parsedRows.length,
-        qbdRowsDeletedInWindow: futureRowsDeleted,
+        qbdRowsDeletedInWindow: rowsDeleted,
+        staleNonBusinessRowsDeleted,
         importDate,
         writeMode: 'upsert_preserve_balance_sheet_without_signal',
         startDate: startDate.toISOString(),
@@ -2037,7 +2080,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
 
   return {
     rowsWritten,
-    rowsDeleted: futureRowsDeleted,
+    rowsDeleted,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
   };
@@ -2081,7 +2124,6 @@ async function persistQuickBooksDesktopDailyMappedLines(
     .filter((line) =>
       line.dateKey.slice(0, 7) === monthKey &&
       line.dateKey <= importDate &&
-      isEstBusinessDay(line.dateKey) &&
       Math.abs(line.amount) > 0.005,
     )
     .map((line) => ({
