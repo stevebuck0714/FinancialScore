@@ -16447,6 +16447,29 @@ export default function OperationsTab({
     const statementRecordsRaw = Array.isArray(dailyFinancialData?.statementRecords) ? dailyFinancialData.statementRecords : [];
     const statementCurrency = String(summary?.statementCurrency || 'USD').toUpperCase();
     const isRollupMode = dailyFinancialStatementRollup !== 'daily';
+    const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
+    const rollupIncomeLineIndex: Record<string, Record<string, number>> = {};
+    const rollupPeriodKeyForDate = (value: unknown): string => {
+      const date = new Date(String(value || ''));
+      if (Number.isNaN(date.getTime())) return '';
+      if (dailyFinancialStatementRollup === 'monthly') {
+        return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
+      if (dailyFinancialStatementRollup === 'quarterly') {
+        return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+      }
+      if (dailyFinancialStatementRollup === 'annual') return String(date.getUTCFullYear());
+      return toDayKey(date);
+    };
+    mappedLines.forEach((line: any) => {
+      const field = String(line?.targetField || '').trim().replace(/^balance_movement:/i, '');
+      if (!(field.startsWith('rev_') || (field.startsWith('cogs_') && field !== 'cogs_total'))) return;
+      const periodKey = rollupPeriodKeyForDate(line?.snapshotDate);
+      if (!periodKey) return;
+      rollupIncomeLineIndex[field] ||= {};
+      rollupIncomeLineIndex[field][periodKey] =
+        Number(rollupIncomeLineIndex[field][periodKey] || 0) + Number(line?.amount || 0);
+    });
     if (isRollupMode) {
       const sortedRollupRecords = statementRecordsRaw
         .map((row: any) => {
@@ -16523,8 +16546,28 @@ export default function OperationsTab({
           acc[key] = Number(rollupByKey[key]?.[field] || 0);
           return acc;
         }, {});
+      const rollupIncomeDetailFields = (prefix: 'rev_' | 'cogs_') =>
+        Object.keys(rollupIncomeLineIndex)
+          .filter((field) =>
+            field.startsWith(prefix) &&
+            rollupKeys.some((key) => Number(rollupIncomeLineIndex[field]?.[key] || 0) !== 0)
+          )
+          .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
+      const rollupRevenueDetailFields = rollupIncomeDetailFields('rev_');
+      const rollupCogsDetailFields = rollupIncomeDetailFields('cogs_');
       const incomeRowDefs = [
         { label: 'Total Revenue', styleType: 'section', valuesByDate: rollupSeries('revenue') },
+        ...rollupRevenueDetailFields.map((field) => ({
+          label: `  ${getFieldDisplayName(field)}`,
+          styleType: 'normal' as const,
+          valuesByDate: rollupIncomeLineIndex[field],
+        })),
+        { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
+        ...rollupCogsDetailFields.map((field) => ({
+          label: `  ${getFieldDisplayName(field)}`,
+          styleType: 'normal' as const,
+          valuesByDate: rollupIncomeLineIndex[field],
+        })),
         { label: 'Total COGS', styleType: 'subtotal', valuesByDate: rollupSeries('cogsTotal') },
         { label: 'GROSS PROFIT', styleType: 'subtotal', valuesByDate: rollupSeries('grossProfit') },
         { label: 'Total Operating Expenses', styleType: 'subtotal', valuesByDate: rollupSeries('expense') },
@@ -16814,7 +16857,6 @@ export default function OperationsTab({
     const marginPctDomain: [number, number] = [Math.floor((Math.min(0, marginPctMin) - 5) / 5) * 5, Math.ceil((Math.max(0, marginPctMax) + 5) / 5) * 5];
     const dailyTrendXAxisInterval = Math.max(Math.ceil(trendRows.length / 12) - 1, 0);
 
-    const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
     const lineIndex: Record<string, Record<string, number>> = {};
     const normalizeTargetField = (field: string): string =>
       String(field || '')
