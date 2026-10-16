@@ -399,7 +399,7 @@ export default function ProductRevenueForecastReport({
 
   const updateMonthQty = (
     id: string,
-    field: 'forecastQty' | 'sgpForecastQty' | 'adjustedQty',
+    field: 'forecastQty' | 'sgpForecastQty',
     month: ForecastMonth,
     raw: string
   ) => {
@@ -411,10 +411,8 @@ export default function ProductRevenueForecastReport({
       prev.map((line) => {
         if (line.id !== id) return line;
         const current =
-          field === 'adjustedQty'
-            ? line.adjustedQty || line.forecastQty || emptyMonthQtyMap()
-            : field === 'sgpForecastQty'
-              ? line.sgpForecastQty || line.forecastQty || emptyMonthQtyMap()
+          field === 'sgpForecastQty'
+            ? line.sgpForecastQty || line.forecastQty || emptyMonthQtyMap()
             : line.forecastQty || emptyMonthQtyMap();
         return { ...line, [field]: { ...current, [String(month)]: value } };
       })
@@ -1065,21 +1063,9 @@ export default function ProductRevenueForecastReport({
                           {fmtQty(qtyValue(line.forecastQty, selectedMonth))}
                         </td>
                       )}
-                      {canEditSelectedMonth && !groupScope ? (
-                        <td style={monthInputCellStyle}>
-                          <input
-                            type="number"
-                            value={qtyValue(line.adjustedQty || line.forecastQty, selectedMonth)}
-                            onChange={(event) => updateMonthQty(line.id, 'adjustedQty', selectedMonth, event.target.value)}
-                            style={monthQtyInputStyle}
-                            aria-label={`${monthName} Forecast - ADJUSTED`}
-                          />
-                        </td>
-                      ) : (
-                        <td style={monthCellStyle}>
-                          {fmtQty(typedAdjustedMonthQty(line.forecastQty, selectedMonth, line.adjustedQty))}
-                        </td>
-                      )}
+                      <td style={monthCellStyle}>
+                        {fmtQty(typedAdjustedMonthQty(line.forecastQty, selectedMonth, line.adjustedQty))}
+                      </td>
                       <td style={monthCellStyle}>
                         {fmtQty(qtyValue(line.actualQty, selectedMonth))}
                       </td>

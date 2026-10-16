@@ -191,14 +191,27 @@ export async function lockSgpBudget(params: {
     throw new SgpBudgetLockedError(params.year, `SGP budget for ${params.year} is already locked.`);
   }
 
-  // Lines with no stored SGP fall back to the live forecast; pin them so the
-  // signed-off SGP cannot drift when the forecast is edited later.
+  // SGP is the approved starting point for every month. Pin it (falling back
+  // to Forecasted where needed), then initialize Forecasted and Forecast-ADJ
+  // from that locked SGP plan.
   await prisma.$executeRaw`
     UPDATE "ProductRevenueForecastLine"
-    SET "sgpForecastQty" = "forecastQty", "updatedAt" = CURRENT_TIMESTAMP
+    SET
+      "sgpForecastQty" = CASE
+        WHEN "sgpForecastQty" IS NULL OR "sgpForecastQty" = '{}'::jsonb THEN "forecastQty"
+        ELSE "sgpForecastQty"
+      END,
+      "forecastQty" = CASE
+        WHEN "sgpForecastQty" IS NULL OR "sgpForecastQty" = '{}'::jsonb THEN "forecastQty"
+        ELSE "sgpForecastQty"
+      END,
+      "adjustedQty" = CASE
+        WHEN "sgpForecastQty" IS NULL OR "sgpForecastQty" = '{}'::jsonb THEN "forecastQty"
+        ELSE "sgpForecastQty"
+      END,
+      "updatedAt" = CURRENT_TIMESTAMP
     WHERE "companyId" = ${params.companyId}
       AND "year" = ${params.year}
-      AND ("sgpForecastQty" IS NULL OR "sgpForecastQty" = '{}'::jsonb)
   `;
 
   const [summary, snapshot, name] = await Promise.all([

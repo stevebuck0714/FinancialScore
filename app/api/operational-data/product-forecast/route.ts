@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  actualsClosedThrough,
+  forecastAdjustedClosedThrough,
   summarizeForecastQtyMonths,
   withClosedMonthActualAdjusted,
   type ProductRevenueForecastLineInput,
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
 
         if (!customerId && !customerName && !customerGroup) {
           const actualQty = await loadProductActualQty({ companyId, year });
-          const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
+          const dataThru = forecastAdjustedClosedThrough(year);
           let totals = null;
           if (includeTotals) {
             const companyLines = await loadProductForecastLinesWithCatalog({ companyId, year });
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
           customerId: customerGroup ? undefined : customerId,
           customerName: customerGroup ? undefined : customerName,
         });
-        const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
+        const dataThru = forecastAdjustedClosedThrough(year);
         const groupedLines = withCustomerGroups(lines.map(serializeForecastLine), customerGroups);
 
         return {
@@ -195,7 +195,7 @@ export async function PUT(request: NextRequest) {
       customerId,
       customerName,
     });
-    const dataThru = actualsClosedThrough(year, actualQty.actuals.asOf);
+    const dataThru = forecastAdjustedClosedThrough(year);
     const customerGroups = await loadCustomerGroups(companyId);
 
     return NextResponse.json({

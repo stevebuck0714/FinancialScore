@@ -203,8 +203,8 @@ export function actualsClosedThrough(year: number, actualsAsOf: string | null | 
 }
 
 /**
- * Closed months: Forecast-ADJ becomes the actual units and Forecast follows
- * Forecast-ADJ. SGP forecast is left as is, so callers must resolve it before this.
+ * Closed months: Forecast-ADJ becomes the live Infor actual units. Forecasted
+ * remains the user's final entered forecast, and SGP forecast is left as is.
  */
 export function withClosedMonthActualAdjusted<T extends {
   forecastQty: MonthQtyMap;
@@ -214,14 +214,26 @@ export function withClosedMonthActualAdjusted<T extends {
   if (!closedThrough) return lines;
   return lines.map((line) => {
     const adjusted = normalizeAdjustedQtyMap(line.adjustedQty, line.forecastQty);
-    const forecast = { ...line.forecastQty };
     for (const month of FORECAST_MONTHS) {
       if (!monthIsClosed(month, closedThrough)) continue;
       adjusted[String(month)] = monthQty(line.actualQty, month);
-      forecast[String(month)] = adjusted[String(month)];
     }
-    return { ...line, forecastQty: forecast, adjustedQty: adjusted };
+    return { ...line, adjustedQty: adjusted };
   });
+}
+
+/**
+ * The Forecasted field closes at the beginning of the following EST month.
+ * Forecast-ADJ follows the same calendar boundary, then displays live Infor
+ * actuals (including zero for an item with no actual volume).
+ */
+export function forecastAdjustedClosedThrough(year: number, now: Date = new Date()): string | null {
+  const currentYear = estYear(now);
+  if (year > currentYear) return null;
+  if (year < currentYear) return `${year}-12-31`;
+  const currentMonth = estMonthIndex(now) + 1;
+  if (currentMonth <= 1) return null;
+  return new Date(Date.UTC(year, currentMonth - 1, 0)).toISOString().slice(0, 10);
 }
 
 export function forecastMonthIsEditable(year: number, month: ForecastMonth, now: Date = new Date()): boolean {
