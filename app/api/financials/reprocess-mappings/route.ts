@@ -1940,12 +1940,15 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
     : [];
   const monthKey = options.monthKey && /^\d{4}-\d{2}$/.test(options.monthKey) ? options.monthKey : null;
   const sourceRunId = `qbd-reprocess-${Date.now()}`;
+  const importDate = formatEstDate();
+  const futureRowsDeleted = await deleteQbdDailyRowsAfterImportDate(companyId, importDate, monthKey);
   const parsedRows = rows
     .map((row) => {
       const rawDate = qbdString(row.snapshotDate);
       const dateKey = qbdDateKey(rawDate);
       if (!dateKey) return null;
       if (monthKey && dateKey.slice(0, 7) !== monthKey) return null;
+      if (dateKey > importDate) return null;
       if (!isEstBusinessDay(dateKey)) return null;
       const snapshotDate = new Date(`${dateKey}T00:00:00.000Z`);
       if (Number.isNaN(snapshotDate.getTime())) return null;
@@ -1966,7 +1969,7 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
     .filter((row): row is NonNullable<typeof row> => row !== null);
 
   if (!parsedRows.length) {
-    return { rowsWritten: 0, startDate: null, endDate: null };
+    return { rowsWritten: 0, rowsDeleted: futureRowsDeleted, startDate: null, endDate: null };
   }
 
   const sortedDates = parsedRows.map((row) => row.snapshotDate).sort((a, b) => a.getTime() - b.getTime());
@@ -2022,7 +2025,8 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
       metadata: {
         source: QBD_DAILY_FINANCIAL_SOURCE,
         rowsBuilt: parsedRows.length,
-        qbdRowsDeletedInWindow: 0,
+        qbdRowsDeletedInWindow: futureRowsDeleted,
+        importDate,
         writeMode: 'upsert_preserve_balance_sheet_without_signal',
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
@@ -2033,10 +2037,77 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
 
   return {
     rowsWritten,
-    rowsDeleted: 0,
+    rowsDeleted: futureRowsDeleted,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
   };
+}
+
+// QBD daily rows end on the import date (EST). Forward-dated GL entries and
+// month-end balance walks must not leave rows for days that have not happened.
+async function deleteQbdDailyRowsAfterImportDate(companyId: string, importDate: string, monthKey: string | null) {
+  const afterImportDate = new Date(`${importDate}T00:00:00.000Z`);
+  afterImportDate.setUTCDate(afterImportDate.getUTCDate() + 1);
+  const monthEnd = monthKey
+    ? new Date(Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)), 1))
+    : null;
+  if (monthEnd && monthEnd <= afterImportDate) return 0;
+  const snapshotDate = monthEnd ? { gte: afterImportDate, lt: monthEnd } : { gte: afterImportDate };
+  const [snapshots] = await prisma.$transaction([
+    prisma.dailyFinancialSnapshot.deleteMany({
+      where: { companyId, frequency: 'daily', sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE, snapshotDate },
+    }),
+    prisma.dailyFinancialMappedLine.deleteMany({
+      where: { companyId, frequency: 'daily', sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE, snapshotDate },
+    }),
+  ]);
+  return snapshots.count;
+}
+
+function qbdIsIncomeStatementDetailTarget(targetField: string): boolean {
+  return targetField.startsWith('rev_') || (targetField.startsWith('cogs_') && targetField !== 'cogs_total');
+}
+
+async function persistQuickBooksDesktopDailyMappedLines(
+  companyId: string,
+  monthKey: string,
+  lines: Map<string, { dateKey: string; accountName: string; targetField: string; amount: number }>,
+) {
+  const importDate = formatEstDate();
+  const sourceRunId = `qbd-reprocess-lines-${Date.now()}`;
+  const monthStart = new Date(`${monthKey}-01T00:00:00.000Z`);
+  const nextMonthStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+  const data = Array.from(lines.values())
+    .filter((line) =>
+      line.dateKey.slice(0, 7) === monthKey &&
+      line.dateKey <= importDate &&
+      isEstBusinessDay(line.dateKey) &&
+      Math.abs(line.amount) > 0.005,
+    )
+    .map((line) => ({
+      companyId,
+      snapshotDate: new Date(`${line.dateKey}T00:00:00.000Z`),
+      frequency: 'daily',
+      sourceAccountName: line.accountName,
+      sourceAccountId: null,
+      sourceAccountType: 'QuickBooksDesktopGeneralLedger',
+      targetField: line.targetField,
+      amount: line.amount,
+      sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
+      sourceRunId,
+    }));
+  const [deleted, created] = await prisma.$transaction([
+    prisma.dailyFinancialMappedLine.deleteMany({
+      where: {
+        companyId,
+        frequency: 'daily',
+        sourcePlatform: QBD_DAILY_FINANCIAL_SOURCE,
+        snapshotDate: { gte: monthStart, lt: nextMonthStart },
+      },
+    }),
+    prisma.dailyFinancialMappedLine.createMany({ data, skipDuplicates: true }),
+  ]);
+  return { linesWritten: created.count, linesDeleted: deleted.count };
 }
 
 async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey: string) {
@@ -2081,6 +2152,7 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     }
     return '';
   };
+  const dailyDetailLines = new Map<string, { dateKey: string; accountName: string; targetField: string; amount: number }>();
   let pnlRowsUsed = 0;
   let unmappedRows = 0;
   let nonPnlRows = 0;
@@ -2089,7 +2161,8 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
   for (const glRow of glRows) {
     const dateKey = qbdDateKey(qbdReportColValueByTitle(glRow, ['Txn Date', 'Date'], ['3']));
     if (!dateKey || dateKey.slice(0, 7) !== monthKey) continue;
-    const target = getTarget(glRow.accountName || glRow.rowValue);
+    const accountName = qbdString(glRow.accountName || glRow.rowValue);
+    const target = getTarget(accountName);
     if (!target) {
       unmappedRows += 1;
       continue;
@@ -2106,6 +2179,12 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     }
     qbdAddMappedAmount(getDailySnapshot(dateKey), target, amount);
     qbdAddMappedAmount(monthlyPnl, target, amount);
+    if (qbdIsIncomeStatementDetailTarget(target) && accountName) {
+      const lineKey = `${dateKey}|${accountName}|${target}`;
+      const line = dailyDetailLines.get(lineKey) || { dateKey, accountName, targetField: target, amount: 0 };
+      line.amount += amount;
+      dailyDetailLines.set(lineKey, line);
+    }
     pnlRowsUsed += 1;
   }
 
@@ -2148,6 +2227,7 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     { canUpdatePnl: true, canUpdateBalanceSheet: false },
     { monthKey },
   );
+  const mappedLinesResult = await persistQuickBooksDesktopDailyMappedLines(companyId, monthKey, dailyDetailLines);
   const balanceSheetResult = await rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId, monthKey);
   const totals = qbdDailyFinancialSnapshots.reduce(
     (acc, row) => {
@@ -2169,6 +2249,7 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     zeroAmountRows,
     dailyRowsBuilt: qbdDailyFinancialSnapshots.length,
     ...result,
+    mappedLines: mappedLinesResult,
     balanceSheet: balanceSheetResult,
     totals,
     breakdowns: {

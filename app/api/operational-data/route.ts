@@ -473,6 +473,11 @@ function appendDailyFinancialSnapshotMappedLines(mappedLines: any[], snapshotRow
       return `${snapshotDate}|${String(line?.targetField || '').trim()}`;
     })
   );
+  const datesWithCogsDetail = new Set(
+    lines
+      .filter((line) => line?.snapshotDate && isIncomeStatementDetailField(line?.targetField, 'cogs_'))
+      .map((line) => new Date(line.snapshotDate).toISOString().slice(0, 10))
+  );
 
   const appendLine = (row: any, targetField: string, amount: number, sourceAccountName: string) => {
     if (!targetField || Math.abs(Number(amount || 0)) <= 0.005) return;
@@ -507,7 +512,8 @@ function appendDailyFinancialSnapshotMappedLines(mappedLines: any[], snapshotRow
       appendLine(row, field, amount, field);
     }
     const cogsTotal = Number(row?.cogsTotal || 0);
-    if (Math.abs(cogsTotal) > 0.005 && Math.abs(cogsDetailTotal) <= 0.005) {
+    const rowDateKey = row?.snapshotDate ? new Date(row.snapshotDate).toISOString().slice(0, 10) : '';
+    if (Math.abs(cogsTotal) > 0.005 && Math.abs(cogsDetailTotal) <= 0.005 && !datesWithCogsDetail.has(rowDateKey)) {
       appendLine(row, 'cogsOther', cogsTotal, 'Unallocated COGS');
     }
 
@@ -532,161 +538,6 @@ function isIncomeStatementDetailField(field: unknown, prefix: 'rev_' | 'cogs_'):
     .replace(/^balance_movement:/i, '')
     .toLowerCase();
   return normalized.startsWith(prefix) && normalized !== 'cogs_total';
-}
-
-function readIncomeStatementBreakdown(value: unknown, prefix: 'rev_' | 'cogs_'): Record<string, number> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return Object.entries(value as Record<string, unknown>).reduce<Record<string, number>>((details, [field, amount]) => {
-    if (!isIncomeStatementDetailField(field, prefix)) return details;
-    const numericAmount = Number(amount || 0);
-    if (Math.abs(numericAmount) > 0.005) details[field] = numericAmount;
-    return details;
-  }, {});
-}
-
-/**
- * DailyFinancialMappedLine is populated by the GL-backed Infor flow, but not
- * by every connector (notably QuickBooks Desktop). Daily Financials still
- * needs to show the same revenue/COGS detail as Data Review for those
- * companies. The latest FinancialRecord is Data Review's source of truth, so
- * use its monthly breakdowns and spread each monthly detail across the
- * corresponding daily activity. The entries are response-only: no stored
- * financial data is changed.
- */
-async function appendDataReviewIncomeStatementDetails(
-  companyId: string,
-  mappedLines: any[],
-  snapshotRows: any[],
-): Promise<any[]> {
-  let lines = Array.isArray(mappedLines) ? [...mappedLines] : [];
-  const snapshotsByMonth = new Map<string, any[]>();
-  for (const row of snapshotRows || []) {
-    const snapshotDate = row?.snapshotDate ? new Date(row.snapshotDate) : null;
-    if (!snapshotDate || Number.isNaN(snapshotDate.getTime())) continue;
-    const monthKey = `${snapshotDate.getUTCFullYear()}-${String(snapshotDate.getUTCMonth() + 1).padStart(2, '0')}`;
-    const rows = snapshotsByMonth.get(monthKey) || [];
-    rows.push(row);
-    snapshotsByMonth.set(monthKey, rows);
-  }
-  if (!snapshotsByMonth.size) return lines;
-
-  const monthKeys = Array.from(snapshotsByMonth.keys());
-  const monthStarts = monthKeys
-    .map((key) => new Date(`${key}-01T00:00:00.000Z`))
-    .filter((date) => !Number.isNaN(date.getTime()));
-  if (!monthStarts.length) return lines;
-  const firstMonth = new Date(Math.min(...monthStarts.map((date) => date.getTime())));
-  const lastMonth = new Date(Math.max(...monthStarts.map((date) => date.getTime())));
-  const afterLastMonth = new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth() + 1, 1));
-
-  const latestFinancialRecord = await prisma.financialRecord.findFirst({
-    where: { companyId },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      monthlyData: {
-        where: { monthDate: { gte: firstMonth, lt: afterLastMonth } },
-        select: { monthDate: true, revenueBreakdown: true, cogsBreakdown: true },
-      },
-    },
-  });
-  if (!latestFinancialRecord?.monthlyData?.length) return lines;
-
-  // Allocate against the full month, not merely the requested window. This
-  // keeps a user viewing a partial month from seeing its entire Data Review
-  // detail on only the selected days.
-  const allocationSnapshots = await prisma.dailyFinancialSnapshot.findMany({
-    where: {
-      companyId,
-      frequency: String(snapshotRows[0]?.frequency || 'daily'),
-      snapshotDate: { gte: firstMonth, lt: afterLastMonth },
-    },
-    select: { snapshotDate: true, revenue: true, cogsTotal: true },
-  });
-  const allocationSnapshotsByMonth = new Map<string, Array<{ snapshotDate: Date; revenue: number; cogsTotal: number }>>();
-  for (const row of allocationSnapshots) {
-    const monthKey = `${row.snapshotDate.getUTCFullYear()}-${String(row.snapshotDate.getUTCMonth() + 1).padStart(2, '0')}`;
-    const rows = allocationSnapshotsByMonth.get(monthKey) || [];
-    rows.push(row);
-    allocationSnapshotsByMonth.set(monthKey, rows);
-  }
-
-  const { loadMonthlyHtsDutyCogs, overlayHtsDutyCogs } = await import('@/lib/hts/apply-duty-cogs');
-  const htsCogsByMonth = await loadMonthlyHtsDutyCogs(companyId).catch(() => new Map());
-
-  for (const month of latestFinancialRecord.monthlyData) {
-    const monthDate = new Date(month.monthDate);
-    if (Number.isNaN(monthDate.getTime())) continue;
-    const monthKey = `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, '0')}`;
-    const snapshots = snapshotsByMonth.get(monthKey);
-    if (!snapshots?.length) continue;
-    const detailSets: Array<{ prefix: 'rev_' | 'cogs_'; details: Record<string, number>; totalField: 'revenue' | 'cogsTotal' }> = [
-      {
-        prefix: 'rev_',
-        details: readIncomeStatementBreakdown(month.revenueBreakdown, 'rev_'),
-        totalField: 'revenue',
-      },
-      {
-        prefix: 'cogs_',
-        details: readIncomeStatementBreakdown(
-          overlayHtsDutyCogs(
-            readIncomeStatementBreakdown(month.cogsBreakdown, 'cogs_'),
-            htsCogsByMonth.get(monthKey) || null,
-          ),
-          'cogs_',
-        ),
-        totalField: 'cogsTotal',
-      },
-    ];
-    for (const detailSet of detailSets) {
-      if (!Object.keys(detailSet.details).length) continue;
-      // The Data Review breakdown is authoritative. Replace any connector
-      // detail for this category/month so the same account rows and amounts
-      // appear in both financial views.
-      lines = lines.filter((line) => {
-        const lineDate = line?.snapshotDate ? new Date(line.snapshotDate) : null;
-        if (!lineDate || Number.isNaN(lineDate.getTime())) return true;
-        const lineMonthKey = `${lineDate.getUTCFullYear()}-${String(lineDate.getUTCMonth() + 1).padStart(2, '0')}`;
-        return lineMonthKey !== monthKey || !isIncomeStatementDetailField(line?.targetField, detailSet.prefix);
-      });
-      const allocationRows = allocationSnapshotsByMonth.get(monthKey) || snapshots;
-      const weightsByDate = new Map(
-        allocationRows.map((row) => [
-          new Date(row.snapshotDate).toISOString().slice(0, 10),
-          Math.abs(Number(row?.[detailSet.totalField] || 0)),
-        ]),
-      );
-      const weights = allocationRows.map((row) => Math.abs(Number(row?.[detailSet.totalField] || 0)));
-      const totalWeight = weights.reduce((sum, value) => sum + value, 0);
-      for (const [field, monthlyAmount] of Object.entries(detailSet.details)) {
-        snapshots.forEach((row) => {
-          const snapshotDate = new Date(row.snapshotDate);
-          const dateKey = snapshotDate.toISOString().slice(0, 10);
-          const share = totalWeight > 0
-            ? Number(weightsByDate.get(dateKey) || 0) / totalWeight
-            : 1 / allocationRows.length;
-          const amount = monthlyAmount * share;
-          if (Math.abs(amount) <= 0.005) return;
-          lines.push({
-            id: `data-review:${dateKey}:${field}`,
-            companyId,
-            snapshotDate: row.snapshotDate,
-            frequency: row.frequency || 'daily',
-            sourceAccountName: `Data Review ${monthKey}`,
-            sourceAccountId: null,
-            sourceAccountType: 'MonthlyFinancial',
-            targetField: field,
-            amount,
-            sourcePlatform: 'DATA_REVIEW_BREAKDOWN',
-            sourceRunId: null,
-            createdAt: null,
-            updatedAt: null,
-          });
-        });
-      }
-    }
-  }
-
-  return lines;
 }
 
 function startOfMonth(date: Date): Date {
@@ -12074,7 +11925,6 @@ export async function GET(request: NextRequest) {
             return Number(row?.amount || 0) !== 0;
           });
         }
-        mappedLines = await appendDataReviewIncomeStatementDetails(companyId, mappedLines, data);
         mappedLines = appendDailyFinancialSnapshotMappedLines(mappedLines, data);
         const statementRecords = aggregateDailyStatementRows(
           financialFrequencyForQuery === 'daily' ? dailyDataForAggregator : data,
