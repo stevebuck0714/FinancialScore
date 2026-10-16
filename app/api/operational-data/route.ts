@@ -1340,7 +1340,42 @@ async function deriveCustomerSalesFromRawInvoices(
         )::double precision AS amount
       FROM "InforRawRecord"
       WHERE "companyId" = ${companyId}
+        AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
         AND "miProgram" = 'SLArtrans'
+        -- Keep this as a superset of invoice_date below. businessDate is the
+        -- snapshot/ingest date, not necessarily the invoice date, so filtering
+        -- only on businessDate would omit valid historical invoices.
+        AND (
+          "businessDate"::date BETWEEN ${startDate}::date AND ${endDate}::date
+          OR (
+            CASE
+              WHEN "payload"->>'InvDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'InvDate', 8), 'YYYYMMDD')
+              WHEN "payload"->>'InvDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'InvDate', 10)::date
+              ELSE NULL
+            END
+          ) BETWEEN ${startDate}::date AND ${endDate}::date
+          OR (
+            CASE
+              WHEN "payload"->>'RecordDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'RecordDate', 8), 'YYYYMMDD')
+              WHEN "payload"->>'RecordDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'RecordDate', 10)::date
+              ELSE NULL
+            END
+          ) BETWEEN ${startDate}::date AND ${endDate}::date
+          OR (
+            CASE
+              WHEN "payload"->>'DistDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DistDate', 8), 'YYYYMMDD')
+              WHEN "payload"->>'DistDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DistDate', 10)::date
+              ELSE NULL
+            END
+          ) BETWEEN ${startDate}::date AND ${endDate}::date
+          OR (
+            CASE
+              WHEN "payload"->>'DueDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DueDate', 8), 'YYYYMMDD')
+              WHEN "payload"->>'DueDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DueDate', 10)::date
+              ELSE NULL
+            END
+          ) BETWEEN ${startDate}::date AND ${endDate}::date
+        )
     )
     SELECT
       date_trunc('month', invoice_date)::date AS month_start,
@@ -1436,6 +1471,7 @@ async function deriveCustomerMarginFromRawOrderLineDeltas(
           "createdAt"
         FROM "InforRawRecord"
         WHERE "companyId" = ${companyId}
+          AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
           AND "miProgram" IN ('SLCos', 'SLCohdrs')
           AND "businessDate" <= ${endDate}::date
       ) raw_headers
@@ -1485,7 +1521,41 @@ async function deriveCustomerMarginFromRawOrderLineDeltas(
           "createdAt"
         FROM "InforRawRecord"
         WHERE "companyId" = ${companyId}
+          AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
           AND "miProgram" = 'SLArtrans'
+          -- Match the customer-sales raw invoice range guard. Do not constrain
+          -- this to businessDate alone: it is an ingest snapshot date.
+          AND (
+            "businessDate"::date BETWEEN ${startDate}::date AND ${endDate}::date
+            OR (
+              CASE
+                WHEN "payload"->>'InvDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'InvDate', 8), 'YYYYMMDD')
+                WHEN "payload"->>'InvDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'InvDate', 10)::date
+                ELSE NULL
+              END
+            ) BETWEEN ${startDate}::date AND ${endDate}::date
+            OR (
+              CASE
+                WHEN "payload"->>'RecordDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'RecordDate', 8), 'YYYYMMDD')
+                WHEN "payload"->>'RecordDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'RecordDate', 10)::date
+                ELSE NULL
+              END
+            ) BETWEEN ${startDate}::date AND ${endDate}::date
+            OR (
+              CASE
+                WHEN "payload"->>'DistDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DistDate', 8), 'YYYYMMDD')
+                WHEN "payload"->>'DistDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DistDate', 10)::date
+                ELSE NULL
+              END
+            ) BETWEEN ${startDate}::date AND ${endDate}::date
+            OR (
+              CASE
+                WHEN "payload"->>'DueDate' ~ '^\\d{8}' THEN to_date(LEFT("payload"->>'DueDate', 8), 'YYYYMMDD')
+                WHEN "payload"->>'DueDate' ~ '^\\d{4}-\\d{2}-\\d{2}' THEN LEFT("payload"->>'DueDate', 10)::date
+                ELSE NULL
+              END
+            ) BETWEEN ${startDate}::date AND ${endDate}::date
+          )
           AND (UPPER(NULLIF("payload"->>'Type', '')) IS NULL OR UPPER(NULLIF("payload"->>'Type', '')) NOT IN ('P', 'C'))
       ) raw_invoices
       WHERE order_id IS NOT NULL
@@ -1551,6 +1621,7 @@ async function deriveCustomerMarginFromRawOrderLineDeltas(
         "createdAt"
       FROM "InforRawRecord"
       WHERE "companyId" = ${companyId}
+        AND "platform" IN ('INFOR_M3', 'INFOR_CSI')
         AND "miProgram" IN ('SLCoitems', 'SLCOITEMS')
         AND (
           ("businessDate" >= ${lineLookbackStart}::date AND "businessDate" <= ${endDate}::date)
@@ -4039,6 +4110,29 @@ export async function GET(request: NextRequest) {
           normalizedAccountingSystemKey === 'INFOR_M3' ||
           normalizedAccountingSystemKey === 'INFOR_CSI' ||
           normalizedAccountingSystemKey === 'CSI';
+        // Several customer-report sections use SLArtrans invoice history. Query
+        // the raw table once for the widest range they can request, then filter
+        // the monthly aggregates in memory. Running the same JSON-payload scan
+        // separately for the page, history, concentration, and new-customer
+        // views caused repeated full-history reads on large Infor tenants.
+        const rawInvoiceCoverageStart = new Date(
+          Math.min(
+            startDate.getTime(),
+            Date.UTC(endDate.getUTCFullYear() - 4, endDate.getUTCMonth(), 1),
+          ),
+        );
+        const rawInvoiceRowsForCustomerViews = isInforCompany
+          ? deriveCustomerSalesFromRawInvoices(companyId, rawInvoiceCoverageStart, endDate)
+          : Promise.resolve([] as Awaited<ReturnType<typeof deriveCustomerSalesFromRawInvoices>>);
+        const rawInvoicesForRange = async (rangeStart: Date, rangeEnd: Date) => {
+          const allRows = await rawInvoiceRowsForCustomerViews;
+          const start = rangeStart.getTime();
+          const end = rangeEnd.getTime();
+          return allRows.filter((row) => {
+            const snapshotTime = new Date(row.snapshotDate).getTime();
+            return Number.isFinite(snapshotTime) && snapshotTime >= start && snapshotTime <= end;
+          });
+        };
         const customerFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
         const orderLineFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
@@ -4100,7 +4194,7 @@ export async function GET(request: NextRequest) {
           let rawInvoiceSalesData: any[] = [];
           if (isInforCompany) {
             orderLineSalesData = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
-            rawInvoiceSalesData = await deriveCustomerSalesFromRawInvoices(companyId, startDate, endDate);
+            rawInvoiceSalesData = await rawInvoicesForRange(startDate, endDate);
             if (orderLineSalesData.length > 0) {
               bookingsSourceData = orderLineSalesData;
             }
@@ -4265,7 +4359,7 @@ export async function GET(request: NextRequest) {
             take: 100000,
           }));
           const historicalRawInvoiceRows = isInforCompany
-            ? await deriveCustomerSalesFromRawInvoices(companyId, customerHistoricalStart, endDate)
+            ? await rawInvoicesForRange(customerHistoricalStart, endDate)
             : [];
           const historicalRawInvoiceMonths = new Set(
             historicalRawInvoiceRows
@@ -4433,10 +4527,10 @@ export async function GET(request: NextRequest) {
           }
           const newCustomerLookbackStart = new Date(Date.UTC(concentrationStart.getUTCFullYear() - 3, concentrationStart.getUTCMonth(), 1));
           const rawInvoiceRowsForConcentration = isInforCompany
-            ? await deriveCustomerSalesFromRawInvoices(companyId, concentrationStart, concentrationEnd)
+            ? await rawInvoicesForRange(concentrationStart, concentrationEnd)
             : [];
           const rawInvoiceRowsForNewCustomerHistory = isInforCompany
-            ? await deriveCustomerSalesFromRawInvoices(companyId, newCustomerLookbackStart, concentrationEnd)
+            ? await rawInvoicesForRange(newCustomerLookbackStart, concentrationEnd)
             : [];
           const rawInvoiceMonthsForConcentration = new Set(
             rawInvoiceRowsForConcentration

@@ -1017,12 +1017,12 @@ function buildCanonicalSlVchHdrsBaseEndpointPath(
   endpointPath: string,
   window?: SyncWindow,
   site?: string,
-  options?: { noFullPulls?: boolean }
+  options?: { noFullPulls?: boolean; useApVoucherHistoryFloor?: boolean }
 ): string {
   const [path] = endpointPath.split('?');
   const params = new URLSearchParams();
   const asOfFilter =
-    options?.noFullPulls && window
+    window && (options?.noFullPulls || window.mode === 'daily_overlap' || !options?.useApVoucherHistoryFloor)
       ? buildCsiRecordDateWindowFilter({ window, field: 'RecordDate', includeSitePredicate: false })
       : buildSlVchHdrsAsOfFilter(window, site);
   if (asOfFilter) params.set('filter', asOfFilter);
@@ -1136,7 +1136,7 @@ function buildCanonicalSlVchHdrsEndpointPath(
   window?: SyncWindow,
   site?: string,
   bookmark?: string | null,
-  options?: { noFullPulls?: boolean }
+  options?: { noFullPulls?: boolean; useApVoucherHistoryFloor?: boolean }
 ): string {
   const canonicalBaseEndpointPath = assertSlVchHdrsCanonicalEndpointPath(
     buildCanonicalSlVchHdrsBaseEndpointPath(endpointPath, window, site, options),
@@ -1332,7 +1332,7 @@ function applyCsiSourceWindowAndSort(
   row: InforProgramRow,
   moduleType: ReturnType<typeof classifyModule>,
   window?: SyncWindow,
-  options?: { noFullPulls?: boolean; includeFullArFactHistory?: boolean }
+  options?: { noFullPulls?: boolean; includeFullArFactHistory?: boolean; useApVoucherHistoryFloor?: boolean }
 ): { endpointPath: string; applied: boolean; allowRetryWithoutSourceWindow: boolean } {
   if (!/\/IDORequestService\/ido\/load\//i.test(endpointPath)) {
     return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
@@ -1485,7 +1485,10 @@ function applyCsiSourceWindowAndSort(
   }
   if (isSlVchHdrsProgramLike({ programId: ido, row, endpointPath })) {
     return {
-      endpointPath: buildCanonicalSlVchHdrsEndpointPath(endpointPath, window, row.site, null, { noFullPulls }),
+      endpointPath: buildCanonicalSlVchHdrsEndpointPath(endpointPath, window, row.site, null, {
+        noFullPulls,
+        useApVoucherHistoryFloor: options?.useApVoucherHistoryFloor,
+      }),
       applied: true,
       allowRetryWithoutSourceWindow: false,
     };
@@ -9340,12 +9343,14 @@ export async function syncInforM3OperationalData(
     select: { accountingSystem: true },
   });
   const inforSystem = normalizeInforSystem(company?.accountingSystem);
+  // Routine CSI slices must be bounded to their requested dates. The AP and AR
+  // history rebuild actions opt into their broader population explicitly.
   const noFullPulls =
     inforSystem === 'INFOR_CSI' &&
     frequency === 'daily' &&
     Boolean(syncWindow) &&
-    syncWindow?.mode !== 'backfill' &&
-    envTrue('INFOR_CSI_NO_FULL_PULLS');
+    (!options?.apOnlyBackfill && !options?.fullArFactHistory) &&
+    (syncWindow?.mode !== 'backfill' || envTrue('INFOR_CSI_NO_FULL_PULLS'));
   const programsBySystem =
     metadata.accountingProgramsBySystem && typeof metadata.accountingProgramsBySystem === 'object'
       ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
@@ -9660,6 +9665,7 @@ export async function syncInforM3OperationalData(
       const sourceWindowPathResult = applyCsiSourceWindowAndSort(req.endpointPath, row, moduleType, syncWindow, {
         noFullPulls,
         includeFullArFactHistory: isFullArFactHistoryBackfill,
+        useApVoucherHistoryFloor: options?.apOnlyBackfill === true,
       });
       if (debugSync) {
         console.log(
@@ -9719,6 +9725,7 @@ export async function syncInforM3OperationalData(
       if (isSlVchHdrsProgramLike({ programId, row, endpointPath: req.endpointPath })) {
         initialEndpointPath = buildCanonicalSlVchHdrsEndpointPath(req.endpointPath, syncWindow, row.site, inputBookmark, {
           noFullPulls,
+          useApVoucherHistoryFloor: options?.apOnlyBackfill === true,
         });
         if (debugSync) {
           const initialShape = (() => {
@@ -10206,9 +10213,8 @@ export async function syncInforM3OperationalData(
         sitePolicy === 'none'
           ? rawRecords
           : filterRecordsBySiteIfSupported(rawRecords, row.site);
-      // For daily-overlap syncs only, keep full open-item populations for AR/AP
-      // snapshots. Backfill/manual modes must honor the date window so each day
-      // is rebuilt from that day slice instead of replaying one global snapshot.
+      // Only explicit AR/AP history rebuilds may keep a broad open-item
+      // population. Routine daily slices must honor their date window.
       const isArOpenSnapshotProgram =
         moduleType === 'ar' &&
         ['SLARTRANS', 'SLCUSTDRFTS'].includes(String(row.miProgram || '').trim().toUpperCase());
@@ -10220,6 +10226,7 @@ export async function syncInforM3OperationalData(
         ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
       const keepFullArApPopulation =
         !noFullPulls &&
+        (options?.apOnlyBackfill === true || isFullArFactHistoryBackfill) &&
         (isArOpenSnapshotProgram ||
           isApOpenSnapshotProgram ||
           isApOpenSupportProgram ||
@@ -10763,7 +10770,6 @@ export async function syncInforM3OperationalData(
               `${companyId}|${syncRunId}|${moduleType}|${programId || ''}|${req.transaction}|${effectiveEndpointPath}|${rawRecordsForIngest.length}|${requestDurationMs}|${response.status}`
             )
             .digest('hex');
-          let rawBatchAlreadyPersisted = false;
           try {
             await (prisma as any).inforRawBatch.create({
               data: {
@@ -10801,7 +10807,6 @@ export async function syncInforM3OperationalData(
             // otherwise FK-fail against the abandoned batchId).
             const code = (rawBatchCreateError as { code?: string })?.code;
             if (code === 'P2002') {
-              rawBatchAlreadyPersisted = true;
               const existingBatch = await (prisma as any).inforRawBatch.findFirst({
                 where: {
                   companyId,
@@ -10903,67 +10908,30 @@ export async function syncInforM3OperationalData(
                   where: { batchId },
                 });
                 if (Number(existingChildCount || 0) === 0) {
-                  // A CSI pagination retry can return a page whose records were
-                  // already persisted by an earlier batch in this same run/day.
-                  // Treat that as an idempotent replay only when every distinct
-                  // record hash is already present under this exact run scope.
-                  const sourceRecordHashes = Array.from(
-                    new Set(
-                      rawRows
-                        .map((rawRow) => String(rawRow.sourceRecordHash || '').trim())
-                        .filter((hash) => hash.length > 0)
-                    )
-                  );
-                  // Postgres caps a prepared statement at 32,767 bind variables.
-                  const hashCountBatchSize = 10000;
-                  let existingSameRunRecordCount = 0;
-                  for (let hashOffset = 0; hashOffset < sourceRecordHashes.length; hashOffset += hashCountBatchSize) {
-                    existingSameRunRecordCount += Number(
-                      (await (prisma as any).inforRawRecord.count({
-                        where: {
-                          companyId,
-                          platform: 'INFOR_M3',
-                          syncRunId,
-                          businessDate: snapshotDate,
-                          miProgram: row.miProgram || null,
-                          transaction: req.transaction || null,
-                          sourceRecordHash: { in: sourceRecordHashes.slice(hashOffset, hashOffset + hashCountBatchSize) },
-                        },
-                      })) || 0
-                    );
+                  // A run-wide hash match is not proof this exact page was
+                  // persisted. Treating it as success let a replayed CSI page
+                  // advance the cursor while its batch had no child rows.
+                  // AR history rebuilds are the explicit exception: they
+                  // intentionally reuse canonical SLARTRANS rows from prior runs.
+                  const sourceProgramId = String(row.miProgram || '').trim().toUpperCase();
+                  if (persistedArHistoryRebuildRun === null) {
+                    const rebuildRun = await prisma.inforSyncRun.findFirst({
+                      where: { id: syncRunId, companyId, mode: 'ar_history_rebuild' },
+                      select: { id: true },
+                    });
+                    persistedArHistoryRebuildRun = Boolean(rebuildRun);
                   }
-                  const reusedSameRunRecords =
-                    existingSameRunRecordCount >= sourceRecordHashes.length && sourceRecordHashes.length > 0;
-                  if (reusedSameRunRecords) {
+                  if (
+                    sourceProgramId === 'SLARTRANS' &&
+                    (options?.fullArFactHistory === true || persistedArHistoryRebuildRun)
+                  ) {
                     console.log(
-                      `Raw ingest reusing ${sourceRecordHashes.length} already-persisted ${row.miProgram || 'unknown'} rows for ${syncRunId}.`
+                      `AR history rebuild reusing existing canonical SLARTRANS raw rows for ${syncRunId}.`
                     );
-                  }
-                  if (!reusedSameRunRecords) {
-                    // AR history rebuilds intentionally reuse globally deduplicated
-                    // SLARTRANS raw rows staged by earlier attempts/runs. Use the
-                    // persisted source program, not the request-path resolver:
-                    // CSI preserves mixed casing such as "SLArtrans".
-                    const sourceProgramId = String(row.miProgram || '').trim().toUpperCase();
-                    if (persistedArHistoryRebuildRun === null) {
-                      const rebuildRun = await prisma.inforSyncRun.findFirst({
-                        where: { id: syncRunId, companyId, mode: 'ar_history_rebuild' },
-                        select: { id: true },
-                      });
-                      persistedArHistoryRebuildRun = Boolean(rebuildRun);
-                    }
-                    if (
-                      sourceProgramId === 'SLARTRANS' &&
-                      (options?.fullArFactHistory === true || persistedArHistoryRebuildRun)
-                    ) {
-                      console.log(
-                        `AR history rebuild reusing existing canonical SLARTRANS raw rows for ${syncRunId}.`
-                      );
-                    } else {
-                      throw new Error(
-                        `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for this request (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
-                      );
-                    }
+                  } else {
+                    throw new Error(
+                      `Raw ingest saved 0/${eligibleRecords.length} ${row.miProgram || 'unknown'} rows for this request (syncRunId=${syncRunId}). CSI returned rows but persist skipped them.`
+                    );
                   }
                 }
               }

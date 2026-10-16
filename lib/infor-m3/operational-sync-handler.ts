@@ -587,10 +587,13 @@ export async function runOperationalSyncRequest(
 
     const warningOnly = isBookmarkStallWarningOnly(dayResult.errors);
 
+    const ok = dayResult.success || warningOnly;
     return {
-      status: 200,
+      // A failed raw-ingest write must surface as a failed chunk and must not
+      // expose a continuation that could replay large CSI windows.
+      status: ok ? 200 : 502,
       body: {
-        ok: dayResult.success || warningOnly,
+        ok,
         companyId,
         frequency,
         site,
@@ -612,8 +615,8 @@ export async function runOperationalSyncRequest(
         warningOnly,
         credentialSource: dayResult.credentialSource,
         syncRunId: effectiveSyncRunId,
-        hasMore,
-        cursor,
+        hasMore: ok ? hasMore : false,
+        cursor: ok ? cursor : null,
       },
     };
   }
@@ -686,10 +689,13 @@ export async function runOperationalSyncRequest(
     }
   }
   const warningOnly = isBookmarkStallWarningOnly(result.errors);
+  const ok = result.success || warningOnly;
   return {
-    status: 200,
+    // See the business-day branch above: failed persistence must not advance
+    // the historical cursor.
+    status: ok ? 200 : 502,
     body: {
-      ok: result.success || warningOnly,
+      ok,
       companyId,
       frequency,
       site,
@@ -705,8 +711,8 @@ export async function runOperationalSyncRequest(
       warningOnly,
       credentialSource: result.credentialSource,
       syncRunId: effectiveSyncRunId,
-      hasMore,
-      cursor,
+      hasMore: ok ? hasMore : false,
+      cursor: ok ? cursor : null,
     },
   };
 }

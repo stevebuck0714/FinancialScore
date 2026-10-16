@@ -9380,13 +9380,13 @@ function FinancialScorePage() {
     try {
       const isDailyCsiSync = isCsiCompany && frequency === 'daily';
       const requestedMode = options?.mode;
-      const resolvedMode = requestedMode || (isDailyCsiSync ? 'business_day_backfill' : undefined);
+      // A routine CSI sync is an incremental overlap, not a multi-year
+      // historical backfill. Historical modes remain explicit UI choices.
+      const resolvedMode = requestedMode || (isDailyCsiSync ? 'daily_overlap' : undefined);
       const resolvedBackfillMonths =
         typeof options?.backfillMonths === 'number' && Number.isFinite(options.backfillMonths)
           ? Math.max(1, Math.floor(options.backfillMonths))
-          : isDailyCsiSync
-            ? 36
-            : undefined;
+          : undefined;
       const payload: Record<string, unknown> = {
         action: 'start',
         companyId,

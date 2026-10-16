@@ -20,6 +20,8 @@ export type PluginSyncOptions = {
 
 export type OperationalSyncResult = {
   success: boolean;
+  /** The sync was accepted by the durable worker and has not completed yet. */
+  queued?: boolean;
   recordsCreated: number;
   moduleCounts?: {
     cash: number;
@@ -180,13 +182,9 @@ export async function runOperationalSyncForConnection(
       };
     }
 
-    // Preferred path: enqueue a business_day_backfill so the rolling auto-sync window
-    // fans out one snapshot per business day (with snapshotDateOverride applied per
-    // day inside the worker). The old inline path used mode='manual' over a multi-day
-    // window which (a) only writes a single snapshot for "today" regardless of the
-    // window, and (b) can drop data if the cursor drain doesn't complete within the
-    // 300s cron budget. The queue worker (process-infor-sync-runs cron) handles
-    // chunking and retries reliably.
+    // Nightly automation is a bounded incremental overlap. Historical
+    // business-day backfills are intentionally manual actions; treating every
+    // nightly run as a backfill can repeatedly re-read years of CSI history.
     if (isInforSyncQueueEnabled()) {
       try {
         const startedRun = await startQueueRun({
@@ -194,13 +192,14 @@ export async function runOperationalSyncForConnection(
           platform: 'INFOR_M3',
           frequency,
           site: inforSite,
-          mode: 'business_day_backfill',
+          mode: 'daily_overlap',
           startDate: syncWindow.startDate.toISOString(),
           endDate: syncWindow.endDate.toISOString(),
         });
         await pruneCompanyOperationalData(connection.companyId);
         return {
           success: true,
+          queued: true,
           recordsCreated: 0, // queued; record counts are aggregated by the queue worker
           errors: startedRun.alreadyRunning
             ? ['Infor auto-sync queued behind an already-running backfill; will start when the prior run completes.']

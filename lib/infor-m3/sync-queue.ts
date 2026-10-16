@@ -18,11 +18,6 @@ import {
 import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
 import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
-import { warmWholesaleProductsReportCache } from '@/lib/operations/wholesale-products-report-warmup';
-import {
-  ATLANTIC_PRECISION_COMPANY_ID,
-  warmAtlanticOperationalTabsCaches,
-} from '@/lib/operations/product-group-report-warmup';
 import { refreshAndWarmDutiesTariffsCache } from '@/lib/hts/duties-tariffs-cache';
 
 const DEFAULT_LEASE_SECONDS = 420;
@@ -1621,10 +1616,18 @@ async function processTask(
   let runCompletedInThisTask = false;
 
   if (responseStatus >= 400 || !data?.ok) {
-    const reachedMax = attemptNo >= Math.max(1, Number(task.maxAttempts || DEFAULT_MAX_ATTEMPTS));
+    // A non-empty CSI response with zero persisted raw records is a data
+    // integrity failure, not a transient transport failure. Retrying the same
+    // cursor page only repeats the remote fetch and database reads. Quarantine
+    // the run immediately so the next scheduled incremental run starts cleanly.
+    const isNonRetryableRawPersistenceFailure =
+      /Raw ingest saved 0\/\d+ .*CSI returned rows but persist skipped them/i.test(String(details));
+    const reachedMax =
+      isNonRetryableRawPersistenceFailure ||
+      attemptNo >= Math.max(1, Number(task.maxAttempts || DEFAULT_MAX_ATTEMPTS));
     const backoffMs = Math.min(5 * 60 * 1000, Math.max(10_000, Math.floor(2 ** attemptNo) * 1000));
     const isBusinessDayBackfill = String(task.run.mode || '') === 'business_day_backfill';
-    const shouldSkip = reachedMax && isBusinessDayBackfill;
+    const shouldSkip = reachedMax && isBusinessDayBackfill && !isNonRetryableRawPersistenceFailure;
     let processed = false;
     await db().$transaction(async (tx) => {
       const leaseConsumed = await tx.inforSyncTask.updateMany({
@@ -2214,35 +2217,11 @@ async function processTask(
           });
         }
       }
-      const [wholesaleReportWarmup, operationalTabsWarmup] = await Promise.all([
-        warmWholesaleProductsReportCache(task.companyId),
-        task.companyId === ATLANTIC_PRECISION_COMPANY_ID
-          ? warmAtlanticOperationalTabsCaches()
-          : Promise.resolve({ ok: true, skipped: true }),
-      ]);
-      if (!wholesaleReportWarmup.ok && !wholesaleReportWarmup.skipped) {
-        console.warn('Wholesale products report cache warm-up failed after Infor sync completion:', {
-          companyId: task.companyId,
-          runId: task.runId,
-          error: wholesaleReportWarmup.error,
-          window: wholesaleReportWarmup.window,
-          modes: wholesaleReportWarmup.modes,
-        });
-      }
-      if (!operationalTabsWarmup.ok && !operationalTabsWarmup.skipped) {
-        console.warn('Atlantic operational tab cache warm-up failed after Infor sync completion:', {
-          companyId: task.companyId,
-          runId: task.runId,
-          customers: operationalTabsWarmup.customers,
-          products: operationalTabsWarmup.products,
-          inventory: operationalTabsWarmup.inventory,
-          arAging: operationalTabsWarmup.arAging,
-          apAging: operationalTabsWarmup.apAging,
-          cash: operationalTabsWarmup.cash,
-          dailyFinancials: operationalTabsWarmup.dailyFinancials,
-          groups: operationalTabsWarmup.groups,
-        });
-      }
+      // Do not rebuild every operational report immediately after each queue
+      // run. Those warmups issue broad historical reads (and used to run once
+      // per completed ingest run), multiplying Neon egress. The normal cache
+      // policy and explicit scheduled report warmups populate only reports
+      // that are actually requested.
       await refreshAndWarmDutiesTariffsCache(task.companyId).catch((error) => {
         console.warn('Duties & Tariffs cache warm-up failed after Infor sync completion:', {
           companyId: task.companyId,

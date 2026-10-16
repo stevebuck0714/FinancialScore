@@ -335,8 +335,12 @@ async function processOneRun(
           data?.error ||
           (textSnippet ? `HTTP ${response.status}: ${textSnippet}` : `HTTP ${response.status}: Async sync chunk failed`);
     const retries = Math.max(0, Number(run.retryCount || 0)) + 1;
-    const failed = retries >= MAX_RETRIES_PER_RUN;
-    if (failed && run.mode === 'business_day_backfill') {
+    // CSI returned data but the raw-write layer persisted none of it. This
+    // cannot be fixed by replaying the same cursor page every five minutes.
+    const nonRetryableRawPersistenceFailure =
+      /Raw ingest saved 0\/\d+ .*CSI returned rows but persist skipped them/i.test(String(details));
+    const failed = nonRetryableRawPersistenceFailure || retries >= MAX_RETRIES_PER_RUN;
+    if (failed && run.mode === 'business_day_backfill' && !nonRetryableRawPersistenceFailure) {
       const recoveredCursor = recoverCursorAfterRepeatedChunkFailure(run);
       return {
         ...run,

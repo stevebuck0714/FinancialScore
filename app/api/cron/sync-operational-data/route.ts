@@ -383,7 +383,10 @@ export async function GET(request: NextRequest) {
         }
 
         totalRecords += syncResult.recordsCreated;
-        if (syncResult.success) {
+        // Queue acceptance is not completion. Warming operational reports here
+        // would query the old data and duplicate the worker's post-transform
+        // work every night.
+        if (syncResult.success && !syncResult.queued) {
           console.log(`✅ ${connection.company?.name}: ${syncResult.recordsCreated} records synced`);
           successCount++;
         } else {
