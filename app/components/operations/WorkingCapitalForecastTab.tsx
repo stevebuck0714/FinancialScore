@@ -587,9 +587,28 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             </div>
             {forecastMonthTotals.some((value) => value > 0) && (
               <div style={{ marginTop: '6px', fontSize: '12px', color: '#1e3a8a' }}>
-                Weekly sales and receipts use Income Statement monthly sales, spread across each week by calendar days. Opening AR still collects from the current books.
+                Sales forecast source: Income Statement Forecast. Projected monthly revenue is allocated across the 13 weeks by calendar days, then drives COGS, inventory, and cash collections. Opening AR is collected separately from the current books.
               </div>
             )}
+            <details style={{ marginTop: '8px', maxWidth: '920px' }}>
+              <summary style={{ cursor: 'pointer', color: '#2751d0', fontSize: '12px', fontWeight: 700 }}>
+                How Income Statement Forecast sales affect this cash forecast
+              </summary>
+              <div style={{ marginTop: '8px', border: '1px solid #bfdbfe', borderRadius: '8px', background: '#ffffff', padding: '10px', color: '#334155', fontSize: '12px', lineHeight: 1.55 }}>
+                <div>
+                  1. Projected monthly revenue from the Income Statement Forecast is allocated to each of the 13 weeks according to the number of calendar days from that month in the week.
+                </div>
+                <div style={{ marginTop: '5px' }}>
+                  2. Each week&apos;s allocated sales calculate COGS from that week&apos;s gross margin and determine the inventory purchases needed to support the projected sales.
+                </div>
+                <div style={{ marginTop: '5px' }}>
+                  3. In an accrual forecast, the cash-sales portion is received in the week of sale. The credit-sales portion becomes A/R and is collected using the A/R collection percentages and weekly distribution weights. Opening A/R is a separate balance and follows the same collection schedule.
+                </div>
+                <div style={{ marginTop: '5px' }}>
+                  4. Receipts from those sales, less AP payments (including payments for inventory purchases), operating expenses, adjustments, and LOC interest, determine weekly ending cash and any required LOC draw or repayment.
+                </div>
+              </div>
+            </details>
             {lastSavedAt && (
               <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
                 Last saved: {formatEstDateTime(lastSavedAt)}
@@ -649,7 +668,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             {balancesError && <div style={{ fontSize: '12px', color: '#b91c1c' }}>{balancesError}</div>}
           </div>
           <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
-            Values are from Income Statement Forecast; user can override and save any field.
+            Sales are sourced from the Income Statement Forecast. Operating expense and gross margin are editable weekly inputs.
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
             Weekly seeds are calendar-aligned from the first forecast month and weighted by day overlap across months.
