@@ -297,6 +297,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [opexAdjDraftByWeek, setOpexAdjDraftByWeek] = useState<Record<number, string>>({});
   const [forecastMonthRefs, setForecastMonthRefs] = useState<MonthlyBaseRef[]>([]);
   const [forecastMonthTotals, setForecastMonthTotals] = useState<number[]>([]);
+  const [forecastDirectLaborMonthTotals, setForecastDirectLaborMonthTotals] = useState<number[]>([]);
   const liveMonthSeriesRef = useRef<MonthRevenueSeries | null>(null);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
@@ -355,6 +356,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setHistoricalSalesByWeek(derived.historicalSalesByWeek);
           setForecastMonthRefs(derived.forecastMonthRefs);
           setForecastMonthTotals(derived.forecastMonthTotals);
+          setForecastDirectLaborMonthTotals(derived.monthSeries?.directLaborMonthTotals || []);
           setWeekMonthLabels(buildWeekMonthLabels(derived.forecastMonthRefs));
           setInputs(derived.inputs);
           setHistoricalAverages(derived.historicalAverages);
@@ -377,6 +379,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setStartingApBuckets(DEFAULT_AGING_BUCKETS);
           setForecastMonthRefs([]);
           setForecastMonthTotals([]);
+          setForecastDirectLaborMonthTotals([]);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
@@ -404,6 +407,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       const allocatedSales = allocateForecastSalesByWeek(series);
       setForecastMonthRefs(series.monthRefs);
       setForecastMonthTotals(series.monthTotals);
+      setForecastDirectLaborMonthTotals(series.directLaborMonthTotals || []);
       setWeekMonthLabels(buildWeekMonthLabels(series.monthRefs));
       setWeeklyDrivers((prev) => applyAllocatedSalesToDrivers(prev, allocatedSales));
     };
@@ -427,7 +431,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     accrualOpexPaymentTreatmentByKey,
     forecastMonthRefs,
     forecastMonthTotals,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals]);
+    forecastDirectLaborMonthTotals,
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals]);
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -547,6 +552,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     'Beginning Cash',
     'Receipts',
     'AP Payments',
+    'Direct Labor',
     'Cash Opex',
     'Opex Adj',
     'LOC Interest',
@@ -599,13 +605,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   1. Projected monthly revenue from the Income Statement Forecast is allocated to each of the 13 weeks according to the number of calendar days from that month in the week.
                 </div>
                 <div style={{ marginTop: '5px' }}>
-                  2. Each week&apos;s allocated sales calculate COGS from that week&apos;s gross margin and determine the inventory purchases needed to support the projected sales.
+                  2. Each week&apos;s allocated sales calculate COGS from that week&apos;s gross margin. Inventory-bearing COGS determines purchases; Direct Production Labor is paid separately as direct labor cash.
                 </div>
                 <div style={{ marginTop: '5px' }}>
                   3. In an accrual forecast, the cash-sales portion is received in the week of sale. The credit-sales portion becomes A/R and is collected using the A/R collection percentages and weekly distribution weights. Opening A/R is a separate balance and follows the same collection schedule.
                 </div>
                 <div style={{ marginTop: '5px' }}>
-                  4. Receipts from those sales, less AP payments (including payments for inventory purchases), operating expenses, adjustments, and LOC interest, determine weekly ending cash and any required LOC draw or repayment.
+                  4. Receipts from those sales, less AP payments (including inventory purchases), direct labor, operating expenses, adjustments, and LOC interest, determine weekly ending cash and any required LOC draw or repayment.
                 </div>
               </div>
             </details>
@@ -1059,6 +1065,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.beginningCash)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.receipts)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.apPayments)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.directLaborPayments)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.cashOpex)}</td>
                   <td style={{ padding: '4px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', width: '12ch', minWidth: '12ch', maxWidth: '12ch', boxSizing: 'content-box' }}>
                     <input

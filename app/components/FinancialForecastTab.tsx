@@ -94,6 +94,7 @@ function buildFinancialForecastMonthlyBase(forecastRows: Array<{
   year?: number;
   month?: number;
   totalRevenue?: number;
+  cogsDetails?: Record<string, number>;
   totalOpex?: number;
   grossProfit?: number;
   operatingIncome?: number;
@@ -107,6 +108,9 @@ function buildFinancialForecastMonthlyBase(forecastRows: Array<{
       month: Number(row.month),
     })),
     monthTotals: monthlyRows.map((row) => Math.max(0, Number(row.totalRevenue) || 0)),
+    directLaborMonthTotals: monthlyRows.map((row) =>
+      Math.max(0, Number(row.cogsDetails?.cogs_direct_production_labor) || 0)
+    ),
     opexMonthTotals: monthlyRows.map((row) => Math.max(0, Number(row.totalOpex) || 0)),
     grossMarginMonthPcts: monthlyRows.map((row) => {
       const revenue = Number(row.totalRevenue) || 0;

@@ -63,6 +63,9 @@ export type ForecastRow = {
   sales: number;
   receipts: number;
   cogs: number;
+  inventoryCogs: number;
+  directLabor: number;
+  directLaborPayments: number;
   targetInventory: number;
   purchases: number;
   apPayments: number;
@@ -83,6 +86,11 @@ export type ForecastRow = {
 export type MonthRevenueSeries = {
   monthRefs: MonthlyBaseRef[];
   monthTotals: number[];
+  /**
+   * Direct Production Labor from the Income Statement Forecast. It is a COGS
+   * category but not inventory-bearing, so it must not drive replenishment.
+   */
+  directLaborMonthTotals?: number[];
 };
 
 export const ACCRUAL_OPEX_LINE_ITEMS: Array<{ key: string; label: string }> = [
@@ -303,11 +311,13 @@ export const allocateMonthlyAmountsToWeeks = (
 };
 export const parseMonthRevenueSeries = (raw: unknown): MonthRevenueSeries | null => {
   if (!raw || typeof raw !== 'object') return null;
-  const obj = raw as { monthRefs?: unknown; monthTotals?: unknown };
+  const obj = raw as { monthRefs?: unknown; monthTotals?: unknown; directLaborMonthTotals?: unknown };
   const refsRaw = Array.isArray(obj.monthRefs) ? obj.monthRefs : [];
   const totalsRaw = Array.isArray(obj.monthTotals) ? obj.monthTotals : [];
+  const directLaborRaw = Array.isArray(obj.directLaborMonthTotals) ? obj.directLaborMonthTotals : [];
   const monthRefs: MonthlyBaseRef[] = [];
   const monthTotals: number[] = [];
+  const directLaborMonthTotals: number[] = [];
   const count = Math.min(refsRaw.length, totalsRaw.length);
   for (let i = 0; i < count; i += 1) {
     const item = refsRaw[i] && typeof refsRaw[i] === 'object' ? (refsRaw[i] as { year?: unknown; month?: unknown }) : {};
@@ -317,9 +327,11 @@ export const parseMonthRevenueSeries = (raw: unknown): MonthRevenueSeries | null
     if (!Number.isFinite(year) || !Number.isFinite(month)) continue;
     monthRefs.push({ year, month });
     monthTotals.push(Number.isFinite(total) && total > 0 ? total : 0);
+    const directLabor = Number(directLaborRaw[i]);
+    directLaborMonthTotals.push(Number.isFinite(directLabor) && directLabor > 0 ? directLabor : 0);
   }
   if (monthRefs.length === 0 || !monthTotals.some((value) => value > 0)) return null;
-  return { monthRefs, monthTotals };
+  return { monthRefs, monthTotals, directLaborMonthTotals };
 };
 const forecastWeekStarts = (): Date[] =>
   Array.from({ length: FORECAST_WEEKS }, (_, idx) => addDays(getWeekendAnchorDate(new Date()), idx * 7));
@@ -463,6 +475,7 @@ export type ForecastProjectionInput = {
   accrualOpexPaymentTreatmentByKey: Record<string, OpexPaymentTreatment>;
   forecastMonthRefs: MonthlyBaseRef[];
   forecastMonthTotals: number[];
+  forecastDirectLaborMonthTotals?: number[];
 };
 
 export type DerivedForecastState = ForecastProjectionInput & {
@@ -882,6 +895,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     accrualOpexPaymentTreatmentByKey,
     forecastMonthRefs,
     forecastMonthTotals,
+    forecastDirectLaborMonthTotals = [],
   } = params;
   const result: ForecastRow[] = [];
   const weeks = FORECAST_WEEKS;
@@ -986,10 +1000,19 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       ? Math.max(0, allocatedForecastSales[idx] || 0)
       : Math.max(0, weeklyDrivers[idx]?.sales || 0),
   );
+  const weekStarts = Array.from({ length: weeks }, (_, idx) => addDays(getWeekendAnchorDate(new Date()), idx * 7));
+  // Direct Production Labor is a COGS category, but unlike material COGS it
+  // does not reduce inventory or create an inventory purchase. Pay it as a
+  // direct weekly cash disbursement from the Income Statement Forecast.
+  const directLaborByWeek = allocateMonthlyAmountsToWeeks(
+    forecastDirectLaborMonthTotals.map((value) => Math.max(0, Number(value || 0))),
+    forecastMonthRefs,
+    weekStarts,
+    'calendar',
+  );
   const opexByWeek: number[] = Array.from({ length: weeks }, (_, idx) => Math.max(0, weeklyDrivers[idx]?.opex || 0));
   const opexPaidInFullByWeek = Array.from({ length: weeks }, () => 0);
   const opexViaApByWeek = Array.from({ length: weeks }, () => 0);
-  const weekStarts = Array.from({ length: weeks }, (_, idx) => addDays(getWeekendAnchorDate(new Date()), idx * 7));
   ACCRUAL_OPEX_LINE_ITEMS.forEach(({ key }) => {
     const treatment = accrualOpexPaymentTreatmentByKey?.[key] === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full';
     const amounts = Array.isArray(accrualOpexAmountByRow[key]) ? accrualOpexAmountByRow[key] : [];
@@ -1031,6 +1054,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     const beginningCash = safeNumber(cash, 0);
     const sales = Math.max(0, safeNumber(salesByWeek[i], 0));
     const cogs = Math.max(0, safeNumber(sales * (1 - grossMarginByWeek[i]), 0));
+    const directLabor = Math.max(0, safeNumber(directLaborByWeek[i], 0));
+    const inventoryCogs = Math.max(0, safeNumber(cogs - directLabor, 0));
+    const directLaborPayments = directLabor;
     const directPaidOpex = isAccrualBasis && hasAccrualLineAmounts
       ? Math.max(0, safeNumber(opexPaidInFullByWeek[i], 0))
       : 0;
@@ -1043,11 +1069,11 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     const opex = isAccrualBasis && hasAccrualLineAmounts
       ? directPaidOpex + apScheduledOpex
       : cashOpex;
-    const turnsTargetInventory = safeNumber(cogs * inventoryWeeksOnHand, 0);
+    const turnsTargetInventory = safeNumber(inventoryCogs * inventoryWeeksOnHand, 0);
     const historicalTargetInventory = safeNumber(sales * historicalInventoryToSales, 0);
     const targetInventory = (turnsTargetInventory + historicalTargetInventory) / 2;
 
-    const postSalesInventory = Math.max(0, safeNumber(inventory - cogs, 0));
+    const postSalesInventory = Math.max(0, safeNumber(inventory - inventoryCogs, 0));
     const purchaseForTarget = Math.max(0, safeNumber(targetInventory - postSalesInventory, 0));
     const purchases = safeNumber(purchaseForTarget, 0);
     let cashSalesReceipts = 0;
@@ -1082,7 +1108,10 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
 
     const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
     const opexAdj = safeNumber(weeklyDrivers[i]?.opexAdj, 0);
-    const baseEndingCash = safeNumber(beginningCash + receipts - apPayments - cashOpex - opexAdj - locInterest, beginningCash);
+    const baseEndingCash = safeNumber(
+      beginningCash + receipts - apPayments - directLaborPayments - cashOpex - opexAdj - locInterest,
+      beginningCash,
+    );
     const unleveredEndingCash = baseEndingCash;
 
     let locDraw = 0;
@@ -1121,6 +1150,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       sales,
       receipts,
       cogs,
+      inventoryCogs,
+      directLabor,
+      directLaborPayments,
       targetInventory,
       purchases,
       apPayments,
