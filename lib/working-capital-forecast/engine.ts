@@ -50,6 +50,12 @@ export type AgingBuckets = {
   bucket90plus: number;
 };
 
+export type HistoricalApPaymentProfile = {
+  weeklyPaymentAmount: number;
+  purchasePaymentLagWeeks: number;
+  matchedPaymentCount: number;
+};
+
 export type MonthlyBaseRef = {
   year: number;
   month: number; // 0-based
@@ -513,6 +519,7 @@ export type ForecastProjectionInput = {
   forecastMonthTotals: number[];
   forecastDirectLaborMonthTotals?: number[];
   forecastMaterialCogsMonthTotals?: number[];
+  historicalApPaymentProfile?: HistoricalApPaymentProfile | null;
 };
 
 export type DerivedForecastState = ForecastProjectionInput & {
@@ -546,6 +553,7 @@ export function deriveForecastStateFromBootstrap(
   const dailyFinancial = bootstrap?.operational?.dailyFinancials || null;
   const arResult = bootstrap?.operational?.arAgingResult || null;
   const apResult = bootstrap?.operational?.apAgingResult || null;
+  const historicalApPaymentProfile = bootstrap?.operational?.historicalApPaymentProfile || null;
   const inventoryHistory = bootstrap?.operational?.inventoryHistory || null;
   const productHistory = bootstrap?.operational?.productHistory || null;
   const productMarginHistory = bootstrap?.operational?.productMarginHistory || null;
@@ -842,6 +850,7 @@ export function deriveForecastStateFromBootstrap(
     forecastMonthRefs: monthRefsBase,
     forecastMonthTotals: monthSeries?.monthTotals || [],
     forecastMaterialCogsMonthTotals: monthSeries?.materialCogsMonthTotals || [],
+    historicalApPaymentProfile,
     monthSeries,
     inventoryBalanceFromImportedData: hasImportedInventoryBalance,
     locBalanceFromImportedData: hasImportedLocBalance,
@@ -934,6 +943,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     forecastMonthTotals,
     forecastDirectLaborMonthTotals = [],
     forecastMaterialCogsMonthTotals = [],
+    historicalApPaymentProfile = null,
   } = params;
   const result: ForecastRow[] = [];
   const weeks = FORECAST_WEEKS;
@@ -960,6 +970,15 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     inputs.apWeek2WeightPct,
     inputs.apWeek3WeightPct,
     inputs.apWeek4WeightPct
+  );
+  const useHistoricalApPaymentProfile =
+    Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0) > 0 &&
+    Number(historicalApPaymentProfile?.purchasePaymentLagWeeks || 0) >= 1;
+  const historicalWeeklyApPayment = Math.max(0, Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0));
+  const historicalPurchasePaymentLagWeeks = clampNumber(
+    Math.round(Number(historicalApPaymentProfile?.purchasePaymentLagWeeks || 0)),
+    1,
+    FORECAST_WEEKS,
   );
   type Cohort = { remaining: number; ageWeeks: number };
   const getPhaseRate = (
@@ -997,6 +1016,15 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       const realized = Math.min(cohort.remaining, Math.max(0, safeNumber(scheduled, 0)));
       cohort.remaining = Math.max(0, cohort.remaining - realized);
       total += realized;
+    }
+    return total;
+  };
+  const processCohortsAtPaymentLag = (cohorts: Cohort[], paymentLagWeeks: number): number => {
+    let total = 0;
+    for (const cohort of cohorts) {
+      if (cohort.remaining <= 0 || cohort.ageWeeks < paymentLagWeeks) continue;
+      total += cohort.remaining;
+      cohort.remaining = 0;
     }
     return total;
   };
@@ -1139,23 +1167,27 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
         ar90plusRate,
         arWeeklyWeights
       );
-    const apPayments =
-      Math.max(0, safeNumber(openingApPayments[i] || 0)) +
-      processCohorts(
-        apCohorts,
-        apCurrentRate,
-        ap30to60Rate,
-        ap60to90Rate,
-        ap90plusRate,
-        apWeeklyWeights
-      );
+    const recurringApPayments = useHistoricalApPaymentProfile
+      ? processCohortsAtPaymentLag(apCohorts, historicalPurchasePaymentLagWeeks)
+      : processCohorts(
+          apCohorts,
+          apCurrentRate,
+          ap30to60Rate,
+          ap60to90Rate,
+          ap90plusRate,
+          apWeeklyWeights
+        );
+    const openingApPayment = useHistoricalApPaymentProfile
+      ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
+      : Math.max(0, safeNumber(openingApPayments[i] || 0));
+    const apPayments = openingApPayment + recurringApPayments;
     openingArOutstanding = Math.max(
       0,
       openingArOutstanding - Math.max(0, safeNumber(openingArReceipts[i] || 0)),
     );
     openingApOutstanding = Math.max(
       0,
-      openingApOutstanding - Math.max(0, safeNumber(openingApPayments[i] || 0)),
+      openingApOutstanding - openingApPayment,
     );
     // Add this week's new AP after payout processing so newly incurred AP
     // starts paying in following weeks rather than being paid immediately.

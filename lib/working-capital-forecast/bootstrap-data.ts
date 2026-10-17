@@ -232,6 +232,64 @@ async function loadDailyFinancials(companyId: string) {
   };
 }
 
+const median = (values: number[]): number | null => {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+
+async function loadHistoricalApPaymentProfile(companyId: string) {
+  try {
+    const [paymentRows, matchedBillRows] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{ paidAmountHome: number }>>(
+        `SELECT "paidAmountHome"::float8 AS "paidAmountHome"
+         FROM "APPaymentFact"
+         WHERE "companyId" = $1
+           AND "paymentDate" >= CURRENT_DATE - INTERVAL '91 days'`,
+        companyId,
+      ),
+      prisma.$queryRawUnsafe<Array<{ paymentDate: Date; billDate: Date | null }>>(
+        `SELECT p."paymentDate", bill."billDate"
+         FROM "APPaymentFact" p
+         JOIN LATERAL (
+           SELECT s."billDate"
+           FROM "APOpenBillSnapshot" s
+           WHERE s."companyId" = p."companyId"
+             AND s."billNo" = p."billNo"
+             AND LOWER(s."vendorName") = LOWER(p."vendorName")
+             AND s."snapshotDate" <= p."paymentDate"
+           ORDER BY s."snapshotDate" DESC
+           LIMIT 1
+         ) bill ON true
+         WHERE p."companyId" = $1
+           AND p."paymentDate" >= CURRENT_DATE - INTERVAL '365 days'
+           AND NULLIF(TRIM(COALESCE(p."billNo", '')), '') IS NOT NULL`,
+        companyId,
+      ),
+    ]);
+    const weeklyPaymentAmount = paymentRows.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.paidAmountHome || 0)),
+      0,
+    ) / 13;
+    const paymentLagDays = matchedBillRows
+      .map((row) => {
+        if (!row.billDate || !row.paymentDate) return Number.NaN;
+        return Math.max(0, Math.round((new Date(row.paymentDate).getTime() - new Date(row.billDate).getTime()) / 86_400_000));
+      })
+      .filter((value) => Number.isFinite(value) && value <= 180);
+    if (weeklyPaymentAmount <= 0) return null;
+    const medianLagDays = median(paymentLagDays);
+    return {
+      weeklyPaymentAmount: Math.round(weeklyPaymentAmount),
+      purchasePaymentLagWeeks: Math.max(1, Math.min(13, Math.round((medianLagDays ?? 28) / 7))),
+      matchedPaymentCount: paymentLagDays.length,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function loadOpenInvoiceAgingFallback(
   companyId: string,
   kind: 'ar' | 'ap',
@@ -487,7 +545,7 @@ export async function loadWorkingCapitalForecastBootstrap(companyId: string, bas
   const latestOrder: Frequency[] = ['daily', 'weekly', 'monthly'];
   const historyOrder: Frequency[] = ['monthly', 'weekly', 'daily'];
 
-  const [savedSettings, financialForecastInputs, loans, dailyFinancials, arAgingResult, apAgingResult] =
+  const [savedSettings, financialForecastInputs, loans, dailyFinancials, arAgingResult, apAgingResult, historicalApPaymentProfile] =
     await Promise.all([
       loadSavedSettings(companyId, basisMode),
       loadFinancialForecastInputs(companyId, basisMode),
@@ -495,6 +553,7 @@ export async function loadWorkingCapitalForecastBootstrap(companyId: string, bas
       loadDailyFinancials(companyId),
       pickAgingSnapshots(companyId, 'ar', latestOrder),
       pickAgingSnapshots(companyId, 'ap', latestOrder),
+      loadHistoricalApPaymentProfile(companyId),
     ]);
 
   const synthesized = synthesizeHistoryFromDaily(dailyFinancials.records);
@@ -539,6 +598,7 @@ export async function loadWorkingCapitalForecastBootstrap(companyId: string, bas
       cashResult,
       arAgingResult,
       apAgingResult,
+      historicalApPaymentProfile,
       inventoryHistory,
       productHistory,
       productMarginHistory,

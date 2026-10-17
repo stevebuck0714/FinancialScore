@@ -26,6 +26,7 @@ import {
   type ForecastInputs,
   type ForecastRow,
   type HistoricalFlowProfile,
+  type HistoricalApPaymentProfile,
   type MonthRevenueSeries,
   type MonthlyBaseRef,
   type OpexPaymentTreatment,
@@ -299,6 +300,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [forecastMonthTotals, setForecastMonthTotals] = useState<number[]>([]);
   const [forecastDirectLaborMonthTotals, setForecastDirectLaborMonthTotals] = useState<number[]>([]);
   const [forecastMaterialCogsMonthTotals, setForecastMaterialCogsMonthTotals] = useState<number[]>([]);
+  const [historicalApPaymentProfile, setHistoricalApPaymentProfile] = useState<HistoricalApPaymentProfile | null>(null);
   const liveMonthSeriesRef = useRef<MonthRevenueSeries | null>(null);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
@@ -359,6 +361,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastMonthTotals(derived.forecastMonthTotals);
           setForecastDirectLaborMonthTotals(derived.monthSeries?.directLaborMonthTotals || []);
           setForecastMaterialCogsMonthTotals(derived.forecastMaterialCogsMonthTotals || []);
+          setHistoricalApPaymentProfile(derived.historicalApPaymentProfile || null);
           setWeekMonthLabels(buildWeekMonthLabels(derived.forecastMonthRefs));
           setInputs(derived.inputs);
           setHistoricalAverages(derived.historicalAverages);
@@ -383,6 +386,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastMonthTotals([]);
           setForecastDirectLaborMonthTotals([]);
           setForecastMaterialCogsMonthTotals([]);
+          setHistoricalApPaymentProfile(null);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
@@ -437,7 +441,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     forecastMonthTotals,
     forecastDirectLaborMonthTotals,
     forecastMaterialCogsMonthTotals,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals]);
+    historicalApPaymentProfile,
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, historicalApPaymentProfile]);
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -895,8 +900,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 AP Inputs
               </div>
               <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35, marginBottom: '6px' }}>
-                Set the share of each opening AP aging bucket expected to be paid over the next four weeks. The weekly weights allocate those expected payments across Weeks 1–4 and should total 100%.
+                Imported AP payment history determines forecast timing when available. Otherwise, set the share of each opening AP aging bucket expected to be paid over the next four weeks; the weekly weights allocate those expected payments across Weeks 1–4 and should total 100%.
               </div>
+              {historicalApPaymentProfile && (
+                <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
+                  Forecast payment timing uses the last 13 weeks of imported AP payments: about {formatCurrency(historicalApPaymentProfile.weeklyPaymentAmount)} per week, with new supplier purchases paid after approximately {historicalApPaymentProfile.purchasePaymentLagWeeks} week{historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}{historicalApPaymentProfile.matchedPaymentCount > 0 ? ` (based on ${historicalApPaymentProfile.matchedPaymentCount} matched bills).` : ' (four-week fallback because no bill/payment matches were available).'}
+                </div>
+              )}
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Aging Buckets (% paid next 4 weeks)</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
