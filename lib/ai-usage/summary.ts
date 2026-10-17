@@ -69,10 +69,10 @@ export async function loadCurrentMonthAiUsageByCompany(): Promise<Array<MonthRow
     SELECT "companyId",
       ${month} AS month,
       COUNT(*)::int AS interactions,
-      COALESCE(SUM(CASE WHEN "billable" AND "feature" <> 'exec_briefing' THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
+      COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
       COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
       COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
-      COALESCE(SUM(CASE WHEN "billable" AND "feature" <> 'exec_briefing' THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
+      COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
     FROM "AiUsageEvent"
     WHERE "companyId" IS NOT NULL
       AND to_char("createdAt" AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM') = ${month}
@@ -91,10 +91,10 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
     prisma.$queryRaw<MonthRow[]>`
       SELECT to_char("createdAt" AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM') AS month,
         COUNT(*)::int AS interactions,
-        COALESCE(SUM(CASE WHEN "billable" AND "feature" <> 'exec_briefing' THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
+        COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
         COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
         COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
-        COALESCE(SUM(CASE WHEN "billable" AND "feature" <> 'exec_briefing' THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
+        COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
       FROM "AiUsageEvent"
       WHERE "companyId" = ${companyId}
         AND ("createdAt" AT TIME ZONE ${APP_TIME_ZONE}) >= ${`${firstMonth}-01`}::timestamp
@@ -102,12 +102,12 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
     `,
     prisma.$queryRaw<Array<Omit<AiUsageFeatureRow, 'label'>>>`
       SELECT "feature",
-        BOOL_OR("billable" AND "feature" <> 'exec_briefing') AS billable,
+        BOOL_OR("billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights')) AS billable,
         COUNT(*)::int AS interactions,
-        COALESCE(SUM(CASE WHEN "billable" AND "feature" <> 'exec_briefing' THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
+        COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
         COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
         COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
-        COALESCE(SUM(CASE WHEN "billable" AND "feature" <> 'exec_briefing' THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
+        COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "costUsd" ELSE 0 END), 0)::float8 AS "billableCostUsd"
       FROM "AiUsageEvent"
       WHERE "companyId" = ${companyId}
         AND to_char("createdAt" AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM') = ${current}

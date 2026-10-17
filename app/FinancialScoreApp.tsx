@@ -76,6 +76,7 @@ const TeamManagementTab = dynamic(() => import('./components/dashboard/TeamManag
 const ProfileTab = dynamic(() => import('./components/dashboard/ProfileTab'), { ssr: false });
 const LOBReportingTab = dynamic(() => import('./components/dashboard/LOBReportingTab'), { ssr: false });
 const DocumentsTab = dynamic(() => import('./components/dashboard/DocumentsTab'), { ssr: false });
+const TokenUsageTab = dynamic(() => import('./components/dashboard/TokenUsageTab'), { ssr: false });
 const ConsultantDashboard = dynamic(() => import('./components/consultant/ConsultantDashboard'), { ssr: false });
 const CompanyManagementTab = dynamic(() => import('./components/admin/CompanyManagementTab'), { ssr: false });
 const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySettingsTab'), { ssr: false });
@@ -2497,7 +2498,7 @@ function FinancialScorePage() {
   };
 
   // Handle admin dashboard tab navigation with payment gate
-  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'documents' | 'data-mapping') => {
+  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'documents' | 'token-usage' | 'data-mapping') => {
     // Payments is now a sub-tab under Company Management
     if (tab === 'payments') {
       setAdminDashboardTab('company-management');
@@ -2692,7 +2693,7 @@ function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'documents' | 'data-mapping' | 'goals' | 'payments'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'documents' | 'token-usage' | 'data-mapping' | 'goals' | 'payments'>('company-management');
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
@@ -15512,6 +15513,24 @@ function FinancialScorePage() {
             >
               Documents
             </button>
+            <button
+              onClick={() => handleAdminTabNavigation('token-usage')}
+              style={{
+                padding: '10px 14px',
+                background: adminDashboardTab === 'token-usage' ? '#eff6ff' : 'transparent',
+                color: adminDashboardTab === 'token-usage' ? '#1F70C1' : '#475569',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'token-usage' ? '3px solid #1F70C1' : '3px solid transparent',
+                marginBottom: '-1px',
+                fontSize: '14px',
+                textTransform: 'uppercase',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              Token Usage
+            </button>
             </div>
             {(adminDashboardTab === 'data-mapping' || adminDashboardTab === 'data-review') && selectedCompanyId && (
               <div style={{ padding: '6px 0 8px 16px', flexShrink: 0 }}>
@@ -15612,6 +15631,9 @@ function FinancialScorePage() {
           {/* Documents Tab */}
           {adminDashboardTab === 'documents' && selectedCompanyId && (
             <DocumentsTab selectedCompanyId={selectedCompanyId} />
+          )}
+          {adminDashboardTab === 'token-usage' && selectedCompanyId && (
+            <TokenUsageTab selectedCompanyId={selectedCompanyId} />
           )}
 
           {!selectedCompanyId && adminDashboardTab === 'documents' && (

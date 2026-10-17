@@ -20,7 +20,7 @@ export const AI_USAGE_FEATURES = {
 export type AiUsageFeature = keyof typeof AI_USAGE_FEATURES;
 
 /** System-generated or included usage: tracked for cost, never counted toward a customer's allowance. */
-const NON_BILLABLE_FEATURES = new Set<AiUsageFeature>(['exec_briefing', 'industry_brief', 'system_check']);
+const NON_BILLABLE_FEATURES = new Set<AiUsageFeature>(['financial_score_insights', 'exec_briefing', 'industry_brief', 'system_check']);
 
 export type AiUsageTag = {
   feature: AiUsageFeature;
