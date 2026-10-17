@@ -86,6 +86,12 @@ const STACKED_BAR_COLORS = [
 ];
 const FORECAST_MONTH_COUNT = 60;
 const FINANCIAL_FORECAST_MONTHLY_BASE_EVENT = 'corelytics-financial-forecast-monthly-base';
+const isInventoryBearingMaterialCogsKey = (key: string): boolean => {
+  const normalized = String(key || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  if (normalized === 'cogsmaterials') return true;
+  return /(?:^|_)(?:raw_)?materials?(?:_|$)|(?:^|_)direct_inputs?(?:_|$)|(?:^|_)packaging(?:_|$)|(?:^|_)product_costs?(?:_|$)/
+    .test(normalized);
+};
 
 function buildFinancialForecastMonthlyBase(forecastRows: Array<{
   kind?: string;
@@ -110,6 +116,12 @@ function buildFinancialForecastMonthlyBase(forecastRows: Array<{
     monthTotals: monthlyRows.map((row) => Math.max(0, Number(row.totalRevenue) || 0)),
     directLaborMonthTotals: monthlyRows.map((row) =>
       Math.max(0, Number(row.cogsDetails?.cogs_direct_production_labor) || 0)
+    ),
+    materialCogsMonthTotals: monthlyRows.map((row) =>
+      Object.entries(row.cogsDetails || {}).reduce(
+        (sum, [key, amount]) => sum + (isInventoryBearingMaterialCogsKey(key) ? Math.max(0, Number(amount) || 0) : 0),
+        0,
+      )
     ),
     opexMonthTotals: monthlyRows.map((row) => Math.max(0, Number(row.totalOpex) || 0)),
     grossMarginMonthPcts: monthlyRows.map((row) => {

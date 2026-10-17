@@ -298,6 +298,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [forecastMonthRefs, setForecastMonthRefs] = useState<MonthlyBaseRef[]>([]);
   const [forecastMonthTotals, setForecastMonthTotals] = useState<number[]>([]);
   const [forecastDirectLaborMonthTotals, setForecastDirectLaborMonthTotals] = useState<number[]>([]);
+  const [forecastMaterialCogsMonthTotals, setForecastMaterialCogsMonthTotals] = useState<number[]>([]);
   const liveMonthSeriesRef = useRef<MonthRevenueSeries | null>(null);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
@@ -357,6 +358,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastMonthRefs(derived.forecastMonthRefs);
           setForecastMonthTotals(derived.forecastMonthTotals);
           setForecastDirectLaborMonthTotals(derived.monthSeries?.directLaborMonthTotals || []);
+          setForecastMaterialCogsMonthTotals(derived.forecastMaterialCogsMonthTotals || []);
           setWeekMonthLabels(buildWeekMonthLabels(derived.forecastMonthRefs));
           setInputs(derived.inputs);
           setHistoricalAverages(derived.historicalAverages);
@@ -380,6 +382,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastMonthRefs([]);
           setForecastMonthTotals([]);
           setForecastDirectLaborMonthTotals([]);
+          setForecastMaterialCogsMonthTotals([]);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
@@ -408,6 +411,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       setForecastMonthRefs(series.monthRefs);
       setForecastMonthTotals(series.monthTotals);
       setForecastDirectLaborMonthTotals(series.directLaborMonthTotals || []);
+      setForecastMaterialCogsMonthTotals(series.materialCogsMonthTotals || []);
       setWeekMonthLabels(buildWeekMonthLabels(series.monthRefs));
       setWeeklyDrivers((prev) => applyAllocatedSalesToDrivers(prev, allocatedSales));
     };
@@ -432,7 +436,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     forecastMonthRefs,
     forecastMonthTotals,
     forecastDirectLaborMonthTotals,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals]);
+    forecastMaterialCogsMonthTotals,
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals]);
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -605,7 +610,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   1. Projected monthly revenue from the Income Statement Forecast is allocated to each of the 13 weeks according to the number of calendar days from that month in the week.
                 </div>
                 <div style={{ marginTop: '5px' }}>
-                  2. Each week&apos;s allocated sales calculate COGS from that week&apos;s gross margin. Inventory-bearing COGS determines purchases; Direct Production Labor is paid separately as direct labor cash.
+                  2. Inventory-bearing material COGS from the Income Statement Forecast determines purchases; companies without that detail use COGS calculated from weekly gross margin. Direct Production Labor is paid separately as direct labor cash.
                 </div>
                 <div style={{ marginTop: '5px' }}>
                   3. In an accrual forecast, the cash-sales portion is received in the week of sale. The credit-sales portion becomes A/R and is collected using the A/R collection percentages and weekly distribution weights. Opening A/R is a separate balance and follows the same collection schedule.
