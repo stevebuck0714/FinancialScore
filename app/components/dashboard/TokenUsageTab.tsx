@@ -8,6 +8,11 @@ const formatMonth = (month: string) => {
   const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return names[Number(number) - 1] ? `${names[Number(number) - 1]} ${year}` : month;
 };
+const formatHistoryMonth = (month: string) => {
+  const [year, number] = String(month || '').split('-');
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return names[Number(number) - 1] && year ? `${names[Number(number) - 1]}-${year.slice(-2)}` : month;
+};
 
 export default function TokenUsageTab({ selectedCompanyId }: { selectedCompanyId: string }) {
   const [usage, setUsage] = useState<any>(null);
@@ -44,13 +49,26 @@ export default function TokenUsageTab({ selectedCompanyId }: { selectedCompanyId
           <div style={{ padding: '12px', background: '#fdf4ff', border: '1px solid #f5d0fe', borderRadius: '8px', color: '#475569', fontSize: '13px', marginBottom: '16px' }}>
             <strong>{formatMonth(current?.month || '')} (EST):</strong> {formatTokens(current?.billableTokens)}{allowance > 0 ? ` of ${formatTokens(allowance)} tokens (${Math.round(usedPct || 0)}%)` : ' tokens'}
             <div style={{ marginTop: '4px', fontSize: '11px' }}>
-              <strong>Allowance:</strong> {allowance > 0 ? `${formatTokens(allowance)} tokens/month` : 'Not set'} | <strong>Overage Price:</strong> ${Number(pricing?.overagePricePer1MTokens || 0).toFixed(2)} per 1M tokens | <strong>Billable Cost:</strong> ${Number(current?.costUsd || 0).toFixed(2)}
+              <strong>Allowance:</strong> {allowance > 0 ? `${formatTokens(allowance)} tokens/month` : 'Not set'} | <strong>Overage Price:</strong> ${Number(pricing?.overagePricePer1MTokens || 0).toFixed(2)} per 1M tokens | <strong>Cost:</strong> ${Number(current?.overageChargeUsd || 0).toFixed(2)}
             </div>
           </div>
           <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Monthly History (EST)</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-            <thead><tr style={{ background: '#f1f5f9' }}><th style={{ textAlign: 'left', padding: '7px' }}>Month</th><th style={{ textAlign: 'right', padding: '7px' }}>Interactions</th><th style={{ textAlign: 'right', padding: '7px' }}>Tokens</th><th style={{ textAlign: 'right', padding: '7px' }}>Cost</th></tr></thead>
-            <tbody>{(usage.months || []).map((row: any) => <tr key={row.month} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '7px' }}>{formatMonth(row.month)}</td><td style={{ textAlign: 'right', padding: '7px' }}>{formatTokens(row.interactions)}</td><td style={{ textAlign: 'right', padding: '7px' }}>{formatTokens(row.totalTokens)}</td><td style={{ textAlign: 'right', padding: '7px' }}>${Number(row.costUsd || 0).toFixed(2)}</td></tr>)}</tbody>
+            <thead><tr style={{ background: '#f1f5f9' }}><th style={{ textAlign: 'left', padding: '7px' }}>Month</th><th style={{ textAlign: 'right', padding: '7px' }}>Interactions</th><th style={{ textAlign: 'right', padding: '7px' }}>Tokens</th><th style={{ textAlign: 'right', padding: '7px' }}>Avg Tokens per Query</th><th style={{ textAlign: 'right', padding: '7px' }}>Allowance</th><th style={{ textAlign: 'right', padding: '7px' }}>Remaining Allowance</th><th style={{ textAlign: 'right', padding: '7px' }}>Cost</th></tr></thead>
+            <tbody>{(usage.months || []).map((row: any) => {
+              const tokens = Number(row.totalTokens || 0);
+              const interactions = Number(row.interactions || 0);
+              const rowAllowance = allowance;
+              return <tr key={row.month} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                <td style={{ padding: '7px' }}>{formatHistoryMonth(row.month)}</td>
+                <td style={{ textAlign: 'right', padding: '7px' }}>{formatTokens(interactions)}</td>
+                <td style={{ textAlign: 'right', padding: '7px' }}>{formatTokens(tokens)}</td>
+                <td style={{ textAlign: 'right', padding: '7px' }}>{formatTokens(interactions > 0 ? tokens / interactions : 0)}</td>
+                <td style={{ textAlign: 'right', padding: '7px' }}>{rowAllowance > 0 ? formatTokens(rowAllowance) : 'Not set'}</td>
+                <td style={{ textAlign: 'right', padding: '7px' }}>{rowAllowance > 0 ? formatTokens(Math.max(0, rowAllowance - tokens)) : '—'}</td>
+                <td style={{ textAlign: 'right', padding: '7px' }}>${Number(row.overageChargeUsd || 0).toFixed(2)}</td>
+              </tr>;
+            })}</tbody>
           </table>
         </>
       )}
