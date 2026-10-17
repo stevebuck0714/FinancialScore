@@ -22481,12 +22481,12 @@ function FinancialScorePage() {
             const erpInstall = sumTtmByKeywords(['erpinstall', 'erpimplementation'], ['expense']);
             const relocation = sumTtmByKeywords(['relocation', 'movingexpense'], ['expense']);
             const covidCosts = sumTtmByKeywords(['covid'], ['expense']);
-            const effectiveLegalSettlements = sdeManualInputs.legalSettlements ?? legalSettlements;
-            const effectiveMajorRepairs = sdeManualInputs.majorRepairs ?? majorRepairs;
-            const effectiveConsulting = sdeManualInputs.consulting ?? consultingExpense;
-            const effectiveErpInstall = sdeManualInputs.erpInstall ?? erpInstall;
-            const effectiveRelocation = sdeManualInputs.relocation ?? relocation;
-            const effectiveNonRecurringOther = sdeManualInputs.nonRecurringOther ?? 0;
+            const effectiveLegalSettlements = (ebitdaLineItemTotals.NON_RECURRING?.legalSettlements ?? 0) + (sdeManualInputs.legalSettlements ?? legalSettlements);
+            const effectiveMajorRepairs = (ebitdaLineItemTotals.NON_RECURRING?.majorRepairs ?? 0) + (sdeManualInputs.majorRepairs ?? majorRepairs);
+            const effectiveConsulting = (ebitdaLineItemTotals.NON_RECURRING?.consulting ?? 0) + (sdeManualInputs.consulting ?? consultingExpense);
+            const effectiveErpInstall = (ebitdaLineItemTotals.NON_RECURRING?.erpInstall ?? 0) + (sdeManualInputs.erpInstall ?? erpInstall);
+            const effectiveRelocation = (ebitdaLineItemTotals.NON_RECURRING?.relocation ?? 0) + (sdeManualInputs.relocation ?? relocation);
+            const effectiveNonRecurringOther = (ebitdaLineItemTotals.NON_RECURRING?.nonRecurringOther ?? 0) + (sdeManualInputs.nonRecurringOther ?? 0);
             const nonRecurringExpenseAdj =
               effectiveLegalSettlements +
               effectiveMajorRepairs +
@@ -22500,12 +22500,12 @@ function FinancialScorePage() {
             const autoLeases = sumTtmByKeywords(['autolease', 'vehiclelease'], ['expense']);
             const mealsAndEntertainmentAdj = sumTtmField('mealsEntertainment');
             const clubDues = sumTtmByKeywords(['clubdues'], ['expense']);
-            const effectivePersonalTravel = sdeManualInputs.personalTravel ?? personalTravel;
-            const effectiveFamilyPayroll = sdeManualInputs.familyPayroll ?? familyPayroll;
-            const effectiveAutoLeases = sdeManualInputs.autoLeases ?? autoLeases;
-            const effectiveMealsEntertainment = sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj;
-            const effectiveClubDues = sdeManualInputs.clubDues ?? clubDues;
-            const effectivePersonalOther = sdeManualInputs.personalOther ?? 0;
+            const effectivePersonalTravel = (ebitdaLineItemTotals.PERSONAL?.personalTravel ?? 0) + (sdeManualInputs.personalTravel ?? personalTravel);
+            const effectiveFamilyPayroll = (ebitdaLineItemTotals.PERSONAL?.familyPayroll ?? 0) + (sdeManualInputs.familyPayroll ?? familyPayroll);
+            const effectiveAutoLeases = (ebitdaLineItemTotals.PERSONAL?.autoLeases ?? 0) + (sdeManualInputs.autoLeases ?? autoLeases);
+            const effectiveMealsEntertainment = (ebitdaLineItemTotals.PERSONAL?.mealsEntertainment ?? 0) + (sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj);
+            const effectiveClubDues = (ebitdaLineItemTotals.PERSONAL?.clubDues ?? 0) + (sdeManualInputs.clubDues ?? clubDues);
+            const effectivePersonalOther = (ebitdaLineItemTotals.PERSONAL?.personalOther ?? 0) + (sdeManualInputs.personalOther ?? 0);
             const personalDiscretionaryAdj =
               effectivePersonalTravel +
               effectiveFamilyPayroll +
@@ -22517,10 +22517,10 @@ function FinancialScorePage() {
             const assetSales = sumTtmByKeywords(['assetsale', 'gainonsale'], ['revenue']);
             const insuranceProceeds = sumTtmByKeywords(['insuranceproceed'], ['revenue']);
             const oneTimeContract = sumTtmByKeywords(['onetimecontract'], ['revenue']);
-            const effectiveAssetSales = sdeManualInputs.assetSales ?? assetSales;
-            const effectiveInsuranceProceeds = sdeManualInputs.insuranceProceeds ?? insuranceProceeds;
-            const effectiveOneTimeContract = sdeManualInputs.oneTimeContract ?? oneTimeContract;
-            const effectiveOneTimeRevenueOther = sdeManualInputs.oneTimeRevenueOther ?? 0;
+            const effectiveAssetSales = (ebitdaLineItemTotals.ONE_TIME_REVENUE?.assetSales ?? 0) + (sdeManualInputs.assetSales ?? assetSales);
+            const effectiveInsuranceProceeds = (ebitdaLineItemTotals.ONE_TIME_REVENUE?.insuranceProceeds ?? 0) + (sdeManualInputs.insuranceProceeds ?? insuranceProceeds);
+            const effectiveOneTimeContract = (ebitdaLineItemTotals.ONE_TIME_REVENUE?.oneTimeContract ?? 0) + (sdeManualInputs.oneTimeContract ?? oneTimeContract);
+            const effectiveOneTimeRevenueOther = (ebitdaLineItemTotals.ONE_TIME_REVENUE?.oneTimeRevenueOther ?? 0) + (sdeManualInputs.oneTimeRevenueOther ?? 0);
             const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract + effectiveOneTimeRevenueOther;
 
             const qoeOwnerSalaryAdjustment = coreSellerAdjustment;
