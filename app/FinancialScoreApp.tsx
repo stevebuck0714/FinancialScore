@@ -21896,10 +21896,12 @@ function FinancialScorePage() {
                     const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
                     const ownerSalaryAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownerSalary ?? 0;
                     const ownersDrawAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownersDraw ?? 0;
+                    const marketReplacementSalaryAssigned = ebitdaLineItemTotals.OWNER_COMP?.marketReplacementSalary ?? 0;
+                    const ownerCompOtherAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownerCompOther ?? 0;
                     const effectiveOwnerSalaryAdj = ownerSalaryAssigned + Math.abs(sdeManualInputs.ownerSalary ?? 0);
                     const effectiveOwnersDrawAdj = ownersDrawAssigned + Math.abs(sdeManualInputs.ownersDraw ?? 0);
-                    const effectiveMarketReplacementSalary = Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
-                    const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
+                    const effectiveMarketReplacementSalary = marketReplacementSalaryAssigned + Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
+                    const effectiveOwnerCompOther = ownerCompOtherAssigned + (sdeManualInputs.ownerCompOther ?? 0);
                     const coreSellerAdjustment = effectiveOwnerSalaryAdj + effectiveOwnersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
 
                     const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
@@ -22467,12 +22469,14 @@ function FinancialScorePage() {
             const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
             const ownerSalaryAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownerSalary ?? 0;
             const ownersDrawAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownersDraw ?? 0;
+            const marketReplacementSalaryAssigned = ebitdaLineItemTotals.OWNER_COMP?.marketReplacementSalary ?? 0;
+            const ownerCompOtherAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownerCompOther ?? 0;
             const effectiveOwnerSalaryAdj = ownerSalaryAssigned + Math.abs(sdeManualInputs.ownerSalary ?? 0);
             const effectiveOwnersDrawAdj = ownersDrawAssigned + Math.abs(sdeManualInputs.ownersDraw ?? 0);
             const marketReplacementSalaryAdj = 0;
             const effectiveMarketReplacementSalary =
-              Math.abs(sdeManualInputs.marketReplacementSalary ?? marketReplacementSalaryAdj);
-            const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
+              marketReplacementSalaryAssigned + Math.abs(sdeManualInputs.marketReplacementSalary ?? marketReplacementSalaryAdj);
+            const effectiveOwnerCompOther = ownerCompOtherAssigned + (sdeManualInputs.ownerCompOther ?? 0);
             const coreSellerAdjustment = effectiveOwnerSalaryAdj + effectiveOwnersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
 
             const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
@@ -23437,8 +23441,8 @@ function FinancialScorePage() {
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>1. Owner Compensation Adjustment</div>
                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Replace owner pay with market salary.</div>
                       {([
-                        ['Owner salary', sdeManualInputs.ownerSalary ?? 0, 'ownerSalaryInput', 'ownerSalary'],
-                        ['Owners Draw', sdeManualInputs.ownersDraw ?? 0, 'ownersDrawInput', 'ownersDraw'],
+                        ['Owner salary', effectiveOwnerSalaryAdj, 'ownerSalaryInput', 'ownerSalary'],
+                        ['Owners Draw', effectiveOwnersDrawAdj, 'ownersDrawInput', 'ownersDraw'],
                         ['Market replacement salary', effectiveMarketReplacementSalary, 'input', 'marketReplacementSalary'],
                         ['Other', effectiveOwnerCompOther, 'ownerCompOther', 'ownerCompOther'],
                         ['Adjustment', formatDollars(coreSellerAdjustment), 'readonly-adjustment', null],
@@ -23458,7 +23462,7 @@ function FinancialScorePage() {
                                   value={formatInputDollars(Number(value) || 0)}
                                   onChange={(e) => {
                                     const parsed = parseInputDollars(e.target.value);
-                                    setSdeManualInputs((prev) => ({ ...prev, ownerSalary: Math.abs(parsed) }));
+                                    setSdeManualInputs((prev) => ({ ...prev, ownerSalary: Math.max(0, Math.abs(parsed) - ownerSalaryAssigned) }));
                                   }}
                                   style={{
                                     width: '130px',
@@ -23486,7 +23490,7 @@ function FinancialScorePage() {
                                   value={formatInputDollars(Number(value) || 0)}
                                   onChange={(e) => {
                                     const parsed = parseInputDollars(e.target.value);
-                                    setSdeManualInputs((prev) => ({ ...prev, ownersDraw: Math.abs(parsed) }));
+                                    setSdeManualInputs((prev) => ({ ...prev, ownersDraw: Math.max(0, Math.abs(parsed) - ownersDrawAssigned) }));
                                   }}
                                   style={{
                                     width: '130px',
@@ -23514,7 +23518,7 @@ function FinancialScorePage() {
                                   value={formatInputDollars(Number(value) || 0)}
                                   onChange={(e) => {
                                     const parsed = parseInputDollars(e.target.value);
-                                    setSdeManualInputs((prev) => ({ ...prev, marketReplacementSalary: Math.abs(parsed) }));
+                                    setSdeManualInputs((prev) => ({ ...prev, marketReplacementSalary: Math.max(0, Math.abs(parsed) - marketReplacementSalaryAssigned) }));
                                   }}
                                   style={{
                                     width: '130px',
@@ -23542,7 +23546,7 @@ function FinancialScorePage() {
                                   value={formatInputDollars(Number(value) || 0)}
                                   onChange={(e) => {
                                     const parsed = parseInputDollars(e.target.value);
-                                    setSdeManualInputs((prev) => ({ ...prev, ownerCompOther: parsed }));
+                                    setSdeManualInputs((prev) => ({ ...prev, ownerCompOther: parsed - ownerCompOtherAssigned }));
                                   }}
                                   style={{
                                     width: '130px',
