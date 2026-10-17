@@ -1687,7 +1687,11 @@ export default function FinancialForecastTab({
     };
 
     if (incomeStatementViewMode === 'monthly') {
-      return buildYearMonths(incomeStatementCurrentYear);
+      // The Income Statement monthly view is the full projection horizon, not
+      // only the current calendar year. This mirrors the 60 monthly inputs.
+      return forecastRows
+        .filter((row) => row.kind === 'month')
+        .map((row) => ({ ...row, isActual: false }));
     }
 
     if (incomeStatementViewMode === 'quarterly') {
