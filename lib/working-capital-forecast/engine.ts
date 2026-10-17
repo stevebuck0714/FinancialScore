@@ -99,6 +99,8 @@ export type MonthRevenueSeries = {
   directLaborMonthTotals?: number[];
   /** Inventory-bearing material COGS from the Income Statement Forecast. */
   materialCogsMonthTotals?: number[];
+  /** Projected COGS expected to be paid through accounts payable. */
+  apCogsMonthTotals?: number[];
 };
 
 export const ACCRUAL_OPEX_LINE_ITEMS: Array<{ key: string; label: string }> = [
@@ -324,15 +326,18 @@ export const parseMonthRevenueSeries = (raw: unknown): MonthRevenueSeries | null
     monthTotals?: unknown;
     directLaborMonthTotals?: unknown;
     materialCogsMonthTotals?: unknown;
+    apCogsMonthTotals?: unknown;
   };
   const refsRaw = Array.isArray(obj.monthRefs) ? obj.monthRefs : [];
   const totalsRaw = Array.isArray(obj.monthTotals) ? obj.monthTotals : [];
   const directLaborRaw = Array.isArray(obj.directLaborMonthTotals) ? obj.directLaborMonthTotals : [];
   const materialCogsRaw = Array.isArray(obj.materialCogsMonthTotals) ? obj.materialCogsMonthTotals : null;
+  const apCogsRaw = Array.isArray(obj.apCogsMonthTotals) ? obj.apCogsMonthTotals : null;
   const monthRefs: MonthlyBaseRef[] = [];
   const monthTotals: number[] = [];
   const directLaborMonthTotals: number[] = [];
   const materialCogsMonthTotals: number[] = [];
+  const apCogsMonthTotals: number[] = [];
   const count = Math.min(refsRaw.length, totalsRaw.length);
   for (let i = 0; i < count; i += 1) {
     const item = refsRaw[i] && typeof refsRaw[i] === 'object' ? (refsRaw[i] as { year?: unknown; month?: unknown }) : {};
@@ -348,6 +353,10 @@ export const parseMonthRevenueSeries = (raw: unknown): MonthRevenueSeries | null
       const materialCogs = Number(materialCogsRaw[i]);
       materialCogsMonthTotals.push(Number.isFinite(materialCogs) && materialCogs > 0 ? materialCogs : 0);
     }
+    if (apCogsRaw) {
+      const apCogs = Number(apCogsRaw[i]);
+      apCogsMonthTotals.push(Number.isFinite(apCogs) && apCogs > 0 ? apCogs : 0);
+    }
   }
   if (monthRefs.length === 0 || !monthTotals.some((value) => value > 0)) return null;
   return {
@@ -355,6 +364,7 @@ export const parseMonthRevenueSeries = (raw: unknown): MonthRevenueSeries | null
     monthTotals,
     directLaborMonthTotals,
     ...(materialCogsRaw ? { materialCogsMonthTotals } : {}),
+    ...(apCogsRaw ? { apCogsMonthTotals } : {}),
   };
 };
 const forecastWeekStarts = (): Date[] =>
@@ -519,6 +529,7 @@ export type ForecastProjectionInput = {
   forecastMonthTotals: number[];
   forecastDirectLaborMonthTotals?: number[];
   forecastMaterialCogsMonthTotals?: number[];
+  forecastApCogsMonthTotals?: number[];
   historicalApPaymentProfile?: HistoricalApPaymentProfile | null;
 };
 
@@ -850,6 +861,7 @@ export function deriveForecastStateFromBootstrap(
     forecastMonthRefs: monthRefsBase,
     forecastMonthTotals: monthSeries?.monthTotals || [],
     forecastMaterialCogsMonthTotals: monthSeries?.materialCogsMonthTotals || [],
+    forecastApCogsMonthTotals: monthSeries?.apCogsMonthTotals || [],
     historicalApPaymentProfile,
     monthSeries,
     inventoryBalanceFromImportedData: hasImportedInventoryBalance,
@@ -943,6 +955,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     forecastMonthTotals,
     forecastDirectLaborMonthTotals = [],
     forecastMaterialCogsMonthTotals = [],
+    forecastApCogsMonthTotals = [],
     historicalApPaymentProfile = null,
   } = params;
   const result: ForecastRow[] = [];
@@ -1077,6 +1090,12 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     weekStarts,
     'calendar',
   );
+  const apCogsByWeek = allocateMonthlyAmountsToWeeks(
+    forecastApCogsMonthTotals.map((value) => Math.max(0, Number(value || 0))),
+    forecastMonthRefs,
+    weekStarts,
+    'calendar',
+  );
   const hasForecastMaterialCogs = forecastMaterialCogsMonthTotals.length > 0;
   const opexByWeek: number[] = Array.from({ length: weeks }, (_, idx) => Math.max(0, weeklyDrivers[idx]?.opex || 0));
   const opexPaidInFullByWeek = Array.from({ length: weeks }, () => 0);
@@ -1128,6 +1147,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     const inventoryCogs = hasForecastMaterialCogs
       ? Math.max(0, safeNumber(materialCogsByWeek[i], 0))
       : Math.max(0, safeNumber(cogs - directLabor, 0));
+    const nonInventoryApCogs = Math.max(0, safeNumber(apCogsByWeek[i] - inventoryCogs, 0));
     const directLaborPayments = directLabor;
     const directPaidOpex = isAccrualBasis && hasAccrualLineAmounts
       ? Math.max(0, safeNumber(opexPaidInFullByWeek[i], 0))
@@ -1191,7 +1211,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     );
     // Add this week's new AP after payout processing so newly incurred AP
     // starts paying in following weeks rather than being paid immediately.
-    apCohorts.push({ remaining: Math.max(0, purchases + apScheduledOpex), ageWeeks: 0 });
+    apCohorts.push({ remaining: Math.max(0, purchases + nonInventoryApCogs + apScheduledOpex), ageWeeks: 0 });
     const receipts = Math.max(0, safeNumber(scheduledArReceipts + cashSalesReceipts, 0));
 
     const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);

@@ -300,6 +300,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [forecastMonthTotals, setForecastMonthTotals] = useState<number[]>([]);
   const [forecastDirectLaborMonthTotals, setForecastDirectLaborMonthTotals] = useState<number[]>([]);
   const [forecastMaterialCogsMonthTotals, setForecastMaterialCogsMonthTotals] = useState<number[]>([]);
+  const [forecastApCogsMonthTotals, setForecastApCogsMonthTotals] = useState<number[]>([]);
   const [historicalApPaymentProfile, setHistoricalApPaymentProfile] = useState<HistoricalApPaymentProfile | null>(null);
   const liveMonthSeriesRef = useRef<MonthRevenueSeries | null>(null);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
@@ -361,6 +362,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastMonthTotals(derived.forecastMonthTotals);
           setForecastDirectLaborMonthTotals(derived.monthSeries?.directLaborMonthTotals || []);
           setForecastMaterialCogsMonthTotals(derived.forecastMaterialCogsMonthTotals || []);
+          setForecastApCogsMonthTotals(derived.forecastApCogsMonthTotals || []);
           setHistoricalApPaymentProfile(derived.historicalApPaymentProfile || null);
           setWeekMonthLabels(buildWeekMonthLabels(derived.forecastMonthRefs));
           setInputs(derived.inputs);
@@ -386,6 +388,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastMonthTotals([]);
           setForecastDirectLaborMonthTotals([]);
           setForecastMaterialCogsMonthTotals([]);
+          setForecastApCogsMonthTotals([]);
           setHistoricalApPaymentProfile(null);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
@@ -416,6 +419,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       setForecastMonthTotals(series.monthTotals);
       setForecastDirectLaborMonthTotals(series.directLaborMonthTotals || []);
       setForecastMaterialCogsMonthTotals(series.materialCogsMonthTotals || []);
+      setForecastApCogsMonthTotals(series.apCogsMonthTotals || []);
       setWeekMonthLabels(buildWeekMonthLabels(series.monthRefs));
       setWeeklyDrivers((prev) => applyAllocatedSalesToDrivers(prev, allocatedSales));
     };
@@ -441,8 +445,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     forecastMonthTotals,
     forecastDirectLaborMonthTotals,
     forecastMaterialCogsMonthTotals,
+    forecastApCogsMonthTotals,
     historicalApPaymentProfile,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, historicalApPaymentProfile]);
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile]);
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -615,7 +620,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   1. Projected monthly revenue from the Income Statement Forecast is allocated to each of the 13 weeks according to the number of calendar days from that month in the week.
                 </div>
                 <div style={{ marginTop: '5px' }}>
-                  2. Inventory-bearing material COGS from the Income Statement Forecast determines purchases; companies without that detail use COGS calculated from weekly gross margin. Direct Production Labor is paid separately as direct labor cash.
+                  2. Projected material COGS determines inventory purchases. Projected manufacturing overhead, other COGS, duties, and tariffs create AP without increasing inventory. Direct Production Labor is paid separately as direct labor cash.
                 </div>
                 <div style={{ marginTop: '5px' }}>
                   3. In an accrual forecast, the cash-sales portion is received in the week of sale. The credit-sales portion becomes A/R and is collected using the A/R collection percentages and weekly distribution weights. Opening A/R is a separate balance and follows the same collection schedule.
