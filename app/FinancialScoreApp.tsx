@@ -23593,7 +23593,8 @@ function FinancialScorePage() {
                               value={formatInputDollars(Number(value) || 0)}
                               onChange={(e) => {
                                 const parsed = parseInputDollars(e.target.value);
-                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                                const assignedAmount = ebitdaLineItemTotals.PERSONAL?.[String(key)] ?? 0;
+                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed - assignedAmount }));
                               }}
                               style={{
                                 width: '130px',
@@ -23660,7 +23661,8 @@ function FinancialScorePage() {
                               value={formatInputDollars(Number(value) || 0)}
                               onChange={(e) => {
                                 const parsed = parseInputDollars(e.target.value);
-                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                                const assignedAmount = ebitdaLineItemTotals.NON_RECURRING?.[String(key)] ?? 0;
+                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed - assignedAmount }));
                               }}
                               style={{
                                 width: '130px',
@@ -23699,7 +23701,8 @@ function FinancialScorePage() {
                               value={formatInputDollars(Number(value) || 0)}
                               onChange={(e) => {
                                 const parsed = parseInputDollars(e.target.value);
-                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                                const assignedAmount = ebitdaLineItemTotals.ONE_TIME_REVENUE?.[String(key)] ?? 0;
+                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed - assignedAmount }));
                               }}
                               style={{
                                 width: '130px',
