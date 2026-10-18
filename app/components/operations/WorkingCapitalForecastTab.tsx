@@ -765,31 +765,19 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   background: '#f8fafc',
                 }}
               >
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Historical Sales to Collections</div>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Projected Sales Collections</div>
                 <div style={{ fontSize: '11px', color: '#334155', marginBottom: '8px' }}>
-                  Historical weekly sales seed the opening AR collection mix so near-term cash reflects actual sales cohorts.
+                  Projected credit sales become AR and begin collecting after the selected lag. Opening AR follows the aging collection assumptions below.
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Credit Sales %</label>
                     <PercentInput value={inputs.creditSalesPct} onValueChange={(next) => updatePercentField('creditSalesPct', next)} style={compactPercentInputStyle} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Lookback Weeks</label>
-                    <input type="number" value={inputs.historicalSalesLookbackWeeks} onChange={(e) => updateNumberInput('historicalSalesLookbackWeeks', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
-                  </div>
-                  <div>
                     <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Collection Lag (Weeks)</label>
                     <input type="number" value={inputs.historicalSalesCollectionLagWeeks} onChange={(e) => updateNumberInput('historicalSalesCollectionLagWeeks', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
                   </div>
-                </div>
-                <div style={{ marginTop: '8px', fontSize: '11px', color: '#475569' }}>
-                  Avg historical weekly sales:{' '}
-                  <strong style={{ color: '#0f172a' }}>
-                    {historicalSalesByWeek.length > 0
-                      ? formatCurrency(Math.round(historicalSalesByWeek.reduce((sum, value) => sum + Number(value || 0), 0) / historicalSalesByWeek.length))
-                      : 'N/A'}
-                  </strong>
                 </div>
                 <div style={{ height: '8px' }} />
                 <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '4px', paddingTop: '8px' }}>

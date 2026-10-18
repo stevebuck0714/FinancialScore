@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
+const INSIGHTS_CACHE_PREFIX = 'corelytics-score-insights-v1';
+const stableHash = (value: string): string => {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return (hash >>> 0).toString(36);
+};
+
 type TrendPoint = {
   month?: string;
   financialScore?: number;
@@ -155,6 +164,21 @@ export default function FinancialScoreInsightsView({
     alr1,
     alrGrowth,
   ]);
+  const insightsCacheKey = useMemo(
+    () => `${INSIGHTS_CACHE_PREFIX}:${selectedCompanyId}:${stableHash(JSON.stringify(payload))}`,
+    [selectedCompanyId, payload],
+  );
+
+  useEffect(() => {
+    setError(null);
+    setInsights(null);
+    try {
+      const cached = window.sessionStorage.getItem(insightsCacheKey);
+      if (cached) setInsights(JSON.parse(cached) as InsightsResult);
+    } catch {
+      // A cache miss or unavailable session storage should never block the page.
+    }
+  }, [insightsCacheKey]);
 
   const loadInsights = async () => {
     if (!selectedCompanyId) return;
@@ -171,18 +195,17 @@ export default function FinancialScoreInsightsView({
         throw new Error(data?.error || 'Failed to generate insights');
       }
       setInsights(data.insights);
+      try {
+        window.sessionStorage.setItem(insightsCacheKey, JSON.stringify(data.insights));
+      } catch {
+        // Insights remain available for the current render if session storage is unavailable.
+      }
     } catch (err: any) {
-      setInsights(null);
       setError(err?.message || 'Failed to generate insights');
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    void loadInsights();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCompanyId, payload]);
 
   const section = (title: string, body: ReactNode, accent = '#1F70C1') => (
     <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px 18px', boxShadow: '0 1px 4px rgba(15,23,42,0.04)' }}>
@@ -218,7 +241,7 @@ export default function FinancialScoreInsightsView({
             whiteSpace: 'nowrap',
           }}
         >
-          {loading ? 'Analyzing…' : 'Refresh insights'}
+          {loading ? 'Analyzing…' : insights ? 'Refresh insights' : 'Generate insights'}
         </button>
       </div>
 
@@ -231,6 +254,11 @@ export default function FinancialScoreInsightsView({
       {loading && !insights && (
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '32px', textAlign: 'center', color: '#64748b' }}>
           Analyzing Corelytics Score trends…
+        </div>
+      )}
+      {!loading && !insights && !error && (
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '32px', textAlign: 'center', color: '#64748b' }}>
+          Generate insights when you need an AI review of this company&apos;s score trends.
         </div>
       )}
 

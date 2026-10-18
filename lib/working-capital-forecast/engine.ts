@@ -964,6 +964,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
   const inventoryWeeksOnHand = Math.max(0.25, 52 / Math.max(0.5, inputs.inventoryTurns));
   const historicalInventoryToSales = flowProfile.inventoryToSalesRatio > 0 ? flowProfile.inventoryToSalesRatio : DEFAULT_FLOW_PROFILE.inventoryToSalesRatio;
   const creditSalesRate = clampNumber(inputs.creditSalesPct / 100, 0, 1);
+  const collectionLagWeeks = clampNumber(Math.round(inputs.historicalSalesCollectionLagWeeks || 0), 0, 12);
   const arCurrentRate = clampNumber(inputs.arCurrentCollectPct / 100, 0, 1);
   const ar30to60Rate = clampNumber(inputs.ar30To60CollectPct / 100, 0, 1);
   const ar60to90Rate = clampNumber(inputs.ar60To90CollectPct / 100, 0, 1);
@@ -993,7 +994,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     1,
     FORECAST_WEEKS,
   );
-  type Cohort = { remaining: number; ageWeeks: number };
+  type Cohort = { remaining: number; ageWeeks: number; scheduledThisWindow?: number };
   const getPhaseRate = (
     ageWeeks: number,
     currentRate: number,
@@ -1032,6 +1033,30 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     }
     return total;
   };
+  // AR collection percentages describe the total expected to collect over an
+  // aging window. Apply that total once across the four weekly weights, rather
+  // than recalculating it from the declining balance every week.
+  const processArCollections = (cohorts: Cohort[]): number => {
+    let total = 0;
+    for (const cohort of cohorts) {
+      if (cohort.remaining <= 0 || cohort.ageWeeks < 0) continue;
+      if (cohort.ageWeeks % 4 === 0) {
+        cohort.scheduledThisWindow = cohort.remaining * getPhaseRate(
+          cohort.ageWeeks,
+          arCurrentRate,
+          ar30to60Rate,
+          ar60to90Rate,
+          ar90plusRate,
+        );
+      }
+      const scheduled = Math.max(0, Number(cohort.scheduledThisWindow || 0)) *
+        (arWeeklyWeights[cohort.ageWeeks % 4] || 0);
+      const realized = Math.min(cohort.remaining, scheduled);
+      cohort.remaining = Math.max(0, cohort.remaining - realized);
+      total += realized;
+    }
+    return total;
+  };
   const processCohortsAtPaymentLag = (cohorts: Cohort[], paymentLagWeeks: number): number => {
     let total = 0;
     for (const cohort of cohorts) {
@@ -1042,14 +1067,6 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     return total;
   };
   const arBuckets = reconcileAgingBucketsToTotal(startingArBuckets, startingBalances.ar);
-  const openingArReceipts = allocateOpeningAgingBalance(
-    arBuckets,
-    arCurrentRate,
-    ar30to60Rate,
-    ar60to90Rate,
-    ar90plusRate,
-    arWeeklyWeights,
-  );
   const apBuckets = reconcileAgingBucketsToTotal(startingApBuckets, startingBalances.ap);
   const openingApPayments = allocateOpeningAgingBalance(
     apBuckets,
@@ -1059,11 +1076,16 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     ap90plusRate,
     apWeeklyWeights,
   );
-  // Opening AR/AP are explicitly allocated above. Cohorts track only sales
-  // and purchases created during this forecast.
+  // Opening AR and forecast sales use distinct AR cohorts. New credit sales
+  // wait for the configured collection lag before their first collection.
+  const openingArCohorts: Cohort[] = [
+    { remaining: Math.max(0, arBuckets.current), ageWeeks: 0 },
+    { remaining: Math.max(0, arBuckets.bucket30to60), ageWeeks: 4 },
+    { remaining: Math.max(0, arBuckets.bucket60to90), ageWeeks: 8 },
+    { remaining: Math.max(0, arBuckets.bucket90plus), ageWeeks: 12 },
+  ];
   const arCohorts: Cohort[] = [];
   const apCohorts: Cohort[] = [];
-  let openingArOutstanding = Math.max(0, Number(startingBalances.ar || 0));
   let openingApOutstanding = Math.max(0, Number(startingBalances.ap || 0));
 
   const allocatedForecastSales = allocateForecastSalesByWeek(
@@ -1172,21 +1194,14 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     if (isAccrualBasis) {
       const creditSales = Math.max(0, safeNumber(sales * creditSalesRate, 0));
       cashSalesReceipts = Math.max(0, safeNumber(sales - creditSales, 0));
-      arCohorts.push({ remaining: creditSales, ageWeeks: 0 });
+      arCohorts.push({ remaining: creditSales, ageWeeks: -collectionLagWeeks });
     } else {
-      arCohorts.push({ remaining: Math.max(0, sales), ageWeeks: 0 });
+      arCohorts.push({ remaining: Math.max(0, sales), ageWeeks: -collectionLagWeeks });
     }
 
     const scheduledArReceipts =
-      Math.max(0, safeNumber(openingArReceipts[i] || 0)) +
-      processCohorts(
-        arCohorts,
-        arCurrentRate,
-        ar30to60Rate,
-        ar60to90Rate,
-        ar90plusRate,
-        arWeeklyWeights
-      );
+      processArCollections(openingArCohorts) +
+      processArCollections(arCohorts);
     const recurringApPayments = useHistoricalApPaymentProfile
       ? processCohortsAtPaymentLag(apCohorts, historicalPurchasePaymentLagWeeks)
       : processCohorts(
@@ -1201,10 +1216,6 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
       : Math.max(0, safeNumber(openingApPayments[i] || 0));
     const apPayments = openingApPayment + recurringApPayments;
-    openingArOutstanding = Math.max(
-      0,
-      openingArOutstanding - Math.max(0, safeNumber(openingArReceipts[i] || 0)),
-    );
     openingApOutstanding = Math.max(
       0,
       openingApOutstanding - openingApPayment,
@@ -1239,7 +1250,8 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     const endingAr = Math.max(
       0,
       safeNumber(
-        openingArOutstanding + arCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0),
+        openingArCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0) +
+          arCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0),
         ar
       )
     );
@@ -1283,6 +1295,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     ar = endingAr;
     ap = endingAp;
     inventory = endingInventory;
+    for (const cohort of openingArCohorts) cohort.ageWeeks += 1;
     for (const cohort of arCohorts) cohort.ageWeeks += 1;
     for (const cohort of apCohorts) cohort.ageWeeks += 1;
   }
