@@ -851,7 +851,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               </div>
               {historicalArCollectionProfile && (
                 <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
-                  Opening AR timing uses {historicalArCollectionProfile.matchedPaymentCount} matched invoice payments and current invoice due dates.
+                  Opening AR timing uses current invoice due dates{historicalArCollectionProfile.matchedPaymentCount > 0
+                    ? ` and ${historicalArCollectionProfile.matchedPaymentCount} matched invoice payments.`
+                    : '.'}
                 </div>
               )}
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Aging Buckets (% collected next 4 weeks)</div>

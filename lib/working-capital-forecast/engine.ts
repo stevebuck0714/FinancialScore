@@ -1117,9 +1117,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
   const historicalArInvoices = Array.isArray(historicalArCollectionProfile?.openInvoices)
     ? historicalArCollectionProfile.openInvoices
     : [];
-  const useHistoricalArInvoiceSchedule =
-    historicalArInvoices.length > 0 &&
-    Number(historicalArCollectionProfile?.matchedPaymentCount || 0) > 0;
+  const useHistoricalArInvoiceSchedule = historicalArInvoices.length > 0;
   const openingArInvoiceReceipts = Array.from({ length: weeks }, () => 0);
   if (useHistoricalArInvoiceSchedule) {
     const invoiceTotal = historicalArInvoices.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.amountDueHome || 0)), 0);

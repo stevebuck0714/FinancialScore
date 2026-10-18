@@ -328,7 +328,11 @@ async function loadHistoricalArCollectionProfile(companyId: string) {
     const daysAfterDue = matchedPayments
       .map((row) => row.dueDate ? Math.round((new Date(row.paymentDate).getTime() - new Date(row.dueDate).getTime()) / 86_400_000) : Number.NaN)
       .filter((value) => Number.isFinite(value) && value >= -90 && value <= 180);
-    if (!openInvoices.length || !daysAfterDue.length) return null;
+    // Open invoice due dates are still the best available schedule even when
+    // the source does not provide payment-to-invoice matches. In that case,
+    // assume payment on the due date rather than reverting to a four-week
+    // aggregate AR allocation.
+    if (!openInvoices.length) return null;
     return {
       paymentDaysAfterDue: Math.round(median(daysAfterDue) || 0),
       matchedPaymentCount: daysAfterDue.length,
