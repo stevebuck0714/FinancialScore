@@ -972,6 +972,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     forecastDirectLaborMonthTotals = [],
     forecastMaterialCogsMonthTotals = [],
     forecastApCogsMonthTotals = [],
+    historicalSalesByWeek = [],
     historicalApPaymentProfile = null,
     historicalArCollectionProfile = null,
   } = params;
@@ -1093,15 +1094,49 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     ap90plusRate,
     apWeeklyWeights,
   );
+  // Seed the opening AR with recent actual sales cohorts. Without these,
+  // Week 1 starts with no in-flight sales collections and each later forecast
+  // cohort stacks on top of the opening AR schedule, creating a false ramp.
+  // The seeded cohorts are part of starting AR, so reduce the aggregate aging
+  // balance by their unpaid amount to avoid counting those receivables twice.
+  const recentHistoricalSales = historicalSalesByWeek
+    .slice(0, 4)
+    .map((value) => Math.max(0, Number(value || 0)));
+  const seededArCohorts: Cohort[] = recentHistoricalSales.map((sales, index) => {
+    const ageWeeks = index + 1 - collectionLagWeeks;
+    const scheduledThisWindow = sales * arCurrentRate;
+    const priorWeight = arWeeklyWeights
+      .slice(0, Math.max(0, Math.min(4, ageWeeks)))
+      .reduce((sum, weight) => sum + weight, 0);
+    return {
+      remaining: Math.max(0, sales - scheduledThisWindow * priorWeight),
+      ageWeeks,
+      scheduledThisWindow,
+    };
+  });
+  const seededArOutstanding = seededArCohorts.reduce((sum, cohort) => sum + cohort.remaining, 0);
+  const startingAr = Math.max(0, Number(startingBalances.ar || 0));
+  if (seededArOutstanding > startingAr && seededArOutstanding > 0) {
+    const scale = startingAr / seededArOutstanding;
+    seededArCohorts.forEach((cohort) => {
+      cohort.remaining *= scale;
+      cohort.scheduledThisWindow = Math.max(0, Number(cohort.scheduledThisWindow || 0)) * scale;
+    });
+  }
+  const remainingOpeningAr = Math.max(
+    0,
+    startingAr - seededArCohorts.reduce((sum, cohort) => sum + cohort.remaining, 0),
+  );
+  const openingArScale = startingAr > 0 ? remainingOpeningAr / startingAr : 0;
   // Opening AR and forecast sales use distinct AR cohorts. New credit sales
   // wait for the configured collection lag before their first collection.
   const openingArCohorts: Cohort[] = [
-    { remaining: Math.max(0, arBuckets.current), ageWeeks: 0 },
-    { remaining: Math.max(0, arBuckets.bucket30to60), ageWeeks: 4 },
-    { remaining: Math.max(0, arBuckets.bucket60to90), ageWeeks: 8 },
-    { remaining: Math.max(0, arBuckets.bucket90plus), ageWeeks: 12 },
+    { remaining: Math.max(0, arBuckets.current * openingArScale), ageWeeks: 0 },
+    { remaining: Math.max(0, arBuckets.bucket30to60 * openingArScale), ageWeeks: 4 },
+    { remaining: Math.max(0, arBuckets.bucket60to90 * openingArScale), ageWeeks: 8 },
+    { remaining: Math.max(0, arBuckets.bucket90plus * openingArScale), ageWeeks: 12 },
   ];
-  const arCohorts: Cohort[] = [];
+  const arCohorts: Cohort[] = seededArCohorts;
   const apCohorts: Cohort[] = [];
   let openingApOutstanding = Math.max(0, Number(startingBalances.ap || 0));
 
@@ -1117,9 +1152,8 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
   const historicalArInvoices = Array.isArray(historicalArCollectionProfile?.openInvoices)
     ? historicalArCollectionProfile.openInvoices
     : [];
-  const useHistoricalArInvoiceSchedule = historicalArInvoices.length > 0;
   const openingArInvoiceReceipts = Array.from({ length: weeks }, () => 0);
-  if (useHistoricalArInvoiceSchedule) {
+  if (historicalArInvoices.length > 0) {
     const invoiceTotal = historicalArInvoices.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.amountDueHome || 0)), 0);
     const scale = invoiceTotal > 0 ? Math.max(0, Number(startingBalances.ar || 0)) / invoiceTotal : 0;
     historicalArInvoices.forEach((invoice) => {
@@ -1135,7 +1169,28 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       }
     });
   }
-  let openingArInvoiceOutstanding = Math.max(0, Number(startingBalances.ar || 0));
+  const scheduledOpeningArTotal = openingArInvoiceReceipts.reduce((sum, value) => sum + value, 0);
+  const largestScheduledOpeningArWeek = Math.max(0, ...openingArInvoiceReceipts);
+  // Some imports stamp nearly every invoice with the same due date. That is
+  // not a usable receipt calendar (and creates a single-week cash spike), so
+  // use the historical-sales cohort schedule instead.
+  const useHistoricalArInvoiceSchedule =
+    scheduledOpeningArTotal > 0 &&
+    largestScheduledOpeningArWeek / scheduledOpeningArTotal < 0.6;
+  const useHistoricalArSeededCadence =
+    !useHistoricalArInvoiceSchedule &&
+    seededArCohorts.length >= 4;
+  const openingArCadenceReceipt = useHistoricalArSeededCadence
+    ? remainingOpeningAr / weeks
+    : 0;
+  if (useHistoricalArInvoiceSchedule) {
+    // Invoice timing already represents the opening AR balance, so the
+    // historical-sales seed would double count it.
+    arCohorts.splice(0, seededArCohorts.length);
+  }
+  let openingArInvoiceOutstanding = useHistoricalArSeededCadence
+    ? remainingOpeningAr
+    : Math.max(0, Number(startingBalances.ar || 0));
   // Direct Production Labor is a COGS category, but unlike material COGS it
   // does not reduce inventory or create an inventory purchase. Pay it as a
   // direct weekly cash disbursement from the Income Statement Forecast.
@@ -1240,7 +1295,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
 
     const openingArReceipts = useHistoricalArInvoiceSchedule
       ? Math.min(openingArInvoiceOutstanding, Math.max(0, openingArInvoiceReceipts[i] || 0))
-      : processArCollections(openingArCohorts);
+      : useHistoricalArSeededCadence
+        ? Math.min(openingArInvoiceOutstanding, Math.max(0, openingArCadenceReceipt))
+        : processArCollections(openingArCohorts);
     const scheduledArReceipts = openingArReceipts + processArCollections(arCohorts);
     const recurringApPayments = useHistoricalApPaymentProfile
       ? processCohortsAtPaymentLag(apCohorts, historicalPurchasePaymentLagWeeks)
@@ -1256,7 +1313,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
       : Math.max(0, safeNumber(openingApPayments[i] || 0));
     const apPayments = openingApPayment + recurringApPayments;
-    if (useHistoricalArInvoiceSchedule) {
+    if (useHistoricalArInvoiceSchedule || useHistoricalArSeededCadence) {
       openingArInvoiceOutstanding = Math.max(0, openingArInvoiceOutstanding - openingArReceipts);
     }
     openingApOutstanding = Math.max(
@@ -1293,7 +1350,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     const endingAr = Math.max(
       0,
       safeNumber(
-        (useHistoricalArInvoiceSchedule
+        (useHistoricalArInvoiceSchedule || useHistoricalArSeededCadence
           ? openingArInvoiceOutstanding
           : openingArCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0)) +
           arCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0),

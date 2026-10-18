@@ -847,12 +847,12 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 AR Inputs
               </div>
               <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35, marginBottom: '6px' }}>
-                Set the share of each opening AR aging bucket expected to be collected over the next four weeks. The weekly weights allocate those expected collections across Weeks 1–4 and should total 100%.
+                Opening AR uses invoice due dates when they form a usable schedule. Otherwise, recent sales cohorts and a smooth remaining-AR cadence avoid artificial startup collection cliffs. The aging assumptions below are the fallback when neither history is available.
               </div>
               {historicalArCollectionProfile && (
                 <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
-                  Opening AR timing uses current invoice due dates{historicalArCollectionProfile.matchedPaymentCount > 0
-                    ? ` and ${historicalArCollectionProfile.matchedPaymentCount} matched invoice payments.`
+                  Imported opening-invoice data is available{historicalArCollectionProfile.matchedPaymentCount > 0
+                    ? ` with ${historicalArCollectionProfile.matchedPaymentCount} matched invoice payments.`
                     : '.'}
                 </div>
               )}
