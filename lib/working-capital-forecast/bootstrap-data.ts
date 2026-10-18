@@ -290,6 +290,55 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
   }
 }
 
+async function loadHistoricalArCollectionProfile(companyId: string) {
+  try {
+    const [openInvoices, matchedPayments] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{
+        invoiceNo: string; customerId: string | null; customerName: string; invoiceDate: Date | null; dueDate: Date | null; amountDueHome: number;
+      }>>(
+        `WITH latest AS (
+           SELECT MAX("snapshotDate") AS d FROM "AROpenInvoiceSnapshot" WHERE "companyId" = $1
+         )
+         SELECT s."invoiceNo", s."customerId", s."customerName", s."invoiceDate", s."dueDate",
+           s."amountDueHome"::float8 AS "amountDueHome"
+         FROM "AROpenInvoiceSnapshot" s
+         CROSS JOIN latest
+         WHERE s."companyId" = $1 AND s."snapshotDate" = latest.d`,
+        companyId,
+      ),
+      prisma.$queryRawUnsafe<Array<{ paymentDate: Date; invoiceDate: Date | null; dueDate: Date | null }>>(
+        `SELECT p."paymentDate", invoice."invoiceDate", invoice."dueDate"
+         FROM "ARPaymentFact" p
+         JOIN LATERAL (
+           SELECT s."invoiceDate", s."dueDate"
+           FROM "AROpenInvoiceSnapshot" s
+           WHERE s."companyId" = p."companyId"
+             AND s."invoiceNo" = p."invoiceNo"
+             AND LOWER(s."customerName") = LOWER(p."customerName")
+             AND s."snapshotDate" <= p."paymentDate"
+           ORDER BY s."snapshotDate" DESC
+           LIMIT 1
+         ) invoice ON true
+         WHERE p."companyId" = $1
+           AND p."paymentDate" >= CURRENT_DATE - INTERVAL '365 days'
+           AND NULLIF(TRIM(COALESCE(p."invoiceNo", '')), '') IS NOT NULL`,
+        companyId,
+      ),
+    ]);
+    const daysAfterDue = matchedPayments
+      .map((row) => row.dueDate ? Math.round((new Date(row.paymentDate).getTime() - new Date(row.dueDate).getTime()) / 86_400_000) : Number.NaN)
+      .filter((value) => Number.isFinite(value) && value >= -90 && value <= 180);
+    if (!openInvoices.length || !daysAfterDue.length) return null;
+    return {
+      paymentDaysAfterDue: Math.round(median(daysAfterDue) || 0),
+      matchedPaymentCount: daysAfterDue.length,
+      openInvoices,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function loadOpenInvoiceAgingFallback(
   companyId: string,
   kind: 'ar' | 'ap',
@@ -545,7 +594,7 @@ export async function loadWorkingCapitalForecastBootstrap(companyId: string, bas
   const latestOrder: Frequency[] = ['daily', 'weekly', 'monthly'];
   const historyOrder: Frequency[] = ['monthly', 'weekly', 'daily'];
 
-  const [savedSettings, financialForecastInputs, loans, dailyFinancials, arAgingResult, apAgingResult, historicalApPaymentProfile] =
+  const [savedSettings, financialForecastInputs, loans, dailyFinancials, arAgingResult, apAgingResult, historicalApPaymentProfile, historicalArCollectionProfile] =
     await Promise.all([
       loadSavedSettings(companyId, basisMode),
       loadFinancialForecastInputs(companyId, basisMode),
@@ -554,6 +603,7 @@ export async function loadWorkingCapitalForecastBootstrap(companyId: string, bas
       pickAgingSnapshots(companyId, 'ar', latestOrder),
       pickAgingSnapshots(companyId, 'ap', latestOrder),
       loadHistoricalApPaymentProfile(companyId),
+      loadHistoricalArCollectionProfile(companyId),
     ]);
 
   const synthesized = synthesizeHistoryFromDaily(dailyFinancials.records);
@@ -599,6 +649,7 @@ export async function loadWorkingCapitalForecastBootstrap(companyId: string, bas
       arAgingResult,
       apAgingResult,
       historicalApPaymentProfile,
+      historicalArCollectionProfile,
       inventoryHistory,
       productHistory,
       productMarginHistory,

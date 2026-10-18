@@ -27,6 +27,7 @@ import {
   type ForecastRow,
   type HistoricalFlowProfile,
   type HistoricalApPaymentProfile,
+  type HistoricalArCollectionProfile,
   type MonthRevenueSeries,
   type MonthlyBaseRef,
   type OpexPaymentTreatment,
@@ -302,6 +303,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [forecastMaterialCogsMonthTotals, setForecastMaterialCogsMonthTotals] = useState<number[]>([]);
   const [forecastApCogsMonthTotals, setForecastApCogsMonthTotals] = useState<number[]>([]);
   const [historicalApPaymentProfile, setHistoricalApPaymentProfile] = useState<HistoricalApPaymentProfile | null>(null);
+  const [historicalArCollectionProfile, setHistoricalArCollectionProfile] = useState<HistoricalArCollectionProfile | null>(null);
   const liveMonthSeriesRef = useRef<MonthRevenueSeries | null>(null);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
@@ -364,6 +366,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastMaterialCogsMonthTotals(derived.forecastMaterialCogsMonthTotals || []);
           setForecastApCogsMonthTotals(derived.forecastApCogsMonthTotals || []);
           setHistoricalApPaymentProfile(derived.historicalApPaymentProfile || null);
+          setHistoricalArCollectionProfile(derived.historicalArCollectionProfile || null);
           setWeekMonthLabels(buildWeekMonthLabels(derived.forecastMonthRefs));
           setInputs(derived.inputs);
           setHistoricalAverages(derived.historicalAverages);
@@ -390,6 +393,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastMaterialCogsMonthTotals([]);
           setForecastApCogsMonthTotals([]);
           setHistoricalApPaymentProfile(null);
+          setHistoricalArCollectionProfile(null);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
@@ -447,7 +451,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     forecastMaterialCogsMonthTotals,
     forecastApCogsMonthTotals,
     historicalApPaymentProfile,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile]);
+    historicalArCollectionProfile,
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile]);
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -844,6 +849,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35, marginBottom: '6px' }}>
                 Set the share of each opening AR aging bucket expected to be collected over the next four weeks. The weekly weights allocate those expected collections across Weeks 1–4 and should total 100%.
               </div>
+              {historicalArCollectionProfile && (
+                <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
+                  Opening AR timing uses {historicalArCollectionProfile.matchedPaymentCount} matched invoice payments and current invoice due dates.
+                </div>
+              )}
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Aging Buckets (% collected next 4 weeks)</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>

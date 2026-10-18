@@ -56,6 +56,19 @@ export type HistoricalApPaymentProfile = {
   matchedPaymentCount: number;
 };
 
+export type HistoricalArCollectionProfile = {
+  paymentDaysAfterDue: number;
+  matchedPaymentCount: number;
+  openInvoices: Array<{
+    invoiceNo: string;
+    customerId?: string | null;
+    customerName: string;
+    invoiceDate?: string | Date | null;
+    dueDate?: string | Date | null;
+    amountDueHome: number;
+  }>;
+};
+
 export type MonthlyBaseRef = {
   year: number;
   month: number; // 0-based
@@ -531,6 +544,7 @@ export type ForecastProjectionInput = {
   forecastMaterialCogsMonthTotals?: number[];
   forecastApCogsMonthTotals?: number[];
   historicalApPaymentProfile?: HistoricalApPaymentProfile | null;
+  historicalArCollectionProfile?: HistoricalArCollectionProfile | null;
 };
 
 export type DerivedForecastState = ForecastProjectionInput & {
@@ -565,6 +579,7 @@ export function deriveForecastStateFromBootstrap(
   const arResult = bootstrap?.operational?.arAgingResult || null;
   const apResult = bootstrap?.operational?.apAgingResult || null;
   const historicalApPaymentProfile = bootstrap?.operational?.historicalApPaymentProfile || null;
+  const historicalArCollectionProfile = bootstrap?.operational?.historicalArCollectionProfile || null;
   const inventoryHistory = bootstrap?.operational?.inventoryHistory || null;
   const productHistory = bootstrap?.operational?.productHistory || null;
   const productMarginHistory = bootstrap?.operational?.productMarginHistory || null;
@@ -863,6 +878,7 @@ export function deriveForecastStateFromBootstrap(
     forecastMaterialCogsMonthTotals: monthSeries?.materialCogsMonthTotals || [],
     forecastApCogsMonthTotals: monthSeries?.apCogsMonthTotals || [],
     historicalApPaymentProfile,
+    historicalArCollectionProfile,
     monthSeries,
     inventoryBalanceFromImportedData: hasImportedInventoryBalance,
     locBalanceFromImportedData: hasImportedLocBalance,
@@ -957,6 +973,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     forecastMaterialCogsMonthTotals = [],
     forecastApCogsMonthTotals = [],
     historicalApPaymentProfile = null,
+    historicalArCollectionProfile = null,
   } = params;
   const result: ForecastRow[] = [];
   const weeks = FORECAST_WEEKS;
@@ -1097,6 +1114,30 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       : Math.max(0, weeklyDrivers[idx]?.sales || 0),
   );
   const weekStarts = Array.from({ length: weeks }, (_, idx) => addDays(getWeekendAnchorDate(new Date()), idx * 7));
+  const historicalArInvoices = Array.isArray(historicalArCollectionProfile?.openInvoices)
+    ? historicalArCollectionProfile.openInvoices
+    : [];
+  const useHistoricalArInvoiceSchedule =
+    historicalArInvoices.length > 0 &&
+    Number(historicalArCollectionProfile?.matchedPaymentCount || 0) > 0;
+  const openingArInvoiceReceipts = Array.from({ length: weeks }, () => 0);
+  if (useHistoricalArInvoiceSchedule) {
+    const invoiceTotal = historicalArInvoices.reduce((sum, invoice) => sum + Math.max(0, Number(invoice.amountDueHome || 0)), 0);
+    const scale = invoiceTotal > 0 ? Math.max(0, Number(startingBalances.ar || 0)) / invoiceTotal : 0;
+    historicalArInvoices.forEach((invoice) => {
+      const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : invoice.invoiceDate ? new Date(invoice.invoiceDate) : weekStarts[0];
+      const expectedDate = Number.isNaN(dueDate.getTime())
+        ? weekStarts[0]
+        : addDays(dueDate, Number(historicalArCollectionProfile?.paymentDaysAfterDue || 0));
+      const weekIndex = weekStarts.findIndex((weekStart) => expectedDate <= addDays(weekStart, 6));
+      // Keep invoices expected after this horizon in ending AR instead of
+      // incorrectly pulling them into Week 13.
+      if (weekIndex >= 0) {
+        openingArInvoiceReceipts[weekIndex] += Math.max(0, Number(invoice.amountDueHome || 0)) * scale;
+      }
+    });
+  }
+  let openingArInvoiceOutstanding = Math.max(0, Number(startingBalances.ar || 0));
   // Direct Production Labor is a COGS category, but unlike material COGS it
   // does not reduce inventory or create an inventory purchase. Pay it as a
   // direct weekly cash disbursement from the Income Statement Forecast.
@@ -1199,9 +1240,10 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       arCohorts.push({ remaining: Math.max(0, sales), ageWeeks: -collectionLagWeeks });
     }
 
-    const scheduledArReceipts =
-      processArCollections(openingArCohorts) +
-      processArCollections(arCohorts);
+    const openingArReceipts = useHistoricalArInvoiceSchedule
+      ? Math.min(openingArInvoiceOutstanding, Math.max(0, openingArInvoiceReceipts[i] || 0))
+      : processArCollections(openingArCohorts);
+    const scheduledArReceipts = openingArReceipts + processArCollections(arCohorts);
     const recurringApPayments = useHistoricalApPaymentProfile
       ? processCohortsAtPaymentLag(apCohorts, historicalPurchasePaymentLagWeeks)
       : processCohorts(
@@ -1216,6 +1258,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
       : Math.max(0, safeNumber(openingApPayments[i] || 0));
     const apPayments = openingApPayment + recurringApPayments;
+    if (useHistoricalArInvoiceSchedule) {
+      openingArInvoiceOutstanding = Math.max(0, openingArInvoiceOutstanding - openingArReceipts);
+    }
     openingApOutstanding = Math.max(
       0,
       openingApOutstanding - openingApPayment,
@@ -1250,7 +1295,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     const endingAr = Math.max(
       0,
       safeNumber(
-        openingArCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0) +
+        (useHistoricalArInvoiceSchedule
+          ? openingArInvoiceOutstanding
+          : openingArCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0)) +
           arCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0),
         ar
       )
