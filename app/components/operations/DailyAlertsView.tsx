@@ -135,7 +135,9 @@ type DailyAlertsCache = {
 };
 
 const DAILY_ALERTS_FETCH_TIMEOUT_MS = 20000;
-const DAILY_CACHE_VERSION = 'v11-qbo-daily-ops-capability';
+// Force clients to discard briefings cached before business-day comparisons
+// replaced weekend baselines.
+const DAILY_CACHE_VERSION = 'v12-business-day-exec-briefing';
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
@@ -2999,6 +3001,23 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   ))}
                 </div>
               </div>
+              <button
+                onClick={() => void loadExecBriefing(true)}
+                disabled={execBriefingLoading}
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  color: 'white',
+                  background: execBriefingLoading ? '#94a3b8' : '#2751d0',
+                  border: '1px solid #2751d0',
+                  borderRadius: '999px',
+                  padding: '5px 11px',
+                  cursor: execBriefingLoading ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {execBriefingLoading ? 'Refreshing...' : 'Refresh Briefing'}
+              </button>
             </div>
 
             {briefingPeriod === 'daily' &&
