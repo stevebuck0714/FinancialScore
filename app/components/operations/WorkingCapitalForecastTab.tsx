@@ -28,6 +28,7 @@ import {
   type HistoricalFlowProfile,
   type HistoricalApPaymentProfile,
   type HistoricalArCollectionProfile,
+  type HistoricalDebtServiceProfile,
   type MonthRevenueSeries,
   type MonthlyBaseRef,
   type OpexPaymentTreatment,
@@ -307,6 +308,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [forecastApCogsMonthTotals, setForecastApCogsMonthTotals] = useState<number[]>([]);
   const [historicalApPaymentProfile, setHistoricalApPaymentProfile] = useState<HistoricalApPaymentProfile | null>(null);
   const [historicalArCollectionProfile, setHistoricalArCollectionProfile] = useState<HistoricalArCollectionProfile | null>(null);
+  const [historicalDebtServiceProfile, setHistoricalDebtServiceProfile] = useState<HistoricalDebtServiceProfile | null>(null);
   const liveMonthSeriesRef = useRef<MonthRevenueSeries | null>(null);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
@@ -370,6 +372,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastApCogsMonthTotals(derived.forecastApCogsMonthTotals || []);
           setHistoricalApPaymentProfile(derived.historicalApPaymentProfile || null);
           setHistoricalArCollectionProfile(derived.historicalArCollectionProfile || null);
+          setHistoricalDebtServiceProfile(derived.historicalDebtServiceProfile || null);
           setWeekMonthLabels(buildWeekMonthLabels(derived.forecastMonthRefs));
           setInputs(derived.inputs);
           setHistoricalAverages(derived.historicalAverages);
@@ -397,6 +400,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setForecastApCogsMonthTotals([]);
           setHistoricalApPaymentProfile(null);
           setHistoricalArCollectionProfile(null);
+          setHistoricalDebtServiceProfile(null);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
@@ -455,7 +459,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     forecastApCogsMonthTotals,
     historicalApPaymentProfile,
     historicalArCollectionProfile,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile]);
+    historicalDebtServiceProfile,
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile, historicalDebtServiceProfile]);
   const historicalArTimingActive = Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0) > 0;
   const historicalApTimingActive =
     Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0) > 0 &&
@@ -467,6 +472,21 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         FORECAST_WEEKS,
       )
     : null;
+  const renderDebtPrincipalField = () => (
+    <div style={{ gridColumn: '1 / -1' }}>
+      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Weekly Debt Principal (Long-Term Debt)</label>
+      <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>
+        {formatCurrency(historicalDebtServiceProfile?.weeklyPrincipalAmount || 0)}
+      </div>
+      <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35, marginTop: '4px' }}>
+        {historicalDebtServiceProfile?.source === 'history'
+          ? `From the decline in the long-term debt balance over the last ${historicalDebtServiceProfile.observedWeeks} complete weeks.`
+          : historicalDebtServiceProfile?.source === 'terms'
+            ? 'From the amortization terms on the Loans page because there is not enough long-term debt balance history.'
+            : 'No long-term debt principal found in balance history or Loans page terms.'}
+      </div>
+    </div>
+  );
   const disabledForecastAssumptionStyle: React.CSSProperties = {
     ...compactPercentInputStyle,
     background: '#f1f5f9',
@@ -596,6 +616,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     'Cash Opex',
     'Opex Adj',
     'LOC Interest',
+    'Debt Principal',
     'LOC Draw',
     'LOC Repay',
     'Unlevered Cash',
@@ -651,7 +672,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   3. In an accrual forecast, the cash-sales portion is received in the week of sale. The credit-sales portion becomes A/R and is collected using the A/R collection percentages and weekly distribution weights. Opening A/R is a separate balance and follows the same collection schedule.
                 </div>
                 <div style={{ marginTop: '5px' }}>
-                  4. Receipts from those sales, less AP payments (including inventory purchases), direct labor, operating expenses, adjustments, and LOC interest, determine weekly ending cash and any required LOC draw or repayment.
+                  4. Receipts from those sales, less AP payments (including inventory purchases), direct labor, operating expenses, adjustments, LOC interest, and long-term debt principal, determine weekly ending cash and any required LOC draw or repayment. Loan interest is already included in operating expenses, so Debt Principal deducts only the principal portion.
                 </div>
               </div>
             </details>
@@ -860,6 +881,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                         />
                       </div>
                     )}
+                    {renderDebtPrincipalField()}
                   </div>
                 </div>
               </div>
@@ -1037,6 +1059,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                     />
                   </div>
                 )}
+                {renderDebtPrincipalField()}
               </div>
             </div>
             )}
@@ -1144,6 +1167,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                     />
                   </td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.locInterest)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.debtPrincipal)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locDraw > 0 ? '#7c3aed' : '#64748b' }}>{formatCurrency(row.locDraw)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locRepay > 0 ? '#0284c7' : '#64748b' }}>{formatCurrency(row.locRepay)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.unleveredEndingCash < 0 ? '#dc2626' : '#111827', fontWeight: 600 }}>

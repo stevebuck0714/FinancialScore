@@ -70,6 +70,14 @@ export type HistoricalArCollectionProfile = {
   }>;
 };
 
+export type HistoricalDebtServiceProfile = {
+  weeklyPrincipalAmount: number;
+  source: 'history' | 'terms' | 'none';
+  observedWeeks: number;
+  /** Long-term debt balance the principal schedule cannot exceed. */
+  startingBalance: number;
+};
+
 export type MonthlyBaseRef = {
   year: number;
   month: number; // 0-based
@@ -93,6 +101,7 @@ export type ForecastRow = {
   cashOpex: number;
   opexAdj: number;
   locInterest: number;
+  debtPrincipal: number;
   locDraw: number;
   locRepay: number;
   unleveredEndingCash: number;
@@ -546,6 +555,7 @@ export type ForecastProjectionInput = {
   forecastApCogsMonthTotals?: number[];
   historicalApPaymentProfile?: HistoricalApPaymentProfile | null;
   historicalArCollectionProfile?: HistoricalArCollectionProfile | null;
+  historicalDebtServiceProfile?: HistoricalDebtServiceProfile | null;
 };
 
 export type DerivedForecastState = ForecastProjectionInput & {
@@ -581,6 +591,7 @@ export function deriveForecastStateFromBootstrap(
   const apResult = bootstrap?.operational?.apAgingResult || null;
   const historicalApPaymentProfile = bootstrap?.operational?.historicalApPaymentProfile || null;
   const historicalArCollectionProfile = bootstrap?.operational?.historicalArCollectionProfile || null;
+  const historicalDebtServiceProfile = bootstrap?.operational?.historicalDebtServiceProfile || null;
   const inventoryHistory = bootstrap?.operational?.inventoryHistory || null;
   const productHistory = bootstrap?.operational?.productHistory || null;
   const productMarginHistory = bootstrap?.operational?.productMarginHistory || null;
@@ -880,6 +891,7 @@ export function deriveForecastStateFromBootstrap(
     forecastApCogsMonthTotals: monthSeries?.apCogsMonthTotals || [],
     historicalApPaymentProfile,
     historicalArCollectionProfile,
+    historicalDebtServiceProfile,
     monthSeries,
     inventoryBalanceFromImportedData: hasImportedInventoryBalance,
     locBalanceFromImportedData: hasImportedLocBalance,
@@ -976,6 +988,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     historicalSalesByWeek = [],
     historicalApPaymentProfile = null,
     historicalArCollectionProfile = null,
+    historicalDebtServiceProfile = null,
   } = params;
   const result: ForecastRow[] = [];
   const weeks = FORECAST_WEEKS;
@@ -1011,6 +1024,11 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0) > 0;
   const historicalWeeklyApPayment = Math.max(0, Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0));
   const historicalWeeklyArCollection = Math.max(0, Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0));
+  // Principal is a balance-sheet repayment; interest already flows through the
+  // Income Statement Forecast opex lines, so only principal is deducted here.
+  const weeklyDebtPrincipal = Math.max(0, safeNumber(historicalDebtServiceProfile?.weeklyPrincipalAmount, 0));
+  const debtServiceStartingBalance = Math.max(0, safeNumber(historicalDebtServiceProfile?.startingBalance, 0));
+  let remainingLongTermDebt = debtServiceStartingBalance > 0 ? debtServiceStartingBalance : weeklyDebtPrincipal * FORECAST_WEEKS;
   const historicalPurchasePaymentLagWeeks = clampNumber(
     Math.round(Number(historicalApPaymentProfile?.purchasePaymentLagWeeks || 0)),
     1,
@@ -1356,8 +1374,10 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
 
     const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
     const opexAdj = safeNumber(weeklyDrivers[i]?.opexAdj, 0);
+    const debtPrincipal = Math.min(weeklyDebtPrincipal, remainingLongTermDebt);
+    remainingLongTermDebt = Math.max(0, remainingLongTermDebt - debtPrincipal);
     const baseEndingCash = safeNumber(
-      beginningCash + receipts - apPayments - directLaborPayments - cashOpex - opexAdj - locInterest,
+      beginningCash + receipts - apPayments - directLaborPayments - cashOpex - opexAdj - locInterest - debtPrincipal,
       beginningCash,
     );
     const unleveredEndingCash = baseEndingCash;
@@ -1411,6 +1431,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       cashOpex,
       opexAdj,
       locInterest,
+      debtPrincipal,
       locDraw,
       locRepay,
       unleveredEndingCash,
