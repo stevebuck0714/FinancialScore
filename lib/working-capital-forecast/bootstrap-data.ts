@@ -292,7 +292,7 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
 
 async function loadHistoricalArCollectionProfile(companyId: string) {
   try {
-    const [openInvoices, matchedPayments] = await Promise.all([
+    const [openInvoices, paymentRows, matchedPayments] = await Promise.all([
       prisma.$queryRawUnsafe<Array<{
         invoiceNo: string; customerId: string | null; customerName: string; invoiceDate: Date | null; dueDate: Date | null; amountDueHome: number;
       }>>(
@@ -304,6 +304,13 @@ async function loadHistoricalArCollectionProfile(companyId: string) {
          FROM "AROpenInvoiceSnapshot" s
          CROSS JOIN latest
          WHERE s."companyId" = $1 AND s."snapshotDate" = latest.d`,
+        companyId,
+      ),
+      prisma.$queryRawUnsafe<Array<{ paidAmountHome: number }>>(
+        `SELECT "paidAmountHome"::float8 AS "paidAmountHome"
+         FROM "ARPaymentFact"
+         WHERE "companyId" = $1
+           AND "paymentDate" >= CURRENT_DATE - INTERVAL '91 days'`,
         companyId,
       ),
       prisma.$queryRawUnsafe<Array<{ paymentDate: Date; invoiceDate: Date | null; dueDate: Date | null }>>(
@@ -325,17 +332,22 @@ async function loadHistoricalArCollectionProfile(companyId: string) {
         companyId,
       ),
     ]);
+    const weeklyCollectionAmount = paymentRows.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.paidAmountHome || 0)),
+      0,
+    ) / 13;
     const daysAfterDue = matchedPayments
       .map((row) => row.dueDate ? Math.round((new Date(row.paymentDate).getTime() - new Date(row.dueDate).getTime()) / 86_400_000) : Number.NaN)
       .filter((value) => Number.isFinite(value) && value >= -90 && value <= 180);
-    // Open invoice due dates are still the best available schedule even when
-    // the source does not provide payment-to-invoice matches. In that case,
-    // assume payment on the due date rather than reverting to a four-week
-    // aggregate AR allocation.
-    if (!openInvoices.length) return null;
+    // Recent receipt history is sufficient to establish an AR cash cadence;
+    // invoice-to-payment matches refine invoice timing but are not required.
+    // Open invoices are optional and, when present, are used for the opening
+    // AR schedule.
+    if (!openInvoices.length && weeklyCollectionAmount <= 0) return null;
     return {
       paymentDaysAfterDue: Math.round(median(daysAfterDue) || 0),
       matchedPaymentCount: daysAfterDue.length,
+      weeklyCollectionAmount: Math.round(weeklyCollectionAmount),
       openInvoices,
     };
   } catch {

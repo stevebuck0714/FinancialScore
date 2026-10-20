@@ -75,12 +75,14 @@ function PercentInput({
   min = 0,
   max = 100,
   style,
+  disabled = false,
 }: {
   value: number;
   onValueChange: (next: number) => void;
   min?: number;
   max?: number;
   style?: React.CSSProperties;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const wrapperStyle: React.CSSProperties = {
@@ -95,6 +97,7 @@ function PercentInput({
       <input
         type="text"
         inputMode="decimal"
+        disabled={disabled}
         value={draft !== null ? draft : formatPercentIdle(value)}
         onFocus={(event) => {
           setDraft(formatPercentIdle(value));
@@ -115,7 +118,7 @@ function PercentInput({
         onKeyDown={(event) => {
           if (event.key === 'Enter') event.currentTarget.blur();
         }}
-        style={fieldStyle}
+        style={{ ...fieldStyle, ...(disabled ? { background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' } : {}) }}
       />
       <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 700, flexShrink: 0 }}>%</span>
     </div>
@@ -453,6 +456,23 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     historicalApPaymentProfile,
     historicalArCollectionProfile,
   }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile]);
+  const historicalArTimingActive = Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0) > 0;
+  const historicalApTimingActive =
+    Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0) > 0 &&
+    Number(historicalApPaymentProfile?.purchasePaymentLagWeeks || 0) >= 1;
+  const historicalArCollectionLagWeeks = historicalArTimingActive
+    ? clampNumber(
+        Math.round(startingBalances.ar / Number(historicalArCollectionProfile?.weeklyCollectionAmount || 1)),
+        1,
+        FORECAST_WEEKS,
+      )
+    : null;
+  const disabledForecastAssumptionStyle: React.CSSProperties = {
+    ...compactPercentInputStyle,
+    background: '#f1f5f9',
+    color: '#64748b',
+    cursor: 'not-allowed',
+  };
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -772,7 +792,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               >
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Projected Sales Collections</div>
                 <div style={{ fontSize: '11px', color: '#334155', marginBottom: '8px' }}>
-                  Projected credit sales become AR and begin collecting after the selected lag. Opening AR follows the aging collection assumptions below.
+                  {historicalArTimingActive
+                    ? 'Historical AR receipts set the collection timing for projected credit sales. The manual collection lag is retained as a fallback only.'
+                    : 'Projected credit sales become AR and begin collecting after the selected lag. Opening AR follows the aging collection assumptions below.'}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
                   <div>
@@ -781,7 +803,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Collection Lag (Weeks)</label>
-                    <input type="number" value={inputs.historicalSalesCollectionLagWeeks} onChange={(e) => updateNumberInput('historicalSalesCollectionLagWeeks', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                    <input type="number" disabled={historicalArTimingActive} value={inputs.historicalSalesCollectionLagWeeks} onChange={(e) => updateNumberInput('historicalSalesCollectionLagWeeks', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px', ...(historicalArTimingActive ? { background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' } : {}) }} />
                   </div>
                 </div>
                 <div style={{ height: '8px' }} />
@@ -847,51 +869,55 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 AR Inputs
               </div>
               <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35, marginBottom: '6px' }}>
-                Opening AR uses invoice due dates when they form a usable schedule. Otherwise, recent sales cohorts and a smooth remaining-AR cadence avoid artificial startup collection cliffs. The aging assumptions below are the fallback when neither history is available.
+                {historicalArTimingActive
+                  ? 'Historical AR receipts drive projected collection timing. Opening AR uses invoice due dates when they form a usable schedule; otherwise it follows the recent receipt cadence.'
+                  : 'Opening AR uses invoice due dates when they form a usable schedule. Otherwise, recent sales cohorts and a smooth remaining-AR cadence avoid artificial startup collection cliffs. The aging assumptions below are the fallback when neither history is available.'}
               </div>
               {historicalArCollectionProfile && (
                 <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
-                  Imported opening-invoice data is available{historicalArCollectionProfile.matchedPaymentCount > 0
-                    ? ` with ${historicalArCollectionProfile.matchedPaymentCount} matched invoice payments.`
-                    : '.'}
+                  {historicalArTimingActive
+                    ? `Historical AR receipt timing is active: about ${formatCurrency(historicalArCollectionProfile.weeklyCollectionAmount)} collected per week with an estimated ${historicalArCollectionLagWeeks}-week collection lag${historicalArCollectionProfile.matchedPaymentCount > 0 ? `, based in part on ${historicalArCollectionProfile.matchedPaymentCount} matched invoice payments.` : '.'}`
+                    : `Imported opening-invoice data is available${historicalArCollectionProfile.matchedPaymentCount > 0
+                      ? ` with ${historicalArCollectionProfile.matchedPaymentCount} matched invoice payments.`
+                      : '.'}`}
                 </div>
               )}
-              <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Aging Buckets (% collected next 4 weeks)</div>
+              <div style={{ fontSize: '11px', color: historicalArTimingActive ? '#64748b' : '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Aging Buckets (% collected next 4 weeks){historicalArTimingActive ? ' — Fallback assumptions' : ''}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Current</label>
-                  <PercentInput value={inputs.arCurrentCollectPct} onValueChange={(next) => updatePercentField('arCurrentCollectPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.arCurrentCollectPct} onValueChange={(next) => updatePercentField('arCurrentCollectPct', next)} disabled={historicalArTimingActive} style={historicalArTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>30-60</label>
-                  <PercentInput value={inputs.ar30To60CollectPct} onValueChange={(next) => updatePercentField('ar30To60CollectPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.ar30To60CollectPct} onValueChange={(next) => updatePercentField('ar30To60CollectPct', next)} disabled={historicalArTimingActive} style={historicalArTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>60-90</label>
-                  <PercentInput value={inputs.ar60To90CollectPct} onValueChange={(next) => updatePercentField('ar60To90CollectPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.ar60To90CollectPct} onValueChange={(next) => updatePercentField('ar60To90CollectPct', next)} disabled={historicalArTimingActive} style={historicalArTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>90+</label>
-                  <PercentInput value={inputs.ar90PlusCollectPct} onValueChange={(next) => updatePercentField('ar90PlusCollectPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.ar90PlusCollectPct} onValueChange={(next) => updatePercentField('ar90PlusCollectPct', next)} disabled={historicalArTimingActive} style={historicalArTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
               </div>
-              <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Weekly Distribution Weights</div>
+              <div style={{ fontSize: '11px', color: historicalArTimingActive ? '#64748b' : '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Weekly Distribution Weights{historicalArTimingActive ? ' — Fallback assumptions' : ''}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W1</label>
-                  <PercentInput value={inputs.arWeek1WeightPct} onValueChange={(next) => updatePercentField('arWeek1WeightPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.arWeek1WeightPct} onValueChange={(next) => updatePercentField('arWeek1WeightPct', next)} disabled={historicalArTimingActive} style={historicalArTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W2</label>
-                  <PercentInput value={inputs.arWeek2WeightPct} onValueChange={(next) => updatePercentField('arWeek2WeightPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.arWeek2WeightPct} onValueChange={(next) => updatePercentField('arWeek2WeightPct', next)} disabled={historicalArTimingActive} style={historicalArTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W3</label>
-                  <PercentInput value={inputs.arWeek3WeightPct} onValueChange={(next) => updatePercentField('arWeek3WeightPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.arWeek3WeightPct} onValueChange={(next) => updatePercentField('arWeek3WeightPct', next)} disabled={historicalArTimingActive} style={historicalArTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W4</label>
-                  <PercentInput value={inputs.arWeek4WeightPct} onValueChange={(next) => updatePercentField('arWeek4WeightPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.arWeek4WeightPct} onValueChange={(next) => updatePercentField('arWeek4WeightPct', next)} disabled={historicalArTimingActive} style={historicalArTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
               </div>
               <div>
@@ -905,49 +931,51 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 AP Inputs
               </div>
               <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35, marginBottom: '6px' }}>
-                Imported AP payment history determines forecast timing when available. Otherwise, set the share of each opening AP aging bucket expected to be paid over the next four weeks; the weekly weights allocate those expected payments across Weeks 1–4 and should total 100%.
+                {historicalApTimingActive
+                  ? 'Historical AP payments determine forecast timing. The aging assumptions below are retained only when payment history is unavailable.'
+                  : 'Set the share of each opening AP aging bucket expected to be paid over the next four weeks; the weekly weights allocate those expected payments across Weeks 1–4 and should total 100%.'}
               </div>
               {historicalApPaymentProfile && (
                 <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
                   Forecast payment timing uses the last 13 weeks of imported AP payments: about {formatCurrency(historicalApPaymentProfile.weeklyPaymentAmount)} per week, with new supplier purchases paid after approximately {historicalApPaymentProfile.purchasePaymentLagWeeks} week{historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}{historicalApPaymentProfile.matchedPaymentCount > 0 ? ` (based on ${historicalApPaymentProfile.matchedPaymentCount} matched bills).` : ' (four-week fallback because no bill/payment matches were available).'}
                 </div>
               )}
-              <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Aging Buckets (% paid next 4 weeks)</div>
+              <div style={{ fontSize: '11px', color: historicalApTimingActive ? '#64748b' : '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Aging Buckets (% paid next 4 weeks){historicalApTimingActive ? ' — Fallback assumptions' : ''}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Current</label>
-                  <PercentInput value={inputs.apCurrentPayPct} onValueChange={(next) => updatePercentField('apCurrentPayPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.apCurrentPayPct} onValueChange={(next) => updatePercentField('apCurrentPayPct', next)} disabled={historicalApTimingActive} style={historicalApTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>30-60</label>
-                  <PercentInput value={inputs.ap30To60PayPct} onValueChange={(next) => updatePercentField('ap30To60PayPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.ap30To60PayPct} onValueChange={(next) => updatePercentField('ap30To60PayPct', next)} disabled={historicalApTimingActive} style={historicalApTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>60-90</label>
-                  <PercentInput value={inputs.ap60To90PayPct} onValueChange={(next) => updatePercentField('ap60To90PayPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.ap60To90PayPct} onValueChange={(next) => updatePercentField('ap60To90PayPct', next)} disabled={historicalApTimingActive} style={historicalApTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>90+</label>
-                  <PercentInput value={inputs.ap90PlusPayPct} onValueChange={(next) => updatePercentField('ap90PlusPayPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.ap90PlusPayPct} onValueChange={(next) => updatePercentField('ap90PlusPayPct', next)} disabled={historicalApTimingActive} style={historicalApTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
               </div>
-              <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Weekly Distribution Weights</div>
+              <div style={{ fontSize: '11px', color: historicalApTimingActive ? '#64748b' : '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Weekly Distribution Weights{historicalApTimingActive ? ' — Fallback assumptions' : ''}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W1</label>
-                  <PercentInput value={inputs.apWeek1WeightPct} onValueChange={(next) => updatePercentField('apWeek1WeightPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.apWeek1WeightPct} onValueChange={(next) => updatePercentField('apWeek1WeightPct', next)} disabled={historicalApTimingActive} style={historicalApTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W2</label>
-                  <PercentInput value={inputs.apWeek2WeightPct} onValueChange={(next) => updatePercentField('apWeek2WeightPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.apWeek2WeightPct} onValueChange={(next) => updatePercentField('apWeek2WeightPct', next)} disabled={historicalApTimingActive} style={historicalApTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W3</label>
-                  <PercentInput value={inputs.apWeek3WeightPct} onValueChange={(next) => updatePercentField('apWeek3WeightPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.apWeek3WeightPct} onValueChange={(next) => updatePercentField('apWeek3WeightPct', next)} disabled={historicalApTimingActive} style={historicalApTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>W4</label>
-                  <PercentInput value={inputs.apWeek4WeightPct} onValueChange={(next) => updatePercentField('apWeek4WeightPct', next)} style={compactPercentInputStyle} />
+                  <PercentInput value={inputs.apWeek4WeightPct} onValueChange={(next) => updatePercentField('apWeek4WeightPct', next)} disabled={historicalApTimingActive} style={historicalApTimingActive ? disabledForecastAssumptionStyle : compactPercentInputStyle} />
                 </div>
               </div>
               <div>
