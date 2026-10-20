@@ -1264,6 +1264,137 @@ export async function sendAskThreadSharedEmail({
   }
 }
 
+export type AskThreadEmailTurn = {
+  askedAt: Date;
+  question: string;
+  shortAnswer: string;
+  longAnswer: string;
+  citedBullets: Array<{ text: string }>;
+  howThisImpactsUs: string;
+  sources: Array<{ url: string; title?: string | null; publishedDate?: string | null }>;
+};
+
+interface AskThreadResultEmailProps {
+  to: string[];
+  replyTo: string;
+  sentByNameOrEmail: string;
+  companyName: string;
+  threadTitle: string;
+  sentAt: Date;
+  message?: string | null;
+  turns: AskThreadEmailTurn[];
+}
+
+function safeExternalUrl(url: string): string | null {
+  const trimmed = String(url || '').trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
+
+function askTurnEmailHtml(turn: AskThreadEmailTurn, index: number, total: number): string {
+  const sectionLabel = (label: string) =>
+    `<p style="margin:14px 0 4px;color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">${label}</p>`;
+  const paragraph = (text: string) =>
+    `<p style="margin:0;color:#0f172a;font-size:14px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(text)}</p>`;
+  const bullets = turn.citedBullets.filter((b) => String(b?.text || '').trim());
+  const sources = turn.sources
+    .map((s) => ({ ...s, safeUrl: safeExternalUrl(s.url) }))
+    .filter((s) => s.safeUrl);
+  return `
+        <tr><td style="padding:20px 26px;border-top:1px solid #e2e8f0;">
+          <p style="margin:0 0 4px;color:#64748b;font-size:12px;">${total > 1 ? `Question ${index + 1} of ${total} · ` : ''}${escapeHtml(formatEstDateTime(turn.askedAt))}</p>
+          <p style="margin:0 0 6px;color:#1e293b;font-size:16px;font-weight:700;line-height:1.45;">${escapeHtml(turn.question)}</p>
+          ${turn.shortAnswer ? `${sectionLabel('Short answer')}${paragraph(turn.shortAnswer)}` : ''}
+          ${turn.longAnswer ? `${sectionLabel('Long answer')}${paragraph(turn.longAnswer)}` : ''}
+          ${
+            bullets.length
+              ? `${sectionLabel('Cited bullets')}<ul style="margin:0;padding-left:20px;color:#0f172a;font-size:14px;line-height:1.6;">${bullets
+                  .map((b) => `<li style="margin:0 0 4px;">${escapeHtml(b.text)}</li>`)
+                  .join('')}</ul>`
+              : ''
+          }
+          ${turn.howThisImpactsUs ? `${sectionLabel('How this impacts us')}${paragraph(turn.howThisImpactsUs)}` : ''}
+          ${
+            sources.length
+              ? `${sectionLabel('Sources')}<ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.6;">${sources
+                  .map(
+                    (s) =>
+                      `<li style="margin:0 0 4px;"><a href="${escapeHtml(s.safeUrl as string)}" style="color:#2563eb;text-decoration:none;">${escapeHtml(s.title || (s.safeUrl as string))}</a>${
+                        s.publishedDate ? ` <span style="color:#64748b;">(${escapeHtml(s.publishedDate)})</span>` : ''
+                      }</li>`,
+                  )
+                  .join('')}</ul>`
+              : ''
+          }
+        </td></tr>`;
+}
+
+export async function sendAskThreadResultEmail({
+  to,
+  replyTo,
+  sentByNameOrEmail,
+  companyName,
+  threadTitle,
+  sentAt,
+  message,
+  turns,
+}: AskThreadResultEmailProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping Ask Corelytics result email');
+    return { success: false as const, reason: 'Email service not configured' };
+  }
+
+  const safeSentBy = escapeHtml(sentByNameOrEmail);
+  const safeCompany = escapeHtml(companyName);
+  const safeTitle = escapeHtml(threadTitle || 'Untitled thread');
+  const safeSentAt = escapeHtml(formatEstDateTime(sentAt));
+  const trimmedMessage = String(message || '').trim();
+  const messageBlock = trimmedMessage
+    ? `
+        <tr><td style="padding:0 26px 18px;">
+          <table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:separate;background:#f8fafc;border:1px solid #e2e8f0;border-left:3px solid #1F70C1;border-radius:6px;">
+            <tr><td style="padding:12px 16px;color:#334155;font-size:14px;white-space:pre-wrap;">${escapeHtml(trimmedMessage)}</td></tr>
+          </table>
+        </td></tr>`
+    : '';
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to,
+      replyTo: [replyTo],
+      subject: `${sentByNameOrEmail} sent you an Ask Corelytics answer - ${companyName}`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Ask Corelytics answer</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="680" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:22px 26px 14px;">
+          <h2 style="margin:0;color:#1e293b;font-size:22px;">${safeTitle}</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">${safeSentBy} sent you this Ask Corelytics result for <strong>${safeCompany}</strong> on ${safeSentAt}.</p>
+        </td></tr>${messageBlock}${turns.map((turn, idx) => askTurnEmailHtml(turn, idx, turns.length)).join('')}
+        <tr><td style="padding:16px 26px;border-top:1px solid #e2e8f0;background:#f8fafc;border-radius:0 0 10px 10px;">
+          <p style="margin:0;color:#94a3b8;font-size:12px;line-height:1.6;">This is a copy of the answers as of the time it was sent. Reply to this email to reach ${safeSentBy}.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) throw new Error(`Failed to send email: ${error.message}`);
+    return { success: true as const, data };
+  } catch (sendError) {
+    console.error('❌ Error sending Ask Corelytics result email:', sendError);
+    return { success: false as const, error: sendError };
+  }
+}
+
 // Support ticket props
 interface SupportTicketProps {
   subject: string;

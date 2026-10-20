@@ -83,6 +83,7 @@ export type AuditAction =
   | 'ASK_THREAD_SHARE_VIEWED'
   | 'ASK_THREAD_SHARE_REMOVED_BY_RECIPIENT'
   | 'ASK_THREAD_CONTINUED'
+  | 'ASK_THREAD_EMAILED'
 
 export interface AuditLogEntry {
   action: AuditAction

@@ -9,6 +9,7 @@ type MyThreadSummary = {
   updatedAt: string;
   turnCount: number;
   sharedWith: Array<{ userId: string; name: string; viewed: boolean }>;
+  emailedTo?: Array<{ email: string; sentAt: string }>;
 };
 
 type SharedThreadSummary = {
@@ -96,6 +97,28 @@ function SharedWithLine(props: { recipients: MyThreadSummary['sharedWith'] }) {
   );
 }
 
+function EmailedToLine(props: { recipients: NonNullable<MyThreadSummary['emailedTo']> }) {
+  const shown = props.recipients.slice(0, MAX_NAMES_SHOWN);
+  const hidden = props.recipients.slice(MAX_NAMES_SHOWN);
+  return (
+    <div style={{ fontSize: '11px', color: '#0369a1', marginTop: '3px', lineHeight: '1.4', overflowWrap: 'anywhere' }}>
+      Emailed to{' '}
+      {shown.map((recipient, idx) => (
+        <span key={recipient.email} title={`Sent ${formatEstDateTime(recipient.sentAt)}`}>
+          {idx > 0 ? ', ' : ''}
+          {recipient.email}
+          <span style={{ color: '#94a3b8' }}> ({formatEstDateTime(recipient.sentAt)})</span>
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <span title={hidden.map((r) => `${r.email} (${formatEstDateTime(r.sentAt)})`).join('\n')}>
+          {` +${hidden.length} more`}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function AskThreadsSidebar(props: {
   companyId: string;
   refreshKey: number;
@@ -162,6 +185,7 @@ export function AskThreadsSidebar(props: {
                     {questionCount(thread.turnCount)} · {formatEstDateTime(thread.updatedAt)}
                   </div>
                   {thread.sharedWith.length > 0 && <SharedWithLine recipients={thread.sharedWith} />}
+                  {thread.emailedTo && thread.emailedTo.length > 0 && <EmailedToLine recipients={thread.emailedTo} />}
                 </button>
                 <button
                   title="Delete thread"
@@ -458,6 +482,137 @@ export function ShareThreadDialog(props: { threadId: string; onClose: () => void
               }}
             >
               {saving ? 'Sharing…' : selected.size > 0 ? `Share with ${selected.size}` : 'Share'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MAX_EMAIL_RECIPIENTS = 10;
+
+function parseEmailList(value: string): string[] {
+  return Array.from(new Set(value.split(/[,;\s]+/).map((email) => email.trim().toLowerCase()).filter(Boolean)));
+}
+
+export function EmailThreadDialog(props: { threadId: string; turnCount: number; onClose: () => void; onSent: () => void }) {
+  const { threadId, turnCount, onClose, onSent } = props;
+  const [emailsText, setEmailsText] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const emails = useMemo(() => parseEmailList(emailsText), [emailsText]);
+  const tooMany = emails.length > MAX_EMAIL_RECIPIENTS;
+  const canSend = emails.length > 0 && !tooMany && !sending;
+
+  async function send() {
+    if (!canSend) return;
+    setSending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/ask-threads/${encodeURIComponent(threadId)}/emails`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emails, message }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Failed to send.');
+      const sent: string[] = Array.isArray(data?.sent) ? data.sent : [];
+      const failed: string[] = Array.isArray(data?.failed) ? data.failed : [];
+      setNotice(`Sent to ${sent.join(', ')}.`);
+      if (failed.length > 0) {
+        setError(`Could not send to ${failed.join(', ')}. Try those again in a few minutes.`);
+        setEmailsText(failed.join(', '));
+      } else {
+        setEmailsText('');
+        setMessage('');
+      }
+      onSent();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Email thread"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ ...cardStyle, width: '100%', maxWidth: '540px', maxHeight: '85vh', display: 'grid', gap: '12px' }}
+      >
+        <div>
+          <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>Email thread</div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: '1.45' }}>
+            Sends the {questionCount(turnCount)} in this thread, with their answers, to any email address. The email holds a copy as of
+            now and has no link back to Corelytics. Questions you add later are only included if you email again. Replies go to your
+            email.
+          </div>
+        </div>
+
+        <label style={{ display: 'grid', gap: '4px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>Email addresses</span>
+          <input
+            value={emailsText}
+            onChange={(e) => setEmailsText(e.target.value)}
+            placeholder="name@example.com, other@example.com"
+            autoFocus
+            style={{ padding: '8px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+          />
+          <span style={{ fontSize: '11px', color: tooMany ? '#b91c1c' : '#64748b' }}>
+            {tooMany
+              ? `Enter at most ${MAX_EMAIL_RECIPIENTS} addresses.`
+              : `Separate addresses with commas. Up to ${MAX_EMAIL_RECIPIENTS}. Each person gets their own email.`}
+          </span>
+        </label>
+
+        <label style={{ display: 'grid', gap: '4px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>Message (optional)</span>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            maxLength={1000}
+            rows={3}
+            placeholder='e.g. "Here is the AR trend we discussed."'
+            style={{ padding: '8px 10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical' }}
+          />
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Shown at the top of the email. It is not sent to the AI.</span>
+        </label>
+
+        <div style={{ display: 'grid', gap: '8px' }}>
+          {error && <div style={{ fontSize: '12px', color: '#b91c1c' }}>{error}</div>}
+          {notice && <div style={{ fontSize: '12px', color: '#15803d' }}>{notice}</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button
+              onClick={onClose}
+              style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 800, cursor: 'pointer' }}
+            >
+              Close
+            </button>
+            <button
+              onClick={send}
+              disabled={!canSend}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '10px',
+                border: 'none',
+                background: canSend ? '#2563eb' : '#94a3b8',
+                color: '#fff',
+                fontWeight: 800,
+                cursor: canSend ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {sending ? 'Sending…' : emails.length > 1 ? `Send to ${emails.length}` : 'Send'}
             </button>
           </div>
         </div>

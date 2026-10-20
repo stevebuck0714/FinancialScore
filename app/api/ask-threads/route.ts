@@ -7,6 +7,17 @@ export const dynamic = 'force-dynamic';
 
 const MAX_THREADS = 100;
 
+function latestEmailPerRecipient(emails: Array<{ recipientEmail: string; sentAt: Date }>) {
+  const seen = new Set<string>();
+  const latest: Array<{ email: string; sentAt: string }> = [];
+  for (const row of emails) {
+    if (seen.has(row.recipientEmail)) continue;
+    seen.add(row.recipientEmail);
+    latest.push({ email: row.recipientEmail, sentAt: row.sentAt.toISOString() });
+  }
+  return latest;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const context = await requireAuth();
@@ -30,6 +41,10 @@ export async function GET(request: NextRequest) {
           shares: {
             orderBy: { sharedAt: 'asc' },
             select: { viewedAt: true, sharedWith: { select: { id: true, name: true, email: true } } },
+          },
+          emails: {
+            orderBy: { sentAt: 'desc' },
+            select: { recipientEmail: true, sentAt: true },
           },
         },
       }),
@@ -62,6 +77,7 @@ export async function GET(request: NextRequest) {
           name: share.sharedWith.name || share.sharedWith.email,
           viewed: Boolean(share.viewedAt),
         })),
+        emailedTo: latestEmailPerRecipient(thread.emails),
       })),
       sharedWithMe: sharedWithMe.map((share) => ({
         shareId: share.id,

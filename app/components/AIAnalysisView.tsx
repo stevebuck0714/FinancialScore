@@ -10,7 +10,7 @@ import {
   Paragraph,
   TextRun,
 } from 'docx';
-import { AskThreadsSidebar, ShareThreadDialog } from '@/app/components/ask-corelytics/AskThreadsPanel';
+import { AskThreadsSidebar, EmailThreadDialog, ShareThreadDialog } from '@/app/components/ask-corelytics/AskThreadsPanel';
 
 type AskResponse = {
   shortAnswer: string;
@@ -137,6 +137,7 @@ export default function AIAnalysisView(props: {
   const [threadsRefreshKey, setThreadsRefreshKey] = useState(0);
   const [sharedView, setSharedView] = useState<SharedThreadView | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [threadNotice, setThreadNotice] = useState<string | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const askInputRef = useRef<HTMLInputElement | null>(null);
@@ -1323,6 +1324,23 @@ export default function AIAnalysisView(props: {
                 >
                   Share Thread
                 </button>
+                <button
+                  onClick={() => setEmailDialogOpen(true)}
+                  disabled={!savedThreadId || askThreadTurns.length === 0 || askLoading}
+                  title={savedThreadId ? 'Email this thread to any email address' : 'Ask a question first; threads are saved automatically'}
+                  style={{
+                    padding: '7px 10px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: savedThreadId && askThreadTurns.length > 0 ? '#0891b2' : '#94a3b8',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: savedThreadId && askThreadTurns.length > 0 ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Email Thread
+                </button>
               </div>
 
               {askError && askThreadTurns.length === 0 && (
@@ -1433,6 +1451,14 @@ export default function AIAnalysisView(props: {
                   threadId={savedThreadId}
                   onClose={() => setShareDialogOpen(false)}
                   onShared={() => setThreadsRefreshKey((k) => k + 1)}
+                />
+              )}
+              {emailDialogOpen && savedThreadId && (
+                <EmailThreadDialog
+                  threadId={savedThreadId}
+                  turnCount={askThreadTurns.length}
+                  onClose={() => setEmailDialogOpen(false)}
+                  onSent={() => setThreadsRefreshKey((k) => k + 1)}
                 />
               )}
               {askResponse && askThreadTurns.length === 0 && !sharedView && (

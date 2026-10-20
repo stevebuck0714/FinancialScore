@@ -240,6 +240,7 @@ model User {
   askThreadsOwned      AskThread[]        @relation("AskThreadOwner")
   askThreadSharesReceived AskThreadShare[] @relation("AskThreadShareRecipient")
   askThreadSharesSent  AskThreadShare[]   @relation("AskThreadShareSender")
+  askThreadEmailsSent  AskThreadEmail[]   @relation("AskThreadEmailSender")
 
   @@index([email])
   @@index([companyId])
@@ -283,6 +284,7 @@ model AskThread {
   forks              AskThread[]      @relation("AskThreadForks")
   turns              AskThreadTurn[]
   shares             AskThreadShare[]
+  emails             AskThreadEmail[]
 
   @@index([companyId, ownerUserId, updatedAt(sort: Desc)])
   @@index([forkedFromThreadId])
@@ -321,6 +323,24 @@ model AskThreadShare {
   @@unique([threadId, sharedWithUserId])
   @@index([sharedWithUserId, sharedAt(sort: Desc)])
   @@index([sharedByUserId])
+}
+
+// Copy of an AskThread emailed to any address. The email holds the content; it has no link back to the app.
+model AskThreadEmail {
+  id               String    @id @default(cuid())
+  threadId         String
+  sentByUserId     String
+  recipientEmail   String
+  sentTurnCount    Int
+  message          String?
+  providerMessageId String?
+  sentAt           DateTime  @default(now())
+
+  thread           AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sentBy           User      @relation("AskThreadEmailSender", fields: [sentByUserId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, sentAt(sort: Desc)])
+  @@index([sentByUserId, sentAt(sort: Desc)])
 }
 
 model UserCompanyAccess {
