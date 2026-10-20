@@ -386,8 +386,12 @@ export async function GET(request: NextRequest) {
         // Queue acceptance is not completion. Warming operational reports here
         // would query the old data and duplicate the worker's post-transform
         // work every night.
-        if (syncResult.success && !syncResult.queued) {
-          console.log(`✅ ${connection.company?.name}: ${syncResult.recordsCreated} records synced`);
+        if (syncResult.success) {
+          if (syncResult.queued) {
+            console.log(`⏳ ${connection.company?.name}: Infor sync queued; completion worker will record the successful load.`);
+          } else {
+            console.log(`✅ ${connection.company?.name}: ${syncResult.recordsCreated} records synced`);
+          }
           successCount++;
         } else {
           console.error(`⚠️ ${connection.company?.name}: Partial sync with errors:`, syncResult.errors);
@@ -401,7 +405,9 @@ export async function GET(request: NextRequest) {
           });
         }
         
-        // Update last sync timestamp
+        // A queued Infor run has only been accepted. Its completion worker
+        // updates lastSyncAt after transforms and daily financial snapshots
+        // are actually finished, so the watchdog can detect stalled runs.
         await prisma.accountingConnection.updateMany({
           where: {
             id: connection.id,
@@ -409,12 +415,12 @@ export async function GET(request: NextRequest) {
           },
           data: {
             status: syncResult.success ? 'ACTIVE' : 'ERROR',
-            lastSyncAt: new Date(),
+            ...(syncResult.success && !syncResult.queued ? { lastSyncAt: new Date() } : {}),
             errorMessage: syncResult.success ? null : (syncResult.errors || []).join(' | ').slice(0, 900),
           },
         });
 
-        if (syncResult.success) {
+        if (syncResult.success && !syncResult.queued) {
           if (connection.companyId === ATLANTIC_PRECISION_COMPANY_ID) {
             const operationalPagesWarmup = await warmAtlanticOperationalTabsCaches({
               baseUrl: request.nextUrl.origin,

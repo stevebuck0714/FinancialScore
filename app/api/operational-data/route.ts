@@ -52,6 +52,7 @@ import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 import { getCashAccountAllowlistSet, isAllowedCashAccount } from '@/lib/financial/cash-balance-sheet-anchor';
+import { isBakersCompany } from '@/lib/financial/qbd-bakers-bs-pins';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
 import {
   ensurePlatosClosetMonthlyFacts,
@@ -11870,9 +11871,22 @@ export async function GET(request: NextRequest) {
           const expense = Number(row?.expense || 0);
           return revenue === 0 && cogsTotal === 0 && expense === 0;
         };
-        const dailyDataForAggregator: any[] = Array.isArray(data) ? data.slice() : [];
+        const isBakersDailyFinancials = isBakersCompany(companyId);
+        const isBakersWeekend = (row: any): boolean => {
+          const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+          if (!snapshot || Number.isNaN(snapshot.getTime())) return false;
+          const weekday = snapshot.getUTCDay();
+          return weekday === 0 || weekday === 6;
+        };
+        const dailyDataForAggregator: any[] = Array.isArray(data)
+          ? isBakersDailyFinancials && financialFrequencyForQuery === 'daily'
+            ? data.filter((row: any) => !isBakersWeekend(row))
+            : data.slice()
+          : [];
         if (financialFrequencyForQuery === 'daily' && Array.isArray(data) && data.length) {
-          data = data.filter((row: any) => !isWeekendNoActivity(row));
+          data = data.filter((row: any) =>
+            isBakersDailyFinancials ? !isBakersWeekend(row) : !isWeekendNoActivity(row)
+          );
         }
 
         if (!data.length && !dailyDataForAggregator.length) {
@@ -11914,14 +11928,14 @@ export async function GET(request: NextRequest) {
             })
           : [];
         if (financialFrequencyForQuery === 'daily' && mappedLines.length) {
-          // Mirror the per-day table's "weekends with activity stay" rule
-          // for the per-account breakdown. A mapped line on a weekend is
-          // real GL activity; only drop weekend lines whose value is zero.
+          // Bakers daily financials are business-day reports. Other companies
+          // keep weekend lines only when they contain actual GL activity.
           mappedLines = mappedLines.filter((row: any) => {
             const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
             if (!snapshot || Number.isNaN(snapshot.getTime())) return true;
             const weekday = snapshot.getUTCDay();
             if (weekday !== 0 && weekday !== 6) return true;
+            if (isBakersDailyFinancials) return false;
             return Number(row?.amount || 0) !== 0;
           });
         }

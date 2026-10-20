@@ -2538,6 +2538,10 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
   const directBalanceSheetReports = await loadQbdBalanceSheetReportSnapshots(companyId);
   for (const report of directBalanceSheetReports) {
     if (report.reportDate.slice(0, 7) !== monthKey) continue;
+    // QBD occasionally returns an accumulated, malformed Balance Sheet for
+    // weekend as-of dates. Bakers daily financials are business-day reports,
+    // and the full rebuild path already excludes these source reports.
+    if (isBakersCompany(companyId) && !isEstBusinessDay(report.reportDate)) continue;
     const row = createQbdMappedDailySnapshot(report.reportDate);
     for (const reportRow of report.rows) {
       const rowType = qbdString(reportRow.rowType).toLowerCase();
