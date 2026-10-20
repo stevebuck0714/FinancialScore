@@ -3471,6 +3471,7 @@ function scheduleOperationalPageCacheRebuild(request: NextRequest, cacheKey: str
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
  * - limit: number (optional) - max records to return
+ * - includeInventoryAging: boolean (optional) - loads the inventory aging detail on demand
  * - sectorCategory: NAICS sector code (optional) - falls back to company sector
  */
 export async function GET(request: NextRequest) {
@@ -3504,6 +3505,11 @@ export async function GET(request: NextRequest) {
     const skuParam = String(searchParams.get('sku') || '').trim();
     const includeCostHistory = ['1', 'true', 'yes'].includes(
       String(searchParams.get('includeCostHistory') || '')
+        .trim()
+        .toLowerCase()
+    );
+    const includeInventoryAging = ['1', 'true', 'yes'].includes(
+      String(searchParams.get('includeInventoryAging') || '')
         .trim()
         .toLowerCase()
     );
@@ -3777,6 +3783,7 @@ export async function GET(request: NextRequest) {
       OPERATIONAL_CACHEABLE_TYPES.has(cacheType) &&
       !skuParam &&
       !includeCostHistory &&
+      !includeInventoryAging &&
       !refreshConcentration &&
       !(isFiltechDemoCompany(companyId) && cacheType === 'products');
     const operationalCache =
@@ -3816,6 +3823,7 @@ export async function GET(request: NextRequest) {
               cacheType === 'products' && isFiltechDemoCompany(companyId) ? 'filtech-product-fixtures-v2-authoritative' : null,
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-apr-cpn-v4' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
+              cacheType === 'inventory' ? 'inventory-memory-bounded-trend-v1' : null,
             ]),
             // Hydrated Infor days belong in the version, not the key: when a
             // late transform completes, the key must stay stable so the last
@@ -10767,6 +10775,28 @@ export async function GET(request: NextRequest) {
           gte: inventoryStartUtcDay,
           lt: inventoryEndExclusive,
         };
+        // The inventory table is point-in-time data and its trend is an
+        // operational aid, not a complete item-level history export. Pulling
+        // every SKU snapshot in a broad saved dashboard range can materialize
+        // millions of rows in the function. Keep the normal trend to the most
+        // recent 90 days; an item-specific cost-history request remains
+        // intentionally uncapped.
+        const inventoryTrendStartUtcDay = includeCostHistory
+          ? inventoryStartUtcDay
+          : new Date(
+              Math.max(
+                inventoryStartUtcDay.getTime(),
+                Date.UTC(
+                  inventoryEndUtcDay.getUTCFullYear(),
+                  inventoryEndUtcDay.getUTCMonth(),
+                  inventoryEndUtcDay.getUTCDate() - 89
+                )
+              )
+            );
+        const inventoryTrendDateFilter = {
+          gte: inventoryTrendStartUtcDay,
+          lt: inventoryEndExclusive,
+        };
 
         // Inventory table should always use the full latest snapshot,
         // not a row-limited slice of mixed days.
@@ -10952,7 +10982,7 @@ export async function GET(request: NextRequest) {
               where: {
                 companyId,
                 frequency: 'daily',
-                snapshotDate: inventoryDateFilter,
+                snapshotDate: inventoryTrendDateFilter,
               },
               select: {
                 snapshotDate: true,
@@ -10962,24 +10992,31 @@ export async function GET(request: NextRequest) {
             })
           : [];
 
-        let inventoryTrendRowsRaw = await prisma.inventorySnapshot.findMany({
-          where: {
-            companyId,
-            frequency: 'daily',
-            snapshotDate: inventoryDateFilter,
-          },
-          orderBy: [{ snapshotDate: 'asc' }, { createdAt: 'desc' }],
-        });
-        // Fallback for companies that only have non-daily inventory snapshots.
-        if (!inventoryTrendRowsRaw.length) {
+        // A DailyFinancialSnapshot already holds the daily inventory total used
+        // by the trend chart. Do not also hydrate every SKU-level inventory
+        // snapshot for the same range. The detailed rows are needed only for a
+        // SKU cost-history request or when no daily total is available.
+        let inventoryTrendRowsRaw: any[] = [];
+        if (!storedDailyInventoryRows.length || includeCostHistory) {
           inventoryTrendRowsRaw = await prisma.inventorySnapshot.findMany({
             where: {
               companyId,
-              frequency,
-              snapshotDate: inventoryDateFilter,
+              frequency: 'daily',
+              snapshotDate: inventoryTrendDateFilter,
             },
             orderBy: [{ snapshotDate: 'asc' }, { createdAt: 'desc' }],
           });
+          // Fallback for companies that only have non-daily inventory snapshots.
+          if (!inventoryTrendRowsRaw.length) {
+            inventoryTrendRowsRaw = await prisma.inventorySnapshot.findMany({
+              where: {
+                companyId,
+                frequency,
+                snapshotDate: inventoryTrendDateFilter,
+              },
+              orderBy: [{ snapshotDate: 'asc' }, { createdAt: 'desc' }],
+            });
+          }
         }
         let unitCostHistory: Array<{
           snapshotDate: string;
@@ -11121,7 +11158,7 @@ export async function GET(request: NextRequest) {
             where: {
               companyId,
               frequency: 'daily',
-              snapshotDate: { lt: inventoryStartUtcDay },
+              snapshotDate: { lt: inventoryTrendStartUtcDay },
             },
             select: { inventory: true },
             orderBy: { snapshotDate: 'desc' },
@@ -11132,7 +11169,7 @@ export async function GET(request: NextRequest) {
             where: {
               companyId,
               frequency: 'daily',
-              snapshotDate: { lt: inventoryStartUtcDay },
+              snapshotDate: { lt: inventoryTrendStartUtcDay },
             },
             orderBy: { snapshotDate: 'desc' },
             select: { snapshotDate: true },
@@ -11152,7 +11189,7 @@ export async function GET(request: NextRequest) {
               where: {
                 companyId,
                 frequency,
-                snapshotDate: { lt: inventoryStartUtcDay },
+                snapshotDate: { lt: inventoryTrendStartUtcDay },
               },
               orderBy: { snapshotDate: 'desc' },
               select: { snapshotDate: true },
@@ -11171,7 +11208,7 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        const startUtcDay = new Date(inventoryStartUtcDay);
+        const startUtcDay = new Date(inventoryTrendStartUtcDay);
         const endUtcDay = new Date(inventoryEndUtcDay);
         const trendValueByDay = new Map<string, number>();
         if (storedDailyInventoryRows.length > 0) {
@@ -11231,20 +11268,7 @@ export async function GET(request: NextRequest) {
         const start90Utc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate() - 89));
         const asOfUtc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate()));
         let agingReport: any[] = [];
-        const rawShippedRows = await (prisma as any).inforRawRecord.findMany({
-          where: {
-            companyId,
-            platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-            businessDate: { gte: start90Utc, lte: asOfUtc },
-            miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
-          },
-          select: {
-            businessDate: true,
-            payload: true,
-          },
-          orderBy: [{ businessDate: 'asc' }],
-          take: rawPayloadRowCap,
-        });
+        if (includeInventoryAging) {
         const movementBySku = new Map<
           string,
           {
@@ -11255,22 +11279,22 @@ export async function GET(request: NextRequest) {
           }
         >();
         const lineState = new Map<string, { seen: boolean; lastQtyShipped: number }>();
-        for (const row of rawShippedRows as any[]) {
+        const processShippedRow = (row: any) => {
           const payload =
             row?.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
               ? (row.payload as Record<string, unknown>)
               : null;
-          if (!payload) continue;
+          if (!payload) return;
           const rawOrderId = normalizeToken(payload['CoNum'] ?? payload['CONUM'] ?? payload['coNum'] ?? '');
           const rawLine = normalizeToken(payload['CoLine'] ?? payload['COLINE'] ?? payload['coLine'] ?? '0') || '0';
           const rawRelease = normalizeToken(payload['CoRelease'] ?? payload['CORELEASE'] ?? payload['coRelease'] ?? '0') || '0';
           const lineKey = `${rawOrderId}|${rawLine}-${rawRelease}`;
-          if (!rawOrderId) continue;
+          if (!rawOrderId) return;
           const skuToken = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
           const keyAliases = Array.from(
             new Set([canonicalMovementKey(skuToken)].filter(Boolean))
           );
-          if (!keyAliases.length) continue;
+          if (!keyAliases.length) return;
           for (const alias of keyAliases) {
             if (!movementBySku.has(alias)) {
               movementBySku.set(alias, {
@@ -11282,7 +11306,7 @@ export async function GET(request: NextRequest) {
             }
           }
           const businessDateRaw = row?.businessDate ? new Date(row.businessDate) : null;
-          if (!businessDateRaw || Number.isNaN(businessDateRaw.getTime())) continue;
+          if (!businessDateRaw || Number.isNaN(businessDateRaw.getTime())) return;
           const eventUtc = new Date(
             Date.UTC(businessDateRaw.getUTCFullYear(), businessDateRaw.getUTCMonth(), businessDateRaw.getUTCDate())
           );
@@ -11306,12 +11330,12 @@ export async function GET(request: NextRequest) {
                 if (eventUtc.getTime() >= start30Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty30 += qtyShippedAbs;
               }
             }
-            continue;
+            return;
           }
           const state = lineState.get(lineKey)!;
           const delta = qtyShippedAbs - state.lastQtyShipped;
           state.lastQtyShipped = Math.max(state.lastQtyShipped, qtyShippedAbs);
-          if (delta <= 0) continue;
+          if (delta <= 0) return;
           for (const alias of keyAliases) {
             const acc = movementBySku.get(alias)!;
             if (!acc.lastOrderDate || eventUtc.getTime() > acc.lastOrderDate.getTime()) acc.lastOrderDate = eventUtc;
@@ -11319,6 +11343,32 @@ export async function GET(request: NextRequest) {
             if (eventUtc.getTime() >= start60Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty60 += delta;
             if (eventUtc.getTime() >= start30Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty30 += delta;
           }
+        };
+        // Raw Infor payloads can be large. Process them in bounded batches so
+        // an inventory report never retains tens of thousands of JSON payloads
+        // in a serverless function at once.
+        const rawShipmentBatchSize = 1_000;
+        let rawShipmentOffset = 0;
+        while (rawShipmentOffset < rawPayloadRowCap) {
+          const rawShippedRows = await (prisma as any).inforRawRecord.findMany({
+            where: {
+              companyId,
+              platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+              businessDate: { gte: start90Utc, lte: asOfUtc },
+              miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+            },
+            select: {
+              businessDate: true,
+              payload: true,
+            },
+            orderBy: [{ businessDate: 'asc' }, { id: 'asc' }],
+            skip: rawShipmentOffset,
+            take: Math.min(rawShipmentBatchSize, rawPayloadRowCap - rawShipmentOffset),
+          });
+          if (!rawShippedRows.length) break;
+          for (const row of rawShippedRows as any[]) processShippedRow(row);
+          rawShipmentOffset += rawShippedRows.length;
+          if (rawShippedRows.length < rawShipmentBatchSize) break;
         }
         agingReport = latestInventoryBySku.map((inv) => {
           const lookupAliases = Array.from(
@@ -11359,6 +11409,7 @@ export async function GET(request: NextRequest) {
           (a, b) =>
             Number(b.estimatedObsolescenceExposure || 0) - Number(a.estimatedObsolescenceExposure || 0)
         );
+        }
 
         const inventoryMetrics = {
           totalValue: latestInventoryBySku.reduce((sum, item) => sum + Number(item.assetValue || 0), 0),
@@ -11367,6 +11418,7 @@ export async function GET(request: NextRequest) {
           top5InventoryValue: 0,
           totalObsolescenceExposure: 0,
           inventoryTurnover: null as number | null,
+          inventoryAgingLoaded: includeInventoryAging,
         };
         inventoryMetrics.top5InventoryValue = [...latestInventoryBySku]
           .sort((a, b) => Number(b.assetValue || 0) - Number(a.assetValue || 0))
@@ -11407,6 +11459,7 @@ export async function GET(request: NextRequest) {
               top5InventoryValue: 0,
               totalObsolescenceExposure: 0,
               inventoryTurnover: null,
+              inventoryAgingLoaded: includeInventoryAging,
             },
           });
         }

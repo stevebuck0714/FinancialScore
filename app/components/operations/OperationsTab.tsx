@@ -1046,7 +1046,9 @@ export default function OperationsTab({
   const wholesaleProductsReportCacheRef = useRef(wholesaleProductsReportCacheStore);
   const wholesaleProductsReportInflightRef = useRef(wholesaleProductsReportInflightStore);
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
-  const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
+  const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(false);
+  const [inventoryAgingLoading, setInventoryAgingLoading] = useState(false);
+  const [inventoryAgingError, setInventoryAgingError] = useState<string | null>(null);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
     | 'itemName'
     | 'sku'
@@ -3108,6 +3110,23 @@ export default function OperationsTab({
     if (!response.ok) throw new Error('Failed to load inventory unit cost history');
     const payload = await response.json();
     return Array.isArray(payload?.unitCostHistory) ? payload.unitCostHistory : [];
+  };
+
+  const fetchInventoryAgingReport = async () => {
+    const inventoryWarmStartDate = addEstCalendarDays(endDate, -90);
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      type: 'inventory',
+      frequency: 'daily',
+      startDate: startDate < inventoryWarmStartDate ? inventoryWarmStartDate : startDate,
+      endDate,
+      limit: '1000',
+      includeInventoryAging: 'true',
+      ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+    });
+    const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('Failed to load inventory aging data');
+    return response.json();
   };
 
   async function fetchCashConversionFinancialData() {
@@ -14832,6 +14851,30 @@ export default function OperationsTab({
     })();
     const rawInventoryAgingRows = Array.isArray(agingReport) ? agingReport.slice(0, 100) : [];
     const inventoryAgingSearch = String(inventoryAgingSearchTerm || '').trim().toLowerCase();
+    const handleInventoryAgingToggle = async () => {
+      const willExpand = !inventoryAgingTableExpanded;
+      setInventoryAgingTableExpanded(willExpand);
+      if (!willExpand || summary?.inventoryAgingLoaded || inventoryAgingLoading) return;
+
+      setInventoryAgingLoading(true);
+      setInventoryAgingError(null);
+      try {
+        const payload = await fetchInventoryAgingReport();
+        setInventoryData((current: any) =>
+          current
+            ? {
+                ...current,
+                agingReport: Array.isArray(payload?.agingReport) ? payload.agingReport : [],
+                summary: { ...current.summary, ...(payload?.summary || {}) },
+              }
+            : current
+        );
+      } catch (err: any) {
+        setInventoryAgingError(err?.message || 'Failed to load inventory aging data.');
+      } finally {
+        setInventoryAgingLoading(false);
+      }
+    };
     const filteredInventoryAgingRows = rawInventoryAgingRows.filter((row: any) => {
       if (!inventoryAgingSearch) return true;
       const itemName = String(row?.itemName || '').toLowerCase();
@@ -15893,7 +15936,7 @@ export default function OperationsTab({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <button
-                  onClick={() => setInventoryAgingTableExpanded((prev) => !prev)}
+                  onClick={handleInventoryAgingToggle}
                   style={{
                     border: '1px solid #cbd5e1',
                     borderRadius: '8px',
@@ -15921,6 +15964,16 @@ export default function OperationsTab({
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px' }}>
               Sales-driven proxy using outbound activity from latest available order-line snapshot (top 100 exposure rows).
             </div>
+            {inventoryAgingLoading && (
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px' }}>
+                Loading inventory aging and obsolescence data…
+              </div>
+            )}
+            {inventoryAgingError && (
+              <div style={{ fontSize: '12px', color: '#b91c1c', marginBottom: '14px' }}>
+                {inventoryAgingError}
+              </div>
+            )}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
