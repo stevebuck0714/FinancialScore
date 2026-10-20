@@ -66,6 +66,9 @@ const EXEC_BRIEFING_LOGIC_VERSION = 'exec-briefing-v30-qbd-prior-est-day-cutoff'
 const PRIVATE_DAILY_CACHE_HEADERS = {
   'Cache-Control': 'private, max-age=300, stale-while-revalidate=1800',
 };
+// Bump when briefing interpretation changes without an underlying data change.
+// It invalidates persisted same-day briefings built under prior logic.
+const EXEC_BRIEFING_LOGIC_VERSION = 'business-day-financial-comparisons-v1';
 const GENE_SOLUTIONS_COMPANY_ID = 'cmrc86g8l0001qhbkgcq6wrf9';
 
 let pulseCacheTablesPromise: Promise<void> | null = null;
@@ -366,11 +369,12 @@ function isZeroIncomeActivityRow(row: any): boolean {
     Math.abs(asNumber(row?.expense)) < 0.005;
 }
 
-function isWeekendZeroIncomeActivityRow(row: any): boolean {
+function isBusinessDayWithIncomeActivity(row: any): boolean {
   const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
   if (!snapshot || Number.isNaN(snapshot.getTime())) return false;
   const weekday = snapshot.getUTCDay();
-  return (weekday === 0 || weekday === 6) && isZeroIncomeActivityRow(row);
+  if (weekday === 0 || weekday === 6) return false;
+  return !isZeroIncomeActivityRow(row);
 }
 
 const EXEC_BRIEFING_EXPENSE_FIELDS = new Set([
@@ -1652,7 +1656,12 @@ export async function GET(request: NextRequest) {
     }
     const sectorCategory = resolveCompanyIndustrySectorCategory(company);
     const moduleProfile = getExecBriefingModuleProfile(sectorCategory);
-    const dataVersion = await buildPulseDataVersion(companyId, startDate, monthlyStartDate, moduleProfile);
+    const dataVersion = `${EXEC_BRIEFING_LOGIC_VERSION}:${await buildPulseDataVersion(
+      companyId,
+      startDate,
+      monthlyStartDate,
+      moduleProfile,
+    )}`;
     const versionedCacheKey = `${cacheKey}:${dataVersion.slice(0, 12)}`;
 
     if (!forceRefresh && !shouldUseGeneSolutionsMockBriefing) {
@@ -1771,7 +1780,12 @@ export async function GET(request: NextRequest) {
     const completeMonthlyFinancials = monthlyFinancials.filter(isCompleteMonthlyPeriod);
     const latestFinancial = last(completeMonthlyFinancials) || last(monthlyFinancials);
     const dailyFinancialsWithMappedIncome = applyMappedIncomeTotalsToDailyRows(dailyFinancials, dailyFinancialMappedLines);
-    const sortedDailyFinancials = sortByDate(dailyFinancialsWithMappedIncome.filter((row: any) => !isWeekendZeroIncomeActivityRow(row)));
+    // Daily executive comparisons are business-day activity comparisons.
+    // Never allow a weekend carry-forward, weekend posting, or zero-activity
+    // weekday to become the baseline for the latest business day.
+    const sortedDailyFinancials = sortByDate(
+      dailyFinancialsWithMappedIncome.filter(isBusinessDayWithIncomeActivity),
+    );
     const latestDailyFinancial = last(sortedDailyFinancials);
     const weeklyPair = period === 'weekly' ? completedIsoWeekPairUtc() : null;
     const preferDailySnapshots = period === 'daily' || period === 'weekly';
