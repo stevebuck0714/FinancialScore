@@ -320,14 +320,17 @@ export async function refreshCompanyItemDutyRates(
     ].map((code) => String(code || '').trim()).filter(Boolean))).join(', ') || null;
     const dutyPct = tradeProgram === 'usmca' ? dutyQuote?.specialRatePct : dutyQuote?.dutyRatePct;
     const specialPct = specialQuote?.specialRatePct ?? null;
+    // A Chapter 99 code in a column is that column's rate. Its quote's buckets
+    // also carry origin-wide measures (for China, the IEEPA headings), which
+    // would otherwise replace the entered code's own rate.
     const section301Pct =
-      section301Quote?.section301RatePct ?? directChapter99Rate(item.section301HtsCode, section301Quote);
+      directChapter99Rate(item.section301HtsCode, section301Quote) ?? section301Quote?.section301RatePct ?? null;
     const section232Pct =
-      section232Quote?.section232RatePct ?? directChapter99Rate(item.section232HtsCode, section232Quote);
+      directChapter99Rate(item.section232HtsCode, section232Quote) ?? section232Quote?.section232RatePct ?? null;
     const ieepaPct =
-      ieepaQuote?.ieepaRatePct ?? directChapter99Rate(item.ieepaHtsCode, ieepaQuote);
+      directChapter99Rate(item.ieepaHtsCode, ieepaQuote) ?? ieepaQuote?.ieepaRatePct ?? null;
     const additionalPct =
-      additionalQuote?.additionalRatePct ?? directChapter99Rate(item.additionalHtsCode, additionalQuote);
+      directChapter99Rate(item.additionalHtsCode, additionalQuote) ?? additionalQuote?.additionalRatePct ?? null;
     const tariffPct = sumPct(section301Pct, section232Pct, ieepaPct, additionalPct);
     const value = item.enteredValuePerPiece == null ? null : Number(item.enteredValuePerPiece);
     const dutyPerPiece = value == null || dutyPct == null ? null : Number((value * dutyPct) / 100);
