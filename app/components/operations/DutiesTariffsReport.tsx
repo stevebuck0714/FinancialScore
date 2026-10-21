@@ -499,20 +499,13 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
         setItems(filter === 'needs_hts' ? nextItems.filter((row) => row.needsHtsInput) : nextItems);
       }
       const releaseLabel = payload.releaseTitle || payload.releaseName || 'USITC HTS';
-      const appliedDuty = Number(payload.applied?.dutyAmount || 0);
-      const appliedTariff = Number(payload.applied?.tariffAmount || 0);
-      const appliedRows = Number(payload.applied?.rows || 0);
       if (lookedUp === 0) {
         setError(
           'No saved HTS-10 codes to look up on USITC. Enter HTS-10, click Save, then Refresh rates. Rates appear on All items, not on Needs HTS input.'
         );
       } else {
-        const appliedNote =
-          appliedRows > 0
-            ? ` Applied to sales dates: ${usdText(appliedDuty)} duty, ${usdText(appliedTariff)} tariffs.`
-            : ' No sales dollars applied. Items need Value $ and a matching sales history.';
         setNotice(
-          `USITC rates as of ${payload.asOfDate || asOfDate} (${releaseLabel}): updated ${updatedCount}, reused ${Number(payload.reused || 0)}, fetched ${Number(payload.fetched || 0)}${Number(payload.cleared || 0) ? `, old rates removed from ${Number(payload.cleared)}` : ''}${failedCount ? `, ${failedCount} HTS failed` : ''}.${appliedNote}`
+          `USITC rates as of ${payload.asOfDate || asOfDate} (${releaseLabel}): updated ${updatedCount}, reused ${Number(payload.reused || 0)}, fetched ${Number(payload.fetched || 0)}${Number(payload.cleared || 0) ? `, old rates removed from ${Number(payload.cleared)}` : ''}${failedCount ? `, ${failedCount} HTS failed` : ''}.`
         );
       }
       if (failedCount && Array.isArray(payload.failed)) {
