@@ -252,15 +252,18 @@ function amountsForOverlay(
       quotesByIdentity.get(htsQuoteIdentityKey(htsCode, originKey(overlay.countryOfOrigin), tradeProgram)) || [];
     const quote = pickQuoteForEventDate(quotes, lookupDate);
     if (quote) {
+      // Duty follows the main HTS code's quote for the sale date. Tariffs are
+      // the 301/232/IEEPA/Other column rates the refresh stored from the codes
+      // entered in those columns, so a blank column adds no tariff.
       return amountsFromRates({
         enteredValuePerPiece,
         dutyRatePct: dutyRatePctForProgram(quote, tradeProgram),
-        specialRatePct: asFiniteNumber(quote.specialRatePct),
-        section301RatePct: asFiniteNumber(quote.section301RatePct),
-        section232RatePct: asFiniteNumber(quote.section232RatePct),
-        ieepaRatePct: asFiniteNumber(quote.ieepaRatePct),
-        additionalRatePct: asFiniteNumber(quote.additionalRatePct),
-        tariffRatePct: asFiniteNumber(quote.tariffRatePct),
+        specialRatePct: asFiniteNumber(overlay.specialRatePct),
+        section301RatePct: asFiniteNumber(overlay.section301RatePct),
+        section232RatePct: asFiniteNumber(overlay.section232RatePct),
+        ieepaRatePct: asFiniteNumber(overlay.ieepaRatePct),
+        additionalRatePct: asFiniteNumber(overlay.additionalRatePct),
+        tariffRatePct: asFiniteNumber(overlay.tariffRatePct),
         quoteAsOfDate: quote.asOfDate,
         rateSource: 'hts',
       });
