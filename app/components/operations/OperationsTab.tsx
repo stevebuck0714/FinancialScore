@@ -12431,7 +12431,7 @@ export default function OperationsTab({
       };
 
       if (wholesaleProductsLoading && !Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)) {
-        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading vendor pricing data...</div>;
+        return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading vendor contract data...</div>;
       }
       if (wholesaleProductsError && !Array.isArray(wholesaleProductsData?.summary?.wholesaleVendorPricingRows)) {
         return (
@@ -12582,7 +12582,7 @@ export default function OperationsTab({
                 {vendorPricingVisibleRows.length === 0 && (
                   <tr>
                     <td colSpan={columns.length + 1} style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
-                      No vendor pricing rows match the selected filters.
+                      No vendor contract rows match the selected filters.
                     </td>
                   </tr>
                 )}
