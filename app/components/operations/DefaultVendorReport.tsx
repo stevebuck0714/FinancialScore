@@ -54,6 +54,7 @@ export default function DefaultVendorReport({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const money = (value: number) => formatMoney(Number(value || 0), { currency, locale, decimals: 0 });
+  const unitPrice = (value: number) => formatMoney(Number(value || 0), { currency, locale, decimals: 4 });
   const wrapPanel = (children: ReactNode) => (
     <OperationalReportPanel
       reportKey={reportKey}
@@ -132,7 +133,7 @@ export default function DefaultVendorReport({
       <th style={{ ...headerStyle, textAlign: 'right' }}>Forecast volume</th><th style={{ ...headerStyle, textAlign: 'right' }}>Contract price</th><th style={{ ...headerStyle, textAlign: 'right' }}>SGP price</th>
     </tr></thead><tbody>{payload.itemVolumePricing.slice(0, 40).map((row, index) => <tr key={`${row.vendorName}-${row.itemSku}-${index}`}>
       <td style={cellStyle}>{row.vendorName}</td><td style={cellStyle}><strong>{row.itemSku}</strong></td><td style={rightCellStyle}>{row.actual6mo.toLocaleString()}</td>
-      <td style={rightCellStyle}>{row.forecast6mo.toLocaleString()}</td><td style={rightCellStyle}>{money(row.contractPrice)}</td><td style={rightCellStyle}>{money(row.sgpPrice)}</td>
+      <td style={rightCellStyle}>{row.forecast6mo.toLocaleString()}</td><td style={rightCellStyle}>{unitPrice(row.contractPrice)}</td><td style={rightCellStyle}>{unitPrice(row.sgpPrice)}</td>
     </tr>)}</tbody></table>{payload.itemVolumePricing.length === 0 ? noRows : null}</div></>);
   }
 
@@ -153,7 +154,7 @@ export default function DefaultVendorReport({
 
   if (reportKey === 'vendorsPriceChangeTracker') {
     return wrapPanel(<>{reportHeading}<div style={{ overflowX: 'auto' }}><table style={tableStyle}><thead><tr><th style={headerStyle}>Vendor</th><th style={headerStyle}>Item</th><th style={{ ...headerStyle, textAlign: 'right' }}>Contract</th><th style={{ ...headerStyle, textAlign: 'right' }}>SGP</th><th style={{ ...headerStyle, textAlign: 'right' }}>Variance</th><th style={{ ...headerStyle, textAlign: 'right' }}>Variance %</th></tr></thead>
-      <tbody>{payload.priceChanges.slice(0, 40).map((row, index) => <tr key={`${row.vendorName}-${row.itemSku}-${index}`}><td style={cellStyle}>{row.vendorName}</td><td style={cellStyle}><strong>{row.itemSku}</strong></td><td style={rightCellStyle}>{money(row.contractPrice)}</td><td style={rightCellStyle}>{money(row.sgpPrice)}</td><td style={{ ...rightCellStyle, color: row.variance > 0 ? '#b91c1c' : '#15803d' }}>{row.variance >= 0 ? '+' : ''}{money(row.variance)}</td><td style={rightCellStyle}>{row.variancePct >= 0 ? '+' : ''}{row.variancePct.toFixed(1)}%</td></tr>)}</tbody>
+      <tbody>{payload.priceChanges.slice(0, 40).map((row, index) => <tr key={`${row.vendorName}-${row.itemSku}-${index}`}><td style={cellStyle}>{row.vendorName}</td><td style={cellStyle}><strong>{row.itemSku}</strong></td><td style={rightCellStyle}>{unitPrice(row.contractPrice)}</td><td style={rightCellStyle}>{unitPrice(row.sgpPrice)}</td><td style={{ ...rightCellStyle, color: row.variance > 0 ? '#b91c1c' : '#15803d' }}>{row.variance >= 0 ? '+' : ''}{unitPrice(row.variance)}</td><td style={rightCellStyle}>{row.variancePct >= 0 ? '+' : ''}{row.variancePct.toFixed(1)}%</td></tr>)}</tbody>
     </table>{payload.priceChanges.length === 0 ? noRows : null}</div></>);
   }
 

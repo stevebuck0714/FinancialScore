@@ -106,10 +106,17 @@ export async function GET(request: NextRequest) {
       ),
     ]);
 
+    // Prices are per customer group, and SGP is set for only some groups. Keep
+    // contract and SGP from the same group: prefer a group that has both.
+    const hasBoth = (row: PriceRow) => row.contractPrice != null && row.sgpPrice != null;
     const priceBySku = new Map<string, PriceRow>();
     prices.forEach((row) => {
       const existing = priceBySku.get(row.itemSku);
-      if (!existing || Number(row.contractPrice || 0) > Number(existing.contractPrice || 0)) priceBySku.set(row.itemSku, row);
+      const better =
+        !existing ||
+        (hasBoth(row) && !hasBoth(existing)) ||
+        (hasBoth(row) === hasBoth(existing) && Number(row.contractPrice || 0) > Number(existing.contractPrice || 0));
+      if (better) priceBySku.set(row.itemSku, row);
     });
     const paymentByVendor = new Map<string, number>();
     const paymentsByMonth = new Map<string, Map<number, number>>();
@@ -166,8 +173,15 @@ export async function GET(request: NextRequest) {
       spend: row.totalPaid,
       sharePct: totalSpend ? (row.totalPaid / totalSpend) * 100 : 0,
     }));
+    const seenPriceChange = new Set<string>();
     const priceChanges = itemVolumePricing
-      .filter((row) => row.contractPrice || row.sgpPrice)
+      .filter((row) => {
+        if (!row.contractPrice || !row.sgpPrice) return false;
+        const key = `${row.vendorName}||${row.itemSku}`;
+        if (seenPriceChange.has(key)) return false;
+        seenPriceChange.add(key);
+        return true;
+      })
       .map((row) => ({
         vendorName: row.vendorName,
         itemSku: row.itemSku,
