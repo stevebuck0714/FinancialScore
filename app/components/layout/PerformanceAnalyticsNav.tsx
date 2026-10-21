@@ -9,7 +9,6 @@
  
  const PERFORMANCE_ANALYTICS_VIEWS = [
   { id: 'pa-critical-issues', label: 'Critical Issues' },
-  { id: 'pa-focus-board', label: 'Major Trends' },
    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
    { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }

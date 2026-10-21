@@ -35,7 +35,6 @@ import { calculateEbitda } from '@/lib/financial/ebitda';
 const PERFORMANCE_ANALYSIS_TABS = [
   { id: 'pa-overview', label: 'Overview' },
   { id: 'pa-critical-issues', label: 'Critical Issues' },
-  { id: 'pa-focus-board', label: 'Major Trends' },
   { id: 'pa-trend-explorer', label: 'Trend Explorer' },
   { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
   { id: 'pa-opportunity-workspace', label: 'Actions & Monitoring' },
@@ -148,7 +147,6 @@ const FinancialForecastTab = dynamic(() => import('./components/FinancialForecas
 const MDAView = dynamic(() => import('./components/MDAView'), { ssr: false });
 const AIAnalysisView = dynamic(() => import('./components/AIAnalysisView'), { ssr: false });
 const PerformanceAnalyticsOverview = dynamic(() => import('./components/performance-analytics/PerformanceAnalyticsOverview'), { ssr: false });
-const FocusBoard = dynamic(() => import('./components/performance-analytics/FocusBoard'), { ssr: false });
 const TrendExplorer = dynamic(() => import('./components/performance-analytics/TrendExplorer'), { ssr: false });
 const AnomalyInbox = dynamic(() => import('./components/performance-analytics/AnomalyInbox'), { ssr: false });
 const OpportunityWorkspace = dynamic(() => import('./components/performance-analytics/OpportunityWorkspace'), { ssr: false });
@@ -323,7 +321,6 @@ const NAVIGABLE_VIEWS = new Set([
   'operations',
   'pa-overview',
   'pa-critical-issues',
-  'pa-focus-board',
   'pa-trend-explorer',
   'pa-anomaly-inbox',
   'pa-opportunity-workspace',
@@ -1693,7 +1690,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
   const [valuationBuilderSelections, setValuationBuilderSelections] = useState<Record<string, boolean>>({
     es_enterpriseValueRange: true,
     es_primaryValuationMethod: true,
@@ -2362,7 +2359,7 @@ function FinancialScorePage() {
   };
 
   // Handle navigation with payment gate
-  const handleNavigation = async (view: string) => {
+  const handleNavigation = async (view: string, options?: { operationalDataType?: string }) => {
     const section = viewToCompanySection(view);
     if (section && !hasCompanySectionAccess(section)) {
       alert('Access Restricted\n\nYour account does not have access to this section.');
@@ -2490,10 +2487,14 @@ function FinancialScorePage() {
     }
     if (view === 'operations-cash-forecast') {
       setOperationsPrintConfig({ tab: 'forecast', forecastBasisTab: 'accrual-basis', forecastSubTab: 'cash-forecast' });
+      setOperationsInitialDataType(null);
       setCurrentView('operations');
       return;
     }
-    if (view === 'operations') setOperationsPrintConfig(null);
+    if (view === 'operations') {
+      setOperationsPrintConfig(null);
+      setOperationsInitialDataType(options?.operationalDataType || null);
+    }
     setCurrentView(view as any);
   };
 
@@ -4376,6 +4377,7 @@ function FinancialScorePage() {
     overviewSubTab?: string;
     sectionKey?: string;
   } | null>(null);
+  const [operationsInitialDataType, setOperationsInitialDataType] = useState<string | null>(null);
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [isPrintingPackage, setIsPrintingPackage] = useState(false);
 
@@ -17236,6 +17238,7 @@ function FinancialScorePage() {
           monthly={monthly}
           operationalHubConfig={selectedCompanyOperationalHub}
           initialTab={operationsPrintConfig?.tab}
+          initialDataType={operationsInitialDataType || undefined}
           initialForecastBasisTab={operationsPrintConfig?.forecastBasisTab}
           initialForecastSubTab={operationsPrintConfig?.forecastSubTab}
           initialOverviewSubTab={operationsPrintConfig?.overviewSubTab}
@@ -21359,11 +21362,10 @@ function FinancialScorePage() {
           monthly={monthly}
           operationalHubConfig={selectedCompanyOperationalHub}
           viewMode="overview-only"
+          onOpenOperationalData={(dataType) => {
+            void handleNavigation('operations', { operationalDataType: dataType });
+          }}
         />
-      )}
-
-      {currentView === 'pa-focus-board' && selectedCompanyId && (
-        <FocusBoard companyId={selectedCompanyId} />
       )}
 
       {currentView === 'pa-trend-explorer' && selectedCompanyId && (

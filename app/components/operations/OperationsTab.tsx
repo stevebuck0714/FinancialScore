@@ -98,10 +98,12 @@ interface OperationsTabProps {
   operationalHubConfig?: any;
   viewMode?: 'full' | 'overview-only';
   initialTab?: string;
+  initialDataType?: string;
   initialForecastBasisTab?: 'cash-basis' | 'accrual-basis';
   initialForecastSubTab?: ForecastSubTab;
   initialOverviewSubTab?: string;
   initialPrintSectionKey?: string;
+  onOpenOperationalData?: (dataType: OpsDataType) => void;
 }
 
 type OpTab = 'dashboard' | 'overview' | string;
@@ -623,7 +625,7 @@ type MonitorCard = {
   drill: string;
   dataType?: OpsDataType;
 };
-type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
+type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading' | 'unavailable';
 const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging'];
 const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 const PRODUCT_DATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -818,10 +820,12 @@ export default function OperationsTab({
   operationalHubConfig,
   viewMode = 'full',
   initialTab,
+  initialDataType,
   initialForecastBasisTab,
   initialForecastSubTab,
   initialOverviewSubTab,
-  initialPrintSectionKey
+  initialPrintSectionKey,
+  onOpenOperationalData,
 }: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
   const isRealEstateSector = String(industrySectorCategory || '').trim() === '53';
@@ -1756,6 +1760,10 @@ export default function OperationsTab({
 
   const jumpToDataType = (type?: OpsDataType) => {
     if (!type) return;
+    if (isOverviewOnly) {
+      onOpenOperationalData?.(type);
+      return;
+    }
     const targetModule = availableModuleTabs.find((module) => mapModuleToDataType(module) === type);
     if (targetModule) setActiveTab(targetModule as OpTab);
   };
@@ -1772,6 +1780,12 @@ export default function OperationsTab({
       setActiveTab(initialTab as OpTab);
     }
   }, [initialTab, safeAvailableTabs]);
+
+  useEffect(() => {
+    if (!initialDataType || isOverviewOnly) return;
+    const targetModule = availableModuleTabs.find((module) => mapModuleToDataType(module) === initialDataType);
+    if (targetModule) setActiveTab(targetModule as OpTab);
+  }, [initialDataType, isOverviewOnly, availableModuleTabs]);
 
   useEffect(() => {
     if (initialForecastBasisTab) {
@@ -3276,6 +3290,7 @@ export default function OperationsTab({
     warning: { border: '#fde68a', bg: '#fffbeb', badgeBg: '#fef3c7', badgeColor: '#92400e', label: 'Watch' },
     critical: { border: '#fecaca', bg: '#fef2f2', badgeBg: '#fee2e2', badgeColor: '#991b1b', label: 'Alert' },
     loading: { border: '#e2e8f0', bg: '#f8fafc', badgeBg: '#f1f5f9', badgeColor: '#475569', label: 'Loading' },
+    unavailable: { border: '#e2e8f0', bg: '#f8fafc', badgeBg: '#f1f5f9', badgeColor: '#475569', label: 'Unavailable' },
   };
 
   const hasRealModuleData = (type?: OpsDataType): boolean => {
@@ -3302,7 +3317,7 @@ export default function OperationsTab({
       return {
         headline: 'No real data for this module yet',
         detail: 'Run operational sync and expand date range to populate this signal.',
-        severity: 'loading',
+        severity: 'unavailable',
       };
     }
 
@@ -3397,18 +3412,30 @@ export default function OperationsTab({
       return { maxUnitCostSpike, worstSpreadCompression };
     })();
 
+    if (card.title === 'WIP Build') {
+      return {
+        headline: 'WIP data is not available',
+        detail: 'Product sales records do not measure work in process, aging, or production bottlenecks.',
+        severity: 'unavailable',
+      };
+    }
+
     if (card.title === 'DSO Drift') {
-      const currentDso = Number(arSummary.dso || 0);
-      const latestAr = Number(arRecords[0]?.totalAR || arSummary.totalAR || 0);
-      const trailingAvgAr = arRecords.length
-        ? arRecords.reduce((sum: number, row: any) => sum + Number(row.totalAR || 0), 0) / arRecords.length
-        : latestAr;
-      const baselineDso = trailingAvgAr > 0 ? currentDso * (trailingAvgAr / Math.max(latestAr, 1)) : currentDso;
-      const delta = currentDso - baselineDso;
+      const dsoSnapshots = arRecords.filter((row: any) => Number(row?.dso || 0) > 0);
+      if (dsoSnapshots.length < 2) {
+        return {
+          headline: 'DSO trend is not available',
+          detail: 'At least two AR snapshots with calculated DSO are required; no proxy is used.',
+          severity: 'unavailable',
+        };
+      }
+      const currentDso = Number(dsoSnapshots[0].dso);
+      const priorDso = Number(dsoSnapshots[1].dso);
+      const delta = currentDso - priorDso;
       const severity: CardSeverity = delta >= 5 ? 'critical' : delta >= 2 ? 'warning' : 'normal';
       return {
-        headline: `DSO ${currentDso.toFixed(1)} days (${delta >= 0 ? '+' : ''}${delta.toFixed(1)} vs baseline)`,
-        detail: `Baseline ${baselineDso.toFixed(1)} days (trailing-window proxy)`,
+        headline: `DSO ${currentDso.toFixed(1)} days (${delta >= 0 ? '+' : ''}${delta.toFixed(1)} vs prior snapshot)`,
+        detail: `Prior snapshot DSO ${priorDso.toFixed(1)} days`,
         severity,
       };
     }
@@ -3417,6 +3444,13 @@ export default function OperationsTab({
       const currentOver30 = Number(arSummary.over30Pct || 0);
       const latest = arRecords[0];
       const previous = arRecords[1];
+      if (!latest || !previous || Number(latest.totalAR || 0) <= 0 || Number(previous.totalAR || 0) <= 0) {
+        return {
+          headline: 'Past-due AR trend is not available',
+          detail: 'At least two AR snapshots with open receivables are required to measure a spike.',
+          severity: 'unavailable',
+        };
+      }
       const prevOver30 = previous
         ? ((Number(previous.days31to60 || 0) + Number(previous.days61to90 || 0) + Number(previous.days90plus || 0)) / Math.max(Number(previous.totalAR || 1), 1)) * 100
         : currentOver30;
@@ -3441,32 +3475,18 @@ export default function OperationsTab({
     }
 
     if (card.title === 'Spend Acceleration') {
-      const latestAp = Number(apRecords[0]?.totalAP || apSummary.totalAP || 0);
-      const previousAp = Number(apRecords[1]?.totalAP || latestAp || 0);
-      const pct = previousAp > 0 ? ((latestAp - previousAp) / previousAp) * 100 : 0;
-      const severity: CardSeverity = pct >= 15 ? 'critical' : pct >= 8 ? 'warning' : 'normal';
       return {
-        headline: `AP trend ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% period-over-period`,
-        detail: `${formatCurrency(previousAp)} -> ${formatCurrency(latestAp)}`,
-        severity,
+        headline: 'Spend trend is not available',
+        detail: 'AP balances are not spending transactions and cannot support a category or vendor spend-trend conclusion.',
+        severity: 'unavailable',
       };
     }
 
     if (card.title === 'Material Cost Drift') {
-      if (!productCostSignals?.maxUnitCostSpike) {
-        return {
-          headline: 'No SKU unit-cost trend signal yet',
-          detail: 'Need recent and prior period shipped quantity for SKU-level unit cost comparison.',
-          severity: 'loading',
-        };
-      }
-      const spike = productCostSignals.maxUnitCostSpike;
-      const severity: CardSeverity =
-        spike.unitCostChangePct >= 10 ? 'critical' : spike.unitCostChangePct >= 5 ? 'warning' : 'normal';
       return {
-        headline: `Top unit-cost move ${spike.unitCostChangePct >= 0 ? '+' : ''}${spike.unitCostChangePct.toFixed(1)}% (SKU ${spike.sku})`,
-        detail: `${formatUnitCost(spike.priorUnitCost)} -> ${formatUnitCost(spike.recentUnitCost)} (recent 30d vs prior 30d)`,
-        severity,
+        headline: 'Purchase-cost trend is not available',
+        detail: 'Product sales COGS is not PO or invoice unit-cost history, so it cannot support a material-cost drift conclusion.',
+        severity: 'unavailable',
       };
     }
 
@@ -3591,7 +3611,7 @@ export default function OperationsTab({
         eta: '1-2 days',
         freshness: 'No records',
         confidence: 'Low',
-        severity: smartCardsLoading ? 'loading' : 'normal',
+        severity: smartCardsLoading ? 'loading' : 'unavailable',
       };
     }
 
@@ -3608,12 +3628,6 @@ export default function OperationsTab({
         overdue: Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0),
       }))
       .sort((a: any, b: any) => b.overdue - a.overdue);
-    const apDrivers = (Array.isArray(apSummary.unpaidByVendor) ? apSummary.unpaidByVendor : [])
-      .map((row: any) => ({
-        name: row.vendorName,
-        overdue: Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0),
-      }))
-      .sort((a: any, b: any) => b.overdue - a.overdue);
 
     const ownerByType: Record<string, { owner: string; eta: string }> = {
       'ar-aging': { owner: 'Collections Lead', eta: '24-72 hours' },
@@ -3624,6 +3638,20 @@ export default function OperationsTab({
       inventory: { owner: 'Supply Chain', eta: '2-4 days' },
     };
     const ownerMeta = ownerByType[playbook.dataType || ''] || { owner: 'Ops Team', eta: '1-3 days' };
+
+    if (playbook.title === 'Why did WIP build?') {
+      return {
+        whyNow: 'WIP data is not available',
+        impact: 'Product sales data does not identify work in process, aging, or bottleneck areas.',
+        drivers: [],
+        startHere: 'Connect a production/WIP source with item, work center, and aging data.',
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: 'No WIP records',
+        confidence: 'Low',
+        severity: 'unavailable',
+      };
+    }
 
     if (playbook.title === 'Why did AR worsen?') {
       const over30 = Number(arSummary.over30Pct || 0);
@@ -3646,22 +3674,16 @@ export default function OperationsTab({
     }
 
     if (playbook.title === 'Why did spend spike?') {
-      const totalAp = Number(apSummary.totalAP || 0);
-      const over30 = Number(apSummary.over30Pct || 0);
-      const top = apDrivers[0];
-      const impact = apDrivers.slice(0, 3).reduce((sum: number, row: any) => sum + row.overdue, 0);
-      const severity: CardSeverity = over30 >= 35 ? 'critical' : over30 >= 25 ? 'warning' : 'normal';
       return {
-        whyNow: `AP aging pressure: ${over30.toFixed(1)}% over 30 days`,
-        impact: `~${formatCurrency(impact)} in top overdue vendors; total AP ${formatCurrency(totalAp)}`,
-        drivers: apDrivers.slice(0, 3).map((row: any) => `${row.name} (${formatCurrency(row.overdue)})`),
-        startHere: top ? `Open AP for ${top.name}` : playbook.path,
+        whyNow: 'Spend transaction history is not available',
+        impact: 'AP aging and open balances cannot establish whether spending changed or identify spend categories.',
+        drivers: [],
+        startHere: 'Connect spend or AP transaction detail with posting date and category.',
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${formatDateInputLabel(endDate)}`,
-        confidence: apDrivers.length >= 3 ? 'High' : 'Medium',
-        severity,
-        focusVendor: top?.name || null,
+        freshness: 'No spend trend records',
+        confidence: 'Low',
+        severity: 'unavailable',
       };
     }
 
@@ -3690,6 +3712,22 @@ export default function OperationsTab({
 
     if (playbook.title === 'Why did margin shrink?') {
       const products = Array.isArray(productsSummary.topProducts) ? productsSummary.topProducts : [];
+      const cogsCoveredProducts = products.filter((row: any) =>
+        Number(row.totalRevenue || 0) > 0 && Number(row.totalCogs || 0) > 0
+      );
+      if (!cogsCoveredProducts.length) {
+        return {
+          whyNow: 'Product cost data is not available',
+          impact: 'Gross margin cannot be evaluated when sales records have no product COGS.',
+          drivers: [],
+          startHere: 'Load product cost or COGS data before evaluating margin changes.',
+          owner: ownerMeta.owner,
+          eta: ownerMeta.eta,
+          freshness: `As of ${formatDateInputLabel(endDate)}`,
+          confidence: 'Low',
+          severity: 'unavailable',
+        };
+      }
       const lowestMargin = [...products]
         .sort((a: any, b: any) => Number(a.grossMarginPct || 0) - Number(b.grossMarginPct || 0))
         .slice(0, 3);
@@ -4216,6 +4254,7 @@ export default function OperationsTab({
           warning: 2,
           normal: 1,
           loading: 0,
+          unavailable: 0,
         };
         const rankedMonitorCards = monitorCards
           .map((card, index) => ({ card, insight: getMonitorInsight(card), index }))
@@ -4269,7 +4308,7 @@ export default function OperationsTab({
                     <span style={{ fontSize: '12px', padding: '3px 9px', borderRadius: '999px', background: severity.badgeBg, color: severity.badgeColor, fontWeight: 700 }}>
                       {severity.label}
                     </span>
-                    {card.dataType && (
+                    {card.dataType && insight.severity !== 'unavailable' && insight.severity !== 'loading' && (
                       <button
                         onClick={() => jumpToDataType(card.dataType)}
                         style={{ fontSize: '13px', color: '#2563eb', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
@@ -4303,12 +4342,14 @@ export default function OperationsTab({
                       <span style={{ fontSize: '12px', padding: '3px 9px', borderRadius: '999px', background: severity.badgeBg, color: severity.badgeColor, fontWeight: 700 }}>
                         {severity.label}
                       </span>
-                      <button
-                        onClick={() => openInvestigate(playbook, insight)}
-                        style={{ fontSize: '13px', color: '#2563eb', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
-                      >
-                        Investigate
-                      </button>
+                      {insight.severity !== 'unavailable' && insight.severity !== 'loading' && (
+                        <button
+                          onClick={() => openInvestigate(playbook, insight)}
+                          style={{ fontSize: '13px', color: '#2563eb', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                        >
+                          Investigate
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div style={{ fontSize: '15px', color: '#0f172a', marginTop: '3px', fontWeight: 700, lineHeight: 1.35 }}><strong>Why now:</strong> {insight.whyNow}</div>

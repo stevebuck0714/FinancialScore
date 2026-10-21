@@ -242,8 +242,12 @@ function aggregateRecentSales(
 
 function extractPriorityFocusTerms(goals: Record<string, any>): string[] {
   const raw = goals?.[OPERATIONAL_FOCUS_KEY];
-  if (!Array.isArray(raw)) return [];
-  return raw
+  const values = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object'
+      ? Object.values(raw)
+      : [];
+  return values
     .map((item) => {
       if (typeof item === 'string') return item;
       if (item && typeof item === 'object') return String(item.term || item.label || item.name || '');
@@ -307,13 +311,13 @@ export async function getCompanyPulseContext(companyId: string): Promise<{
   };
 }
 
-async function loadCriticalFindings(companyId: string): Promise<FindingRow[]> {
+async function loadHighAndCriticalFindings(companyId: string): Promise<FindingRow[]> {
   try {
     return await prisma.$queryRawUnsafe<FindingRow[]>(
       `SELECT "id", "type", "metric", "severity", "confidence", "payload", "updatedAt"
        FROM "PerformanceFinding"
        WHERE "companyId" = $1
-         AND LOWER(COALESCE("severity", '')) = 'critical'
+         AND LOWER(COALESCE("severity", '')) IN ('high', 'critical')
        ORDER BY "updatedAt" DESC
        LIMIT 50`,
       companyId
@@ -523,7 +527,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
       take: 500,
     }),
     loadSectorMetricRows(companyId, salesLookbackStart),
-    loadCriticalFindings(companyId),
+    loadHighAndCriticalFindings(companyId),
   ]);
 
   const latestAr = arRows[0];
@@ -790,7 +794,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         title: 'Monthly revenue and gross profit deteriorated',
         detail: `${monthLabel(latestCompletedMonthKey)} revenue was ${money(latestMonth.revenue)}, ${formatPct(revenueDeltaPct)} vs ${monthLabel(priorCompletedMonthKey)}; gross profit changed ${money(grossProfitDelta)} (${formatPct(grossProfitDeltaPct)}).`,
         owner: 'Finance Owner',
-        drillView: 'performance-analytics',
+        drillView: 'pa-overview',
         deltaText: `Revenue ${formatPct(revenueDeltaPct)}`,
         updatedAt: latestDaily?.snapshotDate.toISOString() || nowIso,
         itemLabel: monthLabel(latestCompletedMonthKey),
@@ -865,7 +869,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
       title: 'Customer concentration risk is elevated',
       detail: `${topCustomer.name} is ${formatPct(topCustomerShare)} of recent customer revenue; top 3 customers are ${formatPct(top3CustomerShare)}.`,
       owner: 'Sales Lead',
-      drillView: 'performance-analytics',
+      drillView: 'pa-overview',
       deltaText: `Top customer ${formatPct(topCustomerShare)}`,
       updatedAt: latestCustomer?.snapshotDate.toISOString() || nowIso,
       itemLabel: topCustomer.name,
@@ -903,7 +907,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
       title: 'SKU concentration risk is elevated',
       detail: `${topProductLabel} is ${formatPct(topProductShare)} of recent product revenue; top 5 SKUs are ${formatPct(top5ProductShare)}.`,
       owner: 'Operations Lead',
-      drillView: 'performance-analytics',
+      drillView: 'pa-overview',
       deltaText: `Top 5 ${formatPct(top5ProductShare)}`,
       updatedAt: latestProduct?.snapshotDate.toISOString() || nowIso,
       itemLabel: topProductLabel,
@@ -926,8 +930,8 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
     .slice(0, 12)
     .forEach((finding) => {
       const payload = finding.payload || {};
-      const title = String(payload.title || payload.headline || finding.metric || 'Critical performance finding').trim();
-      const detail = String(payload.detail || payload.summary || payload.description || 'Unresolved critical finding requires review.').trim();
+      const title = String(payload.title || payload.headline || finding.metric || 'High-priority performance finding').trim();
+      const detail = String(payload.detail || payload.summary || payload.description || 'Unresolved high-priority finding requires review.').trim();
       alerts.push({
         fingerprint: `finding:${finding.id}`,
         source: 'unresolved',
@@ -940,9 +944,9 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         priorityScore: Math.round(Math.min(100, 75 + asNumber(finding.confidence) * 10)),
         bucket: 'attention',
         explainability: {
-          triggerName: 'Unresolved Critical Finding',
-          formula: 'Critical PerformanceFinding with unresolved status',
-          threshold: 'severity = critical and status not resolved',
+          triggerName: 'Unresolved High or Critical Finding',
+          formula: 'High or Critical PerformanceFinding with unresolved status',
+          threshold: 'severity in {high, critical} and status not resolved',
           reasonNow: detail,
           policySource: 'Performance Analytics findings feed',
           dataRefs: ['PerformanceFinding'],
