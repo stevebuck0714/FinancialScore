@@ -4,12 +4,18 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { isOperationalModuleAllowed } from '@/lib/operations/operational-dashboard-access';
-import { normalizeAdjustedQtyMap, normalizeMonthQtyMap, type MonthQtyMap } from '@/lib/operations/product-revenue-forecast';
+import {
+  normalizeAdjustedQtyMap,
+  normalizeMonthQtyMap,
+  type ForecastMonth,
+  type MonthQtyMap,
+} from '@/lib/operations/product-revenue-forecast';
 import { formatEstDate } from '@/lib/time/eastern';
 import {
   UNASSIGNED_VENDOR_ID,
   UNASSIGNED_VENDOR_NAME,
   forecastActualsKey,
+  isVendorForecastMonthEditable,
   isSgpAsOfDate,
   type VendorMonthlyForecastLineInput,
 } from '@/lib/operations/vendor-monthly-forecast';
@@ -685,9 +691,16 @@ export async function patchVendorForecastLines(companyId: string, year: number, 
     const row = byId.get(asText(patch.id));
     if (!row) continue;
     const base = vendorForecastBaseQty(row);
-    const overrides = patch.forecastOverrideQty !== undefined
+    const requestedOverrides = patch.forecastOverrideQty !== undefined
       ? parseForecastOverrideQty(patch.forecastOverrideQty)
       : parseForecastOverrideQty(row.forecastOverrideQty);
+    const overrides = parseForecastOverrideQty(row.forecastOverrideQty);
+    for (let month = 1; month <= 12; month += 1) {
+      const key = String(month);
+      if (!isVendorForecastMonthEditable(year, month as ForecastMonth)) continue;
+      if (key in requestedOverrides) overrides[key] = requestedOverrides[key];
+      else delete overrides[key];
+    }
     const effective = effectiveVendorForecastQty(base, overrides);
     const productionType = patch.productionType !== undefined
       ? asText(patch.productionType) || null

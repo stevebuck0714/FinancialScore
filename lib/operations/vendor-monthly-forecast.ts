@@ -7,6 +7,7 @@ import {
   type MonthQtyMap,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
+import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
 export type VendorMonthlyForecastLineInput = ProductRevenueForecastLineInput & {
   vendorId: string;
@@ -24,6 +25,18 @@ type MatrixCell = string | number | Date | boolean | null | undefined;
 
 export const UNASSIGNED_VENDOR_ID = '';
 export const UNASSIGNED_VENDOR_NAME = 'Unassigned';
+
+/** Current and future months remain editable; prior calendar months are locked. */
+export function isVendorForecastMonthEditable(
+  year: number,
+  month: ForecastMonth,
+  now: Date = new Date()
+): boolean {
+  const currentYear = estYear(now);
+  if (year < currentYear) return false;
+  if (year > currentYear) return true;
+  return month >= estMonthIndex(now) + 1;
+}
 
 /** Typed SGP estimated qty: annual J plus one column per month. */
 export const SGP_ESTIMATED_COLS: Record<ForecastMonth, string> = {

@@ -6,6 +6,7 @@ import {
   vendorForecastNeedsRefresh,
 } from '@/lib/operations/vendor-forecast-infor';
 import { effectiveVendorForecastQty } from '@/lib/operations/vendor-monthly-forecast-db';
+import { isVendorForecastMonthEditable } from '@/lib/operations/vendor-monthly-forecast';
 
 function testRefreshFreshnessGuard() {
   const now = new Date('2026-10-20T16:00:00.000Z');
@@ -57,6 +58,15 @@ function testOverridesRemainEffective() {
   assert.equal(effective['3'], 30);
 }
 
+function testPriorMonthOverridesAreLocked() {
+  const october = new Date('2026-10-20T16:00:00.000Z');
+  assert.equal(isVendorForecastMonthEditable(2026, 10, october), true, 'The current EST month remains editable.');
+  assert.equal(isVendorForecastMonthEditable(2026, 9, october), false, 'Prior months are locked.');
+  assert.equal(isVendorForecastMonthEditable(2026, 11, october), true, 'Future months remain editable.');
+  assert.equal(isVendorForecastMonthEditable(2025, 12, october), false, 'Prior years are locked.');
+  assert.equal(isVendorForecastMonthEditable(2027, 1, october), true, 'Future years remain editable.');
+}
+
 function testVendorListRouteCannotBlockOnRebuild() {
   const routePath = path.join(process.cwd(), 'app', 'api', 'operational-data', 'vendor-forecast', 'route.ts');
   const source = fs.readFileSync(routePath, 'utf8');
@@ -71,6 +81,7 @@ function run() {
   testRefreshFreshnessGuard();
   testCurrentAndNextPlanningMonths();
   testOverridesRemainEffective();
+  testPriorMonthOverridesAreLocked();
   testVendorListRouteCannotBlockOnRebuild();
   console.log('Vendor Monthly Forecast loading tests passed.');
 }

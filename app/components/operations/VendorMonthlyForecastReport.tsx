@@ -13,7 +13,10 @@ import {
   type ForecastMonth,
   type MonthQtyMap,
 } from '@/lib/operations/product-revenue-forecast';
-import { type VendorMonthlyForecastLineInput } from '@/lib/operations/vendor-monthly-forecast';
+import {
+  isVendorForecastMonthEditable,
+  type VendorMonthlyForecastLineInput,
+} from '@/lib/operations/vendor-monthly-forecast';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
 
 type VendorOption = {
@@ -52,6 +55,15 @@ const inputStyle: React.CSSProperties = {
 };
 
 type IdentitySortKey = 'itemSku' | 'customerName' | 'customerPartNumber' | 'customerGroup';
+type VendorForecastSortKey =
+  | IdentitySortKey
+  | 'productionType'
+  | 'previousEstimated'
+  | 'previousActual'
+  | 'previousPct'
+  | 'selectedEstimated'
+  | 'selectedActual'
+  | 'selectedPct';
 
 const IDENTITY_COLUMNS: Array<{
   key: IdentitySortKey;
@@ -126,12 +138,6 @@ function currentMonth(): ForecastMonth {
   return (estMonthIndex() + 1) as ForecastMonth;
 }
 
-function monthFollowsInfor(year: number, month: ForecastMonth): boolean {
-  const thisYear = currentYear();
-  if (year !== thisYear) return year > thisYear;
-  return month >= currentMonth();
-}
-
 const overrideInputStyle: React.CSSProperties = {
   background: '#fef3c7',
   borderColor: '#f59e0b',
@@ -180,7 +186,7 @@ export default function VendorMonthlyForecastReport({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
-  const [sortKey, setSortKey] = useState<IdentitySortKey>('itemSku');
+  const [sortKey, setSortKey] = useState<VendorForecastSortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const savedSignatures = useRef(new Map<string, string>());
   const vendorsRequestSeq = useRef(0);
@@ -385,8 +391,33 @@ export default function VendorMonthlyForecastReport({
   const sortedLines = useMemo(() => {
     const next = [...lines];
     const direction = sortDir === 'asc' ? 1 : -1;
+    const valueFor = (line: ForecastLine): string | number => {
+      switch (sortKey) {
+        case 'productionType':
+          return line.productionType || '';
+        case 'previousEstimated':
+          return qtyValue(line.forecastQty, previousMonth);
+        case 'previousActual':
+          return qtyValue(line.actualQty, previousMonth);
+        case 'previousPct':
+          return pctVsPlan(qtyValue(line.actualQty, previousMonth), qtyValue(line.forecastQty, previousMonth)) ?? -Infinity;
+        case 'selectedEstimated':
+          return qtyValue(line.forecastQty, selectedMonth);
+        case 'selectedActual':
+          return qtyValue(line.actualQty, selectedMonth);
+        case 'selectedPct':
+          return pctVsPlan(qtyValue(line.actualQty, selectedMonth), qtyValue(line.forecastQty, selectedMonth)) ?? -Infinity;
+        default:
+          return line[sortKey] || '';
+      }
+    };
     next.sort((a, b) => {
-      const primary = compareIdentity(a[sortKey] || '', b[sortKey] || '');
+      const left = valueFor(a);
+      const right = valueFor(b);
+      const primary =
+        typeof left === 'number' && typeof right === 'number'
+          ? left - right
+          : compareIdentity(String(left), String(right));
       if (primary !== 0) return primary * direction;
       return (
         compareIdentity(a.itemSku, b.itemSku) ||
@@ -397,7 +428,7 @@ export default function VendorMonthlyForecastReport({
     return next;
   }, [lines, sortDir, sortKey]);
 
-  const handleIdentitySort = (key: IdentitySortKey) => {
+  const handleSort = (key: VendorForecastSortKey) => {
     if (sortKey === key) {
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
       return;
@@ -406,7 +437,7 @@ export default function VendorMonthlyForecastReport({
     setSortDir('asc');
   };
 
-  const identitySortLabel = (key: IdentitySortKey) =>
+  const sortLabel = (key: VendorForecastSortKey) =>
     sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
 
   const monthHeaderStyle: React.CSSProperties = {
@@ -683,7 +714,7 @@ export default function VendorMonthlyForecastReport({
                       key={column.key}
                       title={`Sort by ${column.label}`}
                       align="left"
-                      onClick={() => handleIdentitySort(column.key)}
+                      onClick={() => handleSort(column.key)}
                       aria-sort={sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                       style={{
                         ...stickyIdentityStyle(index, true),
@@ -695,10 +726,13 @@ export default function VendorMonthlyForecastReport({
                         userSelect: 'none',
                       }}
                     >
-                      {column.label}{identitySortLabel(column.key)}
+                      {column.label}{sortLabel(column.key)}
                     </th>
                   ))}
                   <th
+                    title="Sort by Planned / MTO"
+                    onClick={() => handleSort('productionType')}
+                    aria-sort={sortKey === 'productionType' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                     style={{
                       textAlign: 'right',
                       padding: '8px 4px',
@@ -710,16 +744,18 @@ export default function VendorMonthlyForecastReport({
                       verticalAlign: 'bottom',
                       fontSize: 11,
                       fontWeight: 700,
+                      cursor: 'pointer',
+                      userSelect: 'none',
                     }}
                   >
-                    Planned<br />MTO
+                    Planned<br />MTO{sortLabel('productionType')}
                   </th>
-                  <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>{`Estimated ${previousMonthName}`}</th>
-                  <th style={priorHeaderStyle}>{`${previousMonthName} Actual`}</th>
-                  <th style={priorHeaderStyle}>{`% ${previousMonthName} Actual vs Estimated`}</th>
-                  <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }}>{`Estimated ${monthName}`}</th>
-                  <th style={monthHeaderStyle}>{`${monthName} Actual`}</th>
-                  <th style={monthHeaderStyle}>{`% ${monthName} Actual vs Estimated`}</th>
+                  <th title={`Sort by Estimated ${previousMonthName}`} onClick={() => handleSort('previousEstimated')} aria-sort={sortKey === 'previousEstimated' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0', cursor: 'pointer', userSelect: 'none' }}>{`Estimated ${previousMonthName}`}{sortLabel('previousEstimated')}</th>
+                  <th title={`Sort by ${previousMonthName} Actual`} onClick={() => handleSort('previousActual')} aria-sort={sortKey === 'previousActual' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>{`${previousMonthName} Actual`}{sortLabel('previousActual')}</th>
+                  <th title={`Sort by ${previousMonthName} Actual vs Estimated`} onClick={() => handleSort('previousPct')} aria-sort={sortKey === 'previousPct' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>{`% ${previousMonthName} Actual vs Estimated`}{sortLabel('previousPct')}</th>
+                  <th title={`Sort by Estimated ${monthName}`} onClick={() => handleSort('selectedEstimated')} aria-sort={sortKey === 'selectedEstimated' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe', cursor: 'pointer', userSelect: 'none' }}>{`Estimated ${monthName}`}{sortLabel('selectedEstimated')}</th>
+                  <th title={`Sort by ${monthName} Actual`} onClick={() => handleSort('selectedActual')} aria-sort={sortKey === 'selectedActual' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>{`${monthName} Actual`}{sortLabel('selectedActual')}</th>
+                  <th title={`Sort by ${monthName} Actual vs Estimated`} onClick={() => handleSort('selectedPct')} aria-sort={sortKey === 'selectedPct' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>{`% ${monthName} Actual vs Estimated`}{sortLabel('selectedPct')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -767,15 +803,23 @@ export default function VendorMonthlyForecastReport({
                         const overrides = line.forecastOverrideQty || {};
                         const overridden = key in overrides;
                         const inforQty = qtyValue(line.inforForecastQty || line.forecastQty, selectedMonth);
-                        const sourceLabel = monthFollowsInfor(year, selectedMonth) ? 'Infor order book' : 'Closed-month estimate';
+                        const editable = isVendorForecastMonthEditable(year, selectedMonth);
+                        const sourceLabel = editable ? 'Infor order book' : 'Locked prior-month estimate';
                         return (
                           <input
                             type="number"
                             value={overridden ? overrides[key] : ''}
                             placeholder={fmtQty(inforQty)}
                             onChange={(event) => updateMonthOverride(line.id, selectedMonth, event.target.value)}
-                            style={overridden ? { ...monthQtyInputStyle, ...overrideInputStyle } : monthQtyInputStyle}
-                            title={overridden
+                            disabled={!editable}
+                            style={
+                              overridden
+                                ? { ...monthQtyInputStyle, ...overrideInputStyle, ...(editable ? {} : { cursor: 'not-allowed', opacity: 0.7 }) }
+                                : { ...monthQtyInputStyle, ...(editable ? {} : { cursor: 'not-allowed', opacity: 0.7 }) }
+                            }
+                            title={!editable
+                              ? `${sourceLabel}: ${fmtQty(inforQty)}. Prior months are locked at month end.`
+                              : overridden
                               ? `Override. ${sourceLabel}: ${fmtQty(inforQty)}. Clear to use it.`
                               : `${sourceLabel}: ${fmtQty(inforQty)}. Type to override.`}
                             aria-label={`Estimated ${monthName}`}
