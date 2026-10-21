@@ -512,7 +512,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
             ? ` Applied to sales dates: ${usdText(appliedDuty)} duty, ${usdText(appliedTariff)} tariffs.`
             : ' No sales dollars applied. Items need Value $ and a matching sales history.';
         setNotice(
-          `USITC rates as of ${payload.asOfDate || asOfDate} (${releaseLabel}): updated ${updatedCount}, reused ${Number(payload.reused || 0)}, fetched ${Number(payload.fetched || 0)}${failedCount ? `, ${failedCount} HTS failed` : ''}.${appliedNote}`
+          `USITC rates as of ${payload.asOfDate || asOfDate} (${releaseLabel}): updated ${updatedCount}, reused ${Number(payload.reused || 0)}, fetched ${Number(payload.fetched || 0)}${Number(payload.cleared || 0) ? `, old rates removed from ${Number(payload.cleared)}` : ''}${failedCount ? `, ${failedCount} HTS failed` : ''}.${appliedNote}`
         );
       }
       if (failedCount && Array.isArray(payload.failed)) {

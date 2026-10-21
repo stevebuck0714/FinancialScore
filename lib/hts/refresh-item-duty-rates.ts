@@ -33,6 +33,8 @@ export type RefreshDutyRatesResult = {
   reused: number;
   fetched: number;
   updated: number;
+  /** Items whose older rates were removed because this lookup could not rate them. */
+  cleared: number;
   skipped: number;
   failed: Array<{ htsCode: string; error: string }>;
 };
@@ -293,7 +295,7 @@ export async function refreshCompanyItemDutyRates(
     }
   }
 
-  let updated = 0;
+  const updatedIds: string[] = [];
   const asOfTimestamp = utcMidnightForEstDate(asOfDate);
   for (const item of items) {
     const originCountry = originKey(item.countryOfOrigin);
@@ -351,8 +353,43 @@ export async function refreshCompanyItemDutyRates(
         "updatedAt" = NOW()
       WHERE "id" = ${item.id}
     `;
-    updated += 1;
+    updatedIds.push(item.id);
   }
+
+  // Rates come only from this HTS lookup, so anything this run could not rate
+  // (no HTS code, or no USITC line for its current code) must not keep an
+  // older rate. Skipped when every lookup failed, so a USITC outage cannot
+  // blank the whole list.
+  const usitcUnavailable = unique.size > 0 && quotes.size === 0;
+  const cleared = usitcUnavailable
+    ? 0
+    : await prisma.$executeRaw`
+        UPDATE "CompanyItemDuty"
+        SET
+          "dutyRatePct" = NULL,
+          "specialRatePct" = NULL,
+          "section301RatePct" = NULL,
+          "section232RatePct" = NULL,
+          "ieepaRatePct" = NULL,
+          "additionalRatePct" = NULL,
+          "tariffRatePct" = NULL,
+          "tariffHtsCode" = NULL,
+          "dutyDescription" = NULL,
+          "dutyPerPiece" = NULL,
+          "tariffPerPiece" = NULL,
+          "rateSource" = 'hts',
+          "lastRateAsOfDate" = NULL,
+          "lastRateReleaseName" = NULL,
+          "updatedAt" = NOW()
+        WHERE "companyId" = ${companyId}
+          AND NOT ("id" = ANY(${updatedIds}::text[]))
+          AND (
+            "dutyRatePct" IS NOT NULL OR "specialRatePct" IS NOT NULL OR "section301RatePct" IS NOT NULL
+            OR "section232RatePct" IS NOT NULL OR "ieepaRatePct" IS NOT NULL OR "additionalRatePct" IS NOT NULL
+            OR "tariffRatePct" IS NOT NULL OR "dutyPerPiece" IS NOT NULL OR "tariffPerPiece" IS NOT NULL
+            OR "lastRateAsOfDate" IS NOT NULL
+          )
+      `;
 
   return {
     asOfDate,
@@ -361,8 +398,9 @@ export async function refreshCompanyItemDutyRates(
     lookedUp: unique.size,
     reused,
     fetched,
-    updated,
-    skipped: items.length - updated,
+    updated: updatedIds.length,
+    cleared,
+    skipped: items.length - updatedIds.length,
     failed,
   };
 }
