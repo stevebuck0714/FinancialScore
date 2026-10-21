@@ -1426,11 +1426,12 @@ function applyCsiSourceWindowAndSort(
     // SLArtrans snapshots need prior-period transactions to preserve historical open-item carryover.
     // For non-overlap runs, apply an as-of RecordDate cap (<= endDate) rather than a same-day InvDate slice.
     if (window && noFullPulls) {
+      // This IDO is scoped by the CSI request site header, but rejects a Site
+      // predicate combined with its RecordDate range (IllegalFilterException).
       const filter = buildCsiRecordDateWindowFilter({
         window,
         field: 'RecordDate',
-        site: row.site,
-        includeSitePredicate: true,
+        includeSitePredicate: false,
       });
       if (filter) params.set('filter', filter);
     } else if (window && window.mode !== 'daily_overlap') {
