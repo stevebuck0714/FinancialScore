@@ -535,12 +535,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize: 13, color: '#475569' }}>
-            Items, vendors, descriptions and Value $ (unit cost) come from Infor, and origin comes from the vendor address in Infor. Description, origin and Value $ can be overridden (highlighted); clear the cell to go back to Infor.
-            HTS-10 codes are entered here or imported from a tariff file, then Save.
-            Refresh rates fills Duty % from USITC Column 1, Section 301 from the China 8-digit lists, and IEEPA from origin-based Chapter 99 headings. Then it applies that snapshot to sales dates for product cost and P&L Duties / Tariffs. Value $ is required for dollar amounts.
-          </div>
-          <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: '#64748b' }}>
             Inactive items: {counts.inactive}{includeInactive ? ' (shown)' : ' (hidden)'}. Missing HTS: {filter === 'all' ? counts.missing : missingHtsCount}.
             Showing {sortedItems.length} of {counts.total} item{counts.total === 1 ? '' : 's'}.
             {lastRateAsOfDate
