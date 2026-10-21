@@ -1956,6 +1956,10 @@ function isOptionalCsiGlSummaryIdoMissing(params: {
   if (params.moduleType === 'gl') {
     if (!msg.includes('ido not found')) return false;
     if (program && OPTIONAL_CSI_GL_SUMMARY_PROGRAMS.has(program)) return true;
+    // Tenants without SLGLTRANS / chart-of-accounts IDOs source GL from SLLedgers.
+    // A missing IDO cannot succeed on retry, and failing the task makes the
+    // queue re-run the whole chunk, replaying already-persisted sources.
+    if (program === 'SLGLTRANS' || GL_ACCOUNT_MASTER_PROGRAM_IDS.has(program)) return true;
     return (
       endpoint.includes('/load/glacctperiodbalances') ||
       endpoint.includes('/load/slglacctperiodbalances') ||
@@ -10909,20 +10913,54 @@ export async function syncInforM3OperationalData(
                   where: { batchId },
                 });
                 if (Number(existingChildCount || 0) === 0) {
-                  // A run-wide hash match is not proof this exact page was
-                  // persisted. Treating it as success let a replayed CSI page
-                  // advance the cursor while its batch had no child rows.
-                  // AR history rebuilds are the explicit exception: they
-                  // intentionally reuse canonical SLARTRANS rows from prior runs.
+                  // A task retry replays its chunk from the start, so sources
+                  // that already persisted on the failed attempt return rows
+                  // whose hashes exist under this run/day. Transforms read raw
+                  // rows by syncRunId + businessDate, not batchId, so that is
+                  // an idempotent replay only when every distinct hash is
+                  // already present in this exact run scope.
+                  const sourceRecordHashes = Array.from(
+                    new Set(
+                      rawRows
+                        .map((rawRow) => String(rawRow.sourceRecordHash || '').trim())
+                        .filter((hash) => hash.length > 0)
+                    )
+                  );
+                  // Postgres caps a prepared statement at 32,767 bind variables.
+                  const hashCountBatchSize = 10000;
+                  let existingSameRunRecordCount = 0;
+                  for (let hashOffset = 0; hashOffset < sourceRecordHashes.length; hashOffset += hashCountBatchSize) {
+                    existingSameRunRecordCount += Number(
+                      (await (prisma as any).inforRawRecord.count({
+                        where: {
+                          companyId,
+                          platform: 'INFOR_M3',
+                          syncRunId,
+                          businessDate: snapshotDate,
+                          miProgram: row.miProgram || null,
+                          transaction: req.transaction || null,
+                          sourceRecordHash: { in: sourceRecordHashes.slice(hashOffset, hashOffset + hashCountBatchSize) },
+                        },
+                      })) || 0
+                    );
+                  }
+                  const reusedSameRunRecords =
+                    sourceRecordHashes.length > 0 && existingSameRunRecordCount >= sourceRecordHashes.length;
+                  // AR history rebuilds also intentionally reuse canonical
+                  // SLARTRANS rows staged by prior runs.
                   const sourceProgramId = String(row.miProgram || '').trim().toUpperCase();
-                  if (persistedArHistoryRebuildRun === null) {
+                  if (!reusedSameRunRecords && persistedArHistoryRebuildRun === null) {
                     const rebuildRun = await prisma.inforSyncRun.findFirst({
                       where: { id: syncRunId, companyId, mode: 'ar_history_rebuild' },
                       select: { id: true },
                     });
                     persistedArHistoryRebuildRun = Boolean(rebuildRun);
                   }
-                  if (
+                  if (reusedSameRunRecords) {
+                    console.log(
+                      `Raw ingest reusing ${sourceRecordHashes.length} already-persisted ${row.miProgram || 'unknown'} rows for ${syncRunId}.`
+                    );
+                  } else if (
                     sourceProgramId === 'SLARTRANS' &&
                     (options?.fullArFactHistory === true || persistedArHistoryRebuildRun)
                   ) {
