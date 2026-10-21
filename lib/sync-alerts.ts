@@ -59,12 +59,13 @@ export async function notifyAdminsOfSyncFailure(params: NotifySyncFailureParams)
       take: 50,
     });
 
+    // An attempt whose email never went out must not suppress a later retry.
     const alreadyAlerted = recentAlerts.some((row) => {
       const details =
         row.errorDetails && typeof row.errorDetails === 'object' && !Array.isArray(row.errorDetails)
           ? (row.errorDetails as Record<string, unknown>)
           : {};
-      return String(details.alertKey || '') === alertKey;
+      return String(details.alertKey || '') === alertKey && details.emailSent !== false;
     });
 
     if (alreadyAlerted) {

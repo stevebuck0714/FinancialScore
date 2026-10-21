@@ -9,13 +9,15 @@ import { APP_TIME_ZONE, APP_TIME_ZONE_LABEL, formatEstDateTime } from '@/lib/tim
 const WATCHDOG_TIME_ZONE = APP_TIME_ZONE;
 const DEFAULT_GRACE_MINUTES = 15;
 const DEFAULT_DEDUPE_HOURS = 12;
+const FAILED_SYNC_RUN_LOOKBACK_HOURS = 24;
+const FAILED_SYNC_RUN_DEDUPE_HOURS = 24;
 
-type WatchdogAlertReason = 'error_state' | 'overdue';
+type WatchdogAlertReason = 'error_state' | 'overdue' | 'run_failed';
 
 type WatchdogAlertResult = {
   companyId: string;
   companyName: string;
-  sourceType: 'accounting' | 'operational_system';
+  sourceType: 'accounting' | 'operational_system' | 'sync_run';
   sourceKey: string;
   reason: WatchdogAlertReason;
   notified: boolean;
@@ -27,6 +29,7 @@ type WatchdogRunResult = {
   ok: boolean;
   scannedAccountingConnections: number;
   scannedOperationalConnections: number;
+  scannedFailedSyncRuns: number;
   alerts: WatchdogAlertResult[];
   graceMinutes: number;
 };
@@ -466,6 +469,84 @@ async function evaluateOperationalConnection(
   };
 }
 
+function normalizeRunError(value: string): string {
+  // Run-specific identifiers would make every hourly retry a distinct alert.
+  return value.replace(/\s*\(?syncRunId=[\w-]+\)?/gi, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The queue worker alerts on its own failures, but it runs outside Vercel and
+ * cannot be relied on to have email configured. Re-alert from this cron with
+ * the run's actual error so a failed scheduled sync always reaches admins.
+ */
+async function evaluateFailedSyncRuns(
+  now: Date,
+  companyId?: string,
+): Promise<{ scanned: number; alerts: WatchdogAlertResult[] }> {
+  const runs = await prisma.inforSyncRun.findMany({
+    where: {
+      ...(companyId ? { companyId } : {}),
+      status: 'failed',
+      updatedAt: { gte: new Date(now.getTime() - FAILED_SYNC_RUN_LOOKBACK_HOURS * 60 * 60 * 1000) },
+    },
+    select: {
+      id: true,
+      companyId: true,
+      platform: true,
+      mode: true,
+      startDate: true,
+      endDate: true,
+      lastError: true,
+      message: true,
+      finishedAt: true,
+      updatedAt: true,
+    },
+    orderBy: { updatedAt: 'asc' },
+    take: 200,
+  });
+  if (runs.length === 0) return { scanned: 0, alerts: [] };
+
+  const companies = await prisma.company.findMany({
+    where: { id: { in: Array.from(new Set(runs.map((run) => run.companyId))) } },
+    select: { id: true, name: true },
+  });
+  const companyNames = new Map(companies.map((company) => [company.id, company.name || company.id]));
+
+  const alerts: WatchdogAlertResult[] = [];
+  for (const run of runs) {
+    const rawError = asString(run.lastError) || asString(run.message) || 'Sync run failed without an error message.';
+    const normalizedError = normalizeRunError(rawError);
+    const platform = (asString(run.platform) || 'INFOR_M3') as AccountingPlatform;
+    const failedAt = run.finishedAt || run.updatedAt;
+    const window =
+      run.startDate && run.endDate
+        ? `${run.startDate.toISOString().slice(0, 10)} to ${run.endDate.toISOString().slice(0, 10)}`
+        : 'not recorded';
+    const errorDetails = `Run ${run.id} (${run.mode || 'unknown mode'}, window ${window}) failed at ${formatEstDateTime(failedAt) || formatIso(failedAt)}. ${rawError}`;
+
+    const result = await notifyAdminsOfSyncFailure({
+      companyId: run.companyId,
+      platform,
+      syncType: 'sync_run_failed',
+      errorSummary: `Sync run failed: ${normalizedError}`,
+      errorDetails,
+      dedupeHours: FAILED_SYNC_RUN_DEDUPE_HOURS,
+    });
+
+    alerts.push({
+      companyId: run.companyId,
+      companyName: companyNames.get(run.companyId) || run.companyId,
+      sourceType: 'sync_run',
+      sourceKey: `${platform}:${run.id}`,
+      reason: 'run_failed',
+      notified: result.notified,
+      deduped: result.deduped,
+      detail: result.reason || normalizedError,
+    });
+  }
+  return { scanned: runs.length, alerts };
+}
+
 export async function runDataLoadWatchdog(options: {
   companyId?: string;
   now?: Date;
@@ -536,11 +617,14 @@ export async function runDataLoadWatchdog(options: {
     const alert = await evaluateOperationalConnection(row, now, graceMinutes, dedupeHours);
     if (alert) alerts.push(alert);
   }
+  const failedRuns = await evaluateFailedSyncRuns(now, options.companyId);
+  alerts.push(...failedRuns.alerts);
 
   return {
     ok: true,
     scannedAccountingConnections: accountingRows.length,
     scannedOperationalConnections: operationalRows.length,
+    scannedFailedSyncRuns: failedRuns.scanned,
     alerts,
     graceMinutes,
   };
