@@ -300,19 +300,19 @@ export async function refreshCompanyItemDutyRates(
   for (const item of items) {
     const originCountry = originKey(item.countryOfOrigin);
     const tradeProgram = (item.tradeProgram === 'usmca' || item.tradeProgram === 'other' ? item.tradeProgram : 'none') as TradeProgram;
-    const quoteFor = (rawCode: string | null, fallbackCode: string | null) => {
-      const htsCode = normalizeHtsCode(rawCode || fallbackCode);
+    // Each column is rated only from the code entered in it; a blank column has no rate.
+    const quoteFor = (rawCode: string | null) => {
+      const htsCode = normalizeHtsCode(rawCode);
       return htsCode ? quotes.get(quoteKey(htsCode, originCountry, tradeProgram)) || null : null;
     };
-    const dutyQuote = quoteFor(item.htsCode, null);
-    const specialQuote = quoteFor(item.specialHtsCode, item.htsCode);
-    const section301Quote = quoteFor(item.section301HtsCode, item.htsCode);
-    const section232Quote = quoteFor(item.section232HtsCode, item.htsCode);
-    const ieepaQuote = quoteFor(item.ieepaHtsCode, item.htsCode);
-    const additionalQuote = quoteFor(item.additionalHtsCode, item.htsCode);
+    const dutyQuote = quoteFor(item.htsCode);
+    const specialQuote = quoteFor(item.specialHtsCode);
+    const section301Quote = quoteFor(item.section301HtsCode);
+    const section232Quote = quoteFor(item.section232HtsCode);
+    const ieepaQuote = quoteFor(item.ieepaHtsCode);
+    const additionalQuote = quoteFor(item.additionalHtsCode);
     if (!dutyQuote && !specialQuote && !section301Quote && !section232Quote && !ieepaQuote && !additionalQuote) continue;
     const tariffHtsCode = Array.from(new Set([
-      ...extract9903Codes(dutyQuote?.additionalDutiesText),
       item.section301HtsCode,
       item.section232HtsCode,
       item.ieepaHtsCode,
