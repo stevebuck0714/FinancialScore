@@ -19,6 +19,7 @@ import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-f
 import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { refreshAndWarmDutiesTariffsCache } from '@/lib/hts/duties-tariffs-cache';
+import { refreshWholesaleVendorForecastAfterInforSync } from '@/lib/operations/vendor-forecast-infor';
 
 const DEFAULT_LEASE_SECONDS = 420;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -2216,6 +2217,13 @@ async function processTask(
             error: shipmentSync.error,
           });
         }
+        await refreshWholesaleVendorForecastAfterInforSync(task.companyId).catch((error) => {
+          console.warn('Wholesale vendor forecast refresh failed after Infor sync completion:', {
+            companyId: task.companyId,
+            runId: task.runId,
+            error: errorToMessage(error, 'unknown error'),
+          });
+        });
       }
       // Do not rebuild every operational report immediately after each queue
       // run. Those warmups issue broad historical reads (and used to run once

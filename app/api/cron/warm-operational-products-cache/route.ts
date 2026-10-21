@@ -4,6 +4,7 @@ import {
   ATLANTIC_PRECISION_COMPANY_ID,
   warmAtlanticProductGroupReportCache,
 } from '@/lib/operations/product-group-report-warmup';
+import { refreshWholesaleVendorForecastAfterInforSync } from '@/lib/operations/vendor-forecast-infor';
 import { resolveWholesaleProductsReportWindow } from '@/lib/operations/wholesale-products-report-warmup';
 import { addEstCalendarDays } from '@/lib/time/eastern';
 
@@ -143,7 +144,7 @@ export async function GET(request: NextRequest) {
     limit: '1000',
     sectorCategory,
   });
-  const [wholesaleReport, groups] = await Promise.all([
+  const [wholesaleReport, groups, vendorForecast] = await Promise.all([
     sectorCategory === '42'
       ? Promise.all((['margin', 'raw', 'vendor'] as const).map(async (reportMode) => [
           reportMode,
@@ -164,6 +165,15 @@ export async function GET(request: NextRequest) {
     companyId === ATLANTIC_PRECISION_COMPANY_ID
       ? warmAtlanticProductGroupReportCache({ baseUrl: request.nextUrl.origin })
       : Promise.resolve({ ok: true, skipped: true, reason: 'not_atlantic_precision' }),
+    sectorCategory === '42'
+      ? refreshWholesaleVendorForecastAfterInforSync(companyId)
+        .then((result) => ({ ok: true, ...result }))
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn('Wholesale vendor forecast fallback refresh failed:', { companyId, error: message });
+          return { ok: false, error: message };
+        })
+      : Promise.resolve({ ok: true, skipped: true, reason: 'not_wholesale_trade' }),
   ]);
 
   const wholesaleOk = sectorCategory === '42'
@@ -171,7 +181,7 @@ export async function GET(request: NextRequest) {
     : true;
 
   return NextResponse.json({
-    ok: Boolean(customers?.ok && performanceProducts?.ok && inventory?.ok && wholesaleOk && groups?.ok),
+    ok: Boolean(customers?.ok && performanceProducts?.ok && inventory?.ok && wholesaleOk && groups?.ok && vendorForecast?.ok),
     companyId,
     pendingTransforms,
     startDate,
@@ -181,5 +191,6 @@ export async function GET(request: NextRequest) {
     inventory,
     wholesaleReport,
     groups,
+    vendorForecast,
   });
 }

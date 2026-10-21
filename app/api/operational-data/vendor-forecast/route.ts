@@ -18,7 +18,6 @@ import {
   upsertVendorForecastLines,
   type VendorForecastLinePatch,
 } from '@/lib/operations/vendor-monthly-forecast-db';
-import { ensureVendorForecastFromInfor } from '@/lib/operations/vendor-forecast-infor';
 import { loadCustomerGroups, withCustomerGroups } from '@/lib/operations/customer-groups';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
@@ -46,11 +45,14 @@ export async function GET(request: NextRequest) {
     const vendorId = String(request.nextUrl.searchParams.get('vendorId') || '').trim();
     const vendorName = String(request.nextUrl.searchParams.get('vendorName') || '').trim();
 
-    await ensureVendorForecastFromInfor(companyId, year);
-    const settings = await loadVendorForecastSettings(companyId, year);
-    const vendors = await loadVendorForecastVendors(companyId, year);
-    const shipped = await loadCsiMonthlyShippedActuals({ companyId, year });
-    const dataThru = resolveVendorDataThru(settings?.dataThru, shipped.asOf);
+    // The Infor rebuild is performed after source sync and by the scheduled
+    // warmup. Returning the last completed forecast here keeps the vendor
+    // selector interactive even if a refresh is delayed or fails.
+    const [settings, vendors] = await Promise.all([
+      loadVendorForecastSettings(companyId, year),
+      loadVendorForecastVendors(companyId, year),
+    ]);
+    const dataThru = resolveVendorDataThru(settings?.dataThru, null);
     const inforSourceDate = settings?.inforSourceDate ? settings.inforSourceDate.toISOString().slice(0, 10) : null;
 
     const vendorPayload = vendors.map((row) => ({
@@ -71,17 +73,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const lines = await loadVendorForecastLines({
-      companyId,
-      year,
-      vendorId: vendorId || undefined,
-      vendorName: vendorName || undefined,
-    });
-    const customerGroups = await loadCustomerGroups(companyId);
+    const [lines, customerGroups, shipped] = await Promise.all([
+      loadVendorForecastLines({
+        companyId,
+        year,
+        vendorId: vendorId || undefined,
+        vendorName: vendorName || undefined,
+      }),
+      loadCustomerGroups(companyId),
+      loadCsiMonthlyShippedActuals({ companyId, year }),
+    ]);
 
     return NextResponse.json({
       year,
-      dataThru,
+      dataThru: resolveVendorDataThru(settings?.dataThru, shipped.asOf),
       inforSourceDate,
       vendors: vendorPayload,
       lines: withCsiShippedActuals(

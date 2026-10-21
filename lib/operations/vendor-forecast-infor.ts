@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import {
   forecastActualsExactKey,
   forecastActualsItemKey,
+  normalizeForecastCustomerId,
   normalizeMonthQtyMap,
   type MonthQtyMap,
 } from '@/lib/operations/product-revenue-forecast';
@@ -75,14 +76,73 @@ function cleanCustomerName(derived: string | null): string | null {
   return (parts.length > 1 ? parts.slice(1).join(' - ') : text).trim() || null;
 }
 
+type OrderHeader = { cust: string; custName: string | null };
+
+async function latestProgramLoad(companyId: string, miProgram: string): Promise<Date | null> {
+  const rows = await prisma.$queryRaw<Array<{ businessDate: Date | null }>>(Prisma.sql`
+    SELECT MAX("businessDate") AS "businessDate"
+    FROM "InforRawRecord"
+    WHERE "companyId" = ${companyId} AND ${INFOR_PLATFORMS} AND "miProgram" = ${miProgram}
+  `);
+  return rows[0]?.businessDate ?? null;
+}
+
+/**
+ * Newest SLCos header per order. Reads the latest SLCos load first and searches
+ * older loads only for orders it does not contain, so a full nightly load never
+ * scans the whole header history while a partial one still finds every order.
+ */
+async function loadOrderHeaders(companyId: string, orderNumbers: string[]): Promise<Map<string, OrderHeader>> {
+  const headers = new Map<string, OrderHeader>();
+  if (orderNumbers.length === 0) return headers;
+  const addRows = (rows: Array<{ co: string; cust: string; custName: string | null }>) => {
+    for (const row of rows) {
+      if (!headers.has(row.co)) headers.set(row.co, { cust: row.cust, custName: row.custName });
+    }
+  };
+
+  const latestLoad = await latestProgramLoad(companyId, 'SLCos');
+  if (latestLoad) {
+    addRows(await prisma.$queryRaw<Array<{ co: string; cust: string; custName: string | null }>>(Prisma.sql`
+      SELECT DISTINCT ON (TRIM(h.payload->>'CoNum'))
+        TRIM(h.payload->>'CoNum') AS co,
+        TRIM(COALESCE(h.payload->>'CustNum', '')) AS cust,
+        h.payload->>'DerCustNoName' AS "custName"
+      FROM "InforRawRecord" h
+      WHERE h."companyId" = ${companyId}
+        AND h."platform" IN ('INFOR_M3', 'INFOR_CSI')
+        AND h."miProgram" = 'SLCos'
+        AND h."businessDate" = ${latestLoad}
+        AND TRIM(h.payload->>'CoNum') = ANY(${orderNumbers}::text[])
+      ORDER BY TRIM(h.payload->>'CoNum'), h."fetchedAt" DESC
+    `));
+  }
+
+  const missing = orderNumbers.filter((co) => !headers.has(co));
+  if (missing.length > 0) {
+    addRows(await prisma.$queryRaw<Array<{ co: string; cust: string; custName: string | null }>>(Prisma.sql`
+      SELECT DISTINCT ON (TRIM(h.payload->>'CoNum'))
+        TRIM(h.payload->>'CoNum') AS co,
+        TRIM(COALESCE(h.payload->>'CustNum', '')) AS cust,
+        h.payload->>'DerCustNoName' AS "custName"
+      FROM "InforRawRecord" h
+      WHERE h."companyId" = ${companyId}
+        AND h."platform" IN ('INFOR_M3', 'INFOR_CSI')
+        AND h."miProgram" = 'SLCos'
+        AND TRIM(h.payload->>'CoNum') = ANY(${missing}::text[])
+      ORDER BY TRIM(h.payload->>'CoNum'), h."businessDate" DESC, h."fetchedAt" DESC
+    `));
+  }
+  return headers;
+}
+
 /**
  * Order lines from the newest SLCoitems load. The customer lives on the order
  * header (SLCos); the line's own CustNum is blank.
  */
 async function loadOrderLines(companyId: string, businessDate: Date, year: number): Promise<OrderLineRow[]> {
   const rows = await prisma.$queryRaw<Array<{
-    customerId: string;
-    customerName: string | null;
+    co: string;
     itemSku: string;
     customerPartNumber: string;
     stat: string;
@@ -111,32 +171,22 @@ async function loadOrderLines(companyId: string, businessDate: Date, year: numbe
       WHERE item <> ''
         AND stat IN (${Prisma.join(BOOKED_LINE_STATUSES)})
         AND (stat IN ('O', 'P') OR LEFT(COALESCE(due, ''), 4) = ${String(year)})
-    ),
-    hdr AS (
-      SELECT DISTINCT ON (TRIM(h.payload->>'CoNum'))
-        TRIM(h.payload->>'CoNum') AS co,
-        TRIM(COALESCE(h.payload->>'CustNum', '')) AS cust,
-        h.payload->>'DerCustNoName' AS cust_name
-      FROM "InforRawRecord" h
-      WHERE h."companyId" = ${companyId}
-        AND h."platform" IN ('INFOR_M3', 'INFOR_CSI')
-        AND h."miProgram" = 'SLCos'
-        AND TRIM(h.payload->>'CoNum') IN (SELECT co FROM booked)
-      ORDER BY TRIM(h.payload->>'CoNum'), h."businessDate" DESC, h."fetchedAt" DESC
     )
-    SELECT hdr.cust AS "customerId", hdr.cust_name AS "customerName", b.item AS "itemSku",
-           b.cust_item AS "customerPartNumber", b.stat, b.due, b.qty_ordered AS "qtyOrdered", b.qty_shipped AS "qtyShipped"
+    SELECT b.co, b.item AS "itemSku", b.cust_item AS "customerPartNumber", b.stat, b.due,
+           b.qty_ordered AS "qtyOrdered", b.qty_shipped AS "qtyShipped"
     FROM booked b
-    JOIN hdr ON hdr.co = b.co
-    WHERE hdr.cust <> ''
   `);
-  return rows.map((row) => {
+  const headers = await loadOrderHeaders(companyId, [...new Set(rows.map((row) => row.co))]);
+  const result: OrderLineRow[] = [];
+  for (const row of rows) {
+    const header = headers.get(row.co);
+    if (!header || !header.cust) continue;
     const due = String(row.due || '');
     const dueYear = /^\d{8}/.test(due) ? Number(due.slice(0, 4)) : null;
     const dueMonth = /^\d{8}/.test(due) ? Number(due.slice(4, 6)) : null;
-    return {
-      customerId: row.customerId,
-      customerName: cleanCustomerName(row.customerName),
+    result.push({
+      customerId: header.cust,
+      customerName: cleanCustomerName(header.custName),
       itemSku: row.itemSku,
       customerPartNumber: row.customerPartNumber,
       stat: row.stat,
@@ -144,8 +194,9 @@ async function loadOrderLines(companyId: string, businessDate: Date, year: numbe
       dueMonth,
       qtyOrdered: Number(row.qtyOrdered) || 0,
       qtyShipped: Number(row.qtyShipped) || 0,
-    };
-  });
+    });
+  }
+  return result;
 }
 
 async function loadRecentShipmentPairs(companyId: string): Promise<Pair[]> {
@@ -169,21 +220,58 @@ async function loadRecentShipmentPairs(companyId: string): Promise<Pair[]> {
   }
 }
 
-async function loadInforCustomerNames(companyId: string): Promise<Map<string, string>> {
-  const rows = await prisma.$queryRaw<Array<{ customerId: string; name: string }>>(Prisma.sql`
-    SELECT DISTINCT ON (TRIM(payload->>'CustNum'))
-      TRIM(payload->>'CustNum') AS "customerId",
-      TRIM(payload->>'Name') AS name
-    FROM "InforRawRecord"
-    WHERE "companyId" = ${companyId}
-      AND ${INFOR_PLATFORMS}
-      AND "miProgram" = 'SLCustomers'
-      AND COALESCE(TRIM(payload->>'CustNum'), '') <> ''
-      AND COALESCE(TRIM(payload->>'Name'), '') <> ''
-    ORDER BY TRIM(payload->>'CustNum'), "businessDate" DESC, "fetchedAt" DESC
-  `);
+const NORMALIZED_CUST_NUM_SQL = Prisma.sql`
+  CASE WHEN UPPER(TRIM(payload->>'CustNum')) ~ '^[0-9]+$'
+    THEN COALESCE(NULLIF(LTRIM(UPPER(TRIM(payload->>'CustNum')), '0'), ''), '0')
+    ELSE UPPER(TRIM(payload->>'CustNum'))
+  END`;
+
+/**
+ * Newest SLCustomers name for each requested customer (normalized ids). Same
+ * latest-load-first approach as order headers.
+ */
+async function loadInforCustomerNames(companyId: string, customerIds: string[]): Promise<Map<string, string>> {
   const result = new Map<string, string>();
-  for (const row of rows) result.set(forecastActualsItemKey(row.customerId, ''), row.name);
+  if (customerIds.length === 0) return result;
+  const addRows = (rows: Array<{ customerId: string; name: string }>) => {
+    for (const row of rows) {
+      const key = customerKey(row.customerId);
+      if (!result.has(key)) result.set(key, row.name);
+    }
+  };
+
+  const latestLoad = await latestProgramLoad(companyId, 'SLCustomers');
+  if (latestLoad) {
+    addRows(await prisma.$queryRaw<Array<{ customerId: string; name: string }>>(Prisma.sql`
+      SELECT DISTINCT ON (TRIM(payload->>'CustNum'))
+        TRIM(payload->>'CustNum') AS "customerId",
+        TRIM(payload->>'Name') AS name
+      FROM "InforRawRecord"
+      WHERE "companyId" = ${companyId}
+        AND ${INFOR_PLATFORMS}
+        AND "miProgram" = 'SLCustomers'
+        AND "businessDate" = ${latestLoad}
+        AND COALESCE(TRIM(payload->>'CustNum'), '') <> ''
+        AND COALESCE(TRIM(payload->>'Name'), '') <> ''
+      ORDER BY TRIM(payload->>'CustNum'), "fetchedAt" DESC
+    `));
+  }
+
+  const missing = customerIds.filter((id) => !result.has(customerKey(id)));
+  if (missing.length > 0) {
+    addRows(await prisma.$queryRaw<Array<{ customerId: string; name: string }>>(Prisma.sql`
+      SELECT DISTINCT ON (TRIM(payload->>'CustNum'))
+        TRIM(payload->>'CustNum') AS "customerId",
+        TRIM(payload->>'Name') AS name
+      FROM "InforRawRecord"
+      WHERE "companyId" = ${companyId}
+        AND ${INFOR_PLATFORMS}
+        AND "miProgram" = 'SLCustomers'
+        AND COALESCE(TRIM(payload->>'Name'), '') <> ''
+        AND ${NORMALIZED_CUST_NUM_SQL} = ANY(${missing}::text[])
+      ORDER BY TRIM(payload->>'CustNum'), "businessDate" DESC, "fetchedAt" DESC
+    `));
+  }
   return result;
 }
 
@@ -206,6 +294,22 @@ function newForecastId(): string {
   return `vmf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+type RefreshResult = {
+  refreshed: boolean;
+  sourceDate: Date | null;
+  updated: number;
+  inserted: number;
+};
+
+async function timed<T>(timings: Record<string, number>, label: string, work: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    return await work();
+  } finally {
+    timings[label] = Date.now() - startedAt;
+  }
+}
+
 /**
  * Rebuilds the vendor forecast rows from Infor: customer/item rows from open
  * orders and the last 12 months of shipments, vendor from the item's primary
@@ -213,29 +317,52 @@ function newForecastId(): string {
  * ordered quantity, filled lines at shipped quantity, by due month). Closed
  * months, user overrides, and team/CSR/group/status columns are kept.
  */
-export async function refreshVendorForecastFromInfor(companyId: string, year: number): Promise<{
-  refreshed: boolean;
-  sourceDate: Date | null;
-  updated: number;
-  inserted: number;
-}> {
+export async function refreshVendorForecastFromInfor(companyId: string, year: number): Promise<RefreshResult> {
+  const startedAt = Date.now();
+  const timings: Record<string, number> = {};
+  try {
+    const result = await runVendorForecastRefresh(companyId, year, timings);
+    console.info('[vendor-forecast] Infor refresh finished', {
+      companyId,
+      year,
+      totalMs: Date.now() - startedAt,
+      timings,
+      ...result,
+    });
+    return result;
+  } catch (error) {
+    console.error('[vendor-forecast] Infor refresh failed', {
+      companyId,
+      year,
+      totalMs: Date.now() - startedAt,
+      timings,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
+async function runVendorForecastRefresh(
+  companyId: string,
+  year: number,
+  timings: Record<string, number>
+): Promise<RefreshResult> {
   const months = openForecastMonths(year);
-  const sourceDate = await latestOrderLineLoad(companyId);
+  const sourceDate = await timed(timings, 'latestOrderLineLoad', () => latestOrderLineLoad(companyId));
   if (!sourceDate || months.length === 0) return { refreshed: false, sourceDate, updated: 0, inserted: 0 };
 
-  const [orderLines, shipmentPairs, customerNames, vendorByItem, existing] = await Promise.all([
-    loadOrderLines(companyId, sourceDate, year),
-    loadRecentShipmentPairs(companyId),
-    loadInforCustomerNames(companyId),
-    loadPrimaryVendorByItem(companyId),
-    prisma.$queryRawUnsafe<ExistingRow[]>(
+  const [orderLines, shipmentPairs, vendorByItem, existing] = await Promise.all([
+    timed(timings, 'orderLines', () => loadOrderLines(companyId, sourceDate, year)),
+    timed(timings, 'shipmentPairs', () => loadRecentShipmentPairs(companyId)),
+    timed(timings, 'primaryVendors', () => loadPrimaryVendorByItem(companyId)),
+    timed(timings, 'existingLines', () => prisma.$queryRawUnsafe<ExistingRow[]>(
       `SELECT "id", "vendorId", "vendorName", "customerId", "customerName", "customerPartNumber", "itemSku",
               "forecastQty", "inforForecastQty", "forecastOverrideQty", "annualBaseQty", "sortOrder"
          FROM "VendorMonthlyForecastLine"
         WHERE "companyId" = $1 AND "year" = $2`,
       companyId,
       year
-    ),
+    )),
   ]);
 
   const bookByExact = new Map<string, MonthQtyMap>();
@@ -272,6 +399,14 @@ export async function refreshVendorForecastFromInfor(companyId: string, year: nu
     existingItemCounts.set(itemKey, (existingItemCounts.get(itemKey) || 0) + 1);
     takenKeys.add(`${row.vendorId}||${row.customerId}||${row.itemSku}||${row.customerPartNumber}`);
   }
+
+  const unnamedCustomers = new Set<string>();
+  for (const id of [...existing.map((row) => row.customerId), ...[...candidates.values()].map((pair) => pair.customerId)]) {
+    if (!headerNames.has(customerKey(id))) unnamedCustomers.add(normalizeForecastCustomerId(id));
+  }
+  const customerNames = await timed(timings, 'customerNames', () =>
+    loadInforCustomerNames(companyId, [...unnamedCustomers])
+  );
 
   // SLCustomers holds one record per ship-to, so the order header's name is the reliable one.
   const nameFor = (customerId: string, fallback: string) =>
@@ -351,6 +486,7 @@ export async function refreshVendorForecastFromInfor(companyId: string, year: nu
   }
 
   const now = new Date();
+  const writesStartedAt = Date.now();
   for (let offset = 0; offset < updates.length; offset += 150) {
     const chunk = updates.slice(offset, offset + 150);
     const params: unknown[] = [];
@@ -414,6 +550,7 @@ export async function refreshVendorForecastFromInfor(companyId: string, year: nu
       ...params
     );
   }
+  timings.writes = Date.now() - writesStartedAt;
 
   await prisma.$executeRawUnsafe(
     `INSERT INTO "VendorMonthlyForecastSettings" ("companyId", "year", "inforSourceDate", "inforRefreshedAt", "updatedAt")
@@ -433,6 +570,24 @@ export async function refreshVendorForecastFromInfor(companyId: string, year: nu
 
 const inFlight = new Map<string, Promise<unknown>>();
 
+type VendorForecastRefreshSettings = {
+  inforSourceDate: Date | null;
+  inforRefreshedAt: Date | null;
+};
+
+export function vendorForecastNeedsRefresh(
+  settings: VendorForecastRefreshSettings | null,
+  sourceDate: Date | null,
+  now: Date = new Date()
+): boolean {
+  if (!sourceDate) return false;
+  const sameSource = settings?.inforSourceDate?.getTime() === sourceDate.getTime();
+  const sameDay = settings?.inforRefreshedAt
+    ? formatEstDate(settings.inforRefreshedAt) === formatEstDate(now)
+    : false;
+  return !sameSource || !sameDay;
+}
+
 /**
  * Refreshes when a newer Infor order-line load has arrived or the last refresh
  * was on an earlier EST day (so a new month starts following Infor).
@@ -451,10 +606,7 @@ export async function ensureVendorForecastFromInfor(companyId: string, year: num
       loadVendorForecastSettings(companyId, year),
       latestOrderLineLoad(companyId),
     ]);
-    if (!sourceDate) return;
-    const sameSource = settings?.inforSourceDate?.getTime() === sourceDate.getTime();
-    const sameDay = settings?.inforRefreshedAt ? formatEstDate(settings.inforRefreshedAt) === formatEstDate() : false;
-    if (sameSource && sameDay) return;
+    if (!vendorForecastNeedsRefresh(settings, sourceDate)) return;
     await refreshVendorForecastFromInfor(companyId, year);
   })();
   inFlight.set(key, task);
@@ -463,4 +615,28 @@ export async function ensureVendorForecastFromInfor(companyId: string, year: num
   } finally {
     inFlight.delete(key);
   }
+}
+
+/**
+ * Keep wholesale vendor forecasts fresh after Infor completes, rather than
+ * making a CSR wait for a full all-vendor rebuild when opening the report.
+ */
+export async function refreshWholesaleVendorForecastAfterInforSync(
+  companyId: string,
+  now: Date = new Date()
+): Promise<{ skipped: boolean; years: number[] }> {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { industrySectorCategory: true },
+  });
+  if (String(company?.industrySectorCategory || '').trim() !== '42') {
+    return { skipped: true, years: [] };
+  }
+
+  const currentYear = estYear(now);
+  const years = [currentYear, currentYear + 1];
+  // Sequential so the current year finishes first and the two rebuilds do not
+  // compete for the same Infor raw-record scans.
+  for (const year of years) await ensureVendorForecastFromInfor(companyId, year);
+  return { skipped: false, years };
 }
