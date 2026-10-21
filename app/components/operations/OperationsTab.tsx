@@ -13688,7 +13688,7 @@ export default function OperationsTab({
         { key: 'productsVendorPricing', view: 'vendorPricing' as VendorReportView, label: 'Vendor Contracts', enabled: isWholesaleProductSector && isVendorPricingEnabled },
         { key: 'vendorsVendorPricing', view: 'vendorPricingSheet' as VendorReportView, label: 'Vendor Pricing', enabled: isWholesaleProductSector && isVendorPricingSheetEnabled },
         { key: 'vendorsDutiesTariffs', view: 'dutiesTariffs' as VendorReportView, label: 'Duties & Tariffs', enabled: isWholesaleProductSector && isDutiesTariffsEnabled },
-        { key: 'vendorsSgpFreight', view: 'sgpFreight' as VendorReportView, label: 'SGP Freight', enabled: isWholesaleProductSector && isSgpFreightEnabled },
+        { key: 'vendorsSgpFreight', view: 'sgpFreight' as VendorReportView, label: 'Freight', enabled: isWholesaleProductSector && isSgpFreightEnabled },
         { key: 'vendorsMonthlyForecast', view: 'monthlyForecast' as VendorReportView, label: 'Monthly Forecast', enabled: isWholesaleProductSector && isVendorMonthlyForecastEnabled },
         { key: 'vendorsForecastRollup', view: 'forecastRollup' as VendorReportView, label: 'Forecast Rollup', enabled: isWholesaleProductSector && isVendorForecastRollupEnabled },
       ].filter((report) => report.enabled);
@@ -13809,7 +13809,7 @@ export default function OperationsTab({
           ) : activeCustomReport?.view === 'sgpFreight' ? (
             <>
               <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-                SGP Freight
+                Freight
               </h2>
               {renderReorderableCompanyReport('vendorsSgpFreight', 'vendors', <SgpFreightReport
                 selectedCompanyId={selectedCompanyId}

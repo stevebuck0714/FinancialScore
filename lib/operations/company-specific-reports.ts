@@ -208,7 +208,7 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
   },
   {
     key: 'vendorsSgpFreight',
-    label: 'SGP Freight',
+    label: 'Freight',
     tabKey: 'vendors',
     group: 'Vendors',
     sectorCategories: ['42'],

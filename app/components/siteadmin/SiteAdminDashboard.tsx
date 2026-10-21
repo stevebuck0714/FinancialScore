@@ -150,7 +150,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsVendorPricing', label: 'Vendor Contracts', group: 'Vendors' },
   { key: 'vendorsVendorPricing', label: 'Vendor Pricing', group: 'Vendors' },
   { key: 'vendorsDutiesTariffs', label: 'Duties & Tariffs', group: 'Vendors' },
-  { key: 'vendorsSgpFreight', label: 'SGP Freight', group: 'Vendors' },
+  { key: 'vendorsSgpFreight', label: 'Freight', group: 'Vendors' },
   { key: 'vendorsMonthlyForecast', label: 'Monthly Forecast', group: 'Vendors' },
   { key: 'vendorsForecastRollup', label: 'Forecast Rollup', group: 'Vendors' },
   { key: 'inventoryValueTrend', label: 'Value Trend', group: 'Inventory' },
