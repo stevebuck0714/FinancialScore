@@ -240,6 +240,10 @@ export default function ProductMonthlyRevenueReport({
     [customers]
   );
   const groupScope = Boolean(customerGroup);
+  const selectedCustomerGroup =
+    lines.find((line) => line.customerGroup)?.customerGroup ||
+    (selectedCustomer as (CustomerOption & { customerGroup?: string }) | null)?.customerGroup ||
+    '';
   const visibleIdentityColumns = useMemo(
     () => selectedCustomer && !groupScope
       ? IDENTITY_COLUMNS.filter((column) => column.key !== 'customerGroup')
@@ -776,7 +780,7 @@ export default function ProductMonthlyRevenueReport({
               zIndex: 5,
             }}
           >
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>{groupScope ? 'Group' : 'Customer'}</div>
+            <div style={{ fontSize: 16.25, fontWeight: 600, color: '#0f172a' }}>{groupScope ? 'Group' : 'Customer'}</div>
             <div
               title={groupScope ? customerGroup : selectedCustomer?.label}
               style={{
@@ -790,6 +794,16 @@ export default function ProductMonthlyRevenueReport({
             >
               {groupScope ? `Group: ${customerGroup}` : selectedCustomer?.label}
             </div>
+            {!groupScope && selectedCustomer?.customerId ? (
+              <div style={{ fontSize: 16.25, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                <strong>Customer ID:</strong> {selectedCustomer.customerId}
+              </div>
+            ) : null}
+            {!groupScope && selectedCustomerGroup ? (
+              <div style={{ fontSize: 16.25, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                <strong>Group Name:</strong> {selectedCustomerGroup}
+              </div>
+            ) : null}
           </div>
           <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + columnWidthPx(PLANNED_COL_CH) + MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX, minWidth: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + columnWidthPx(PLANNED_COL_CH) + MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX, fontSize: 12, tableLayout: 'fixed' }}>
             <colgroup>

@@ -260,6 +260,10 @@ export default function ProductRevenueRollupReport({
     [customers]
   );
   const groupScope = Boolean(customerGroup);
+  const selectedCustomerGroup =
+    lines.find((line) => line.customerGroup)?.customerGroup ||
+    (selectedCustomer as (CustomerOption & { customerGroup?: string }) | null)?.customerGroup ||
+    '';
   const visibleIdentityColumns = useMemo(
     () => selectedCustomer && !groupScope
       ? IDENTITY_COLUMNS.filter((column) => column.key !== 'customerGroup')
@@ -672,7 +676,7 @@ export default function ProductRevenueRollupReport({
               zIndex: 5,
             }}
           >
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>{groupScope ? 'Group' : 'Customer'}</div>
+            <div style={{ fontSize: 16.25, fontWeight: 600, color: '#0f172a' }}>{groupScope ? 'Group' : 'Customer'}</div>
             <div
               title={groupScope ? customerGroup : selectedCustomer?.label}
               style={{
@@ -686,6 +690,16 @@ export default function ProductRevenueRollupReport({
             >
               {groupScope ? `Group: ${customerGroup}` : selectedCustomer?.label}
             </div>
+            {!groupScope && selectedCustomer?.customerId ? (
+              <div style={{ fontSize: 16.25, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                <strong>Customer ID:</strong> {selectedCustomer.customerId}
+              </div>
+            ) : null}
+            {!groupScope && selectedCustomerGroup ? (
+              <div style={{ fontSize: 16.25, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                <strong>Group Name:</strong> {selectedCustomerGroup}
+              </div>
+            ) : null}
           </div>
           <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + 1706, fontSize: 12, tableLayout: 'fixed' }}>
             <colgroup>

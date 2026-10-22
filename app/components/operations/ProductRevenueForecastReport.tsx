@@ -281,6 +281,10 @@ export default function ProductRevenueForecastReport({
     [customers]
   );
   const groupScope = Boolean(customerGroup);
+  const selectedCustomerGroup =
+    lines.find((line) => line.customerGroup)?.customerGroup ||
+    (selectedCustomer as (CustomerOption & { customerGroup?: string }) | null)?.customerGroup ||
+    '';
   const visibleIdentityColumns = useMemo(
     () => selectedCustomer && !groupScope
       ? IDENTITY_COLUMNS.filter((column) => column.key !== 'customerGroup')
@@ -1181,6 +1185,11 @@ export default function ProductRevenueForecastReport({
               {!groupScope && selectedCustomer?.customerId ? (
                 <div style={{ fontSize: 16.25, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
                   <strong>Customer ID:</strong> {selectedCustomer.customerId}
+                </div>
+              ) : null}
+              {!groupScope && selectedCustomerGroup ? (
+                <div style={{ fontSize: 16.25, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  <strong>Group Name:</strong> {selectedCustomerGroup}
                 </div>
               ) : null}
             </div>
