@@ -60,7 +60,42 @@ type ProductRevenueForecastReportProps = {
   onOpenInfo?: () => void;
   itemIdFilter?: string;
   onItemIdFilterChange?: (itemId: string) => void;
+  /** Opening an item from the new-items alert resets the customer and resolves it from the item. */
+  itemFocusRequest?: { itemId: string; requestId: number } | null;
 };
+
+type ItemCustomer = {
+  customerId: string;
+  customerName: string;
+  customerPartNumber: string;
+};
+
+function blankForecastLine(
+  customer: CustomerOption,
+  itemSku: string,
+  customerPartNumber: string,
+  customerGroup: string,
+  sortOrder: number
+): ForecastLine {
+  return {
+    id: `tmp-${Date.now()}`,
+    customerId: customer.customerId,
+    customerName: customer.customerName,
+    customerGroup,
+    customerPartNumber,
+    itemSku,
+    team: '',
+    csr: '',
+    productionType: '',
+    statusFlag: '',
+    annualBaseQty: null,
+    forecastQty: emptyMonthQtyMap(),
+    sgpForecastQty: emptyMonthQtyMap(),
+    adjustedQty: emptyMonthQtyMap(),
+    actualQty: emptyMonthQtyMap(),
+    sortOrder,
+  };
+}
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -82,7 +117,7 @@ const IDENTITY_COLUMNS: Array<{
   sortable?: boolean;
   readOnly?: boolean;
 }> = [
-  { key: 'itemSku', label: 'APR P/N', widthCh: 12, sortable: true },
+  { key: 'itemSku', label: 'APR P/N', widthCh: 19, sortable: true },
   { key: 'customerPartNumber', label: 'Customer P/N', widthCh: 12, sortable: true },
   { key: 'customerGroup', label: 'Group', widthCh: 8, sortable: true },
   { key: 'team', label: 'TEAM', widthCh: 5, compact: true, sortable: true },
@@ -202,6 +237,7 @@ export default function ProductRevenueForecastReport({
   onOpenInfo,
   itemIdFilter = '',
   onItemIdFilterChange,
+  itemFocusRequest = null,
 }: ProductRevenueForecastReportProps) {
   const [year, setYear] = useState(currentYear());
   const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
@@ -231,6 +267,10 @@ export default function ProductRevenueForecastReport({
   const [sgpLocked, setSgpLocked] = useState(false);
   const handleSgpLockChange = useCallback((locked: boolean) => setSgpLocked(locked), []);
   const customersRequestSeq = useRef(0);
+  const [itemCustomers, setItemCustomers] = useState<{ itemId: string; customers: ItemCustomer[] } | null>(null);
+  const [loadingItemCustomers, setLoadingItemCustomers] = useState(false);
+  const [pendingItemCustomer, setPendingItemCustomer] = useState<(ItemCustomer & { itemId: string }) | null>(null);
+  const pendingNewRowRef = useRef<{ customerKey: string; itemSku: string; customerPartNumber: string } | null>(null);
 
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
@@ -381,7 +421,24 @@ export default function ProductRevenueForecastReport({
       const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to load forecast rows');
-      const nextLines = Array.isArray(payload.lines) ? payload.lines : [];
+      const nextLines: ForecastLine[] = Array.isArray(payload.lines) ? payload.lines : [];
+      const pendingRow = pendingNewRowRef.current;
+      if (pendingRow && !group && customer && pendingRow.customerKey === customer.key) {
+        pendingNewRowRef.current = null;
+        const itemKey = pendingRow.itemSku.trim().toUpperCase();
+        if (!nextLines.some((line) => line.itemSku.trim().toUpperCase() === itemKey)) {
+          nextLines.push(
+            blankForecastLine(
+              customer,
+              pendingRow.itemSku,
+              pendingRow.customerPartNumber,
+              nextLines[0]?.customerGroup || '',
+              nextLines.length
+            )
+          );
+          setNotice(`Added Item ID ${pendingRow.itemSku} for ${customer.label}. Enter monthly projections, then Save page.`);
+        }
+      }
       setLines(nextLines);
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
       if (!options?.keepDirty) setDirty(false);
@@ -414,6 +471,102 @@ export default function ProductRevenueForecastReport({
     }
     void loadLines(selectedCustomer);
   }, [customerGroup, selectedCustomer?.key, loadLines]);
+
+  const focusRequestId = itemFocusRequest?.requestId;
+  const focusItemId = itemFocusRequest?.itemId || '';
+  useEffect(() => {
+    if (!focusRequestId || !focusItemId || !selectedCompanyId) return;
+    let cancelled = false;
+    pendingNewRowRef.current = null;
+    setPendingItemCustomer(null);
+    setCustomerKey('');
+    setCustomerGroup('');
+    setCustomerIdSearch('');
+    setCustomerIdSearchError(null);
+    setLines([]);
+    setDirty(false);
+    setNotice(null);
+    setItemCustomers(null);
+    setLoadingItemCustomers(true);
+    void (async () => {
+      try {
+        const params = new URLSearchParams({
+          companyId: selectedCompanyId,
+          itemCustomers: '1',
+          itemSku: focusItemId,
+        });
+        const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`, {
+          cache: 'no-store',
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!response.ok) throw new Error(payload?.error || 'Failed to find customers for this item');
+        const found: ItemCustomer[] = Array.isArray(payload?.customers) ? payload.customers : [];
+        setItemCustomers({ itemId: focusItemId, customers: found });
+        if (found.length === 1) setPendingItemCustomer({ ...found[0], itemId: focusItemId });
+      } catch (err: any) {
+        if (!cancelled) setError(err?.message || 'Failed to find customers for this item');
+      } finally {
+        if (!cancelled) setLoadingItemCustomers(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [focusItemId, focusRequestId, selectedCompanyId]);
+
+  useEffect(() => {
+    if (!pendingItemCustomer || loadingCustomers) return;
+    const customerId = pendingItemCustomer.customerId.trim();
+    const existing = customers.find(
+      (customer) => customer.customerId.trim().toLowerCase() === customerId.toLowerCase()
+    );
+    const name = pendingItemCustomer.customerName || customerId;
+    const option: CustomerOption = existing || {
+      customerId,
+      customerName: name,
+      key: `${customerId}||${name}`,
+      label: name,
+    };
+    if (!existing) setCustomers((prev) => mergeCustomers([option], prev));
+    pendingNewRowRef.current = {
+      customerKey: option.key,
+      itemSku: pendingItemCustomer.itemId,
+      customerPartNumber: pendingItemCustomer.customerPartNumber,
+    };
+    setCustomerGroup('');
+    setCustomerIdSearch(option.customerId);
+    setCustomerIdSearchError(null);
+    setCustomerKey(option.key);
+    setPendingItemCustomer(null);
+  }, [customers, loadingCustomers, mergeCustomers, pendingItemCustomer]);
+
+  const itemCustomersForFilter =
+    itemCustomers && itemCustomers.itemId.trim().toUpperCase() === itemIdFilter.trim().toUpperCase()
+      ? itemCustomers
+      : null;
+
+  const chooseItemCustomer = (candidate: ItemCustomer) => {
+    if (!itemCustomersForFilter) return;
+    if (dirty && !window.confirm('You have unsaved changes. Switch customer without saving?')) return;
+    setDirty(false);
+    setPendingItemCustomer({ ...candidate, itemId: itemCustomersForFilter.itemId });
+  };
+
+  const addFilteredItemRow = () => {
+    const itemSku = itemIdFilter.trim();
+    if (!selectedCustomer || groupScope || !itemSku) return;
+    const customerPartNumber =
+      itemCustomersForFilter?.customers.find(
+        (candidate) =>
+          candidate.customerId.trim().toLowerCase() === selectedCustomer.customerId.trim().toLowerCase()
+      )?.customerPartNumber || '';
+    setLines((prev) => [
+      ...prev,
+      blankForecastLine(selectedCustomer, itemSku, customerPartNumber, prev[0]?.customerGroup || '', prev.length),
+    ]);
+    markDirty();
+  };
 
   const loadCompanyMonthTotals = useCallback(async () => {
     if (!selectedCompanyId) return;
@@ -907,6 +1060,46 @@ export default function ProductRevenueForecastReport({
       )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}
+      {loadingItemCustomers && focusItemId && (
+        <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>
+          Finding the customer for Item ID {focusItemId}…
+        </div>
+      )}
+      {!loadingItemCustomers && itemCustomersForFilter && itemCustomersForFilter.customers.length === 0 && (
+        <div style={{ color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
+          {`Item ID ${itemCustomersForFilter.itemId} is not linked to a customer yet (no orders, invoices, saved forecast, or Infor customer item). Select the customer, then use Add Item ID ${itemCustomersForFilter.itemId}.`}
+        </div>
+      )}
+      {!loadingItemCustomers && itemCustomersForFilter && itemCustomersForFilter.customers.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
+          <span>{`Item ID ${itemCustomersForFilter.itemId} is linked to ${itemCustomersForFilter.customers.length} customers. Choose one:`}</span>
+          {itemCustomersForFilter.customers.map((candidate) => {
+            const known = customers.find(
+              (customer) => customer.customerId.trim().toLowerCase() === candidate.customerId.trim().toLowerCase()
+            );
+            const name = known?.label || candidate.customerName || candidate.customerId;
+            return (
+              <button
+                key={`${candidate.customerId}||${candidate.customerPartNumber}`}
+                type="button"
+                onClick={() => chooseItemCustomer(candidate)}
+                style={{
+                  border: '1px solid #c7d2fe',
+                  borderRadius: 5,
+                  background: '#eef2ff',
+                  color: '#4338ca',
+                  padding: '4px 8px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                {`${name} (${candidate.customerId})${candidate.customerPartNumber ? ` · Customer P/N ${candidate.customerPartNumber}` : ''}`}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {!selectedCustomer && !groupScope ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
@@ -971,7 +1164,7 @@ export default function ProductRevenueForecastReport({
                 zIndex: 5,
               }}
             >
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>{groupScope ? 'Group' : 'Customer'}</div>
+              <div style={{ fontSize: 16.25, fontWeight: 600, color: '#0f172a' }}>{groupScope ? 'Group' : 'Customer'}</div>
               <div
                 title={groupScope ? customerGroup : selectedCustomer?.label}
                 style={{
@@ -986,7 +1179,7 @@ export default function ProductRevenueForecastReport({
                 {groupScope ? `Group: ${customerGroup}` : selectedCustomer?.label}
               </div>
               {!groupScope && selectedCustomer?.customerId ? (
-                <div style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 16.25, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
                   <strong>Customer ID:</strong> {selectedCustomer.customerId}
                 </div>
               ) : null}
@@ -1226,6 +1419,25 @@ export default function ProductRevenueForecastReport({
                       {itemIdFilter
                         ? `No forecast rows match Item ID ${itemIdFilter}.`
                         : `No forecast rows for this ${groupScope ? 'group' : 'customer'} yet. Import the workbook to load customers and parts, then save.`}
+                      {itemIdFilter.trim() && selectedCustomer && !groupScope ? (
+                        <button
+                          type="button"
+                          onClick={addFilteredItemRow}
+                          style={{
+                            marginLeft: 10,
+                            border: '1px solid #c7d2fe',
+                            borderRadius: 5,
+                            background: '#eef2ff',
+                            color: '#4338ca',
+                            padding: '4px 8px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {`Add Item ID ${itemIdFilter.trim()}`}
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 )}

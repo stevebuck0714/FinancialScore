@@ -1075,6 +1075,7 @@ export default function OperationsTab({
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
   const [productForecastItemIdFilter, setProductForecastItemIdFilter] = useState('');
+  const [productForecastItemFocus, setProductForecastItemFocus] = useState<{ itemId: string; requestId: number } | null>(null);
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('');
@@ -11582,6 +11583,7 @@ export default function OperationsTab({
           surface="products"
           onOpenForecastItem={(itemId) => {
             setProductForecastItemIdFilter(itemId);
+            setProductForecastItemFocus({ itemId, requestId: Date.now() });
             setProductReportView('revenueForecast');
           }}
         />
@@ -13921,6 +13923,7 @@ export default function OperationsTab({
             onOpenInfo={() => setProductChartInfoKey('productsRevenueForecast')}
             itemIdFilter={productForecastItemIdFilter}
             onItemIdFilterChange={setProductForecastItemIdFilter}
+            itemFocusRequest={productForecastItemFocus}
           />)}
           {renderProductChartInfoModal()}
         </div>

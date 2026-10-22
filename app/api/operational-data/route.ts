@@ -3823,7 +3823,9 @@ export async function GET(request: NextRequest) {
               cacheType === 'products' && isFiltechDemoCompany(companyId) ? 'filtech-product-fixtures-v2-authoritative' : null,
               cacheType === 'products' && usesSourceSystemProductSnapshots ? 'products-source-system-bakers-raw-child-id-apr-cpn-v4' : null,
               cacheType === 'sales' && usesSourceSystemProductSnapshots ? 'sales-source-system-product-name-outlier-v1' : null,
-              cacheType === 'inventory' ? 'inventory-memory-bounded-trend-v1' : null,
+              // v2: warehouse-level quantities take precedence over the
+              // duplicate blank-warehouse SLItems item-master total.
+              cacheType === 'inventory' ? 'inventory-memory-bounded-trend-v2-warehouse-quantity-precedence' : null,
             ]),
             // Hydrated Infor days belong in the version, not the key: when a
             // late transform completes, the key must stay stable so the last

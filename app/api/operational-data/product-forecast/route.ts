@@ -6,6 +6,7 @@ import {
   summarizeForecastQtyMonths,
   withClosedMonthActualAdjusted,
   type ForecastMonth,
+  type MonthQtyMap,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
 import {
@@ -24,6 +25,7 @@ import {
   listProductForecastCustomersWithCatalog,
   loadProductForecastLinesWithCatalog,
 } from '@/lib/operations/product-catalog-carryforward';
+import prisma from '@/lib/prisma';
 import { loadCustomerGroups, saveCustomerGroup, withCustomerGroups } from '@/lib/operations/customer-groups';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
 import { getActiveSgpBudgetLock } from '@/lib/operations/product-sgp-budget-lock';
@@ -151,6 +153,75 @@ async function loadItemHistory(params: {
   });
 }
 
+type ItemCustomerRow = {
+  customerId: string | null;
+  customerName: string | null;
+  customerPartNumber: string | null;
+};
+
+async function loadItemCustomers(companyId: string, itemSku: string) {
+  const item = itemSku.trim().toUpperCase();
+  const [forecastRows, orderRows, invoiceRows, customerItemRows] = await Promise.all([
+    prisma.$queryRaw<ItemCustomerRow[]>`
+      SELECT DISTINCT "customerId", "customerName", "customerPartNumber"
+      FROM "ProductRevenueForecastLine"
+      WHERE "companyId" = ${companyId}
+        AND UPPER(TRIM("itemSku")) = ${item}
+    `.catch(() => []),
+    prisma.$queryRaw<ItemCustomerRow[]>`
+      SELECT DISTINCT "customerId", "customerName", "customerPn" AS "customerPartNumber"
+      FROM "CustomerOrderLineSnapshot"
+      WHERE "companyId" = ${companyId}
+        AND (UPPER(TRIM("sku")) = ${item} OR UPPER(TRIM("itemId")) = ${item})
+    `.catch(() => []),
+    prisma.$queryRaw<ItemCustomerRow[]>`
+      SELECT DISTINCT "customerId", NULL::text AS "customerName", "customerPartNumber"
+      FROM "ProductInvoiceLineFact"
+      WHERE "companyId" = ${companyId}
+        AND UPPER(TRIM("itemSku")) = ${item}
+    `.catch(() => []),
+    prisma.$queryRaw<ItemCustomerRow[]>`
+      SELECT DISTINCT
+        "payload"->>'CustNum' AS "customerId",
+        NULL::text AS "customerName",
+        "payload"->>'CustItem' AS "customerPartNumber"
+      FROM "InforRawRecord"
+      WHERE "companyId" = ${companyId}
+        AND "miProgram" IN ('SLCustomerItems', 'SLCUSTOMERITEMS')
+        AND UPPER(TRIM("payload"->>'Item')) = ${item}
+    `.catch(() => []),
+  ]);
+
+  const byKey = new Map<string, { customerId: string; customerName: string; customerPartNumber: string }>();
+  for (const row of [...forecastRows, ...orderRows, ...invoiceRows, ...customerItemRows]) {
+    const customerId = asText(row.customerId);
+    if (!customerId) continue;
+    const customerPartNumber = asText(row.customerPartNumber);
+    const key = `${customerId.toUpperCase()}||${customerPartNumber.toUpperCase()}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      if (!existing.customerName) existing.customerName = asText(row.customerName);
+      continue;
+    }
+    byKey.set(key, { customerId, customerName: asText(row.customerName), customerPartNumber });
+  }
+
+  // Order lines and saved rows can carry a blank customer P/N alongside the real one.
+  const entries = Array.from(byKey.values());
+  return entries
+    .filter(
+      (entry) =>
+        entry.customerPartNumber ||
+        !entries.some(
+          (other) =>
+            other !== entry &&
+            other.customerPartNumber &&
+            other.customerId.toUpperCase() === entry.customerId.toUpperCase()
+        )
+    )
+    .sort((a, b) => a.customerId.localeCompare(b.customerId, undefined, { numeric: true }));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const companyId = String(request.nextUrl.searchParams.get('companyId') || '').trim();
@@ -170,6 +241,15 @@ export async function GET(request: NextRequest) {
     const refresh = ['1', 'true', 'yes'].includes(
       String(request.nextUrl.searchParams.get('refresh') || '').trim().toLowerCase()
     );
+
+    if (request.nextUrl.searchParams.get('itemCustomers') === '1') {
+      const itemSku = String(request.nextUrl.searchParams.get('itemSku') || '').trim();
+      if (!itemSku) {
+        return NextResponse.json({ error: 'Item ID is required' }, { status: 400 });
+      }
+      await ensureProductRevenueForecastTables();
+      return NextResponse.json({ itemSku, customers: await loadItemCustomers(companyId, itemSku) });
+    }
 
     if (historyMonths === 36) {
       const itemSku = String(request.nextUrl.searchParams.get('itemSku') || '').trim();
