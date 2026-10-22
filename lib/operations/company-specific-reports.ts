@@ -74,6 +74,13 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     sectorCategories: ['42'],
   },
   {
+    key: 'productsSgpPriceChanges',
+    label: 'Price Changes from SGP',
+    tabKey: 'products_skus',
+    group: 'Products',
+    sectorCategories: ['42'],
+  },
+  {
     key: 'productsRevenueForecast',
     label: 'Monthly Forecast',
     tabKey: 'projections',

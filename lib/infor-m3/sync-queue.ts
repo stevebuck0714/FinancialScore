@@ -20,6 +20,7 @@ import { shouldWarmDailyExecutiveBriefingForAccountingSystem, warmDailyExecutive
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { refreshAndWarmDutiesTariffsCache } from '@/lib/hts/duties-tariffs-cache';
 import { refreshWholesaleVendorForecastAfterInforSync } from '@/lib/operations/vendor-forecast-infor';
+import { refreshContractPricesFromInfor } from '@/lib/operations/product-contract-price-infor';
 
 const DEFAULT_LEASE_SECONDS = 420;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -2219,6 +2220,13 @@ async function processTask(
         }
         await refreshWholesaleVendorForecastAfterInforSync(task.companyId).catch((error) => {
           console.warn('Wholesale vendor forecast refresh failed after Infor sync completion:', {
+            companyId: task.companyId,
+            runId: task.runId,
+            error: errorToMessage(error, 'unknown error'),
+          });
+        });
+        await refreshContractPricesFromInfor(task.companyId).catch((error) => {
+          console.warn('Contract price refresh failed after Infor sync completion:', {
             companyId: task.companyId,
             runId: task.runId,
             error: errorToMessage(error, 'unknown error'),

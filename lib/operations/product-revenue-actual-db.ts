@@ -131,6 +131,11 @@ export async function ensureProductRevenueTables(): Promise<void> {
           ON "ProductRevenuePrice"("companyId", "year", "customerGroup", "itemSku")
       `);
       await prisma.$executeRawUnsafe(`
+        ALTER TABLE "ProductRevenuePrice"
+        ADD COLUMN IF NOT EXISTS "contractPriceSource" TEXT,
+        ADD COLUMN IF NOT EXISTS "contractPriceAsOf" TIMESTAMP(3)
+      `);
+      await prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "ProductGoalUpdate" (
           "companyId" TEXT NOT NULL,
           "year" INTEGER NOT NULL,
@@ -419,7 +424,10 @@ export async function upsertRevenuePrices(params: {
          "id", "companyId", "year", "customerGroup", "itemSku", "contractPrice", "sgpPrice", "createdAt", "updatedAt"
        ) VALUES ${sqlValues(chunk.length, columns)}
        ON CONFLICT ("companyId", "year", "customerGroup", "itemSku") DO UPDATE SET
-         "contractPrice" = COALESCE(EXCLUDED."contractPrice", "ProductRevenuePrice"."contractPrice"),
+         "contractPrice" = CASE
+           WHEN "ProductRevenuePrice"."contractPriceSource" = 'INFOR' THEN "ProductRevenuePrice"."contractPrice"
+           ELSE COALESCE(EXCLUDED."contractPrice", "ProductRevenuePrice"."contractPrice")
+         END,
          "sgpPrice" = COALESCE(EXCLUDED."sgpPrice", "ProductRevenuePrice"."sgpPrice"),
          "updatedAt" = EXCLUDED."updatedAt"`,
       ...params

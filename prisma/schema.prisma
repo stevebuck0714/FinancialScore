@@ -2097,6 +2097,9 @@ model ProductRevenuePrice {
   itemSku       String
   contractPrice Float?
   sgpPrice      Float?
+  /// INFOR when the contract price came from the latest Infor order line; workbook imports then leave it alone.
+  contractPriceSource String?
+  contractPriceAsOf   DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

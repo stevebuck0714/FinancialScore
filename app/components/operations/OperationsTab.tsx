@@ -38,6 +38,7 @@ import ProductGoalUpdateReport from './ProductGoalUpdateReport';
 import ProductReportsChart from './ProductReportsChart';
 import { calculateEbitda } from '@/lib/financial/ebitda';
 import ProductYtdGapReport from './ProductYtdGapReport';
+import ProductSgpPriceChangesReport from './ProductSgpPriceChangesReport';
 import DutiesTariffsReport from './DutiesTariffsReport';
 import SgpFreightReport from './SgpFreightReport';
 import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
@@ -259,7 +260,7 @@ type WipLineItemSortKey =
   | 'wipValue'
   | 'contractValue'
   | 'invoicedValue';
-type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'reports' | 'ytdGap' | 'retailForecast' | 'merchandiseProfitability';
+type ProductReportView = 'productMarginAnalysis' | 'wholesaleRawData' | 'sgpPriceChanges' | 'vendorPricing' | 'revenueForecast' | 'forecastRollup' | 'monthlyRevenue' | 'revenueRollup' | 'goalUpdate' | 'performance' | 'reports' | 'ytdGap' | 'retailForecast' | 'merchandiseProfitability';
 type VendorReportView = 'vendorPricing' | 'vendorPricingSheet' | 'monthlyForecast' | 'forecastRollup' | 'dutiesTariffs' | 'sgpFreight';
 type WholesaleProductsReportMode = 'margin' | 'raw' | 'vendor';
 type WholesaleRawCustomerOption = {
@@ -1523,6 +1524,7 @@ export default function OperationsTab({
     ((isWholesaleProductsTab || isWholesaleProjectionsTab) &&
     (productReportView === 'productMarginAnalysis' ||
       productReportView === 'wholesaleRawData' ||
+      productReportView === 'sgpPriceChanges' ||
       productReportView === 'revenueForecast' ||
       productReportView === 'forecastRollup' ||
       productReportView === 'monthlyRevenue' ||
@@ -2490,6 +2492,11 @@ export default function OperationsTab({
     String(industrySectorCategory || '').trim() === '42' &&
     mapModuleToDataType(activeTab) === 'products' &&
     productReportView === 'wholesaleRawData';
+  const isWholesaleSgpPriceChangesViewActive =
+    String(industrySectorCategory || '').trim() === '42' &&
+    mapModuleToDataType(activeTab) === 'products' &&
+    !isWholesaleProjectionsTab &&
+    productReportView === 'sgpPriceChanges';
   const isWholesaleRevenueForecastViewActive =
     String(industrySectorCategory || '').trim() === '42' &&
     isWholesaleProjectionsTab &&
@@ -3187,6 +3194,7 @@ export default function OperationsTab({
         String(industrySectorCategory || '').trim() === '42' &&
         (productReportView === 'productMarginAnalysis' ||
           productReportView === 'wholesaleRawData' ||
+          productReportView === 'sgpPriceChanges' ||
           productReportView === 'revenueForecast' ||
           productReportView === 'forecastRollup' ||
           productReportView === 'monthlyRevenue' ||
@@ -3981,6 +3989,7 @@ export default function OperationsTab({
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast' ||
       isWholesaleRawViewActive ||
+      isWholesaleSgpPriceChangesViewActive ||
       isWholesaleRevenueForecastViewActive ||
       isVendorsTab
     ) {
@@ -9619,6 +9628,7 @@ export default function OperationsTab({
     const isWholesaleProductSector = industrySectorCategory === '42';
     const isProductMarginAnalysisEnabled = isWholesaleProductSector && isSectionEnabled('productsProductMarginAnalysis');
     const isWholesaleRawDataEnabled = isWholesaleProductSector && isSectionEnabled('productsWholesaleRawData');
+    const isSgpPriceChangesEnabled = isWholesaleProductSector && isSectionEnabled('productsSgpPriceChanges');
     const isVendorPricingEnabled = isWholesaleProductSector && isSectionEnabled('productsVendorPricing');
     const isVendorPricingSheetEnabled = isWholesaleProductSector && isSectionEnabled('vendorsVendorPricing');
     const isVendorMonthlyForecastEnabled = isWholesaleProductSector && isSectionEnabled('vendorsMonthlyForecast');
@@ -9723,11 +9733,15 @@ export default function OperationsTab({
       isWholesaleProductSector && isWholesaleProductsTab && isWholesaleProjectionView
         ? fallbackProductReportView
         : isWholesaleProductSector && isWholesaleProjectionsTab &&
-            (productReportView === 'productMarginAnalysis' || productReportView === 'wholesaleRawData')
+            (productReportView === 'productMarginAnalysis' ||
+              productReportView === 'wholesaleRawData' ||
+              productReportView === 'sgpPriceChanges')
         ? fallbackProductReportView
         : productReportView === 'productMarginAnalysis' && !isProductMarginAnalysisEnabled
         ? fallbackProductReportView
         : productReportView === 'wholesaleRawData' && !isWholesaleRawDataEnabled
+        ? fallbackProductReportView
+        : productReportView === 'sgpPriceChanges' && !isSgpPriceChangesEnabled
         ? fallbackProductReportView
         : productReportView === 'vendorPricing'
         ? fallbackProductReportView
@@ -9755,6 +9769,7 @@ export default function OperationsTab({
     const shouldRenderProductPerformance = effectiveProductReportView === 'performance' && isProductPerformanceEnabled;
     const shouldRenderProductReports = effectiveProductReportView === 'reports' && isProductReportsEnabled;
     const shouldRenderProductYtdGap = effectiveProductReportView === 'ytdGap' && isProductYtdGapEnabled;
+    const shouldRenderSgpPriceChanges = effectiveProductReportView === 'sgpPriceChanges' && isSgpPriceChangesEnabled;
     const shouldRenderProductMargin = effectiveProductReportView === 'productMarginAnalysis' && isProductMarginAnalysisEnabled;
     const shouldRenderWholesaleRaw = effectiveProductReportView === 'wholesaleRawData' && isWholesaleRawDataEnabled;
     const shouldRenderVendorPricing = isWholesaleVendorsTab && isVendorPricingEnabled;
@@ -11347,7 +11362,7 @@ export default function OperationsTab({
         {label}{retailForecastTableSortKey === key ? (retailForecastTableSortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
       </th>
     );
-    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isVendorPricingEnabled || isRevenueForecastEnabled || isForecastRollupEnabled || isMonthlyRevenueEnabled || isRevenueRollupEnabled || isGoalUpdateEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
+    const productViewSwitcher = isProductMarginAnalysisEnabled || isWholesaleRawDataEnabled || isSgpPriceChangesEnabled || isVendorPricingEnabled || isRevenueForecastEnabled || isForecastRollupEnabled || isMonthlyRevenueEnabled || isRevenueRollupEnabled || isGoalUpdateEnabled || isProductPerformanceEnabled || isRetailForecastingEnabled || isMerchandiseProfitabilityEnabled ? (
       <>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {showWholesaleProductViews && isProductMarginAnalysisEnabled && (
@@ -11386,6 +11401,25 @@ export default function OperationsTab({
             }}
           >
             Customer Orders
+          </button>
+        )}
+        {showWholesaleProductViews && isSgpPriceChangesEnabled && (
+          <button
+            type="button"
+            onClick={() => setProductReportView('sgpPriceChanges')}
+            style={{
+              order: getReportPanelStyle('productsSgpPriceChanges', {}, 'products_skus').order,
+              border: '1px solid #cbd5e1',
+              borderRadius: '999px',
+              padding: '8px 12px',
+              background: effectiveProductReportView === 'sgpPriceChanges' ? '#e0e7ff' : '#ffffff',
+              color: effectiveProductReportView === 'sgpPriceChanges' ? '#3730a3' : '#334155',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            Price Changes from SGP
           </button>
         )}
         {showWholesaleProjectionViews && isRevenueForecastEnabled && (
@@ -11577,7 +11611,7 @@ export default function OperationsTab({
           </button>
         )}
       </div>
-      {isWholesaleProductSector ? (
+      {isWholesaleProductSector && effectiveProductReportView === 'revenueForecast' ? (
         <InforNewIdentitiesAlert
           companyId={selectedCompanyId}
           surface="products"
@@ -13586,6 +13620,23 @@ export default function OperationsTab({
           },
         ],
       },
+      productsSgpPriceChanges: {
+        title: 'What Price Changes from SGP shows',
+        sections: [
+          {
+            body:
+              'Each row compares the SGP item price with the current contract price for one item and customer P/N. Prices are kept per customer group, so the group is shown on each row.',
+          },
+          {
+            heading: 'Where the numbers come from',
+            body: [
+              'SGP Item Price comes from the imported SGP workbook for the selected year.',
+              'Current Contract Price comes from the latest Infor customer order line after each nightly sync. Until Infor has priced an item, the workbook contract price is shown.',
+              'Price Change is Current Contract Price minus SGP Item Price. Price Change % is that change divided by the SGP Item Price. Either reads — when one of the prices is missing.',
+            ],
+          },
+        ],
+      },
       productsYtdGap: {
         title: 'What YTD Gap Analysis shows',
         sections: [
@@ -13801,24 +13852,6 @@ export default function OperationsTab({
               })
             )}
           </div>
-          {isWholesaleProductSector ? (
-            <InforNewIdentitiesAlert
-              companyId={selectedCompanyId}
-              surface="vendors"
-              onOpenDuties={() => {
-                setManufacturingVendorReportKey('');
-                setVendorReportView('dutiesTariffs');
-              }}
-              onOpenFreight={() => {
-                setManufacturingVendorReportKey('');
-                setVendorReportView('sgpFreight');
-              }}
-              onOpenForecast={() => {
-                setManufacturingVendorReportKey('');
-                setVendorReportView('monthlyForecast');
-              }}
-            />
-          ) : null}
           {activeStandardReport ? (
             <DefaultVendorReport
               key={`${selectedCompanyId}-${activeStandardReport.key}`}
@@ -14008,6 +14041,20 @@ export default function OperationsTab({
           {renderReorderableCompanyReport('productsYtdGap', productReportLayoutModule, <ProductYtdGapReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsYtdGap')}
+          />)}
+          {renderProductChartInfoModal()}
+        </div>
+      );
+    }
+
+    if (shouldRenderSgpPriceChanges) {
+      return (
+        <div style={{ padding: '8px 12px 16px' }}>
+          {productPageHeading}
+          {productViewSwitcher}
+          {renderReorderableCompanyReport('productsSgpPriceChanges', productReportLayoutModule, <ProductSgpPriceChangesReport
+            selectedCompanyId={selectedCompanyId}
+            onOpenInfo={() => setProductChartInfoKey('productsSgpPriceChanges')}
           />)}
           {renderProductChartInfoModal()}
         </div>
