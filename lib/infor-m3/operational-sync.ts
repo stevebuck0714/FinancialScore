@@ -10956,16 +10956,44 @@ export async function syncInforM3OperationalData(
                     });
                     persistedArHistoryRebuildRun = Boolean(rebuildRun);
                   }
+                  const isArHistoryReuse =
+                    sourceProgramId === 'SLARTRANS' &&
+                    (options?.fullArFactHistory === true || persistedArHistoryRebuildRun);
+                  // Rows whose _ItemId an earlier run already stored (e.g. a failed
+                  // run for the same business day) are skipped by the global
+                  // sourceRecordId index, yet the transform reads this run's rows.
+                  // Store this run's copy without the global id; the run-scoped
+                  // hash key prevents duplicates within the run, and the transform
+                  // dedupes by _ItemId.
+                  let runScopedRawCount = 0;
+                  if (!reusedSameRunRecords && !isArHistoryReuse && rawRows.some((rawRow) => rawRow.sourceRecordId)) {
+                    for (let rawOffset = 0; rawOffset < rawRows.length; rawOffset += rawWriteBatchSize) {
+                      const rawBatch = rawRows.slice(rawOffset, rawOffset + rawWriteBatchSize);
+                      const written = await retryOnTransientPostgresWrite(
+                        `inforRawRecord.createMany.${row.miProgram || 'unknown'}.${rawOffset}.runScoped`,
+                        () =>
+                          (prisma as any).inforRawRecord.createMany({
+                            data: rawBatch.map((rawRow) => ({ ...rawRow, id: randomUUID(), sourceRecordId: null })),
+                            skipDuplicates: true,
+                          })
+                      );
+                      runScopedRawCount +=
+                        written && typeof written === 'object' && 'count' in written
+                          ? Number((written as { count?: unknown }).count || 0)
+                          : 0;
+                    }
+                  }
                   if (reusedSameRunRecords) {
                     console.log(
                       `Raw ingest reusing ${sourceRecordHashes.length} already-persisted ${row.miProgram || 'unknown'} rows for ${syncRunId}.`
                     );
-                  } else if (
-                    sourceProgramId === 'SLARTRANS' &&
-                    (options?.fullArFactHistory === true || persistedArHistoryRebuildRun)
-                  ) {
+                  } else if (isArHistoryReuse) {
                     console.log(
                       `AR history rebuild reusing existing canonical SLARTRANS raw rows for ${syncRunId}.`
+                    );
+                  } else if (runScopedRawCount > 0) {
+                    console.log(
+                      `Raw ingest stored ${runScopedRawCount} run-scoped ${row.miProgram || 'unknown'} rows already persisted by an earlier run for ${syncRunId}.`
                     );
                   } else {
                     throw new Error(
