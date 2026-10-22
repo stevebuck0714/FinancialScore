@@ -12,6 +12,7 @@ type Props = {
   onOpenDuties?: () => void;
   onOpenFreight?: () => void;
   onOpenForecast?: () => void;
+  onOpenForecastItem?: (itemId: string) => void;
 };
 
 function countLabel(count: number, singular: string, plural: string): string | null {
@@ -31,6 +32,7 @@ export default function InforNewIdentitiesAlert({
   onOpenDuties,
   onOpenFreight,
   onOpenForecast,
+  onOpenForecastItem,
 }: Props) {
   const [payload, setPayload] = useState<InforNewIdentitiesResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -142,7 +144,27 @@ export default function InforNewIdentitiesAlert({
         </div>
       ) : null}
       {payload.items.length ? (
-        <div style={{ marginTop: 6, fontSize: 12 }}>Items: {previewLabels(payload.items)}</div>
+        <div style={{ display: 'grid', gap: 6, marginTop: 6, fontSize: 12 }}>
+          {payload.items.map((item) => (
+            <div
+              key={`item:${item.key}`}
+              style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}
+            >
+              <span>
+                <strong>Item ID:</strong> {item.key} · {item.label}
+              </span>
+              {surface === 'products' && onOpenForecastItem ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenForecastItem(item.key)}
+                  style={buttonStyle}
+                >
+                  Open in Volume Forecast
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
       ) : null}
       {payload.customers.length ? (
         <div style={{ marginTop: 4, fontSize: 12 }}>Customers: {previewLabels(payload.customers)}</div>
@@ -164,7 +186,7 @@ export default function InforNewIdentitiesAlert({
             Freight
           </button>
         ) : null}
-        {onOpenForecast ? (
+        {surface === 'vendors' && onOpenForecast ? (
           <button type="button" onClick={onOpenForecast} style={buttonStyle}>
             Monthly Forecast
           </button>

@@ -10898,8 +10898,11 @@ export async function GET(request: NextRequest) {
               itemId: string | null;
               itemName: string;
               sku: string | null;
-              qtyOnHand: number;
-              assetValue: number;
+              itemMasterQtyOnHand: number;
+              itemMasterAssetValue: number;
+              warehouseQtyOnHand: number;
+              warehouseAssetValue: number;
+              hasWarehouseRows: boolean;
               warehouseSet: Set<string>;
               binSet: Set<string>;
               lotSet: Set<string>;
@@ -10915,8 +10918,11 @@ export async function GET(request: NextRequest) {
                 itemId,
                 itemName,
                 sku,
-                qtyOnHand: 0,
-                assetValue: 0,
+                itemMasterQtyOnHand: 0,
+                itemMasterAssetValue: 0,
+                warehouseQtyOnHand: 0,
+                warehouseAssetValue: 0,
+                hasWarehouseRows: false,
                 warehouseSet: new Set<string>(),
                 binSet: new Set<string>(),
                 lotSet: new Set<string>(),
@@ -10932,12 +10938,23 @@ export async function GET(request: NextRequest) {
                 acc.itemName = itemName;
               }
             }
-            acc.qtyOnHand += Number(row.qtyOnHand || 0);
-            acc.assetValue += Number(row.assetValue || 0);
             const warehouse = normalizeInventoryText((row as any).warehouse);
             const bin = normalizeInventoryText((row as any).bin);
             const lot = normalizeInventoryText((row as any).lot);
-            if (warehouse) acc.warehouseSet.add(warehouse);
+            const qtyOnHand = Number(row.qtyOnHand || 0);
+            const assetValue = Number(row.assetValue || 0);
+            if (warehouse) {
+              // SLItems supplies a company-wide item-master total while
+              // SLItemlocs supplies the same quantity split by warehouse.
+              // Never add both representations for a SKU.
+              acc.hasWarehouseRows = true;
+              acc.warehouseQtyOnHand += qtyOnHand;
+              acc.warehouseAssetValue += assetValue;
+              acc.warehouseSet.add(warehouse);
+            } else {
+              acc.itemMasterQtyOnHand += qtyOnHand;
+              acc.itemMasterAssetValue += assetValue;
+            }
             if (bin) acc.binSet.add(bin);
             if (lot) acc.lotSet.add(lot);
           }
@@ -10945,9 +10962,17 @@ export async function GET(request: NextRequest) {
             itemId: row.itemId,
             itemName: row.itemName,
             sku: row.sku,
-            qtyOnHand: row.qtyOnHand,
-            assetValue: row.assetValue,
-            avgCost: row.qtyOnHand > 0 ? row.assetValue / row.qtyOnHand : 0,
+            qtyOnHand: row.hasWarehouseRows ? row.warehouseQtyOnHand : row.itemMasterQtyOnHand,
+            // CSI location rows sometimes omit asset value. In that case,
+            // preserve the matching SLItems item-master value without adding
+            // its duplicate quantity.
+            assetValue:
+              row.warehouseAssetValue !== 0 ? row.warehouseAssetValue : row.itemMasterAssetValue,
+            avgCost:
+              (row.hasWarehouseRows ? row.warehouseQtyOnHand : row.itemMasterQtyOnHand) > 0
+                ? (row.warehouseAssetValue !== 0 ? row.warehouseAssetValue : row.itemMasterAssetValue) /
+                  (row.hasWarehouseRows ? row.warehouseQtyOnHand : row.itemMasterQtyOnHand)
+                : 0,
             warehouse:
               row.warehouseSet.size === 0
                 ? null
@@ -11045,6 +11070,7 @@ export async function GET(request: NextRequest) {
               count: number;
             }
           >();
+          const matchingInventoryRowsByDay = new Map<string, { snapshotDate: Date; rows: any[] }>();
           const rawPriceRows = await (prisma as any).inforRawRecord.findMany({
             where: {
               companyId,
@@ -11082,18 +11108,26 @@ export async function GET(request: NextRequest) {
               )
             );
             const dayKey = toIsoDay(day);
-            if (!historyByDay.has(dayKey)) {
-              historyByDay.set(dayKey, {
-                snapshotDate: day,
-                qtyOnHand: 0,
-                assetValue: 0,
-              });
+            if (!matchingInventoryRowsByDay.has(dayKey)) {
+              matchingInventoryRowsByDay.set(dayKey, { snapshotDate: day, rows: [] });
             }
-            const acc = historyByDay.get(dayKey)!;
-            const qtyOnHand = Number(row.qtyOnHand || 0);
-            const assetValue = Number(row.assetValue || 0);
-            acc.qtyOnHand += qtyOnHand;
-            acc.assetValue += assetValue;
+            matchingInventoryRowsByDay.get(dayKey)!.rows.push(row);
+          }
+          for (const [dayKey, dayRows] of matchingInventoryRowsByDay) {
+            const inventory = aggregateInventoryBySku(dayRows.rows).find((row) => {
+              const aliases = [
+                canonicalInventoryKey(row.sku),
+                canonicalInventoryKey(row.itemId),
+                canonicalInventoryKey(row.itemName),
+              ].filter(Boolean);
+              return aliases.includes(skuKey);
+            });
+            if (!inventory) continue;
+            historyByDay.set(dayKey, {
+              snapshotDate: dayRows.snapshotDate,
+              qtyOnHand: Number(inventory.qtyOnHand || 0),
+              assetValue: Number(inventory.assetValue || 0),
+            });
           }
           for (const raw of rawPriceRows as any[]) {
             const payload =

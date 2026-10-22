@@ -1074,6 +1074,7 @@ export default function OperationsTab({
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('product');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
+  const [productForecastItemIdFilter, setProductForecastItemIdFilter] = useState('');
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('');
@@ -11579,7 +11580,10 @@ export default function OperationsTab({
         <InforNewIdentitiesAlert
           companyId={selectedCompanyId}
           surface="products"
-          onOpenForecast={() => setProductReportView('revenueForecast')}
+          onOpenForecastItem={(itemId) => {
+            setProductForecastItemIdFilter(itemId);
+            setProductReportView('revenueForecast');
+          }}
         />
       ) : null}
       </>
@@ -11636,17 +11640,17 @@ export default function OperationsTab({
       }> = [
         { key: 'aprPartNumber', label: 'Item #', summaryColumn: true },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '92px', maxWidth: '108px' },
-        { key: 'currentPrice', label: ['SGP Price', '($)'], compact: true },
-        { key: 'materialCost', label: ['SGP Cost', 'of Material', '($)'], compact: true },
-        { key: 'tariffPerPiece', label: ['SGP Impact', 'of Tariff', 'per Piece'], compact: true },
-        { key: 'dutiesPerPiece', label: ['SGP Impact', 'of Duties', 'per Piece ($)'], compact: true },
-        { key: 'freightPerPiece', label: ['SGP Cost', 'of Freight', 'per Piece ($)'], compact: true },
-        { key: 'currentCostOfSales', label: ['SGP Cost', 'of Sales', '($)'], compact: true },
-        { key: 'operatingExpensesPerPiece', label: ['SGP Operating', 'Expenses', '($)'], compact: true },
-        { key: 'fullyLoadedCost', label: ['SGP Fully', 'Loaded Cost', '($)'], compact: true },
-        { key: 'netProfit', label: ['SGP Net', 'Profit', '($)'], compact: true },
-        { key: 'netProfitPct', label: ['SGP Net', 'Profit', '(%)'], compact: true },
-        { key: 'grossMarginPct', label: ['SGP Gross', 'Margin %'], compact: true },
+        { key: 'currentPrice', label: ['Price', '($)'], compact: true },
+        { key: 'materialCost', label: ['Cost', 'of Material', '($)'], compact: true },
+        { key: 'tariffPerPiece', label: ['Impact', 'of Tariff', 'per Piece'], compact: true },
+        { key: 'dutiesPerPiece', label: ['Impact', 'of Duties', 'per Piece ($)'], compact: true },
+        { key: 'freightPerPiece', label: ['Cost', 'of Freight', 'per Piece ($)'], compact: true },
+        { key: 'currentCostOfSales', label: ['Cost', 'of Sales', '($)'], compact: true },
+        { key: 'operatingExpensesPerPiece', label: ['Operating', 'Expenses', '($)'], compact: true },
+        { key: 'fullyLoadedCost', label: ['Fully', 'Loaded Cost', '($)'], compact: true },
+        { key: 'netProfit', label: ['Net', 'Profit', '($)'], compact: true },
+        { key: 'netProfitPct', label: ['Net', 'Profit', '(%)'], compact: true },
+        { key: 'grossMarginPct', label: ['Gross', 'Margin %'], compact: true },
       ];
       // A single customer and an item search always render expanded.
       const canToggleVisibleProductMarginCustomers =
@@ -13915,6 +13919,8 @@ export default function OperationsTab({
           {renderReorderableCompanyReport('productsRevenueForecast', productReportLayoutModule, <ProductRevenueForecastReport
             selectedCompanyId={selectedCompanyId}
             onOpenInfo={() => setProductChartInfoKey('productsRevenueForecast')}
+            itemIdFilter={productForecastItemIdFilter}
+            onItemIdFilterChange={setProductForecastItemIdFilter}
           />)}
           {renderProductChartInfoModal()}
         </div>
@@ -15768,8 +15774,8 @@ export default function OperationsTab({
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  <th onClick={() => handleInventorySort('sku')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Item ID{inventorySortLabel('sku')}</th>
                   <th onClick={() => handleInventorySort('itemName')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Item Name{inventorySortLabel('itemName')}</th>
-                  <th onClick={() => handleInventorySort('sku')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>SKU{inventorySortLabel('sku')}</th>
                   <th onClick={() => handleInventorySort('warehouse')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Warehouse{inventorySortLabel('warehouse')}</th>
                   <th onClick={() => handleInventorySort('bin')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Bin{inventorySortLabel('bin')}</th>
                   <th onClick={() => handleInventorySort('lot')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Lot{inventorySortLabel('lot')}</th>
@@ -15783,8 +15789,8 @@ export default function OperationsTab({
                 <tbody>
                   {sortedInventoryRecords.map((item: any, index: number) => (
                     <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{item.itemName}</td>
                       <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{item.sku}</td>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{item.itemName}</td>
                       <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.warehouse || '').trim() || 'N/A'}</td>
                       <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.bin || '').trim() || 'N/A'}</td>
                       <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.lot || '').trim() || 'N/A'}</td>

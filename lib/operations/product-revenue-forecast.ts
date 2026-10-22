@@ -223,7 +223,7 @@ export function withClosedMonthActualAdjusted<T extends {
 }
 
 /**
- * The Forecasted field closes at the beginning of the following EST month.
+ * The Forecasted field closes at the beginning of its EST month.
  * Forecast-ADJ follows the same calendar boundary, then displays live Infor
  * actuals (including zero for an item with no actual volume).
  */
@@ -241,7 +241,7 @@ export function forecastMonthIsEditable(year: number, month: ForecastMonth, now:
   const currentMonth = (estMonthIndex(now) + 1) as ForecastMonth;
   if (year > currentYear) return true;
   if (year < currentYear) return false;
-  return month >= currentMonth;
+  return month > currentMonth;
 }
 
 function monthQtySourceIsEmpty(value: unknown): boolean {

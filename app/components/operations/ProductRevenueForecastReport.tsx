@@ -33,10 +33,33 @@ type CustomerOption = {
 };
 
 type ForecastLine = ProductRevenueForecastLineInput & { id: string };
+type ItemHistoryPoint = {
+  month: string;
+  forecast: number | null;
+  actual: number | null;
+};
+type IdentitySortKey = 'itemSku' | 'customerPartNumber' | 'customerGroup' | 'team' | 'csr';
+type ForecastSortKey =
+  | IdentitySortKey
+  | 'productionType'
+  | 'previousSgp'
+  | 'previousForecast'
+  | 'previousAdjusted'
+  | 'previousActual'
+  | 'previousActualVsForecast'
+  | 'previousActualVsAdjusted'
+  | 'selectedSgp'
+  | 'selectedForecast'
+  | 'selectedAdjusted'
+  | 'selectedActual'
+  | 'selectedActualVsForecast'
+  | 'selectedActualVsAdjusted';
 
 type ProductRevenueForecastReportProps = {
   selectedCompanyId: string;
   onOpenInfo?: () => void;
+  itemIdFilter?: string;
+  onItemIdFilterChange?: (itemId: string) => void;
 };
 
 const inputStyle: React.CSSProperties = {
@@ -61,9 +84,9 @@ const IDENTITY_COLUMNS: Array<{
 }> = [
   { key: 'itemSku', label: 'APR P/N', widthCh: 12, sortable: true },
   { key: 'customerPartNumber', label: 'Customer P/N', widthCh: 12, sortable: true },
-  { key: 'customerGroup', label: 'Group', widthCh: 8 },
-  { key: 'team', label: 'TEAM', widthCh: 5, compact: true },
-  { key: 'csr', label: 'CSR', widthCh: 3, compact: true },
+  { key: 'customerGroup', label: 'Group', widthCh: 8, sortable: true },
+  { key: 'team', label: 'TEAM', widthCh: 5, compact: true, sortable: true },
+  { key: 'csr', label: 'CSR', widthCh: 3, compact: true, sortable: true },
 ];
 
 const CHAR_PX = 8;
@@ -177,6 +200,8 @@ function qtyValue(map: MonthQtyMap, month: ForecastMonth): number {
 export default function ProductRevenueForecastReport({
   selectedCompanyId,
   onOpenInfo,
+  itemIdFilter = '',
+  onItemIdFilterChange,
 }: ProductRevenueForecastReportProps) {
   const [year, setYear] = useState(currentYear());
   const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
@@ -194,11 +219,15 @@ export default function ProductRevenueForecastReport({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<ForecastMonth>(currentMonth());
-  const [sortKey, setSortKey] = useState<'itemSku' | 'customerPartNumber'>('itemSku');
+  const [sortKey, setSortKey] = useState<ForecastSortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [chartOpen, setChartOpen] = useState(false);
   const [companyMonthTotals, setCompanyMonthTotals] = useState<ForecastMonthQtyTotals | null>(null);
   const [loadingCompanyTotals, setLoadingCompanyTotals] = useState(false);
+  const [historyLine, setHistoryLine] = useState<ForecastLine | null>(null);
+  const [itemHistory, setItemHistory] = useState<ItemHistoryPoint[]>([]);
+  const [loadingItemHistory, setLoadingItemHistory] = useState(false);
+  const [itemHistoryError, setItemHistoryError] = useState<string | null>(null);
   const [sgpLocked, setSgpLocked] = useState(false);
   const handleSgpLockChange = useCallback((locked: boolean) => setSgpLocked(locked), []);
   const customersRequestSeq = useRef(0);
@@ -228,14 +257,47 @@ export default function ProductRevenueForecastReport({
 
   const sortedLines = useMemo(() => {
     const next = [...lines];
+    const valueFor = (line: ForecastLine): string | number => {
+      const previousForecast = qtyValue(line.forecastQty, previousMonth);
+      const previousAdjusted = typedAdjustedMonthQty(line.forecastQty, previousMonth, line.adjustedQty);
+      const previousActual = qtyValue(line.actualQty, previousMonth);
+      const selectedForecast = qtyValue(line.forecastQty, selectedMonth);
+      const selectedAdjusted = typedAdjustedMonthQty(line.forecastQty, selectedMonth, line.adjustedQty);
+      const selectedActual = qtyValue(line.actualQty, selectedMonth);
+      switch (sortKey) {
+        case 'productionType': return line.productionType || '';
+        case 'previousSgp': return qtyValue(sgpQty(line), previousMonth);
+        case 'previousForecast': return previousForecast;
+        case 'previousAdjusted': return previousAdjusted;
+        case 'previousActual': return previousActual;
+        case 'previousActualVsForecast': return pctVsPlan(previousActual, previousForecast) ?? -Infinity;
+        case 'previousActualVsAdjusted': return pctVsPlan(previousActual, previousAdjusted) ?? -Infinity;
+        case 'selectedSgp': return qtyValue(sgpQty(line), selectedMonth);
+        case 'selectedForecast': return selectedForecast;
+        case 'selectedAdjusted': return selectedAdjusted;
+        case 'selectedActual': return selectedActual;
+        case 'selectedActualVsForecast': return pctVsPlan(selectedActual, selectedForecast) ?? -Infinity;
+        case 'selectedActualVsAdjusted': return pctVsPlan(selectedActual, selectedAdjusted) ?? -Infinity;
+        default: return line[sortKey] || '';
+      }
+    };
     next.sort((a, b) => {
-      const cmp = comparePn(a[sortKey], b[sortKey]);
+      const left = valueFor(a);
+      const right = valueFor(b);
+      const cmp = typeof left === 'number' && typeof right === 'number'
+        ? left - right
+        : comparePn(String(left), String(right));
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return next;
-  }, [lines, sortDir, sortKey]);
+  }, [lines, previousMonth, selectedMonth, sgpLocked, sortDir, sortKey]);
+  const filteredLines = useMemo(() => {
+    const filter = itemIdFilter.trim().toUpperCase();
+    if (!filter) return sortedLines;
+    return sortedLines.filter((line) => line.itemSku.trim().toUpperCase() === filter);
+  }, [itemIdFilter, sortedLines]);
 
-  const toggleSort = (key: 'itemSku' | 'customerPartNumber') => {
+  const toggleSort = (key: ForecastSortKey) => {
     if (sortKey === key) {
       setSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
       return;
@@ -243,6 +305,9 @@ export default function ProductRevenueForecastReport({
     setSortKey(key);
     setSortDir('asc');
   };
+
+  const sortLabel = (key: ForecastSortKey) =>
+    sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ' ↕';
 
   const mergeCustomers = useCallback((csi: CustomerOption[], forecast: CustomerOption[]) => {
     const byKey = new Map<string, CustomerOption>();
@@ -374,6 +439,34 @@ export default function ProductRevenueForecastReport({
     setChartOpen(true);
     if (!selectedCustomer && !companyMonthTotals && !loadingCompanyTotals) {
       void loadCompanyMonthTotals();
+    }
+  };
+
+  const openItemHistory = async (line: ForecastLine) => {
+    if (!selectedCompanyId || !selectedCustomer) return;
+    setHistoryLine(line);
+    setItemHistory([]);
+    setItemHistoryError(null);
+    setLoadingItemHistory(true);
+    try {
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        customerId: selectedCustomer.customerId,
+        customerName: selectedCustomer.customerName,
+        itemSku: line.itemSku,
+        customerPartNumber: line.customerPartNumber,
+        historyMonths: '36',
+      });
+      const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`, {
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Failed to load item history');
+      setItemHistory(Array.isArray(payload?.rows) ? payload.rows : []);
+    } catch (loadError: any) {
+      setItemHistoryError(loadError?.message || 'Failed to load item history');
+    } finally {
+      setLoadingItemHistory(false);
     }
   };
 
@@ -686,6 +779,16 @@ export default function ProductRevenueForecastReport({
           </select>
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          Item ID
+          <input
+            type="search"
+            value={itemIdFilter}
+            onChange={(event) => onItemIdFilterChange?.(event.target.value)}
+            placeholder="All items"
+            style={{ ...inputStyle, width: 180 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Group Name
           <select
             value={customerGroup}
@@ -882,6 +985,11 @@ export default function ProductRevenueForecastReport({
               >
                 {groupScope ? `Group: ${customerGroup}` : selectedCustomer?.label}
               </div>
+              {!groupScope && selectedCustomer?.customerId ? (
+                <div style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>
+                  <strong>Customer ID:</strong> {selectedCustomer.customerId}
+                </div>
+              ) : null}
             </div>
             <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: visibleIdentityColumns.reduce((sum, column) => sum + columnWidthPx(column.widthCh), 0) + columnWidthPx(PLANNED_COL_CH) + MONTH_METRIC_COL_COUNT * MONTH_METRIC_COL_PX, fontSize: 12, tableLayout: 'fixed' }}>
               <colgroup>
@@ -900,7 +1008,7 @@ export default function ProductRevenueForecastReport({
                       key={column.key}
                       title={column.sortable ? `Sort by ${column.label}` : column.label}
                       align="left"
-                      onClick={column.sortable ? () => toggleSort(column.key as 'itemSku' | 'customerPartNumber') : undefined}
+                      onClick={column.sortable ? () => toggleSort(column.key as IdentitySortKey) : undefined}
                       style={{
                         ...stickyIdentityStyle(index, true, visibleIdentityColumns),
                         textAlign: 'left',
@@ -912,7 +1020,7 @@ export default function ProductRevenueForecastReport({
                       }}
                     >
                       {column.label}
-                      {column.sortable && sortKey === column.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      {column.sortable ? sortLabel(column.key as IdentitySortKey) : ''}
                     </th>
                   ))}
                   {[
@@ -920,6 +1028,9 @@ export default function ProductRevenueForecastReport({
                   ].map((column) => (
                     <th
                       key={column.key}
+                      title="Sort by Planned / MTO"
+                      onClick={() => toggleSort('productionType')}
+                      aria-sort={sortKey === 'productionType' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                       style={{
                         textAlign: 'right',
                         padding: '8px 4px',
@@ -934,27 +1045,29 @@ export default function ProductRevenueForecastReport({
                         fontSize: 11,
                         fontWeight: 700,
                         boxSizing: 'border-box',
+                        cursor: 'pointer',
+                        userSelect: 'none',
                       }}
                     >
-                      {column.label}
+                      {column.label}{sortLabel('productionType')}
                     </th>
                   ))}
-                  <th style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0' }}>{sgpLocked ? '🔒 ' : ''}SGP Forecast<br />{previousMonthName}<br />&nbsp;</th>
-                  <th style={priorHeaderStyle}>Forecasted<br />{previousMonthName}<br />&nbsp;</th>
-                  <th style={priorHeaderStyle}>{previousMonthName}<br />Forecast -<br />ADJUSTED</th>
-                  <th style={priorHeaderStyle}>{previousMonthName}<br />Actual<br />&nbsp;</th>
-                  <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs<br />Forecasted</th>
-                  <th style={priorHeaderStyle}>% {previousMonthName} Actual<br />vs Adj.<br />Forecast</th>
-                  <th style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe' }} title={sgpLocked ? 'SGP budget is signed off and locked' : undefined}>{sgpLocked ? '🔒 ' : ''}SGP Forecast<br />{monthName}<br />&nbsp;</th>
-                  <th style={monthHeaderStyle}>Forecasted<br />{monthName}<br />&nbsp;</th>
-                  <th style={monthHeaderStyle}>{monthName}<br />Forecast -<br />ADJUSTED</th>
-                  <th style={monthHeaderStyle}>{monthName}<br />Actual<br />&nbsp;</th>
-                  <th style={monthHeaderStyle}>% {monthName} Actual<br />vs<br />Forecasted</th>
-                  <th style={monthHeaderStyle}>% {monthName} Actual<br />vs Adj.<br />Forecast</th>
+                  <th title={`Sort by SGP Forecast ${previousMonthName}`} onClick={() => toggleSort('previousSgp')} aria-sort={sortKey === 'previousSgp' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, borderLeft: '1px solid #e2e8f0', cursor: 'pointer', userSelect: 'none' }}>{sgpLocked ? '🔒 ' : ''}SGP Forecast<br />{previousMonthName}<br />{sortLabel('previousSgp')}</th>
+                  <th title={`Sort by Forecasted ${previousMonthName}`} onClick={() => toggleSort('previousForecast')} aria-sort={sortKey === 'previousForecast' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>Forecasted<br />{previousMonthName}<br />{sortLabel('previousForecast')}</th>
+                  <th title={`Sort by ${previousMonthName} Forecast - Adjusted`} onClick={() => toggleSort('previousAdjusted')} aria-sort={sortKey === 'previousAdjusted' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>{previousMonthName}<br />Forecast -<br />ADJUSTED {sortLabel('previousAdjusted')}</th>
+                  <th title={`Sort by ${previousMonthName} Actual`} onClick={() => toggleSort('previousActual')} aria-sort={sortKey === 'previousActual' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>{previousMonthName}<br />Actual<br />{sortLabel('previousActual')}</th>
+                  <th title={`Sort by ${previousMonthName} Actual vs Forecasted`} onClick={() => toggleSort('previousActualVsForecast')} aria-sort={sortKey === 'previousActualVsForecast' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>% {previousMonthName} Actual<br />vs<br />Forecasted {sortLabel('previousActualVsForecast')}</th>
+                  <th title={`Sort by ${previousMonthName} Actual vs Adjusted Forecast`} onClick={() => toggleSort('previousActualVsAdjusted')} aria-sort={sortKey === 'previousActualVsAdjusted' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...priorHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>% {previousMonthName} Actual<br />vs Adj.<br />Forecast {sortLabel('previousActualVsAdjusted')}</th>
+                  <th title={`Sort by SGP Forecast ${monthName}`} onClick={() => toggleSort('selectedSgp')} aria-sort={sortKey === 'selectedSgp' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, borderLeft: '2px solid #c7d2fe', cursor: 'pointer', userSelect: 'none' }}>{sgpLocked ? '🔒 ' : ''}SGP Forecast<br />{monthName}<br />{sortLabel('selectedSgp')}</th>
+                  <th title={`Sort by Forecasted ${monthName}`} onClick={() => toggleSort('selectedForecast')} aria-sort={sortKey === 'selectedForecast' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>Forecasted<br />{monthName}<br />{sortLabel('selectedForecast')}</th>
+                  <th title={`Sort by ${monthName} Forecast - Adjusted`} onClick={() => toggleSort('selectedAdjusted')} aria-sort={sortKey === 'selectedAdjusted' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>{monthName}<br />Forecast -<br />ADJUSTED {sortLabel('selectedAdjusted')}</th>
+                  <th title={`Sort by ${monthName} Actual`} onClick={() => toggleSort('selectedActual')} aria-sort={sortKey === 'selectedActual' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>{monthName}<br />Actual<br />{sortLabel('selectedActual')}</th>
+                  <th title={`Sort by ${monthName} Actual vs Forecasted`} onClick={() => toggleSort('selectedActualVsForecast')} aria-sort={sortKey === 'selectedActualVsForecast' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>% {monthName} Actual<br />vs<br />Forecasted {sortLabel('selectedActualVsForecast')}</th>
+                  <th title={`Sort by ${monthName} Actual vs Adjusted Forecast`} onClick={() => toggleSort('selectedActualVsAdjusted')} aria-sort={sortKey === 'selectedActualVsAdjusted' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ ...monthHeaderStyle, cursor: 'pointer', userSelect: 'none' }}>% {monthName} Actual<br />vs Adj.<br />Forecast {sortLabel('selectedActualVsAdjusted')}</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedLines.map((line) => {
+                {filteredLines.map((line) => {
                   return (
                     <tr key={line.id} style={{ borderTop: '1px solid #e2e8f0' }}>
                       {visibleIdentityColumns.map((column, index) => (
@@ -968,23 +1081,46 @@ export default function ProductRevenueForecastReport({
                             borderTop: '1px solid #e2e8f0',
                           }}
                         >
-                          <input
-                            value={line[column.key]}
-                            title={line[column.key] || undefined}
-                            readOnly={column.readOnly || groupScope}
-                            onChange={
-                              column.readOnly || groupScope
-                                ? undefined
-                                : column.key === 'customerGroup'
-                                  ? (event) => updateCustomerGroup(event.target.value)
-                                  : (event) => updateLine(line.id, { [column.key]: event.target.value })
-                            }
-                            style={{
-                              ...identityInputStyle,
-                              padding: column.compact ? '5px 4px' : identityInputStyle.padding,
-                              ...(column.readOnly || groupScope ? { background: '#f8fafc', color: '#475569', cursor: 'default' } : {}),
-                            }}
-                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <input
+                              value={line[column.key]}
+                              title={line[column.key] || undefined}
+                              readOnly={column.readOnly || groupScope}
+                              onChange={
+                                column.readOnly || groupScope
+                                  ? undefined
+                                  : column.key === 'customerGroup'
+                                    ? (event) => updateCustomerGroup(event.target.value)
+                                    : (event) => updateLine(line.id, { [column.key]: event.target.value })
+                              }
+                              style={{
+                                ...identityInputStyle,
+                                minWidth: 0,
+                                padding: column.compact ? '5px 4px' : identityInputStyle.padding,
+                                ...(column.readOnly || groupScope ? { background: '#f8fafc', color: '#475569', cursor: 'default' } : {}),
+                              }}
+                            />
+                            {column.key === 'itemSku' && selectedCustomer && !groupScope ? (
+                              <button
+                                type="button"
+                                onClick={() => void openItemHistory(line)}
+                                title={`View 36-month Forecast and Actual history for ${line.itemSku}`}
+                                style={{
+                                  flex: '0 0 auto',
+                                  border: '1px solid #c7d2fe',
+                                  borderRadius: 5,
+                                  background: '#eef2ff',
+                                  color: '#4338ca',
+                                  padding: '4px 5px',
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                History
+                              </button>
+                            ) : null}
+                          </div>
                         </td>
                       ))}
                       <td
@@ -1084,10 +1220,12 @@ export default function ProductRevenueForecastReport({
                     </tr>
                   );
                 })}
-                {lines.length === 0 && (
+                {filteredLines.length === 0 && (
                   <tr>
                     <td colSpan={visibleIdentityColumns.length + 13} style={{ padding: 16, color: '#64748b' }}>
-                      No forecast rows for this {groupScope ? 'group' : 'customer'} yet. Import the workbook to load customers and parts, then save.
+                      {itemIdFilter
+                        ? `No forecast rows match Item ID ${itemIdFilter}.`
+                        : `No forecast rows for this ${groupScope ? 'group' : 'customer'} yet. Import the workbook to load customers and parts, then save.`}
                     </td>
                   </tr>
                 )}
@@ -1104,6 +1242,27 @@ export default function ProductRevenueForecastReport({
         unit="qty"
         rows={trendRows}
         loading={!selectedCustomer && !groupScope && (loadingCompanyTotals || !companyMonthTotals)}
+      />
+      <ProductMonthlyTrendChartModal
+        open={Boolean(historyLine)}
+        onClose={() => setHistoryLine(null)}
+        title={`36-Month History · ${historyLine?.itemSku || ''}`}
+        subtitle={[
+          selectedCustomer?.label,
+          historyLine?.customerPartNumber ? `Customer P/N: ${historyLine.customerPartNumber}` : null,
+          'Forecast and Actual units by month.',
+        ].filter(Boolean).join(' · ')}
+        unit="qty"
+        rows={itemHistory.map((point) => ({
+          month: point.month,
+          forecast: point.forecast,
+          forecastAdj: 0,
+          actual: point.actual,
+        }))}
+        loading={loadingItemHistory}
+        error={itemHistoryError}
+        showAdjusted={false}
+        showValuesTable
       />
     </div>
   );

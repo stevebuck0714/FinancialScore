@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  emptyMonthQtyMap,
   forecastAdjustedClosedThrough,
+  monthQty,
   summarizeForecastQtyMonths,
   withClosedMonthActualAdjusted,
+  type ForecastMonth,
   type ProductRevenueForecastLineInput,
 } from '@/lib/operations/product-revenue-forecast';
 import {
@@ -21,11 +24,11 @@ import {
   listProductForecastCustomersWithCatalog,
   loadProductForecastLinesWithCatalog,
 } from '@/lib/operations/product-catalog-carryforward';
-
 import { loadCustomerGroups, saveCustomerGroup, withCustomerGroups } from '@/lib/operations/customer-groups';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
 import { getActiveSgpBudgetLock } from '@/lib/operations/product-sgp-budget-lock';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
+import { formatEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -40,6 +43,112 @@ function forecastLinesWithActuals(
   dataThru: string | null
 ) {
   return withClosedMonthActualAdjusted(withProductActualQty(lines, actualQty), dataThru);
+}
+
+function historyMonthKeys(monthCount: number): Array<{ year: number; month: ForecastMonth; label: string }> {
+  const [yearText, monthText] = formatEstDate().split('-');
+  let year = Number(yearText);
+  let month = Number(monthText);
+  const months: Array<{ year: number; month: ForecastMonth; label: string }> = [];
+
+  for (let offset = 0; offset < monthCount; offset += 1) {
+    months.unshift({
+      year,
+      month: month as ForecastMonth,
+      label: `${year}-${String(month).padStart(2, '0')}`,
+    });
+    month -= 1;
+    if (month === 0) {
+      month = 12;
+      year -= 1;
+    }
+  }
+  return months;
+}
+
+async function loadItemHistory(params: {
+  companyId: string;
+  customerId: string;
+  itemSku: string;
+  customerPartNumber: string;
+  customerName: string;
+}) {
+  const months = historyMonthKeys(36);
+  const years = Array.from(new Set(months.map((month) => month.year)));
+  const savedLines = await prisma.productRevenueForecastLine.findMany({
+    where: {
+      companyId: params.companyId,
+      customerId: params.customerId,
+      itemSku: params.itemSku,
+      customerPartNumber: params.customerPartNumber,
+      year: { in: years },
+    },
+    select: {
+      year: true,
+      forecastQty: true,
+    },
+  });
+  const forecastsByYear = new Map(
+    savedLines.map((line) => [
+      line.year,
+      normalizeForecastLineInput(
+        {
+          customerId: params.customerId,
+          customerName: params.customerName,
+          customerPartNumber: params.customerPartNumber,
+          itemSku: params.itemSku,
+          forecastQty: line.forecastQty as MonthQtyMap,
+        },
+        params,
+        0
+      ).forecastQty,
+    ])
+  );
+  const actualsByYear = new Map(
+    await Promise.all(
+      years.map(async (year) => [
+        year,
+        await loadProductActualQty({
+          companyId: params.companyId,
+          year,
+          customerId: params.customerId,
+        }),
+      ] as const)
+    )
+  );
+  const [currentYearText, currentMonthText] = formatEstDate().split('-');
+  const currentYear = Number(currentYearText);
+  const currentMonth = Number(currentMonthText);
+
+  return months.map(({ year, month, label }) => {
+    const actualLine = withProductActualQty(
+      [{
+        customerId: params.customerId,
+        customerName: params.customerName,
+        customerGroup: '',
+        customerPartNumber: params.customerPartNumber,
+        itemSku: params.itemSku,
+        team: '',
+        csr: '',
+        productionType: '',
+        statusFlag: '',
+        annualBaseQty: null,
+        forecastQty: emptyMonthQtyMap(),
+        sgpForecastQty: emptyMonthQtyMap(),
+        adjustedQty: emptyMonthQtyMap(),
+        actualQty: emptyMonthQtyMap(),
+        sortOrder: 0,
+      }],
+      actualsByYear.get(year)!
+    )[0];
+    return {
+      month: label,
+      forecast: forecastsByYear.has(year)
+        ? monthQty(forecastsByYear.get(year)!, month)
+        : null,
+      actual: year === currentYear && month === currentMonth ? null : monthQty(actualLine.actualQty, month),
+    };
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -57,9 +166,28 @@ export async function GET(request: NextRequest) {
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();
     const customerGroup = String(request.nextUrl.searchParams.get('customerGroup') || '').trim();
     const includeTotals = String(request.nextUrl.searchParams.get('includeTotals') || '') === '1';
+    const historyMonths = Number(request.nextUrl.searchParams.get('historyMonths') || 0);
     const refresh = ['1', 'true', 'yes'].includes(
       String(request.nextUrl.searchParams.get('refresh') || '').trim().toLowerCase()
     );
+
+    if (historyMonths === 36) {
+      const itemSku = String(request.nextUrl.searchParams.get('itemSku') || '').trim();
+      const customerPartNumber = String(request.nextUrl.searchParams.get('customerPartNumber') || '').trim();
+      if (!customerId || !itemSku) {
+        return NextResponse.json({ error: 'Customer ID and APR P/N are required for item history' }, { status: 400 });
+      }
+      await ensureProductRevenueForecastTables();
+      return NextResponse.json({
+        rows: await loadItemHistory({
+          companyId,
+          customerId,
+          customerName,
+          itemSku,
+          customerPartNumber,
+        }),
+      });
+    }
 
     const { payload } = await withProductReportCache({
       namespace: 'product-forecast-report',
