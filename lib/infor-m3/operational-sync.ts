@@ -1846,8 +1846,14 @@ function resolveSlaPtrxSafePropertyPath(endpointPath: string): string | null {
   return ensureCsiProperties(endpointPath, isXpsFamily ? SLA_PTRXP_SAFE_PROPERTIES : SLA_PTRX_SAFE_PROPERTIES);
 }
 
+// CSI has reported a missing IDO both as "IDO not found" and as
+// "IDO 'SLGLTRANS' not found." Fallbacks to alternate IDOs depend on both.
+function isCsiIdoNotFoundMessage(message: string): boolean {
+  return /\bido\b(?:\s+'[^']*')?\s+not found/i.test(message);
+}
+
 function parseMissingPropertyFromMessage(message: string): string | null {
-  const missingPropertyMatch = message.match(/Property\s+([A-Za-z0-9_]+)\s+not found/i);
+  const missingPropertyMatch = message.match(/Property\s+'?([A-Za-z0-9_]+)'?\s+not found/i);
   if (missingPropertyMatch?.[1]) return String(missingPropertyMatch[1]).trim();
   const invalidColumnMatch = message.match(/Invalid\s+column\s+name\s+'([A-Za-z0-9_]+)'/i);
   if (invalidColumnMatch?.[1]) return String(invalidColumnMatch[1]).trim();
@@ -1954,8 +1960,7 @@ function isOptionalCsiGlSummaryIdoMissing(params: {
 
   // Optional GL summary IDOs can be absent on some tenants.
   if (params.moduleType === 'gl') {
-    // CSI reports this as "IDO 'SLGLTRANS' not found." with the IDO name in between.
-    if (!/\bido\b(?:\s+'[^']*')?\s+not found/.test(msg)) return false;
+    if (!isCsiIdoNotFoundMessage(msg)) return false;
     if (program && OPTIONAL_CSI_GL_SUMMARY_PROGRAMS.has(program)) return true;
     // Tenants without SLGLTRANS / chart-of-accounts IDOs source GL from SLLedgers.
     // A missing IDO cannot succeed on retry, and failing the task makes the
@@ -9908,7 +9913,7 @@ export async function syncInforM3OperationalData(
           /\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(req.endpointPath) &&
           (
             /invalid column name 'vendor_bank_id'/i.test(initialMessage) ||
-            /ido not found/i.test(initialMessage)
+            isCsiIdoNotFoundMessage(initialMessage)
           );
         if (
           !isTransportAndPayloadSuccess(response) &&
@@ -9984,7 +9989,7 @@ export async function syncInforM3OperationalData(
         }
         if (moduleType === 'ap' && !isTransportAndPayloadSuccess(response)) {
           const apErrorMessage = extractResponseMessage(response.body);
-          if (/ido not found/i.test(apErrorMessage) && /\/load\//i.test(effectiveEndpointPath)) {
+          if (isCsiIdoNotFoundMessage(apErrorMessage) && /\/load\//i.test(effectiveEndpointPath)) {
             const candidates = buildApSlaPtrxCandidatePaths(effectiveEndpointPath);
             for (const candidatePath of candidates) {
               if (candidatePath === effectiveEndpointPath) continue;
@@ -10004,7 +10009,7 @@ export async function syncInforM3OperationalData(
           if (
             /\/load\//i.test(effectiveEndpointPath) &&
             (
-              /ido not found/i.test(glErrorMessage) ||
+              isCsiIdoNotFoundMessage(glErrorMessage) ||
               /property .* not found/i.test(glErrorMessage) ||
               /invalid column name/i.test(glErrorMessage)
             )
