@@ -1954,7 +1954,8 @@ function isOptionalCsiGlSummaryIdoMissing(params: {
 
   // Optional GL summary IDOs can be absent on some tenants.
   if (params.moduleType === 'gl') {
-    if (!msg.includes('ido not found')) return false;
+    // CSI reports this as "IDO 'SLGLTRANS' not found." with the IDO name in between.
+    if (!/\bido\b(?:\s+'[^']*')?\s+not found/.test(msg)) return false;
     if (program && OPTIONAL_CSI_GL_SUMMARY_PROGRAMS.has(program)) return true;
     // Tenants without SLGLTRANS / chart-of-accounts IDOs source GL from SLLedgers.
     // A missing IDO cannot succeed on retry, and failing the task makes the
