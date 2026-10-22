@@ -11,6 +11,7 @@ import { INDUSTRY_SECTORS as APP_INDUSTRY_SECTORS } from '@/lib/constants/compan
 import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
 import BillingDashboard from '@/app/components/billing/BillingDashboard';
+import TrafficReport from '@/app/components/siteadmin/TrafficReport';
 import { isLoansDefaultEnabledForCompany, mapModuleToDataType } from '@/lib/operations/module-registry';
 import {
   getOperationalHubDefaultModuleKeys,
@@ -7239,6 +7240,23 @@ export default function SiteAdminDashboard(props: any) {
                   }}
                 >
                   💰 Billing & Revenue
+                </button>
+                <button
+                  onClick={() => setSiteAdminTab('traffic')}
+                  style={{
+                    padding: '8px 16px',
+                    background: siteAdminTab === 'traffic' ? '#667eea' : 'transparent',
+                    color: siteAdminTab === 'traffic' ? 'white' : '#64748b',
+                    border: 'none',
+                    borderBottom: siteAdminTab === 'traffic' ? '3px solid #667eea' : '3px solid transparent',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    borderRadius: '6px 6px 0 0',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Traffic
                 </button>
                 <button
                   onClick={() => setSiteAdminTab('siteadmins')}
@@ -15836,6 +15854,10 @@ export default function SiteAdminDashboard(props: any) {
       {/* Billing & Revenue Tab */}
       {siteAdminTab === 'billing' && (
         <BillingDashboard />
+      )}
+
+      {siteAdminTab === 'traffic' && (
+        <TrafficReport />
       )}
     </div>
   );

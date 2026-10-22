@@ -3,6 +3,8 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useLayoutEffect, ChangeEvent, useRef } from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
+import { viewToTrafficSection } from '@/lib/traffic/sections';
+import { useSectionTracking } from '@/lib/traffic/useSectionTracking';
 import {
   clearBrowserCompanyData,
   isAccountManagerUser,
@@ -2700,7 +2702,7 @@ function FinancialScorePage() {
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
   const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation' | 'team-assessment' | 'dataroom'>('profile');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
-  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'user-access' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
+  const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'user-access' | 'affiliates' | 'default-pricing' | 'billing' | 'traffic' | 'siteadmins'>('consultants');
   const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
 
   const normalizeFinancialSourceLabel = (value: unknown): string | null => {
@@ -3425,6 +3427,10 @@ function FinancialScorePage() {
   );
 
   const siteAdminReturnUser = siteAdminViewingAs || siteAdminSessionUser;
+
+  const isTrackedClientUser =
+    String(currentUser?.role || '').toLowerCase() === 'user' && !canReturnToSiteAdmin && !hasSiteAdminOverride;
+  useSectionTracking(isTrackedClientUser ? viewToTrafficSection(currentView) : null, selectedCompanyId || null);
 
   // A Site Admin preview must never land on an empty company-management page.
   // If a state update or fresh company load temporarily clears the selection,

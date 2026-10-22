@@ -170,6 +170,7 @@ model Company {
   financialForecastBudgetArchives FinancialForecastBudgetArchive[]
   customReports              CustomReport[]
   askThreads                 AskThread[]
+  sectionViews               SectionView[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
@@ -241,11 +242,33 @@ model User {
   askThreadSharesReceived AskThreadShare[] @relation("AskThreadShareRecipient")
   askThreadSharesSent  AskThreadShare[]   @relation("AskThreadShareSender")
   askThreadEmailsSent  AskThreadEmail[]   @relation("AskThreadEmailSender")
+  sectionViews         SectionView[]
 
   @@index([email])
   @@index([companyId])
   @@index([consultantId])
   @@index([passwordResetToken])
+}
+
+// One visible stretch of time a client user spent in a left-sidebar section.
+// isResume marks a return to the same section after the tab was hidden, so it
+// adds time without counting as a new view.
+model SectionView {
+  id         String   @id @default(cuid())
+  companyId  String
+  userId     String
+  section    String
+  isResume   Boolean  @default(false)
+  durationMs Int
+  startedAt  DateTime
+  createdAt  DateTime @default(now())
+
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([startedAt])
+  @@index([companyId, startedAt])
+  @@index([userId])
 }
 
 model CustomReport {
