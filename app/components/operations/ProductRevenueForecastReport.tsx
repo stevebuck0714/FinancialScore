@@ -269,6 +269,8 @@ export default function ProductRevenueForecastReport({
   const customersRequestSeq = useRef(0);
   const [itemCustomers, setItemCustomers] = useState<{ itemId: string; customers: ItemCustomer[] } | null>(null);
   const [loadingItemCustomers, setLoadingItemCustomers] = useState(false);
+  const [lookingUpItemId, setLookingUpItemId] = useState('');
+  const itemCustomersRequestSeq = useRef(0);
   const [pendingItemCustomer, setPendingItemCustomer] = useState<(ItemCustomer & { itemId: string }) | null>(null);
   const pendingNewRowRef = useRef<{ customerKey: string; itemSku: string; customerPartNumber: string } | null>(null);
 
@@ -476,11 +478,38 @@ export default function ProductRevenueForecastReport({
     void loadLines(selectedCustomer);
   }, [customerGroup, selectedCustomer?.key, loadLines]);
 
+  const lookupItemCustomers = useCallback(async (itemId: string) => {
+    if (!selectedCompanyId || !itemId) return;
+    const seq = ++itemCustomersRequestSeq.current;
+    setItemCustomers(null);
+    setLookingUpItemId(itemId);
+    setLoadingItemCustomers(true);
+    try {
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        itemCustomers: '1',
+        itemSku: itemId,
+      });
+      const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`, {
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (seq !== itemCustomersRequestSeq.current) return;
+      if (!response.ok) throw new Error(payload?.error || 'Failed to find customers for this item');
+      const found: ItemCustomer[] = Array.isArray(payload?.customers) ? payload.customers : [];
+      setItemCustomers({ itemId, customers: found });
+      if (found.length === 1) setPendingItemCustomer({ ...found[0], itemId });
+    } catch (err: any) {
+      if (seq === itemCustomersRequestSeq.current) setError(err?.message || 'Failed to find customers for this item');
+    } finally {
+      if (seq === itemCustomersRequestSeq.current) setLoadingItemCustomers(false);
+    }
+  }, [selectedCompanyId]);
+
   const focusRequestId = itemFocusRequest?.requestId;
   const focusItemId = itemFocusRequest?.itemId || '';
   useEffect(() => {
     if (!focusRequestId || !focusItemId || !selectedCompanyId) return;
-    let cancelled = false;
     pendingNewRowRef.current = null;
     setPendingItemCustomer(null);
     setCustomerKey('');
@@ -490,34 +519,17 @@ export default function ProductRevenueForecastReport({
     setLines([]);
     setDirty(false);
     setNotice(null);
-    setItemCustomers(null);
-    setLoadingItemCustomers(true);
-    void (async () => {
-      try {
-        const params = new URLSearchParams({
-          companyId: selectedCompanyId,
-          itemCustomers: '1',
-          itemSku: focusItemId,
-        });
-        const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`, {
-          cache: 'no-store',
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (cancelled) return;
-        if (!response.ok) throw new Error(payload?.error || 'Failed to find customers for this item');
-        const found: ItemCustomer[] = Array.isArray(payload?.customers) ? payload.customers : [];
-        setItemCustomers({ itemId: focusItemId, customers: found });
-        if (found.length === 1) setPendingItemCustomer({ ...found[0], itemId: focusItemId });
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message || 'Failed to find customers for this item');
-      } finally {
-        if (!cancelled) setLoadingItemCustomers(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [focusItemId, focusRequestId, selectedCompanyId]);
+    void lookupItemCustomers(focusItemId);
+  }, [focusItemId, focusRequestId, lookupItemCustomers, selectedCompanyId]);
+
+  // Typing an Item ID with no customer or group selected finds the item's customer.
+  const typedItemId = itemIdFilter.trim();
+  useEffect(() => {
+    if (customerKey || customerGroup || typedItemId.length < 3) return;
+    if (itemCustomers?.itemId.toUpperCase() === typedItemId.toUpperCase()) return;
+    const timer = window.setTimeout(() => void lookupItemCustomers(typedItemId), 500);
+    return () => window.clearTimeout(timer);
+  }, [customerGroup, customerKey, itemCustomers?.itemId, lookupItemCustomers, typedItemId]);
 
   useEffect(() => {
     if (!pendingItemCustomer || loadingCustomers) return;
@@ -1064,9 +1076,9 @@ export default function ProductRevenueForecastReport({
       )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}
-      {loadingItemCustomers && focusItemId && (
+      {loadingItemCustomers && lookingUpItemId && (
         <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>
-          Finding the customer for Item ID {focusItemId}…
+          Finding the customer for Item ID {lookingUpItemId}…
         </div>
       )}
       {!loadingItemCustomers && itemCustomersForFilter && itemCustomersForFilter.customers.length === 0 && (
