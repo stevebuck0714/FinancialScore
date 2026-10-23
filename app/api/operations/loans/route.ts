@@ -15,7 +15,7 @@ import {
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 36;
+const LOAN_ACTIVITY_CACHE_VERSION = 37;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -30,9 +30,14 @@ type LoanTermInput = {
   maturityDate?: string | null;
   amortizationTermMonths?: number | null;
   paymentFrequency?: string | null;
+  firstPaymentDate?: string | null;
+  dayCountConvention?: string | null;
   notes?: string | null;
   closed?: boolean | null;
 };
+
+const DAY_COUNT_CONVENTIONS = new Set(['30/360', 'actual/365', 'actual/360']);
+const SCHEDULE_ACTIVITY_LIMIT = 600;
 
 const DEBT_ACCOUNT_NAME_PATTERN = [
   'loan',
@@ -117,6 +122,11 @@ async function ensureLoanTermsTable() {
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "LoanInstrumentTerm"
       ADD COLUMN IF NOT EXISTS "closed" BOOLEAN NOT NULL DEFAULT false;
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "LoanInstrumentTerm"
+      ADD COLUMN IF NOT EXISTS "firstPaymentDate" DATE,
+      ADD COLUMN IF NOT EXISTS "dayCountConvention" TEXT;
   `);
 }
 
@@ -731,6 +741,8 @@ async function loadLoanTerms(companyId: string) {
         "maturityDate",
         "amortizationTermMonths",
         "paymentFrequency",
+        "firstPaymentDate",
+        "dayCountConvention",
         "notes",
         COALESCE("closed", false) AS "closed",
         "updatedAt"
@@ -1293,7 +1305,7 @@ async function loadLoanActivity(companyId: string) {
         )
         AND NOT (TRIM("accountId") ~ '^10[0-9]' AND COALESCE("accountName", '') !~* 'interest')
       ORDER BY "transDate" DESC
-      LIMIT 300
+      LIMIT 5000
     `,
     companyId,
     mappedDebtAccountIds
@@ -1318,6 +1330,13 @@ async function loadLoanActivity(companyId: string) {
       credits: Number(row.credits || 0),
       transactionCount: Number(row.transactionCount || 0),
     });
+    return acc;
+  }, {});
+
+  const detailAllByInstrument = detailRows.reduce<Record<string, any[]>>((acc, row) => {
+    const key = String(row.instrumentKey || '');
+    if (!acc[key]) acc[key] = [];
+    if (acc[key].length < SCHEDULE_ACTIVITY_LIMIT) acc[key].push(row);
     return acc;
   }, {});
 
@@ -1489,6 +1508,12 @@ async function loadLoanActivity(companyId: string) {
       ...(useRawActivity ? rawInforActivity.recentActivity : detailByInstrument[String(row.instrumentKey)] || []),
       ...allInterestActivity,
     ]).sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime()).slice(0, 30);
+    const scheduleActivity = dedupeActivityRows([
+      ...(useRawActivity ? rawInforActivity.recentActivity : detailAllByInstrument[String(row.instrumentKey)] || []),
+      ...allInterestActivity,
+    ])
+      .sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime())
+      .slice(0, SCHEDULE_ACTIVITY_LIMIT);
     const currentMonth = monthKey(reportAsOfDate);
     const priorMonthBalance = accountBalanceSnapshot?.priorMonthBalance == null
       ? null
@@ -1529,6 +1554,7 @@ async function loadLoanActivity(companyId: string) {
       principalChangeMonth: currentMonth,
       monthlyActivity,
       recentActivity,
+      scheduleActivity,
     };
   });
 
@@ -1563,11 +1589,15 @@ async function loadLoanActivity(companyId: string) {
       instruments = instruments.map((instrument) => {
         const principal = qbdPrincipalActivity.get(String(instrument.accountId || '').trim()) || [];
         if (!principal.length) return instrument;
+        const newestFirst = (rows: any[]) =>
+          rows.sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime());
         return {
           ...instrument,
-          recentActivity: dedupeActivityRows([...instrument.recentActivity, ...principal])
-            .sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime())
-            .slice(0, 30),
+          recentActivity: newestFirst(dedupeActivityRows([...instrument.recentActivity, ...principal])).slice(0, 30),
+          scheduleActivity: newestFirst(dedupeActivityRows([...instrument.scheduleActivity, ...principal])).slice(
+            0,
+            SCHEDULE_ACTIVITY_LIMIT
+          ),
         };
       });
     }
@@ -1602,6 +1632,7 @@ async function buildLoanActivityPayload(companyId: string) {
       estimatedInterestPaid: 0,
       monthlyActivity: [],
       recentActivity: [],
+      scheduleActivity: [],
       terms: normalizeLoanTerms(term),
     }));
   const reportInstruments = [...merged, ...configuredOnly].filter(
@@ -1683,6 +1714,9 @@ export async function POST(request: NextRequest) {
     const maturityDate = normalizeDate(input.maturityDate);
     const amortizationTermMonths = toNumber(input.amortizationTermMonths);
     const paymentFrequency = cleanText(input.paymentFrequency, 80);
+    const firstPaymentDate = normalizeDate(input.firstPaymentDate);
+    const requestedDayCount = String(input.dayCountConvention || '').trim().toLowerCase();
+    const dayCountConvention = DAY_COUNT_CONVENTIONS.has(requestedDayCount) ? requestedDayCount : null;
     const notes = cleanText(input.notes, 2000);
     const closedProvided = Object.prototype.hasOwnProperty.call(input, 'closed');
     const closed = closedProvided ? toBooleanFlag(input.closed) : null;
@@ -1704,9 +1738,11 @@ export async function POST(request: NextRequest) {
           "paymentFrequency",
           "notes",
           "closed",
+          "firstPaymentDate",
+          "dayCountConvention",
           "updatedAt"
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10::date, $11, $12, $13, COALESCE($14, false), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10::date, $11, $12, $13, COALESCE($14, false), $15::date, $16, NOW())
         ON CONFLICT ("companyId", "instrumentKey")
         DO UPDATE SET
           "displayName" = EXCLUDED."displayName",
@@ -1721,6 +1757,8 @@ export async function POST(request: NextRequest) {
           "paymentFrequency" = EXCLUDED."paymentFrequency",
           "notes" = EXCLUDED."notes",
           "closed" = CASE WHEN $14::boolean IS NULL THEN "LoanInstrumentTerm"."closed" ELSE $14::boolean END,
+          "firstPaymentDate" = EXCLUDED."firstPaymentDate",
+          "dayCountConvention" = EXCLUDED."dayCountConvention",
           "updatedAt" = NOW()
         RETURNING *
       `,
@@ -1737,7 +1775,9 @@ export async function POST(request: NextRequest) {
       amortizationTermMonths,
       paymentFrequency,
       notes,
-      closed
+      closed,
+      firstPaymentDate,
+      dayCountConvention
     );
 
     const payload = await buildLoanActivityPayload(companyId);

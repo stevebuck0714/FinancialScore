@@ -5,6 +5,15 @@ import CovenantsTab from '@/app/covenants/components/CovenantsTab';
 import type { MonthlyDataRow, User } from '@/app/types';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
+import {
+  DAY_COUNT_OPTIONS,
+  attachActualsToSchedule,
+  buildAmortizationSchedule,
+  missingAmortizationTerms,
+  parseDayCount,
+  type LoanActualPosting,
+} from '@/lib/loans/amortization';
+import { formatEstDate } from '@/lib/time/eastern';
 
 type LoanTerms = {
   instrumentKey: string;
@@ -18,6 +27,8 @@ type LoanTerms = {
   maturityDate?: string | null;
   amortizationTermMonths?: number | string | null;
   paymentFrequency?: string | null;
+  firstPaymentDate?: string | null;
+  dayCountConvention?: string | null;
   notes?: string | null;
   closed?: boolean | null;
 };
@@ -63,6 +74,7 @@ type LoanInstrument = {
     ref?: string | null;
     sourceProgram?: string | null;
   }>;
+  scheduleActivity?: LoanInstrument['recentActivity'];
   terms?: LoanTerms | null;
 };
 
@@ -85,6 +97,8 @@ const emptyTerms: LoanTerms = {
   maturityDate: '',
   amortizationTermMonths: '',
   paymentFrequency: '',
+  firstPaymentDate: '',
+  dayCountConvention: '',
   notes: '',
   closed: false,
 };
@@ -193,6 +207,8 @@ function buildTerms(instrument: LoanInstrument): LoanTerms {
     maturityDate: normalizeDateInput(instrument.terms?.maturityDate),
     amortizationTermMonths: normalizeInputValue(instrument.terms?.amortizationTermMonths),
     paymentFrequency: normalizeInputValue(instrument.terms?.paymentFrequency),
+    firstPaymentDate: normalizeDateInput(instrument.terms?.firstPaymentDate),
+    dayCountConvention: normalizeInputValue(instrument.terms?.dayCountConvention),
     notes: normalizeInputValue(instrument.terms?.notes),
     closed: isClosedInstrument(instrument),
   };
@@ -259,7 +275,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [instruments, setInstruments] = useState<LoanInstrument[]>([]);
-  const [activePageTab, setActivePageTab] = useState<'instruments' | 'covenants' | 'liquidity'>('instruments');
+  const [activePageTab, setActivePageTab] = useState<'instruments' | 'schedules' | 'covenants' | 'liquidity'>('instruments');
   const [selectedInstrumentKey, setSelectedInstrumentKey] = useState<string>('');
   const [termsDraft, setTermsDraft] = useState<LoanTerms>(emptyTerms);
   const [showClosedInstruments, setShowClosedInstruments] = useState(false);
@@ -286,7 +302,10 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
         ? null
         : Number(selectedInstrument.derivedCurrentBalance || 0);
     let runningBalance = currentBalance;
-    const activityByDate = selectedInstrument.recentActivity.reduce<Array<{ dateKey: string; rows: LoanInstrument['recentActivity'] }>>((groups, row, index) => {
+    const activity = selectedInstrument.scheduleActivity?.length
+      ? selectedInstrument.scheduleActivity
+      : selectedInstrument.recentActivity;
+    const activityByDate = activity.reduce<Array<{ dateKey: string; rows: LoanInstrument['recentActivity'] }>>((groups, row, index) => {
       const dateKey = row.transDate ? new Date(row.transDate).toISOString().slice(0, 10) : `no-date-${index}`;
       const lastGroup = groups[groups.length - 1];
       if (lastGroup?.dateKey === dateKey) {
@@ -314,7 +333,73 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
     const value = operationalHubSections?.[sectionKey];
     return value === undefined ? true : value !== false;
   };
+  const showSchedulesTab = isSectionEnabled('loansSchedules');
   const showCovenantsTab = isSectionEnabled('loansCovenants');
+
+  const amortization = useMemo(() => {
+    if (!selectedInstrument || isLocInstrument(selectedInstrument)) return null;
+    const terms = selectedInstrument.terms || null;
+    const termValues = {
+      originalBalance: toFiniteNumber(terms?.originalBalance),
+      interestRatePct: toFiniteNumber(terms?.interestRatePct),
+      amortizationTermMonths: toFiniteNumber(terms?.amortizationTermMonths),
+      firstPaymentDate: normalizeDateInput(terms?.firstPaymentDate),
+    };
+    const missing = missingAmortizationTerms(termValues);
+    if (missing.length) return { missing, schedule: null, rows: [] };
+    const schedule = buildAmortizationSchedule({
+      loanAmount: termValues.originalBalance || 0,
+      annualRatePct: termValues.interestRatePct || 0,
+      amortizationTermMonths: termValues.amortizationTermMonths || 0,
+      firstPaymentDate: termValues.firstPaymentDate,
+      loanOriginationDate: normalizeDateInput(terms?.loanOriginationDate),
+      maturityDate: normalizeDateInput(terms?.maturityDate),
+      paymentFrequency: terms?.paymentFrequency,
+      dayCountConvention: terms?.dayCountConvention,
+    });
+    if (!schedule) return { missing: [], schedule: null, rows: [] };
+    const activity = selectedInstrument.scheduleActivity?.length
+      ? selectedInstrument.scheduleActivity
+      : selectedInstrument.recentActivity;
+    const postings = activity.flatMap((row): LoanActualPosting[] => {
+      const type = classifyLoanTransaction(row);
+      const amount = Math.abs(Number(row.signedAmount || 0));
+      const date = row.transDate ? new Date(row.transDate).toISOString().slice(0, 10) : '';
+      if (!date || amount <= 0) return [];
+      if (type === 'Interest') return [{ date, kind: 'interest', amount }];
+      if (type === 'Principal payment') return [{ date, kind: 'principal', amount }];
+      if (type === 'Borrowing / draw') return [{ date, kind: 'draw', amount }];
+      return [];
+    });
+    const rows = attachActualsToSchedule({
+      rows: schedule.rows,
+      postings,
+      currentBalance: getLoanCurrentBalance(selectedInstrument),
+      today: formatEstDate(),
+    });
+    return { missing: [], schedule, rows };
+  }, [selectedInstrument]);
+
+  const amortizationSummary = useMemo(() => {
+    if (!amortization?.schedule) return null;
+    const rows = amortization.rows;
+    const pastRows = rows.filter((row) => row.status === 'paid' || row.status === 'current' || row.status === 'no-data');
+    const lastPast = pastRows[pastRows.length - 1] || null;
+    const actualRows = rows.filter((row) => row.status === 'paid' || row.status === 'current');
+    const futureRows = rows.filter((row) => row.status === 'future');
+    const sum = (values: Array<number | null>) => values.reduce<number>((total, value) => total + Number(value || 0), 0);
+    return {
+      scheduledPayment: amortization.schedule.scheduledPayment,
+      scheduledBalanceToday: lastPast ? lastPast.balance : Number(amortization.schedule.rows[0]?.balance || 0) + Number(amortization.schedule.rows[0]?.principal || 0),
+      actualBalanceToday: selectedInstrument ? getLoanCurrentBalance(selectedInstrument) : null,
+      paymentsMade: pastRows.length,
+      paymentsRemaining: futureRows.length,
+      actualInterestToDate: sum(actualRows.map((row) => row.actualInterest)),
+      scheduledInterestToDate: sum(actualRows.map((row) => row.interest)),
+      interestRemaining: sum(futureRows.map((row) => row.interest)),
+      actualsFrom: actualRows[0]?.date || null,
+    };
+  }, [amortization, selectedInstrument]);
   const showLiquidityTab = isSectionEnabled('loansLiquidity');
 
   const liquidityData = useMemo(() => {
@@ -705,6 +790,11 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
         <button type="button" onClick={() => setActivePageTab('instruments')} style={tabButtonStyle(activePageTab === 'instruments')}>
           Loan Instruments
         </button>
+        {showSchedulesTab && (
+          <button type="button" onClick={() => setActivePageTab('schedules')} style={tabButtonStyle(activePageTab === 'schedules')}>
+            Loan Schedules
+          </button>
+        )}
         {showCovenantsTab && (
           <button type="button" onClick={() => setActivePageTab('covenants')} style={tabButtonStyle(activePageTab === 'covenants')}>
             Covenants
@@ -826,6 +916,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                     ['lender', 'Lender', 'text'],
                     ['originalBalance', isLocInstrument(selectedInstrument) ? 'LOC Limit / Loan Amount' : 'Loan Amount', 'currency'],
                     ['loanOriginationDate', 'Loan Origination Date', 'date'],
+                    ['firstPaymentDate', 'First Payment Date', 'date'],
                     ['interestRatePct', 'Interest Rate %', 'number'],
                     ['maturityDate', 'Maturity Date', 'date'],
                     ['amortizationTermMonths', 'Amortization Term Months', 'number'],
@@ -853,6 +944,18 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                       </div>
                     </label>
                   ))}
+                  <label style={{ display: 'block' }}>
+                    <div style={labelStyle}>Interest Day Count</div>
+                    <select
+                      value={parseDayCount(termsDraft.dayCountConvention)}
+                      onChange={(event) => updateTerms('dayCountConvention', event.target.value)}
+                      style={inputStyle}
+                    >
+                      {DAY_COUNT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
                   <label style={{ display: 'block', gridColumn: '1 / -1' }}>
                     <div style={labelStyle}>Notes</div>
                     <textarea
@@ -884,10 +987,155 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
             </div>
           )}
 
+        </>
+      ) : activePageTab === 'schedules' && showSchedulesTab ? (
+        <>
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}>
+              <label style={{ display: 'block', minWidth: '280px' }}>
+                <div style={labelStyle}>Loan</div>
+                <select
+                  value={selectedInstrument?.instrumentKey || ''}
+                  onChange={(event) => setSelectedInstrumentKey(event.target.value)}
+                  style={inputStyle}
+                >
+                  {visibleInstruments.map((instrument) => (
+                    <option key={instrument.instrumentKey} value={instrument.instrumentKey}>
+                      {instrument.terms?.displayName || instrument.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setActivePageTab('instruments')}
+                style={{ border: '1px solid #cbd5e1', background: 'white', borderRadius: '8px', padding: '8px 12px', color: '#334155', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Edit Loan Terms
+              </button>
+            </div>
+            {selectedInstrument && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+                {[
+                  ['Loan Amount', formatOptionalCurrency(selectedInstrument.terms?.originalBalance)],
+                  ['Loan Origination Date', formatDate(normalizeDateInput(selectedInstrument.terms?.loanOriginationDate) || null)],
+                  ['First Payment Date', formatDate(normalizeDateInput(selectedInstrument.terms?.firstPaymentDate) || null)],
+                  ['Interest Rate %', toFiniteNumber(selectedInstrument.terms?.interestRatePct) === null ? '-' : `${Number(selectedInstrument.terms?.interestRatePct)}%`],
+                  ['Amortization Term Months', normalizeInputValue(selectedInstrument.terms?.amortizationTermMonths) || '-'],
+                  ['Maturity Date', formatDate(normalizeDateInput(selectedInstrument.terms?.maturityDate) || null)],
+                  ['Payment Frequency', amortization?.schedule?.frequency.label || normalizeInputValue(selectedInstrument.terms?.paymentFrequency) || 'Monthly'],
+                  ['Interest Day Count', DAY_COUNT_OPTIONS.find((option) => option.value === parseDayCount(selectedInstrument.terms?.dayCountConvention))?.label || '30/360'],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <div style={labelStyle}>{label}</div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedInstrument && isLocInstrument(selectedInstrument) ? (
+            <div style={{ ...cardStyle, color: '#64748b' }}>
+              Lines of credit do not amortize, so there is no payment schedule. Actual draws, repayments, and interest are listed below.
+            </div>
+          ) : amortization && amortization.missing.length > 0 ? (
+            <div style={{ ...cardStyle, color: '#92400e', background: '#fffbeb', borderColor: '#fde68a' }}>
+              To build the schedule, fill in {amortization.missing.join(', ')} in Loan Terms on the Loan Instruments tab, then Save Loan Terms.
+            </div>
+          ) : amortization?.schedule && amortizationSummary ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px' }}>
+                {renderKpiCard('Scheduled Payment', formatMoneyAmount(amortizationSummary.scheduledPayment), `${amortization.schedule.frequency.label} principal + interest`)}
+                {renderKpiCard('Scheduled Balance Today', formatMoneyAmount(amortizationSummary.scheduledBalanceToday), 'Per the schedule after the latest due payment')}
+                {renderKpiCard(
+                  'Actual Balance Today',
+                  formatOptionalCurrency(amortizationSummary.actualBalanceToday),
+                  amortizationSummary.actualBalanceToday === null
+                    ? 'No book balance available'
+                    : `Difference ${formatScheduleMoney(amortizationSummary.actualBalanceToday - amortizationSummary.scheduledBalanceToday)}`
+                )}
+                {renderKpiCard('Payments Made / Remaining', `${amortizationSummary.paymentsMade} / ${amortizationSummary.paymentsRemaining}`, 'Scheduled payments due to date vs. left')}
+                {renderKpiCard(
+                  'Interest Paid to Date',
+                  formatMoneyAmount(amortizationSummary.actualInterestToDate),
+                  amortizationSummary.actualsFrom
+                    ? `Scheduled ${formatMoneyAmount(amortizationSummary.scheduledInterestToDate)} since ${formatDate(amortizationSummary.actualsFrom)}`
+                    : 'No actual postings found'
+                )}
+                {renderKpiCard('Interest Remaining', formatMoneyAmount(amortizationSummary.interestRemaining), 'Scheduled interest on future payments')}
+              </div>
+
+              <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 800, color: '#0f172a' }}>
+                  Amortization Schedule
+                  <span style={{ marginLeft: '8px', fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
+                    Actual columns come from booked interest and principal postings. Payments booked a few days late count toward the nearest due date.
+                  </span>
+                </div>
+                <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                      <tr>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Pmt #</th>
+                        <th style={thStyle}>Date</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Scheduled Payment</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Scheduled Interest</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Scheduled Principal</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Scheduled Balance</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Actual Interest</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Actual Principal</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Actual Balance</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Balance Difference</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {amortization.rows.map((row) => {
+                        const rowStyle: React.CSSProperties = {
+                          background: row.status === 'current' ? '#eff6ff' : 'white',
+                          color: row.status === 'future' ? '#64748b' : '#0f172a',
+                        };
+                        const cell = (value: number | null) => (value === null ? '-' : formatScheduleMoney(value));
+                        return (
+                          <tr key={row.number} style={rowStyle}>
+                            <td style={{ ...tdStyle, color: rowStyle.color, textAlign: 'right' }}>{row.number}</td>
+                            <td style={{ ...tdStyle, color: rowStyle.color }}>
+                              {formatDate(row.date)}
+                              {row.isBalloon && <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: 800, color: '#b45309' }}>Balloon</span>}
+                            </td>
+                            <td style={{ ...tdStyle, color: rowStyle.color, textAlign: 'right' }}>{cell(row.payment)}</td>
+                            <td style={{ ...tdStyle, color: rowStyle.color, textAlign: 'right' }}>{cell(row.interest)}</td>
+                            <td style={{ ...tdStyle, color: rowStyle.color, textAlign: 'right' }}>{cell(row.principal)}</td>
+                            <td style={{ ...tdStyle, color: rowStyle.color, textAlign: 'right', fontWeight: 700 }}>{cell(row.balance)}</td>
+                            <td style={{ ...tdStyle, color: rowStyle.color, textAlign: 'right' }}>{cell(row.actualInterest)}</td>
+                            <td style={{ ...tdStyle, color: rowStyle.color, textAlign: 'right' }}>{cell(row.actualPrincipal)}</td>
+                            <td style={{ ...tdStyle, color: rowStyle.color, textAlign: 'right', fontWeight: 700 }}>{cell(row.actualBalance)}</td>
+                            <td
+                              style={{
+                                ...tdStyle,
+                                textAlign: 'right',
+                                fontWeight: 700,
+                                color: row.balanceDifference === null || Math.abs(row.balanceDifference) < 1
+                                  ? rowStyle.color
+                                  : row.balanceDifference > 0 ? '#b91c1c' : '#15803d',
+                              }}
+                            >
+                              {cell(row.balanceDifference)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : null}
+
           {selectedInstrument && isSectionEnabled('loansRecentGlActivity') && (
             <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: 800, color: '#0f172a' }}>
-                Loan Schedule
+                Actual Transactions
               </div>
               <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'minmax(220px, 1.5fr) minmax(160px, 1fr) minmax(140px, 1fr)', gap: '12px', color: '#0f172a', fontSize: '13px' }}>
                 <div><strong>Loan Name:</strong> {selectedInstrument.displayName || '-'}</div>
