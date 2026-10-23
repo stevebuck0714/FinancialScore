@@ -26,7 +26,6 @@ import {
   loadProductForecastLinesWithCatalog,
 } from '@/lib/operations/product-catalog-carryforward';
 import prisma from '@/lib/prisma';
-import { loadNewCustomerItems } from '@/lib/operations/product-forecast-customer-items';
 import { loadCustomerGroups, saveCustomerGroup, withCustomerGroups } from '@/lib/operations/customer-groups';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
 import { getActiveSgpBudgetLock } from '@/lib/operations/product-sgp-budget-lock';
@@ -273,7 +272,7 @@ export async function GET(request: NextRequest) {
     const { payload } = await withProductReportCache({
       namespace: 'product-forecast-report',
       companyId,
-      keyParts: ['forecast-v2-new-customer-items', year, customerId, customerName, customerGroup, includeTotals ? 'totals' : 'no-totals'],
+      keyParts: ['forecast-v3', year, customerId, customerName, customerGroup, includeTotals ? 'totals' : 'no-totals'],
       refresh,
       build: async () => {
         await ensureProductRevenueForecastTables();
@@ -318,36 +317,7 @@ export async function GET(request: NextRequest) {
           customerName: customerGroup ? undefined : customerName,
         });
         const dataThru = forecastAdjustedClosedThrough(year);
-        const newCustomerItems =
-          !customerGroup && customerId
-            ? await loadNewCustomerItems({
-                companyId,
-                customerId,
-                excludeItemSkus: lines.map((line) => line.itemSku),
-              })
-            : [];
-        const newItemLines = newCustomerItems.map((item, index) => ({
-          id: `tmp-ci-${index}-${item.itemSku}`,
-          customerId,
-          customerName: customerName || lines[0]?.customerName || customerId,
-          customerGroup: null,
-          customerPartNumber: item.customerPartNumber,
-          itemSku: item.itemSku,
-          team: null,
-          csr: null,
-          productionType: null,
-          statusFlag: null,
-          annualBaseQty: null,
-          forecastQty: {},
-          sgpForecastQty: {},
-          adjustedQty: {},
-          actualQty: {},
-          sortOrder: lines.length + index,
-        }));
-        const groupedLines = withCustomerGroups(
-          [...lines, ...newItemLines].map(serializeForecastLine),
-          customerGroups
-        );
+        const groupedLines = withCustomerGroups(lines.map(serializeForecastLine), customerGroups);
 
         return {
           year,
