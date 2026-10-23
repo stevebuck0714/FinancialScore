@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CovenantsTab from '@/app/covenants/components/CovenantsTab';
 import type { MonthlyDataRow, User } from '@/app/types';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
@@ -279,6 +279,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
   const [selectedInstrumentKey, setSelectedInstrumentKey] = useState<string>('');
   const [termsDraft, setTermsDraft] = useState<LoanTerms>(emptyTerms);
   const [showClosedInstruments, setShowClosedInstruments] = useState(false);
+  const firstPaymentDateInputRef = useRef<HTMLInputElement>(null);
 
   const closedInstrumentCount = useMemo(
     () => instruments.filter((instrument) => isClosedInstrument(instrument)).length,
@@ -689,6 +690,124 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
       {detail && <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>{detail}</div>}
     </div>
   );
+  const renderLoanTermsEditor = () => {
+    if (!selectedInstrument || !isSectionEnabled('loansTermsEditor')) return null;
+    return (
+      <>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}>
+          <div>
+            <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>Loan Terms</h3>
+            <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>
+              Saved by company and instrument. These fields do not change ERP mapping or the chart of accounts.
+            </div>
+          </div>
+          {saveMessage && <span style={{ color: '#16a34a', fontSize: '12px', fontWeight: 700 }}>{saveMessage}</span>}
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '14px', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', background: termsDraft.closed ? '#f8fafc' : '#fff' }}>
+          <input
+            type="checkbox"
+            checked={Boolean(termsDraft.closed)}
+            onChange={(event) => updateTerms('closed', event.target.checked)}
+            style={{ marginTop: '2px' }}
+          />
+          <span>
+            <span style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>Closed</span>
+            <span style={{ display: 'block', marginTop: '2px', fontSize: '12px', color: '#64748b' }}>
+              Retired or converted facility. Closed instruments are hidden from this page, liquidity, and covenant setup. They are not deleted.
+            </span>
+          </span>
+        </label>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', alignItems: 'start' }}>
+          {[
+            ['displayName', 'Display Name', 'text'],
+            ['loanType', 'Loan Type', 'text'],
+            ['lender', 'Lender', 'text'],
+            ['originalBalance', isLocInstrument(selectedInstrument) ? 'LOC Limit / Loan Amount' : 'Loan Amount', 'currency'],
+            ['loanOriginationDate', 'Loan Origination Date', 'date'],
+            ['firstPaymentDate', 'First Payment Date', 'date'],
+            ['interestRatePct', 'Interest Rate %', 'number'],
+            ['maturityDate', 'Maturity Date', 'date'],
+            ['amortizationTermMonths', 'Amortization Term Months', 'number'],
+            ['paymentFrequency', 'Payment Frequency', 'text'],
+          ].map(([key, label, type]) => (
+            <label key={key} style={{ display: 'block' }}>
+              <div style={labelStyle}>{label}</div>
+              <div style={{ position: 'relative' }}>
+                {key === 'originalBalance' && (
+                  <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: '13px' }}>$</span>
+                )}
+                <input
+                  ref={key === 'firstPaymentDate' ? firstPaymentDateInputRef : undefined}
+                  type={type === 'currency' ? 'text' : type}
+                  inputMode={type === 'currency' ? 'decimal' : undefined}
+                  step={type === 'number' ? '0.01' : undefined}
+                  value={normalizeInputValue(termsDraft[key as keyof LoanTerms])}
+                  onChange={(event) => updateTerms(key as keyof LoanTerms, type === 'currency' ? cleanCurrencyInputValue(event.target.value) : event.target.value)}
+                  onBlur={() => {
+                    if (type === 'currency') updateTerms(key as keyof LoanTerms, normalizeCurrencyInputValue(termsDraft[key as keyof LoanTerms]));
+                  }}
+                  style={{
+                    ...inputStyle,
+                    paddingLeft: key === 'originalBalance' ? '24px' : inputStyle.padding,
+                    paddingRight: key === 'firstPaymentDate' ? '40px' : inputStyle.padding,
+                  }}
+                />
+                {key === 'firstPaymentDate' && (
+                  <button
+                    type="button"
+                    aria-label="Open first payment date calendar"
+                    onClick={() => {
+                      const input = firstPaymentDateInputRef.current;
+                      if (!input) return;
+                      const dateInput = input as HTMLInputElement & { showPicker?: () => void };
+                      if (dateInput.showPicker) dateInput.showPicker();
+                      else input.focus();
+                    }}
+                    style={{ position: 'absolute', right: '5px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', color: '#2751d0', fontSize: '17px', cursor: 'pointer', padding: '4px 6px' }}
+                    title="Open calendar"
+                  >
+                    📅
+                  </button>
+                )}
+              </div>
+            </label>
+          ))}
+          <label style={{ display: 'block' }}>
+            <div style={labelStyle}>Interest Day Count</div>
+            <select
+              value={parseDayCount(termsDraft.dayCountConvention)}
+              onChange={(event) => updateTerms('dayCountConvention', event.target.value)}
+              style={inputStyle}
+            >
+              {DAY_COUNT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: 'block', gridColumn: '1 / -1' }}>
+            <div style={labelStyle}>Notes</div>
+            <textarea
+              value={normalizeInputValue(termsDraft.notes)}
+              onChange={(event) => updateTerms('notes', event.target.value)}
+              rows={4}
+              style={{ ...inputStyle, resize: 'vertical' }}
+            />
+          </label>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void saveTerms()}
+          disabled={saving}
+          style={{ marginTop: '14px', border: 'none', background: '#2751d0', color: 'white', borderRadius: '8px', padding: '9px 14px', fontWeight: 800, cursor: saving ? 'not-allowed' : 'pointer' }}
+        >
+          {saving ? 'Saving...' : 'Save Loan Terms'}
+        </button>
+      </>
+    );
+  };
   const renderMetricRows = (rows: Array<[string, string]>, compact = false) => (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <tbody>
@@ -882,116 +1001,11 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
             </div>
           </div>}
 
-          {selectedInstrument && isSectionEnabled('loansTermsEditor') && (
-            <div style={cardStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}>
-                  <div>
-                    <h3 style={{ margin: 0, color: '#0f172a', fontSize: '18px' }}>Loan Terms</h3>
-                    <div style={{ marginTop: '4px', color: '#64748b', fontSize: '12px' }}>
-                      Saved by company and instrument. These fields do not change ERP mapping or the chart of accounts. A $0 balance is still an open facility until you mark it closed.
-                    </div>
-                  </div>
-                  {saveMessage && <span style={{ color: '#16a34a', fontSize: '12px', fontWeight: 700 }}>{saveMessage}</span>}
-                </div>
-
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '14px', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', background: termsDraft.closed ? '#f8fafc' : '#fff' }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(termsDraft.closed)}
-                    onChange={(event) => updateTerms('closed', event.target.checked)}
-                    style={{ marginTop: '2px' }}
-                  />
-                  <span>
-                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>Closed</span>
-                    <span style={{ display: 'block', marginTop: '2px', fontSize: '12px', color: '#64748b' }}>
-                      Retired or converted facility. Closed instruments are hidden from this page, liquidity, and covenant setup. They are not deleted.
-                    </span>
-                  </span>
-                </label>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', alignItems: 'start' }}>
-                  {[
-                    ['displayName', 'Display Name', 'text'],
-                    ['loanType', 'Loan Type', 'text'],
-                    ['lender', 'Lender', 'text'],
-                    ['originalBalance', isLocInstrument(selectedInstrument) ? 'LOC Limit / Loan Amount' : 'Loan Amount', 'currency'],
-                    ['loanOriginationDate', 'Loan Origination Date', 'date'],
-                    ['firstPaymentDate', 'First Payment Date', 'date'],
-                    ['interestRatePct', 'Interest Rate %', 'number'],
-                    ['maturityDate', 'Maturity Date', 'date'],
-                    ['amortizationTermMonths', 'Amortization Term Months', 'number'],
-                    ['paymentFrequency', 'Payment Frequency', 'text'],
-                  ].map(([key, label, type]) => (
-                    <label key={key} style={{ display: 'block' }}>
-                      <div style={labelStyle}>{label}</div>
-                      <div style={{ position: 'relative' }}>
-                        {key === 'originalBalance' && (
-                          <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: '13px' }}>
-                            $
-                          </span>
-                        )}
-                        <input
-                          type={type === 'currency' ? 'text' : type}
-                          inputMode={type === 'currency' ? 'decimal' : undefined}
-                          step={type === 'number' ? '0.01' : undefined}
-                          value={normalizeInputValue(termsDraft[key as keyof LoanTerms])}
-                          onChange={(event) => updateTerms(key as keyof LoanTerms, type === 'currency' ? cleanCurrencyInputValue(event.target.value) : event.target.value)}
-                          onBlur={() => {
-                            if (type === 'currency') updateTerms(key as keyof LoanTerms, normalizeCurrencyInputValue(termsDraft[key as keyof LoanTerms]));
-                          }}
-                          style={{ ...inputStyle, paddingLeft: key === 'originalBalance' ? '24px' : inputStyle.padding }}
-                        />
-                      </div>
-                    </label>
-                  ))}
-                  <label style={{ display: 'block' }}>
-                    <div style={labelStyle}>Interest Day Count</div>
-                    <select
-                      value={parseDayCount(termsDraft.dayCountConvention)}
-                      onChange={(event) => updateTerms('dayCountConvention', event.target.value)}
-                      style={inputStyle}
-                    >
-                      {DAY_COUNT_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label style={{ display: 'block', gridColumn: '1 / -1' }}>
-                    <div style={labelStyle}>Notes</div>
-                    <textarea
-                      value={normalizeInputValue(termsDraft.notes)}
-                      onChange={(event) => updateTerms('notes', event.target.value)}
-                      rows={4}
-                      style={{ ...inputStyle, resize: 'vertical' }}
-                    />
-                  </label>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => void saveTerms()}
-                  disabled={saving}
-                  style={{
-                    marginTop: '14px',
-                    border: 'none',
-                    background: '#2751d0',
-                    color: 'white',
-                    borderRadius: '8px',
-                    padding: '9px 14px',
-                    fontWeight: 800,
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {saving ? 'Saving...' : 'Save Loan Terms'}
-                </button>
-            </div>
-          )}
-
         </>
       ) : activePageTab === 'schedules' && showSchedulesTab ? (
         <>
           <div style={cardStyle}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', marginBottom: '14px' }}>
               <label style={{ display: 'block', minWidth: '280px' }}>
                 <div style={labelStyle}>Loan</div>
                 <select
@@ -1001,38 +1015,13 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
                 >
                   {visibleInstruments.map((instrument) => (
                     <option key={instrument.instrumentKey} value={instrument.instrumentKey}>
-                      {instrument.terms?.displayName || instrument.displayName}
+                      {instrument.displayName || instrument.terms?.displayName}
                     </option>
                   ))}
                 </select>
               </label>
-              <button
-                type="button"
-                onClick={() => setActivePageTab('instruments')}
-                style={{ border: '1px solid #cbd5e1', background: 'white', borderRadius: '8px', padding: '8px 12px', color: '#334155', fontWeight: 700, cursor: 'pointer' }}
-              >
-                Edit Loan Terms
-              </button>
             </div>
-            {selectedInstrument && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-                {[
-                  ['Loan Amount', formatOptionalCurrency(selectedInstrument.terms?.originalBalance)],
-                  ['Loan Origination Date', formatDate(normalizeDateInput(selectedInstrument.terms?.loanOriginationDate) || null)],
-                  ['First Payment Date', formatDate(normalizeDateInput(selectedInstrument.terms?.firstPaymentDate) || null)],
-                  ['Interest Rate %', toFiniteNumber(selectedInstrument.terms?.interestRatePct) === null ? '-' : `${Number(selectedInstrument.terms?.interestRatePct)}%`],
-                  ['Amortization Term Months', normalizeInputValue(selectedInstrument.terms?.amortizationTermMonths) || '-'],
-                  ['Maturity Date', formatDate(normalizeDateInput(selectedInstrument.terms?.maturityDate) || null)],
-                  ['Payment Frequency', amortization?.schedule?.frequency.label || normalizeInputValue(selectedInstrument.terms?.paymentFrequency) || 'Monthly'],
-                  ['Interest Day Count', DAY_COUNT_OPTIONS.find((option) => option.value === parseDayCount(selectedInstrument.terms?.dayCountConvention))?.label || '30/360'],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <div style={labelStyle}>{label}</div>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {renderLoanTermsEditor()}
           </div>
 
           {selectedInstrument && isLocInstrument(selectedInstrument) ? (
@@ -1041,7 +1030,7 @@ export default function LoansTab({ selectedCompanyId, companyName, currentUser =
             </div>
           ) : amortization && amortization.missing.length > 0 ? (
             <div style={{ ...cardStyle, color: '#92400e', background: '#fffbeb', borderColor: '#fde68a' }}>
-              To build the schedule, fill in {amortization.missing.join(', ')} in Loan Terms on the Loan Instruments tab, then Save Loan Terms.
+              To build the schedule, fill in {amortization.missing.join(', ')} in Loan Terms above, then Save Loan Terms.
             </div>
           ) : amortization?.schedule && amortizationSummary ? (
             <>
