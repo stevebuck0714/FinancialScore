@@ -9,12 +9,13 @@ import {
   applyBakersQbdBalanceSheetLoanBalances,
   loadBakersDebtGlNetByAccount,
   loadBakersQbdBalanceSheetDebtByAccount,
+  loadBakersQbdLoanActivityByAccount,
 } from '@/lib/loans/bakers-bs-loan-balances';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-const LOAN_ACTIVITY_CACHE_VERSION = 35;
+const LOAN_ACTIVITY_CACHE_VERSION = 36;
 const STALE_LOAN_ACTIVITY_MONTHS = 13;
 
 type LoanTermInput = {
@@ -1553,6 +1554,22 @@ async function loadLoanActivity(companyId: string) {
         priorThroughDate: dateKeyUtc(priorAsOfDate),
       });
       instruments = applyBakersBsLoanBalances(instruments, glNets, reportAsOfDate);
+    }
+    const qbdPrincipalActivity = await loadBakersQbdLoanActivityByAccount({ companyId, mappings }).catch((error) => {
+      console.warn('[loans] QBD principal activity unavailable', error);
+      return new Map();
+    });
+    if (qbdPrincipalActivity.size > 0) {
+      instruments = instruments.map((instrument) => {
+        const principal = qbdPrincipalActivity.get(String(instrument.accountId || '').trim()) || [];
+        if (!principal.length) return instrument;
+        return {
+          ...instrument,
+          recentActivity: dedupeActivityRows([...instrument.recentActivity, ...principal])
+            .sort((a, b) => new Date(b?.transDate || 0).getTime() - new Date(a?.transDate || 0).getTime())
+            .slice(0, 30),
+        };
+      });
     }
   }
 

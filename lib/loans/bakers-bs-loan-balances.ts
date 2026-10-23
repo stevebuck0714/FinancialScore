@@ -295,6 +295,114 @@ export async function loadBakersDebtGlNetByAccount(opts: {
   return out;
 }
 
+export type BakersQbdLoanActivity = {
+  transDate: Date;
+  accountId: string;
+  accountName: string;
+  signedAmount: number;
+  debitAmount: number;
+  creditAmount: number;
+  drCr: null;
+  description: string;
+  ref: string | null;
+  sourceProgram: string;
+};
+
+/**
+ * Principal postings to mapped loc/ltd accounts from the QBD General Detail
+ * report. QBD carries liability balances negative, so a payment posts as a
+ * positive (debit) amount, matching GL debit-minus-credit loan activity.
+ */
+export async function loadBakersQbdLoanActivityByAccount(opts: {
+  companyId: string;
+  mappings: MappingRef[];
+}): Promise<Map<string, BakersQbdLoanActivity[]>> {
+  const out = new Map<string, BakersQbdLoanActivity[]>();
+  if (!isBakersCompany(opts.companyId)) return out;
+  const targetByKey = mappingLookup(opts.mappings);
+
+  const rows = await prisma.$queryRaw<Array<{
+    batchId: string;
+    batchSeen: Date;
+    accountName: string | null;
+    transDateRaw: string | null;
+    amountRaw: string | null;
+    txnType: string | null;
+    ref: string | null;
+    payee: string | null;
+    memo: string | null;
+  }>>`
+    WITH batches AS (
+      SELECT "batchId", MAX("createdAt") AS "batchSeen"
+      FROM "QuickBooksDesktopBackfillPage"
+      WHERE "companyId" = ${opts.companyId}
+        AND "requestName" = 'GeneralDetailReportQuery'
+      GROUP BY "batchId"
+    )
+    SELECT
+      p."batchId",
+      b."batchSeen",
+      COALESCE(row.value->>'accountName', row.value->>'rowValue', '') AS "accountName",
+      COALESCE((SELECT c->>'value' FROM jsonb_array_elements(row.value->'colData') c WHERE c->>'colID' = '3'), '') AS "transDateRaw",
+      COALESCE((SELECT c->>'value' FROM jsonb_array_elements(row.value->'colData') c WHERE c->>'colID' = '8'), '') AS "amountRaw",
+      COALESCE((SELECT c->>'value' FROM jsonb_array_elements(row.value->'colData') c WHERE c->>'colID' = '2'), '') AS "txnType",
+      COALESCE((SELECT c->>'value' FROM jsonb_array_elements(row.value->'colData') c WHERE c->>'colID' = '4'), '') AS "ref",
+      COALESCE((SELECT c->>'value' FROM jsonb_array_elements(row.value->'colData') c WHERE c->>'colID' = '5'), '') AS "payee",
+      COALESCE((SELECT c->>'value' FROM jsonb_array_elements(row.value->'colData') c WHERE c->>'colID' = '6'), '') AS "memo"
+    FROM "QuickBooksDesktopBackfillPage" p
+    JOIN batches b ON b."batchId" = p."batchId"
+    CROSS JOIN LATERAL jsonb_array_elements(p."payload") row(value)
+    WHERE p."companyId" = ${opts.companyId}
+      AND p."requestName" = 'GeneralDetailReportQuery'
+      AND row.value->>'rowKind' = 'DataRow'
+  `;
+
+  // Last batch wins per day, same rule as the GL walk, so re-pulled days are not doubled.
+  const latestBatchByDay = new Map<string, { batchId: string; seen: number }>();
+  const candidates: Array<{ day: string; batchId: string; accountId: string; accountName: string; amount: number; row: (typeof rows)[number] }> = [];
+  for (const row of rows) {
+    const day = dateKey(String(row.transDateRaw || ''));
+    if (!day) continue;
+    const seen = new Date(row.batchSeen).getTime();
+    const latest = latestBatchByDay.get(day);
+    if (!latest || seen > latest.seen) latestBatchByDay.set(day, { batchId: row.batchId, seen });
+    const accountName = String(row.accountName || '').trim();
+    const mapped = lookupKeys(accountName).map((key) => targetByKey.get(key)).find(Boolean);
+    if (!mapped) continue;
+    const target = resolveBakersLocTarget({
+      companyId: opts.companyId,
+      dateKey: day,
+      accountId: mapped.id,
+      accountName,
+      mappedTarget: mapped.target,
+    });
+    if (target !== 'ltd' && target !== 'loc') continue;
+    const amount = qbdNumber(row.amountRaw);
+    if (Math.abs(amount) <= 0.005) continue;
+    candidates.push({ day, batchId: row.batchId, accountId: mapped.id, accountName, amount, row });
+  }
+
+  for (const candidate of candidates) {
+    if (latestBatchByDay.get(candidate.day)?.batchId !== candidate.batchId) continue;
+    const signedAmount = roundMoney(candidate.amount);
+    const list = out.get(candidate.accountId) || [];
+    list.push({
+      transDate: new Date(`${candidate.day}T00:00:00.000Z`),
+      accountId: candidate.accountId,
+      accountName: candidate.accountName,
+      signedAmount,
+      debitAmount: signedAmount > 0 ? signedAmount : 0,
+      creditAmount: signedAmount < 0 ? Math.abs(signedAmount) : 0,
+      drCr: null,
+      description: [candidate.row.payee, candidate.row.memo].filter(Boolean).join(' | ') || candidate.accountName,
+      ref: candidate.row.ref || candidate.row.txnType || null,
+      sourceProgram: 'QuickBooksDesktopBackfillPage:GeneralDetailReportQuery',
+    });
+    out.set(candidate.accountId, list);
+  }
+  return out;
+}
+
 export function applyBakersBsLoanBalances<T extends {
   accountId?: string | null;
   displayName?: string | null;
