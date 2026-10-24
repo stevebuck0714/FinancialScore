@@ -1,6 +1,11 @@
 import prisma from '@/lib/prisma';
 import type { ForecastBasisMode } from '@/lib/working-capital-forecast/engine';
-import { formatEstDate } from '@/lib/time/eastern';
+import {
+  buildAmortizationSchedule,
+  missingAmortizationTerms,
+  sumScheduledPrincipalByWeek,
+} from '@/lib/loans/amortization';
+import { addEstCalendarDays, formatEstDate, utcMidnightForEstDate } from '@/lib/time/eastern';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -606,71 +611,17 @@ async function loadAggregatedInventoryHistory(
   return null;
 }
 
-const DEBT_SERVICE_HISTORY_DAYS = 105; // 15 weeks, so 13+ complete week transitions remain
-const MIN_DEBT_SERVICE_HISTORY_WEEKS = 4;
-// A week-over-week move larger than this share of the balance is a payoff,
-// refinance, or reclassification rather than recurring principal.
-const MAX_RECURRING_PRINCIPAL_SHARE = 0.5;
-
-const utcWeekKey = (date: Date): string => {
-  const day = date.getUTCDay();
-  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - (day === 0 ? 6 : day - 1)));
-  return monday.toISOString().slice(0, 10);
-};
-
-/** Weekly long-term debt principal from book balances, falling back to Loans page terms. */
+/** Scheduled long-term debt principal from every active Loans-page amortization schedule. */
 async function loadHistoricalDebtServiceProfile(companyId: string) {
   try {
-    const rows = await prisma.$queryRawUnsafe<Array<{ snapshotDate: Date; ltd: number }>>(
-      `SELECT "snapshotDate", "ltd"::float8 AS "ltd"
-       FROM "DailyFinancialSnapshot"
-       WHERE "companyId" = $1
-         AND "frequency" = 'daily'
-         AND "snapshotDate" >= CURRENT_DATE - INTERVAL '${DEBT_SERVICE_HISTORY_DAYS} days'
-         AND EXTRACT(ISODOW FROM "snapshotDate") < 6
-       ORDER BY "snapshotDate" ASC`,
-      companyId,
-    );
-    const currentWeekKey = utcWeekKey(new Date(`${formatEstDate()}T00:00:00.000Z`));
-    const weekEndBalances = new Map<string, number>();
-    for (const row of rows) {
-      const date = new Date(row.snapshotDate);
-      const weekKey = utcWeekKey(date);
-      if (weekKey >= currentWeekKey) continue;
-      weekEndBalances.set(weekKey, Math.max(0, Number(row.ltd || 0)));
-    }
-    const balances = Array.from(weekEndBalances.entries())
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([, balance]) => balance);
-    const startingBalance = balances.length ? balances[balances.length - 1] : 0;
-
-    let observedWeeks = 0;
-    let principalPaid = 0;
-    for (let index = 1; index < balances.length; index += 1) {
-      const prior = balances[index - 1];
-      const current = balances[index];
-      if (prior <= 0) continue;
-      const decrease = prior - current;
-      if (Math.abs(decrease) > prior * MAX_RECURRING_PRINCIPAL_SHARE) continue;
-      observedWeeks += 1;
-      if (decrease > 0) principalPaid += decrease;
-    }
-    if (startingBalance > 0 && observedWeeks >= MIN_DEBT_SERVICE_HISTORY_WEEKS && principalPaid > 0) {
+    const termsPrincipal = await loadLoanTermsScheduledPrincipal(companyId);
+    if (termsPrincipal.scheduledPrincipalByWeek.some((amount) => amount > 0)) {
       return {
-        weeklyPrincipalAmount: Math.round(principalPaid / observedWeeks),
-        source: 'history' as const,
-        observedWeeks,
-        startingBalance: Math.round(startingBalance),
-      };
-    }
-
-    const termsPrincipal = await loadLoanTermsWeeklyPrincipal(companyId);
-    if (termsPrincipal.weeklyPrincipalAmount > 0) {
-      return {
-        weeklyPrincipalAmount: Math.round(termsPrincipal.weeklyPrincipalAmount),
+        weeklyPrincipalAmount: 0,
+        scheduledPrincipalByWeek: termsPrincipal.scheduledPrincipalByWeek,
         source: 'terms' as const,
-        observedWeeks,
-        startingBalance: Math.round(startingBalance > 0 ? startingBalance : termsPrincipal.balance),
+        observedWeeks: 0,
+        startingBalance: Math.round(termsPrincipal.balance),
       };
     }
     return null;
@@ -679,8 +630,8 @@ async function loadHistoricalDebtServiceProfile(companyId: string) {
   }
 }
 
-async function loadLoanTermsWeeklyPrincipal(companyId: string) {
-  const empty = { weeklyPrincipalAmount: 0, balance: 0 };
+async function loadLoanTermsScheduledPrincipal(companyId: string) {
+  const empty = { scheduledPrincipalByWeek: Array.from({ length: 13 }, () => 0), balance: 0 };
   let rows: Array<{
     currentBalance: number | null;
     originalBalance: number | null;
@@ -688,6 +639,9 @@ async function loadLoanTermsWeeklyPrincipal(companyId: string) {
     maturityDate: Date | null;
     amortizationTermMonths: number | null;
     loanOriginationDate: Date | null;
+    paymentFrequency: string | null;
+    firstPaymentDate: Date | null;
+    dayCountConvention: string | null;
   }> = [];
   try {
     rows = await prisma.$queryRawUnsafe(
@@ -696,7 +650,10 @@ async function loadLoanTermsWeeklyPrincipal(companyId: string) {
               terms."interestRatePct"::float8 AS "interestRatePct",
               terms."maturityDate",
               terms."amortizationTermMonths",
-              terms."loanOriginationDate"
+              terms."loanOriginationDate",
+              terms."paymentFrequency",
+              terms."firstPaymentDate",
+              terms."dayCountConvention"
        FROM "LoanInstrumentTerm" terms
        JOIN "AccountMapping" mapping
          ON mapping."companyId" = terms."companyId"
@@ -709,32 +666,44 @@ async function loadLoanTermsWeeklyPrincipal(companyId: string) {
   } catch {
     return empty;
   }
-  const today = new Date(`${formatEstDate()}T00:00:00.000Z`);
-  const monthsBetween = (from: Date, to: Date) =>
-    (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());
-  let weeklyPrincipalAmount = 0;
+  const estToday = formatEstDate();
+  const today = utcMidnightForEstDate(estToday);
+  const daysSinceSaturday = (today.getUTCDay() + 1) % 7;
+  const firstForecastWeek = addEstCalendarDays(estToday, -daysSinceSaturday);
+  const weekStarts = Array.from({ length: 13 }, (_, index) => addEstCalendarDays(firstForecastWeek, index * 7));
+  const scheduledPrincipalByWeek = Array.from({ length: 13 }, () => 0);
   let balance = 0;
   for (const row of rows) {
-    const loanBalance = Math.max(0, Number(row.currentBalance ?? row.originalBalance ?? 0));
-    if (loanBalance <= 0) continue;
-    const maturity = row.maturityDate ? new Date(row.maturityDate) : null;
-    const origination = row.loanOriginationDate ? new Date(row.loanOriginationDate) : null;
-    const termMonths = Number(row.amortizationTermMonths || 0);
-    const remainingMonths = maturity && !Number.isNaN(maturity.getTime())
-      ? monthsBetween(today, maturity)
-      : termMonths > 0
-        ? termMonths - (origination && !Number.isNaN(origination.getTime()) ? monthsBetween(origination, today) : 0)
-        : 0;
-    if (remainingMonths <= 0) continue;
-    const monthlyRate = Math.max(0, Number(row.interestRatePct || 0)) / 100 / 12;
-    const monthlyPayment = monthlyRate > 0
-      ? (loanBalance * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -remainingMonths))
-      : loanBalance / remainingMonths;
-    const monthlyPrincipal = Math.max(0, monthlyPayment - loanBalance * monthlyRate);
-    weeklyPrincipalAmount += (monthlyPrincipal * 12) / 52;
-    balance += loanBalance;
+    const loanAmount = Math.max(0, Number(row.originalBalance || 0));
+    const firstPaymentDate = row.firstPaymentDate?.toISOString().slice(0, 10) || '';
+    const terms = {
+      originalBalance: loanAmount,
+      interestRatePct: row.interestRatePct,
+      amortizationTermMonths: row.amortizationTermMonths,
+      firstPaymentDate,
+    };
+    if (missingAmortizationTerms(terms).length > 0) continue;
+    const schedule = buildAmortizationSchedule({
+      loanAmount,
+      annualRatePct: Number(row.interestRatePct || 0),
+      amortizationTermMonths: Number(row.amortizationTermMonths || 0),
+      firstPaymentDate,
+      loanOriginationDate: row.loanOriginationDate?.toISOString().slice(0, 10),
+      maturityDate: row.maturityDate?.toISOString().slice(0, 10),
+      paymentFrequency: row.paymentFrequency,
+      dayCountConvention: row.dayCountConvention,
+    });
+    if (!schedule) continue;
+    const principalByWeek = sumScheduledPrincipalByWeek(schedule.rows, weekStarts);
+    principalByWeek.forEach((amount, index) => {
+      scheduledPrincipalByWeek[index] += amount;
+    });
+    balance += Math.max(0, Number(row.currentBalance ?? loanAmount));
   }
-  return { weeklyPrincipalAmount, balance };
+  return {
+    scheduledPrincipalByWeek: scheduledPrincipalByWeek.map((amount) => Math.round(amount * 100) / 100),
+    balance,
+  };
 }
 
 /** Data behind `/api/working-capital-forecast/bootstrap`, before currency presentation. */

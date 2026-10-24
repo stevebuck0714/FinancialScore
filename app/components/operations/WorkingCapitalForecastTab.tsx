@@ -472,18 +472,18 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         FORECAST_WEEKS,
       )
     : null;
+  const scheduledDebtPrincipalTotal = (historicalDebtServiceProfile?.scheduledPrincipalByWeek || [])
+    .reduce((total, amount) => total + Math.max(0, Number(amount || 0)), 0);
   const renderDebtPrincipalField = () => (
     <div style={{ gridColumn: '1 / -1' }}>
-      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Weekly Debt Principal (Long-Term Debt)</label>
+      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Scheduled Debt Principal (Long-Term Debt)</label>
       <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>
-        {formatCurrency(historicalDebtServiceProfile?.weeklyPrincipalAmount || 0)}
+        {formatCurrency(scheduledDebtPrincipalTotal)}
       </div>
       <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35, marginTop: '4px' }}>
-        {historicalDebtServiceProfile?.source === 'history'
-          ? `From the decline in the long-term debt balance over the last ${historicalDebtServiceProfile.observedWeeks} complete weeks.`
-          : historicalDebtServiceProfile?.source === 'terms'
-            ? 'From the amortization terms on the Loans page because there is not enough long-term debt balance history.'
-            : 'No long-term debt principal found in balance history or Loans page terms.'}
+        {historicalDebtServiceProfile?.source === 'terms'
+          ? 'Total due during this 13-week forecast. Each week uses the sum of scheduled principal from every active long-term debt loan.'
+          : 'No scheduled long-term debt principal found. Complete the amortization terms on the Loans page.'}
       </div>
     </div>
   );

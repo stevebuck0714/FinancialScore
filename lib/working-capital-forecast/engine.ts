@@ -72,9 +72,11 @@ export type HistoricalArCollectionProfile = {
 
 export type HistoricalDebtServiceProfile = {
   weeklyPrincipalAmount: number;
+  /** Scheduled long-term-debt principal for each 13-week forecast column. */
+  scheduledPrincipalByWeek?: number[];
   source: 'history' | 'terms' | 'none';
   observedWeeks: number;
-  /** Long-term debt balance the principal schedule cannot exceed. */
+  /** Long-term debt balance represented by the loaded loan schedules. */
   startingBalance: number;
 };
 
@@ -1027,8 +1029,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
   // Principal is a balance-sheet repayment; interest already flows through the
   // Income Statement Forecast opex lines, so only principal is deducted here.
   const weeklyDebtPrincipal = Math.max(0, safeNumber(historicalDebtServiceProfile?.weeklyPrincipalAmount, 0));
-  const debtServiceStartingBalance = Math.max(0, safeNumber(historicalDebtServiceProfile?.startingBalance, 0));
-  let remainingLongTermDebt = debtServiceStartingBalance > 0 ? debtServiceStartingBalance : weeklyDebtPrincipal * FORECAST_WEEKS;
+  const scheduledDebtPrincipalByWeek = Array.isArray(historicalDebtServiceProfile?.scheduledPrincipalByWeek)
+    ? historicalDebtServiceProfile.scheduledPrincipalByWeek
+    : [];
   const historicalPurchasePaymentLagWeeks = clampNumber(
     Math.round(Number(historicalApPaymentProfile?.purchasePaymentLagWeeks || 0)),
     1,
@@ -1374,8 +1377,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
 
     const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
     const opexAdj = safeNumber(weeklyDrivers[i]?.opexAdj, 0);
-    const debtPrincipal = Math.min(weeklyDebtPrincipal, remainingLongTermDebt);
-    remainingLongTermDebt = Math.max(0, remainingLongTermDebt - debtPrincipal);
+    const debtPrincipal = Math.max(0, safeNumber(scheduledDebtPrincipalByWeek[i], weeklyDebtPrincipal));
     const baseEndingCash = safeNumber(
       beginningCash + receipts - apPayments - directLaborPayments - cashOpex - opexAdj - locInterest - debtPrincipal,
       beginningCash,

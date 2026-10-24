@@ -4,6 +4,7 @@ import {
   buildAmortizationSchedule,
   missingAmortizationTerms,
   parsePaymentFrequency,
+  sumScheduledPrincipalByWeek,
 } from '../lib/loans/amortization';
 
 function close(actual: number, expected: number, tolerance = 0.01) {
@@ -72,6 +73,10 @@ assert.equal(parsePaymentFrequency('bi-weekly').key, 'bi-weekly');
 assert.deepEqual(missingAmortizationTerms({ originalBalance: 5, interestRatePct: 0, amortizationTermMonths: 12 }), [
   'First Payment Date',
 ]);
+assert.deepEqual(
+  sumScheduledPrincipalByWeek(textbook.rows.slice(0, 3), ['2026-01-31', '2026-02-07', '2026-02-14', '2026-02-21', '2026-02-28']),
+  [99.55, 0, 0, 0, 100.05],
+);
 
 // A payment posted 4 days late still lands on its due-date row; balances walk back from today.
 const withActuals = attachActualsToSchedule({

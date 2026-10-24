@@ -106,6 +106,27 @@ export type AmortizationSchedule = {
   rows: AmortizationRow[];
 };
 
+/**
+ * Groups scheduled principal by forecast week. Both payment dates and week
+ * starts are date-only YYYY-MM-DD values, so comparisons remain calendar-date
+ * based and do not shift across time zones.
+ */
+export function sumScheduledPrincipalByWeek(rows: AmortizationRow[], weekStarts: string[]): number[] {
+  const totals = Array.from({ length: weekStarts.length }, () => 0);
+  for (const row of rows) {
+    const weekIndex = weekStarts.findIndex((weekStart, index) => {
+      const nextWeekStart = weekStarts[index + 1] || (() => {
+        const end = toUtcDate(weekStart)!;
+        end.setUTCDate(end.getUTCDate() + 7);
+        return toKey(end);
+      })();
+      return row.date >= weekStart && row.date < nextWeekStart;
+    });
+    if (weekIndex >= 0) totals[weekIndex] += Math.max(0, Number(row.principal || 0));
+  }
+  return totals.map(roundCents);
+}
+
 export function missingAmortizationTerms(terms: {
   originalBalance?: unknown;
   interestRatePct?: unknown;
