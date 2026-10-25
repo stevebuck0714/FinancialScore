@@ -1272,9 +1272,6 @@ export default function AIAnalysisView(props: {
                 <span style={{ fontSize: '12px', color: '#64748b' }}>
                   Off = internal financial/operational data only.
                 </span>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>
-                  Thread turns: {askThreadTurns.length}
-                </span>
                 <button
                   onClick={startNewAskThread}
                   disabled={askLoading}
