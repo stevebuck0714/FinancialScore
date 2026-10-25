@@ -31615,7 +31615,6 @@ Strategies to Improve the CCC
                 border: 'none',
                 borderBottom: effectiveOverviewSubTab === tab.key ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '14px',
-                textTransform: 'uppercase',
                 fontWeight: 600,
                 cursor: 'pointer',
                 transition: 'all 0.2s',
