@@ -115,18 +115,18 @@ export async function buildCashForecastBufferAlerts(params: {
       const firstBelow = belowRows[0];
       alerts.push({
         fingerprint: `cash-forecast-buffer:${basisMode}:below`,
-        source: 'daily-change',
-        title: 'Forecast cash needs line of credit to hold buffer',
+        source: 'open-critical',
+        title: 'Unlevered forecast cash falls below minimum cash buffer',
         detail: `${basisLabel} 13-week forecast cash before line of credit draws falls below the ${money(buffer)} Minimum Cash Buffer in ${weekLabel(firstBelow)}, bottoming at ${money(lowestUnlevered.unleveredEndingCash)} in ${weekLabel(lowestUnlevered)}. The line of credit covers the gap; its balance peaks at ${money(peakLoc)} of the ${money(locLimit)} limit.`,
         owner: 'Finance Owner',
         drillView,
         deltaText: `${belowRows.length} wk below`,
         updatedAt: sourceTimestamp,
         itemLabel,
-        priorityScore: Math.min(100, Math.round(76 + belowRows.length)),
+        priorityScore: Math.min(100, Math.round(88 + belowRows.length)),
         bucket: 'attention',
         explainability: {
-          triggerName: '13-Week Forecast Below Buffer',
+          triggerName: '13-Week Unlevered Forecast Below Buffer',
           formula,
           threshold: `cash before LOC < Minimum Cash Buffer ${money(buffer)}`,
           reasonNow: `${belowRows.length} of ${rows.length} weeks below buffer before LOC; lowest ${money(lowestUnlevered.unleveredEndingCash)}; peak LOC ${money(peakLoc)} of ${money(locLimit)}`,
