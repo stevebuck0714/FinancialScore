@@ -3428,9 +3428,12 @@ function FinancialScorePage() {
 
   const siteAdminReturnUser = siteAdminViewingAs || siteAdminSessionUser;
 
-  const isTrackedClientUser =
-    String(currentUser?.role || '').toLowerCase() === 'user' && !canReturnToSiteAdmin && !hasSiteAdminOverride;
-  useSectionTracking(isTrackedClientUser ? viewToTrafficSection(currentView) : null, selectedCompanyId || null);
+  const roleForTrafficTracking = String(currentUser?.role || '').toLowerCase();
+  const isTrackedCompanyUser =
+    (roleForTrafficTracking === 'user' || roleForTrafficTracking === 'consultant') &&
+    !canReturnToSiteAdmin &&
+    !hasSiteAdminOverride;
+  useSectionTracking(isTrackedCompanyUser ? viewToTrafficSection(currentView) : null, selectedCompanyId || null);
 
   // A Site Admin preview must never land on an empty company-management page.
   // If a state update or fresh company load temporarily clears the selection,

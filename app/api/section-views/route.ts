@@ -8,15 +8,16 @@ export const dynamic = 'force-dynamic';
 const MAX_START_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Records time a client user spent in a sidebar section. Sent as a beacon when
- * the user leaves the section or hides the tab, so it always answers 204 and
- * never surfaces an error to the page.
+ * Records time a client or consultant spent in a company's sidebar section.
+ * Sent as a beacon when the user leaves the section or hides the tab, so it
+ * always answers 204 and never surfaces an error to the page.
  */
 export async function POST(request: NextRequest) {
   try {
     const context = await requireAuth();
-    // Only client users count toward a client's traffic.
-    if (context.role !== 'USER' || !context.companyId) return new NextResponse(null, { status: 204 });
+    // Consultants count only for the company currently verified in their context.
+    // Site Admins and previews never contribute to a company's traffic.
+    if (!['USER', 'CONSULTANT'].includes(context.role) || !context.companyId) return new NextResponse(null, { status: 204 });
 
     const body = await request.json().catch(() => null);
     if (!body || !isTrafficSectionKey(body.section)) return new NextResponse(null, { status: 204 });

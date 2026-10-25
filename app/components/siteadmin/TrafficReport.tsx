@@ -113,7 +113,7 @@ export default function TrafficReport() {
       <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: '0 0 4px' }}>Client Traffic by Section</h3>
         <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px' }}>
-          Left-sidebar sections opened by client users. Site Admins, consultants, and Site Admin previews are excluded.
+          Left-sidebar sections opened by client users and consultants in their selected client company. Site Admins and Site Admin previews are excluded.
           Dates are EST. Time spent counts only while the tab is visible, up to 30 minutes per visit.
         </p>
 
