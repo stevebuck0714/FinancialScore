@@ -1170,7 +1170,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.debtPrincipal)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locDraw > 0 ? '#7c3aed' : '#64748b' }}>{formatCurrency(row.locDraw)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locRepay > 0 ? '#0284c7' : '#64748b' }}>{formatCurrency(row.locRepay)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.unleveredEndingCash < 0 ? '#dc2626' : '#111827', fontWeight: 600 }}>
+                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.unleveredEndingCash < Math.max(0, Number(inputs.minCashBuffer || 0)) ? '#dc2626' : '#111827', fontWeight: 600 }}>
                     {formatCurrency(row.unleveredEndingCash)}
                   </td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.endingCash < 0 ? '#dc2626' : '#111827', fontWeight: 700 }}>
