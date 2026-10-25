@@ -1,5 +1,4 @@
 'use client';
-import { formatEstDateTime } from '@/lib/time/eastern';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
@@ -176,7 +175,13 @@ interface WorkingCapitalForecastTabProps {
   selectedCompanyId: string;
   basisMode?: 'cash' | 'accrual';
   viewMode?: 'full' | 'inputs-only';
+  onToolbarReady?: ((actions: WorkingCapitalForecastToolbarActions | null) => void) | null;
 }
+
+export type WorkingCapitalForecastToolbarActions = {
+  saveInputs: () => void;
+  showHowItWorks: () => void;
+};
 
 const buildWeekMonthLabels = (_monthRefs: MonthlyBaseRef[]): string[] => {
   const anchor = getWeekendAnchorDate(new Date());
@@ -283,7 +288,7 @@ const buildScheduledOpexByWeek = (
   return scheduled.map((value) => Math.max(0, Math.round(value)));
 };
 
-export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode = 'cash', viewMode = 'full' }: WorkingCapitalForecastTabProps) {
+export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode = 'cash', viewMode = 'full', onToolbarReady = null }: WorkingCapitalForecastTabProps) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
   const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const formatCurrencyInput = (value: number): string => money.fmt(Number(value || 0), 0);
@@ -320,8 +325,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [loadingBalances, setLoadingBalances] = useState<boolean>(false);
   const [balancesError, setBalancesError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [inputsExpanded, setInputsExpanded] = useState(false);
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const saveSettingsRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     let cancelled = false;
@@ -379,7 +386,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setWeeklyDrivers(derived.weeklyDrivers);
           setOpexAdjDraftByWeek({});
           setStartingBalances(derived.startingBalances);
-          setLastSavedAt(derived.lastSavedAt);
           setInventoryBalanceFromImportedData(derived.inventoryBalanceFromImportedData);
           setLocBalanceFromImportedData(derived.locBalanceFromImportedData);
           setFlowProfile(derived.flowProfile);
@@ -496,18 +502,23 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
+    const highCash = rows.reduce((acc, row) => Math.max(acc, row.endingCash), Number.NEGATIVE_INFINITY);
     const peakLoc = rows.reduce((acc, row) => Math.max(acc, row.endingLoc), 0);
     const totalDraw = rows.reduce((acc, row) => acc + row.locDraw, 0);
     const totalRepay = rows.reduce((acc, row) => acc + row.locRepay, 0);
-    const week13Cash = rows.length ? rows[rows.length - 1].endingCash : 0;
+    const week13 = rows.length ? rows[rows.length - 1] : null;
     return {
       minCash: Number.isFinite(minCash) ? minCash : 0,
+      highCash: Number.isFinite(highCash) ? highCash : 0,
       peakLoc,
       totalDraw,
       totalRepay,
-      week13Cash,
+      week13Cash: week13?.endingCash || 0,
+      endingAr: week13?.endingAr || 0,
+      endingAp: week13?.endingAp || 0,
+      availableLoc: Math.max(0, Number(inputs.locLimit || 0) - peakLoc),
     };
-  }, [rows]);
+  }, [rows, inputs.locLimit]);
 
   useEffect(() => {
     if (!selectedCompanyId || typeof window === 'undefined') return;
@@ -598,7 +609,6 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to save working capital forecast settings');
       }
-      setLastSavedAt(String(data?.updatedAt || new Date().toISOString()));
       setSaveMessage('Saved');
     } catch (error: any) {
       setSaveMessage(`Save failed: ${error?.message || 'Unknown error'}`);
@@ -606,6 +616,16 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       setIsSaving(false);
     }
   };
+  saveSettingsRef.current = saveSettings;
+
+  useEffect(() => {
+    if (!onToolbarReady) return;
+    onToolbarReady({
+      saveInputs: () => void saveSettingsRef.current(),
+      showHowItWorks: () => setHowItWorksOpen(true),
+    });
+    return () => onToolbarReady(null);
+  }, [onToolbarReady]);
 
   const forecastHeaders = [
     'Week',
@@ -639,90 +659,63 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
 
   return (
     <div style={{ padding: '12px 8px 24px' }}>
-      <div style={{ ...cardStyle, marginBottom: '14px', borderColor: '#cbd5e1', background: '#f8fafc' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
-              {isInputsOnly
-                ? 'Accrual Weekly Inputs (13 Weeks)'
-                : basisMode === 'accrual'
-                  ? 'Cash Forecast - 13 Weeks'
-                  : 'Cash Forecast (Cash Basis, 13 Weeks)'}
-            </div>
-            <div style={{ color: '#334155', fontSize: '13px' }}>
-              Starting balances are sourced from last imported operational data. AR/AP days and inventory turns are auto-seeded from recent history and remain editable.
-            </div>
-            {forecastMonthTotals.some((value) => value > 0) && (
-              <div style={{ marginTop: '6px', fontSize: '12px', color: '#1e3a8a' }}>
-                Sales forecast source: Income Statement Forecast. Projected monthly revenue is allocated across the 13 weeks by calendar days, then drives COGS, inventory, and cash collections. Opening AR is collected separately from the current books.
-              </div>
-            )}
-            <details style={{ marginTop: '8px', maxWidth: '920px' }}>
-              <summary style={{ cursor: 'pointer', color: '#2751d0', fontSize: '12px', fontWeight: 700 }}>
-                How Income Statement Forecast sales affect this cash forecast
-              </summary>
-              <div style={{ marginTop: '8px', border: '1px solid #bfdbfe', borderRadius: '8px', background: '#ffffff', padding: '10px', color: '#334155', fontSize: '12px', lineHeight: 1.55 }}>
-                <div>
-                  1. Projected monthly revenue from the Income Statement Forecast is allocated to each of the 13 weeks according to the number of calendar days from that month in the week.
-                </div>
-                <div style={{ marginTop: '5px' }}>
-                  2. Projected material COGS determines inventory purchases. Projected manufacturing overhead, other COGS, duties, and tariffs create AP without increasing inventory. Direct Production Labor is paid separately as direct labor cash.
-                </div>
-                <div style={{ marginTop: '5px' }}>
-                  3. In an accrual forecast, the cash-sales portion is received in the week of sale. The credit-sales portion becomes A/R and is collected using the A/R collection percentages and weekly distribution weights. Opening A/R is a separate balance and follows the same collection schedule.
-                </div>
-                <div style={{ marginTop: '5px' }}>
-                  4. Receipts from those sales, less AP payments (including inventory purchases), direct labor, operating expenses, adjustments, LOC interest, and long-term debt principal, determine weekly ending cash and any required LOC draw or repayment. Loan interest is already included in operating expenses, so Debt Principal deducts only the principal portion.
-                </div>
-              </div>
-            </details>
-            {lastSavedAt && (
-              <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
-                Last saved: {formatEstDateTime(lastSavedAt)}
-              </div>
-            )}
-            {saveMessage && (
-              <div style={{ marginTop: '6px', fontSize: '12px', color: saveMessage.startsWith('Save failed') ? '#b91c1c' : '#166534' }}>
-                {saveMessage}
-              </div>
-            )}
-          </div>
+      {!onToolbarReady && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '14px' }}>
           <button
-            onClick={saveSettings}
+            type="button"
+            onClick={() => setHowItWorksOpen(true)}
+            style={{ padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+          >
+            How It Works
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveSettings()}
             disabled={isSaving}
-            style={{
-              padding: '10px 16px',
-              borderRadius: '8px',
-              border: '1px solid #2751d0',
-              background: isSaving ? '#e2e8f0' : '#2751d0',
-              color: isSaving ? '#475569' : '#ffffff',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: isSaving ? 'not-allowed' : 'pointer',
-              minWidth: '120px',
-            }}
+            style={{ padding: '8px 12px', border: '1px solid #2751d0', borderRadius: '8px', background: isSaving ? '#e2e8f0' : '#2751d0', color: isSaving ? '#475569' : '#fff', fontSize: '12px', fontWeight: 700, cursor: isSaving ? 'not-allowed' : 'pointer' }}
           >
             {isSaving ? 'Saving...' : 'Save Inputs'}
           </button>
         </div>
-      </div>
+      )}
+      {saveMessage && (
+        <div style={{ marginBottom: '14px', fontSize: '12px', color: saveMessage.startsWith('Save failed') ? '#b91c1c' : '#166534' }}>
+          {saveMessage}
+        </div>
+      )}
 
       {!isInputsOnly && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px', marginBottom: '14px' }}>
-          <div style={{ ...cardStyle, gridColumn: 'span 2' }}>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Beginning Cash (Last Imported)</div>
-            <div style={{ fontSize: '28px', fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: '12px', marginBottom: '14px' }}>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Beginning Cash</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
               {loadingBalances ? 'Loading...' : formatCurrency(startingBalances.cash)}
             </div>
             {balancesError && <div style={{ marginTop: '6px', fontSize: '12px', color: '#b91c1c' }}>{balancesError}</div>}
           </div>
           <div style={cardStyle}>
             <div style={{ fontSize: '12px', color: '#64748b' }}>Minimum Cash</div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: '#0369a1' }}>{formatCurrency(totals.minCash)}</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#0369a1' }}>{formatCurrency(totals.minCash)}</div>
           </div>
           <div style={cardStyle}>
             <div style={{ fontSize: '12px', color: '#64748b' }}>Peak LOC</div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: '#7c3aed' }}>{formatCurrency(totals.peakLoc)}</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#7c3aed' }}>{formatCurrency(totals.peakLoc)}</div>
+          </div>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>AR</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a' }}>{formatCurrency(totals.endingAr)}</div>
+          </div>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>AP</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a' }}>{formatCurrency(totals.endingAp)}</div>
+          </div>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>High Cash</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a' }}>{formatCurrency(totals.highCash)}</div>
+          </div>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Available LOC</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a' }}>{formatCurrency(totals.availableLoc)}</div>
           </div>
         </div>
       )}
@@ -798,8 +791,20 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         )}
 
         <div style={cardStyle}>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>Inputs</div>
-          <div style={{ display: 'grid', gridTemplateColumns: isAccrualFullCashForecast ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={() => setInputsExpanded((expanded) => !expanded)}
+            aria-expanded={inputsExpanded}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: 'none', background: 'transparent', padding: 0, color: '#0f172a', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+          >
+            Inputs
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#475569', fontSize: '12px', fontWeight: 700 }}>
+              {inputsExpanded ? 'Close' : 'Open'}
+              <span aria-hidden="true" style={{ fontSize: '20px', lineHeight: 1 }}>{inputsExpanded ? '▾' : '▸'}</span>
+            </span>
+          </button>
+          {inputsExpanded && (
+          <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: isAccrualFullCashForecast ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
             {basisMode === 'accrual' && (
               <div
                 style={{
@@ -1065,6 +1070,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             )}
 
           </div>
+          )}
         </div>
       </div>
 
@@ -1193,6 +1199,44 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           </table>
         </div>
       </div>
+      )}
+      {howItWorksOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="How the 13-week cash forecast works"
+          onClick={() => setHowItWorksOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', background: 'rgba(15, 23, 42, 0.45)' }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{ width: 'min(760px, 96vw)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto', padding: '18px', border: '1px solid #e2e8f0', borderRadius: '14px', background: '#fff', boxShadow: '0 24px 80px rgba(15, 23, 42, 0.28)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>How It Works</h3>
+              <button
+                type="button"
+                onClick={() => setHowItWorksOpen(false)}
+                style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: '8px', padding: '6px 10px', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ display: 'grid', gap: '12px', color: '#334155', fontSize: '13px', lineHeight: 1.55 }}>
+              <div>Starting balances are sourced from last imported operational data. AR/AP days and inventory turns are auto-seeded from recent history and remain editable.</div>
+              <div>Sales forecast source: Income Statement Forecast. Projected monthly revenue is allocated across the 13 weeks by calendar days, then drives COGS, inventory, and cash collections. Opening AR is collected separately from the current books.</div>
+              <div>
+                <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>How Income Statement Forecast sales affect this cash forecast</div>
+                <ol style={{ margin: 0, paddingLeft: '20px', display: 'grid', gap: '6px' }}>
+                  <li>Projected monthly revenue is allocated to each of the 13 weeks according to the number of calendar days from that month in the week.</li>
+                  <li>Projected material COGS determines inventory purchases. Projected manufacturing overhead, other COGS, duties, and tariffs create AP without increasing inventory. Direct Production Labor is paid separately as direct labor cash.</li>
+                  <li>In an accrual forecast, the cash-sales portion is received in the week of sale. The credit-sales portion becomes A/R and is collected using the A/R collection percentages and weekly distribution weights. Opening A/R is a separate balance and follows the same collection schedule.</li>
+                  <li>Receipts from those sales, less AP payments, direct labor, operating expenses, adjustments, LOC interest, and long-term debt principal, determine weekly ending cash and any required LOC draw or repayment. Loan interest is already included in operating expenses, so Debt Principal deducts only the principal portion.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TrendingUp, Users, Package, DollarSign, Warehouse, AlertCircle, ArrowUp, ArrowDown, GripVertical } from 'lucide-react';
 import {
   LineChart,
@@ -29,7 +29,7 @@ import OperationalReportPageLayout from './OperationalReportPageLayout';
 import SortableReportCollection from './SortableReportCollection';
 import FinancialForecastTab from '../FinancialForecastTab';
 import CustomerSalesForecast from './CustomerSalesForecast';
-import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
+import WorkingCapitalForecastTab, { type WorkingCapitalForecastToolbarActions } from './WorkingCapitalForecastTab';
 import ProductRevenueForecastReport from './ProductRevenueForecastReport';
 import ProductForecastRollupReport from './ProductForecastRollupReport';
 import ProductMonthlyRevenueReport from './ProductMonthlyRevenueReport';
@@ -851,6 +851,10 @@ export default function OperationsTab({
   const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<ForecastSubTab>(() => (
     isRealEstateSector ? 'residential-revenue-forecast' : 'cash-forecast'
   ));
+  const [cashForecastToolbarActions, setCashForecastToolbarActions] = useState<WorkingCapitalForecastToolbarActions | null>(null);
+  const setCashForecastToolbar = useCallback((actions: WorkingCapitalForecastToolbarActions | null) => {
+    setCashForecastToolbarActions(actions);
+  }, []);
   const hasAppliedRealEstateForecastDefaultRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18663,6 +18667,24 @@ Strategies to Improve the CCC
           >
             Graphs
           </button>
+          {activeAccrualBasisForecastTab === 'cash-forecast' && cashForecastToolbarActions && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '8px' }}>
+              <button
+                type="button"
+                onClick={cashForecastToolbarActions.showHowItWorks}
+                style={{ padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                How It Works
+              </button>
+              <button
+                type="button"
+                onClick={cashForecastToolbarActions.saveInputs}
+                style={{ padding: '8px 12px', border: '1px solid #2751d0', borderRadius: '8px', background: '#2751d0', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Save Inputs
+              </button>
+            </div>
+          )}
         </div>
 
         {isRealEstateSector && activeAccrualBasisForecastTab === 'residential-revenue-forecast' && (
@@ -18684,7 +18706,7 @@ Strategies to Improve the CCC
         )}
 
         {activeAccrualBasisForecastTab === 'cash-forecast' && (
-          <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} basisMode="accrual" />
+          <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} basisMode="accrual" onToolbarReady={setCashForecastToolbar} />
         )}
         {activeAccrualBasisForecastTab === 'graphs' && (
           <FinancialForecastTab
