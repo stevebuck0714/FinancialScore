@@ -24,6 +24,7 @@ export type AiUsageMonth = {
 
 export type AiUsageFeatureRow = {
   feature: string;
+  model: string;
   label: string;
   billable: boolean;
   interactions: number;
@@ -128,7 +129,7 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
       GROUP BY 1
     `,
     prisma.$queryRaw<Array<Omit<AiUsageFeatureRow, 'label'>>>`
-      SELECT "feature",
+      SELECT "feature", "model",
         BOOL_OR("billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights')) AS billable,
         COUNT(*)::int AS interactions,
         COALESCE(SUM("promptTokens"), 0)::float8 AS "promptTokens",
@@ -142,7 +143,7 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
       FROM "AiUsageEvent"
       WHERE "companyId" = ${companyId}
         AND to_char("createdAt" AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM') = ${current}
-      GROUP BY "feature"
+      GROUP BY "feature", "model"
       ORDER BY SUM("totalTokens") DESC
     `,
   ]);

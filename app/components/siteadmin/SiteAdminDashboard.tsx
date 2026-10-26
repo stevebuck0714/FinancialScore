@@ -2802,6 +2802,7 @@ export default function SiteAdminDashboard(props: any) {
                     <thead>
                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                         <th style={thStyle}>Feature</th>
+                        <th style={thStyle}>Model</th>
                         <th style={thStyle}>Interactions</th>
                         <th style={thStyle}>Input Tokens</th>
                         <th style={thStyle}>Input Cost</th>
@@ -2815,11 +2816,12 @@ export default function SiteAdminDashboard(props: any) {
                     </thead>
                     <tbody>
                       {(detail.currentMonthByFeature || []).length === 0 ? (
-                        <tr><td style={{ ...tdStyle, color: '#64748b' }} colSpan={10}>No AI usage this month.</td></tr>
+                        <tr><td style={{ ...tdStyle, color: '#64748b' }} colSpan={11}>No AI usage this month.</td></tr>
                       ) : (
                         detail.currentMonthByFeature.map((row: any) => (
-                          <tr key={row.feature} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <tr key={`${row.feature}:${row.model}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                             <td style={tdStyle}>{row.label}{row.billable ? '' : ' (not billed)'}</td>
+                            <td style={tdStyle}>{row.model || 'Unknown'}</td>
                             <td style={tdStyle}>{formatTokenCount(row.interactions)}</td>
                             <td style={tdStyle}>{formatTokenCount(row.promptTokens)}</td>
                             <td style={tdStyle}>{formatProviderCost(row.inputCostUsd)}</td>

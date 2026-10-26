@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
 import { getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
@@ -11,6 +12,10 @@ type InsightsPayload = {
   history?: Array<Record<string, unknown>>;
   recentMonths?: Array<Record<string, unknown>>;
 };
+
+// Corelytics Score Insights is retired. Keep this server-side guard so no
+// request path can invoke an AI model or consume tokens for this feature.
+const CORELYTICS_SCORE_INSIGHTS_AI_ENABLED = false;
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -39,6 +44,10 @@ function parseJsonObject(text: string): Record<string, unknown> {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!CORELYTICS_SCORE_INSIGHTS_AI_ENABLED) {
+      return NextResponse.json({ error: 'Corelytics Score Insights is no longer available.' }, { status: 410 });
+    }
+
     const authContext = await requireAuth();
     const body = (await request.json()) as InsightsPayload;
     const companyId = String(body?.companyId || '').trim();
@@ -50,6 +59,23 @@ export async function POST(request: NextRequest) {
     if (!hasAccess) {
       await auditForbiddenAccess('Company', companyId, 'AI_FINANCIAL_SCORE_INSIGHTS');
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { userDefinedAllocations: true },
+    });
+    if (!company) {
+      return NextResponse.json({ error: 'Company not found' }, { status: 404 });
+    }
+    const financialScore = (company.userDefinedAllocations as Record<string, unknown> | null)?.financialScore;
+    const financialScoreEnabled =
+      financialScore &&
+      typeof financialScore === 'object' &&
+      !Array.isArray(financialScore) &&
+      (financialScore as Record<string, unknown>).enabledByAdmin === true;
+    if (!financialScoreEnabled) {
+      return NextResponse.json({ error: 'Corelytics Score is disabled for this company.' }, { status: 403 });
     }
 
     const history = Array.isArray(body.history) ? body.history.slice(-24) : [];

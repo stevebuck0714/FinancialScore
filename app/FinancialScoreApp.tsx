@@ -60,7 +60,6 @@ const FINANCIAL_REPORTING_TABS = [
 ] as const;
 const CORELYTICS_SCORE_TABS = [
   { id: 'fs-score', label: 'Corelytics Score' },
-  { id: 'fs-insights', label: 'Insights' },
 ] as const;
 const DEFAULT_SELECTED_TREND_ITEMS = ['Revenue', 'Gross Profit', 'Total Operating Expenses', 'Net Income'];
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
@@ -178,7 +177,6 @@ const ValuationEbitdaSection6Preview = dynamic(() => import('./components/valuat
 const ValuationDcfSection7Preview = dynamic(() => import('./components/valuation/ValuationDcfSection7Preview'), { ssr: false });
 const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
 const FinancialScoreView = dynamic(() => import('./components/FinancialScoreView'), { ssr: false });
-const FinancialScoreInsightsView = dynamic(() => import('./components/FinancialScoreInsightsView'), { ssr: false });
 import GoalsView from './components/GoalsView';
 import TrendAnalysisView from './components/TrendAnalysisView';
 import SimpleChart from './components/SimpleChart';
@@ -17352,24 +17350,6 @@ function FinancialScorePage() {
           monthly={monthly}
           trendData={trendData}
           companyName={companyName}
-          finalScore={finalScore}
-          profitabilityScore={profitabilityScore}
-          assetDevScore={assetDevScore}
-          baseRGS={baseRGS}
-          adjustedRGS={adjustedRGS}
-          growth_24mo={growth_24mo}
-          growth_6mo={growth_6mo}
-          expenseAdjustment={expenseAdjustment}
-          alr1={alr1}
-          alrGrowth={alrGrowth}
-        />
-      )}
-      {currentView === 'fs-insights' && selectedCompanyId && isFinancialScoreEnabledByAdmin && (
-        <FinancialScoreInsightsView
-          selectedCompanyId={selectedCompanyId}
-          companyName={companyName}
-          monthly={monthly}
-          trendData={trendData}
           finalScore={finalScore}
           profitabilityScore={profitabilityScore}
           assetDevScore={assetDevScore}

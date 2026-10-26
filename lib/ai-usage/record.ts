@@ -133,12 +133,77 @@ export async function ensureAiUsageTable(): Promise<void> {
         ADD COLUMN IF NOT EXISTS "inputCostUsd" DOUBLE PRECISION,
         ADD COLUMN IF NOT EXISTS "outputCostUsd" DOUBLE PRECISION
       `);
+      await backfillAiUsageCostBreakdowns();
     })().catch((error) => {
       ensurePromise = null;
       throw error;
     });
   }
   return ensurePromise;
+}
+
+function splitUsageCost(params: {
+  model: string;
+  promptTokens: number;
+  cachedPromptTokens: number;
+  cacheWriteTokens: number;
+  completionTokens: number;
+  costUsd: number | null;
+}): { inputCostUsd: number; outputCostUsd: number } | null {
+  const counts = {
+    promptTokens: params.promptTokens,
+    cachedPromptTokens: params.cachedPromptTokens,
+    cacheWriteTokens: params.cacheWriteTokens,
+    completionTokens: params.completionTokens,
+  };
+  const estimated = estimateCostBreakdownUsd(params.model, counts);
+  const estimatedTotal = estimated?.totalCostUsd ?? 0;
+  if (estimated) {
+    const scale = params.costUsd !== null && estimatedTotal > 0 ? params.costUsd / estimatedTotal : 1;
+    return {
+      inputCostUsd: estimated.inputCostUsd * scale,
+      outputCostUsd: estimated.outputCostUsd * scale,
+    };
+  }
+  const totalTokens = params.promptTokens + params.completionTokens;
+  if (params.costUsd === null || totalTokens <= 0) return null;
+  return {
+    inputCostUsd: params.costUsd * (params.promptTokens / totalTokens),
+    outputCostUsd: params.costUsd * (params.completionTokens / totalTokens),
+  };
+}
+
+async function backfillAiUsageCostBreakdowns(): Promise<void> {
+  const rows = await prisma.$queryRaw<Array<{
+    id: string;
+    model: string;
+    promptTokens: number;
+    cachedPromptTokens: number;
+    cacheWriteTokens: number;
+    completionTokens: number;
+    costUsd: number | null;
+  }>>`
+    SELECT "id", "model", "promptTokens", "cachedPromptTokens", "cacheWriteTokens", "completionTokens", "costUsd"
+    FROM "AiUsageEvent"
+    WHERE "costUsd" IS NOT NULL
+      AND ("inputCostUsd" IS NULL OR "outputCostUsd" IS NULL)
+  `;
+  for (const row of rows) {
+    const split = splitUsageCost({
+      model: row.model,
+      promptTokens: Number(row.promptTokens || 0),
+      cachedPromptTokens: Number(row.cachedPromptTokens || 0),
+      cacheWriteTokens: Number(row.cacheWriteTokens || 0),
+      completionTokens: Number(row.completionTokens || 0),
+      costUsd: row.costUsd === null ? null : Number(row.costUsd),
+    });
+    if (!split) continue;
+    await prisma.$executeRaw`
+      UPDATE "AiUsageEvent"
+      SET "inputCostUsd" = ${split.inputCostUsd}, "outputCostUsd" = ${split.outputCostUsd}
+      WHERE "id" = ${row.id}
+    `;
+  }
 }
 
 /**
@@ -160,21 +225,16 @@ export async function recordAiUsage(params: {
     const estimated = estimateCostBreakdownUsd(model, counts);
     const costUsd = counts.reportedCostUsd ?? estimated?.totalCostUsd ?? null;
     const costSource = counts.reportedCostUsd !== null ? 'reported' : estimated !== null ? 'price_table' : null;
-    const estimatedTotal = estimated?.totalCostUsd ?? 0;
-    const reportedScale = counts.reportedCostUsd !== null && estimatedTotal > 0
-      ? counts.reportedCostUsd / estimatedTotal
-      : 1;
-    const tokenTotal = counts.promptTokens + counts.completionTokens;
-    const inputCostUsd = estimated
-      ? estimated.inputCostUsd * reportedScale
-      : costUsd !== null && tokenTotal > 0
-        ? costUsd * (counts.promptTokens / tokenTotal)
-        : null;
-    const outputCostUsd = estimated
-      ? estimated.outputCostUsd * reportedScale
-      : costUsd !== null && tokenTotal > 0
-        ? costUsd * (counts.completionTokens / tokenTotal)
-        : null;
+    const split = splitUsageCost({
+      model,
+      promptTokens: counts.promptTokens,
+      cachedPromptTokens: counts.cachedPromptTokens,
+      cacheWriteTokens: counts.cacheWriteTokens,
+      completionTokens: counts.completionTokens,
+      costUsd,
+    });
+    const inputCostUsd = split?.inputCostUsd ?? null;
+    const outputCostUsd = split?.outputCostUsd ?? null;
     await ensureAiUsageTable();
     await prisma.$executeRaw`
       INSERT INTO "AiUsageEvent" (
