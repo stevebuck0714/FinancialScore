@@ -9,6 +9,10 @@ export type AiUsagePricing = { monthlyTokenAllowance: number; overagePricePer1MT
 export type AiUsageMonth = {
   month: string;
   interactions: number;
+  promptTokens: number;
+  completionTokens: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
   billableTokens: number;
   totalTokens: number;
   costUsd: number;
@@ -23,6 +27,10 @@ export type AiUsageFeatureRow = {
   label: string;
   billable: boolean;
   interactions: number;
+  promptTokens: number;
+  completionTokens: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
   billableTokens: number;
   totalTokens: number;
   costUsd: number;
@@ -59,7 +67,18 @@ function shiftMonth(month: string, delta: number): string {
   return date.toISOString().slice(0, 7);
 }
 
-type MonthRow = { month: string; interactions: number; billableTokens: number; totalTokens: number; costUsd: number; billableCostUsd: number };
+type MonthRow = {
+  month: string;
+  interactions: number;
+  promptTokens: number;
+  completionTokens: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
+  billableTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  billableCostUsd: number;
+};
 
 /** Current EST month totals for every company with usage. */
 export async function loadCurrentMonthAiUsageByCompany(): Promise<Array<MonthRow & { companyId: string }>> {
@@ -69,6 +88,10 @@ export async function loadCurrentMonthAiUsageByCompany(): Promise<Array<MonthRow
     SELECT "companyId",
       ${month} AS month,
       COUNT(*)::int AS interactions,
+      COALESCE(SUM("promptTokens"), 0)::float8 AS "promptTokens",
+      COALESCE(SUM("completionTokens"), 0)::float8 AS "completionTokens",
+      COALESCE(SUM(COALESCE("inputCostUsd", CASE WHEN "totalTokens" > 0 THEN "costUsd" * "promptTokens" / "totalTokens" ELSE 0 END)), 0)::float8 AS "inputCostUsd",
+      COALESCE(SUM(COALESCE("outputCostUsd", CASE WHEN "totalTokens" > 0 THEN "costUsd" * "completionTokens" / "totalTokens" ELSE 0 END)), 0)::float8 AS "outputCostUsd",
       COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
       COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
       COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
@@ -91,6 +114,10 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
     prisma.$queryRaw<MonthRow[]>`
       SELECT to_char("createdAt" AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM') AS month,
         COUNT(*)::int AS interactions,
+        COALESCE(SUM("promptTokens"), 0)::float8 AS "promptTokens",
+        COALESCE(SUM("completionTokens"), 0)::float8 AS "completionTokens",
+        COALESCE(SUM(COALESCE("inputCostUsd", CASE WHEN "totalTokens" > 0 THEN "costUsd" * "promptTokens" / "totalTokens" ELSE 0 END)), 0)::float8 AS "inputCostUsd",
+        COALESCE(SUM(COALESCE("outputCostUsd", CASE WHEN "totalTokens" > 0 THEN "costUsd" * "completionTokens" / "totalTokens" ELSE 0 END)), 0)::float8 AS "outputCostUsd",
         COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
         COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
         COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
@@ -104,6 +131,10 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
       SELECT "feature",
         BOOL_OR("billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights')) AS billable,
         COUNT(*)::int AS interactions,
+        COALESCE(SUM("promptTokens"), 0)::float8 AS "promptTokens",
+        COALESCE(SUM("completionTokens"), 0)::float8 AS "completionTokens",
+        COALESCE(SUM(COALESCE("inputCostUsd", CASE WHEN "totalTokens" > 0 THEN "costUsd" * "promptTokens" / "totalTokens" ELSE 0 END)), 0)::float8 AS "inputCostUsd",
+        COALESCE(SUM(COALESCE("outputCostUsd", CASE WHEN "totalTokens" > 0 THEN "costUsd" * "completionTokens" / "totalTokens" ELSE 0 END)), 0)::float8 AS "outputCostUsd",
         COALESCE(SUM(CASE WHEN "billable" AND "feature" NOT IN ('exec_briefing', 'financial_score_insights') THEN "totalTokens" ELSE 0 END), 0)::float8 AS "billableTokens",
         COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
         COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd",
@@ -125,6 +156,10 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
     months.push({
       month,
       interactions: Number(row?.interactions ?? 0),
+      promptTokens: Number(row?.promptTokens ?? 0),
+      completionTokens: Number(row?.completionTokens ?? 0),
+      inputCostUsd: Number(row?.inputCostUsd ?? 0),
+      outputCostUsd: Number(row?.outputCostUsd ?? 0),
       billableTokens,
       totalTokens: Number(row?.totalTokens ?? 0),
       costUsd: Number(row?.costUsd ?? 0),
@@ -140,6 +175,10 @@ export async function loadCompanyAiUsage(companyId: string, pricing: AiUsagePric
       ...row,
       label: AI_USAGE_FEATURES[row.feature as keyof typeof AI_USAGE_FEATURES] ?? row.feature,
       interactions: Number(row.interactions),
+      promptTokens: Number(row.promptTokens),
+      completionTokens: Number(row.completionTokens),
+      inputCostUsd: Number(row.inputCostUsd),
+      outputCostUsd: Number(row.outputCostUsd),
       billableTokens: Number(row.billableTokens),
       totalTokens: Number(row.totalTokens),
       costUsd: Number(row.costUsd),

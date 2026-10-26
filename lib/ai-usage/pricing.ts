@@ -23,19 +23,27 @@ function priceForModel(model: string): ModelPrice | null {
 }
 
 /** promptTokens includes cached and cache-write tokens (OpenAI-compatible usage convention). */
-export function estimateCostUsd(
+export function estimateCostBreakdownUsd(
   model: string,
   tokens: { promptTokens: number; cachedPromptTokens: number; cacheWriteTokens: number; completionTokens: number },
-): number | null {
+): { inputCostUsd: number; outputCostUsd: number; totalCostUsd: number } | null {
   const price = priceForModel(model);
   if (!price) return null;
   const cached = Math.min(tokens.cachedPromptTokens, tokens.promptTokens);
   const written = Math.min(tokens.cacheWriteTokens, tokens.promptTokens - cached);
   const fresh = tokens.promptTokens - cached - written;
-  const usd =
+  const inputCostUsd = (
     fresh * price.input +
     cached * (price.cachedInput ?? price.input) +
-    written * (price.cacheWrite ?? price.input) +
-    tokens.completionTokens * price.output;
-  return usd / 1_000_000;
+    written * (price.cacheWrite ?? price.input)
+  ) / 1_000_000;
+  const outputCostUsd = (tokens.completionTokens * price.output) / 1_000_000;
+  return { inputCostUsd, outputCostUsd, totalCostUsd: inputCostUsd + outputCostUsd };
+}
+
+export function estimateCostUsd(
+  model: string,
+  tokens: { promptTokens: number; cachedPromptTokens: number; cacheWriteTokens: number; completionTokens: number },
+): number | null {
+  return estimateCostBreakdownUsd(model, tokens)?.totalCostUsd ?? null;
 }

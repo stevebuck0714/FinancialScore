@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import prisma from '@/lib/prisma';
-import { estimateCostUsd } from '@/lib/ai-usage/pricing';
+import { estimateCostBreakdownUsd } from '@/lib/ai-usage/pricing';
 
 export const AI_USAGE_FEATURES = {
   ask_data: 'Ask Corelytics',
@@ -128,6 +128,11 @@ export async function ensureAiUsageTable(): Promise<void> {
         CREATE INDEX IF NOT EXISTS "AiUsageEvent_company_created_idx"
         ON "AiUsageEvent"("companyId", "createdAt")
       `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "AiUsageEvent"
+        ADD COLUMN IF NOT EXISTS "inputCostUsd" DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS "outputCostUsd" DOUBLE PRECISION
+      `);
     })().catch((error) => {
       ensurePromise = null;
       throw error;
@@ -152,20 +157,35 @@ export async function recordAiUsage(params: {
   try {
     const billable =
       Boolean(tag.companyId) && !NON_BILLABLE_FEATURES.has(tag.feature) && tag.billable !== false && outcome === 'ok';
-    const estimated = estimateCostUsd(model, counts);
-    const costUsd = counts.reportedCostUsd ?? estimated;
+    const estimated = estimateCostBreakdownUsd(model, counts);
+    const costUsd = counts.reportedCostUsd ?? estimated?.totalCostUsd ?? null;
     const costSource = counts.reportedCostUsd !== null ? 'reported' : estimated !== null ? 'price_table' : null;
+    const estimatedTotal = estimated?.totalCostUsd ?? 0;
+    const reportedScale = counts.reportedCostUsd !== null && estimatedTotal > 0
+      ? counts.reportedCostUsd / estimatedTotal
+      : 1;
+    const tokenTotal = counts.promptTokens + counts.completionTokens;
+    const inputCostUsd = estimated
+      ? estimated.inputCostUsd * reportedScale
+      : costUsd !== null && tokenTotal > 0
+        ? costUsd * (counts.promptTokens / tokenTotal)
+        : null;
+    const outputCostUsd = estimated
+      ? estimated.outputCostUsd * reportedScale
+      : costUsd !== null && tokenTotal > 0
+        ? costUsd * (counts.completionTokens / tokenTotal)
+        : null;
     await ensureAiUsageTable();
     await prisma.$executeRaw`
       INSERT INTO "AiUsageEvent" (
         "id", "companyId", "userId", "feature", "route", "model", "outcome", "billable", "requests",
         "promptTokens", "cachedPromptTokens", "cacheWriteTokens", "completionTokens", "reasoningTokens",
-        "totalTokens", "costUsd", "costSource", "metadata"
+        "totalTokens", "costUsd", "inputCostUsd", "outputCostUsd", "costSource", "metadata"
       ) VALUES (
         ${randomUUID()}, ${tag.companyId ?? null}, ${tag.userId ?? null}, ${tag.feature}, ${tag.route ?? null},
         ${model}, ${outcome}, ${billable}, ${counts.requests}, ${counts.promptTokens}, ${counts.cachedPromptTokens},
         ${counts.cacheWriteTokens}, ${counts.completionTokens}, ${counts.reasoningTokens},
-        ${counts.promptTokens + counts.completionTokens}, ${costUsd}, ${costSource},
+        ${counts.promptTokens + counts.completionTokens}, ${costUsd}, ${inputCostUsd}, ${outputCostUsd}, ${costSource},
         ${params.metadata ? JSON.stringify(params.metadata) : null}::jsonb
       )
     `;

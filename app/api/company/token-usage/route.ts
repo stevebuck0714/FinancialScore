@@ -25,10 +25,14 @@ export async function GET(request: NextRequest) {
     await ensureAiUsageTable();
     const month = currentEstMonth();
     const rows = await prisma.$queryRaw<Array<{
-      month: string; interactions: number; totalTokens: number; costUsd: number;
+      month: string; interactions: number; promptTokens: number; completionTokens: number; inputCostUsd: number; outputCostUsd: number; totalTokens: number; costUsd: number;
     }>>`
       SELECT to_char("createdAt" AT TIME ZONE ${APP_TIME_ZONE}, 'YYYY-MM') AS month,
         COUNT(*)::int AS interactions,
+        COALESCE(SUM("promptTokens"), 0)::float8 AS "promptTokens",
+        COALESCE(SUM("completionTokens"), 0)::float8 AS "completionTokens",
+        COALESCE(SUM(COALESCE("inputCostUsd", CASE WHEN "totalTokens" > 0 THEN "costUsd" * "promptTokens" / "totalTokens" ELSE 0 END)), 0)::float8 AS "inputCostUsd",
+        COALESCE(SUM(COALESCE("outputCostUsd", CASE WHEN "totalTokens" > 0 THEN "costUsd" * "completionTokens" / "totalTokens" ELSE 0 END)), 0)::float8 AS "outputCostUsd",
         COALESCE(SUM("totalTokens"), 0)::float8 AS "totalTokens",
         COALESCE(SUM("costUsd"), 0)::float8 AS "costUsd"
       FROM "AiUsageEvent"
@@ -44,6 +48,10 @@ export async function GET(request: NextRequest) {
       return {
         month: row.month,
         interactions: Number(row.interactions || 0),
+        promptTokens: Number(row.promptTokens || 0),
+        completionTokens: Number(row.completionTokens || 0),
+        inputCostUsd: Number(row.inputCostUsd || 0),
+        outputCostUsd: Number(row.outputCostUsd || 0),
         billableTokens: tokens,
         totalTokens: tokens,
         costUsd: Number(row.costUsd || 0),

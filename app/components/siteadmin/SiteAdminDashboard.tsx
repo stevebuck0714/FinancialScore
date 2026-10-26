@@ -2665,6 +2665,7 @@ export default function SiteAdminDashboard(props: any) {
   };
 
   const formatTokenCount = (value: unknown) => Math.round(Number(value) || 0).toLocaleString('en-US');
+  const formatProviderCost = (value: unknown) => `$${Number(value || 0).toFixed(4)}`;
 
   const aiUsageAlertCompanies = (aiUsageSummary?.companies || [])
     .filter((row: any) => row.usedPct !== null && row.usedPct >= 80)
@@ -2678,6 +2679,8 @@ export default function SiteAdminDashboard(props: any) {
     const detail = aiUsageDetailByCompany[company.id];
     const usage = (aiUsageSummary?.companies || []).find((row: any) => row.companyId === company.id);
     const billableTokens = Number(usage?.billableTokens || 0);
+    const totalTokens = Number(usage?.totalTokens || 0);
+    const weightedProviderCostPer1M = totalTokens > 0 ? (Number(usage?.costUsd || 0) / totalTokens) * 1_000_000 : 0;
     const usedPct = pricing.monthlyTokenAllowance > 0 ? (billableTokens / pricing.monthlyTokenAllowance) * 100 : null;
     const overageTokens = Math.max(0, billableTokens - pricing.monthlyTokenAllowance);
     const overageCharge = Math.round((overageTokens / 1_000_000) * pricing.overagePricePer1MTokens * 100) / 100;
@@ -2758,6 +2761,9 @@ export default function SiteAdminDashboard(props: any) {
               {usedPct !== null && usedPct >= 100 ? ' | Over allowance' : usedPct !== null && usedPct >= 80 ? ' | Nearing allowance' : ''}
             </div>
             <div style={{ fontSize: '11px' }}>
+              <strong>Input:</strong> {formatTokenCount(usage?.promptTokens)} ({formatProviderCost(usage?.inputCostUsd)}) | <strong>Output:</strong> {formatTokenCount(usage?.completionTokens)} ({formatProviderCost(usage?.outputCostUsd)})
+              {' | '}<strong>Weighted Provider Cost:</strong> ${weightedProviderCostPer1M.toFixed(2)} per 1M
+              {' | '}
               <strong>Allowance:</strong> {pricing.monthlyTokenAllowance > 0 ? `${formatTokenCount(pricing.monthlyTokenAllowance)} tokens/month` : 'Not set'}
               {' | '}<strong>Overage Price:</strong> ${pricing.overagePricePer1MTokens.toFixed(2)} per 1M tokens
               {' | '}<strong>Overage:</strong> {formatTokenCount(overageTokens)} tokens, ${overageCharge.toFixed(2)}
@@ -2797,6 +2803,10 @@ export default function SiteAdminDashboard(props: any) {
                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                         <th style={thStyle}>Feature</th>
                         <th style={thStyle}>Interactions</th>
+                        <th style={thStyle}>Input Tokens</th>
+                        <th style={thStyle}>Input Cost</th>
+                        <th style={thStyle}>Output Tokens</th>
+                        <th style={thStyle}>Output Cost</th>
                         <th style={thStyle}>Billable Tokens</th>
                         <th style={thStyle}>Total Tokens</th>
                         <th style={thStyle}>Billable Cost</th>
@@ -2805,12 +2815,16 @@ export default function SiteAdminDashboard(props: any) {
                     </thead>
                     <tbody>
                       {(detail.currentMonthByFeature || []).length === 0 ? (
-                        <tr><td style={{ ...tdStyle, color: '#64748b' }} colSpan={6}>No AI usage this month.</td></tr>
+                        <tr><td style={{ ...tdStyle, color: '#64748b' }} colSpan={10}>No AI usage this month.</td></tr>
                       ) : (
                         detail.currentMonthByFeature.map((row: any) => (
                           <tr key={row.feature} style={{ borderBottom: '1px solid #e2e8f0' }}>
                             <td style={tdStyle}>{row.label}{row.billable ? '' : ' (not billed)'}</td>
                             <td style={tdStyle}>{formatTokenCount(row.interactions)}</td>
+                            <td style={tdStyle}>{formatTokenCount(row.promptTokens)}</td>
+                            <td style={tdStyle}>{formatProviderCost(row.inputCostUsd)}</td>
+                            <td style={tdStyle}>{formatTokenCount(row.completionTokens)}</td>
+                            <td style={tdStyle}>{formatProviderCost(row.outputCostUsd)}</td>
                             <td style={tdStyle}>{formatTokenCount(row.billableTokens)}</td>
                             <td style={tdStyle}>{formatTokenCount(row.totalTokens)}</td>
                             <td style={tdStyle}>${Number(row.billableCostUsd || 0).toFixed(2)}</td>
@@ -2828,6 +2842,11 @@ export default function SiteAdminDashboard(props: any) {
                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                         <th style={thStyle}>Month</th>
                         <th style={thStyle}>Interactions</th>
+                        <th style={thStyle}>Input Tokens</th>
+                        <th style={thStyle}>Input Cost</th>
+                        <th style={thStyle}>Output Tokens</th>
+                        <th style={thStyle}>Output Cost</th>
+                        <th style={thStyle}>Weighted Cost / 1M</th>
                         <th style={thStyle}>Billable Tokens</th>
                         <th style={thStyle}>Allowance</th>
                         <th style={thStyle}>Overage Tokens</th>
@@ -2841,6 +2860,11 @@ export default function SiteAdminDashboard(props: any) {
                         <tr key={row.month} style={{ borderBottom: '1px solid #e2e8f0' }}>
                           <td style={tdStyle}>{formatAiUsageMonth(row.month)}</td>
                           <td style={tdStyle}>{formatTokenCount(row.interactions)}</td>
+                          <td style={tdStyle}>{formatTokenCount(row.promptTokens)}</td>
+                          <td style={tdStyle}>{formatProviderCost(row.inputCostUsd)}</td>
+                          <td style={tdStyle}>{formatTokenCount(row.completionTokens)}</td>
+                          <td style={tdStyle}>{formatProviderCost(row.outputCostUsd)}</td>
+                          <td style={tdStyle}>${Number(row.totalTokens || 0) > 0 ? ((Number(row.costUsd || 0) / Number(row.totalTokens)) * 1_000_000).toFixed(2) : '0.00'}</td>
                           <td style={tdStyle}>{formatTokenCount(row.billableTokens)}</td>
                           <td style={tdStyle}>{row.allowance > 0 ? formatTokenCount(row.allowance) : 'Not set'}</td>
                           <td style={tdStyle}>{formatTokenCount(row.overageTokens)}</td>
