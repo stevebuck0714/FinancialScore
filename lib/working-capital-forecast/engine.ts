@@ -570,6 +570,13 @@ export type ForecastProjectionInput = {
   historicalApPaymentProfile?: HistoricalApPaymentProfile | null;
   historicalArCollectionProfile?: HistoricalArCollectionProfile | null;
   historicalDebtServiceProfile?: HistoricalDebtServiceProfile | null;
+  /** Holds target inventory at a historical balance instead of the COGS/sales formula. */
+  inventoryTargetProfile?: InventoryTargetProfile | null;
+};
+
+export type InventoryTargetProfile = {
+  targetInventory: number;
+  monthEnds: Array<{ date: string; inventory: number }>;
 };
 
 export type DerivedForecastState = ForecastProjectionInput & {
@@ -906,6 +913,7 @@ export function deriveForecastStateFromBootstrap(
     historicalApPaymentProfile,
     historicalArCollectionProfile,
     historicalDebtServiceProfile,
+    inventoryTargetProfile: (bootstrap?.operational?.inventoryTargetProfile as InventoryTargetProfile | null) || null,
     monthSeries,
     inventoryBalanceFromImportedData: hasImportedInventoryBalance,
     locBalanceFromImportedData: hasImportedLocBalance,
@@ -1004,7 +1012,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     historicalApPaymentProfile = null,
     historicalArCollectionProfile = null,
     historicalDebtServiceProfile = null,
+    inventoryTargetProfile = null,
   } = params;
+  const fixedTargetInventory = Math.max(0, Number(inventoryTargetProfile?.targetInventory || 0));
   const result: ForecastRow[] = [];
   const weeks = FORECAST_WEEKS;
   const isAccrualBasis = basisMode === 'accrual';
@@ -1337,7 +1347,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       : cashOpex;
     const turnsTargetInventory = safeNumber(inventoryCogs * inventoryWeeksOnHand, 0);
     const historicalTargetInventory = safeNumber(sales * historicalInventoryToSales, 0);
-    const targetInventory = (turnsTargetInventory + historicalTargetInventory) / 2;
+    const targetInventory = fixedTargetInventory > 0
+      ? fixedTargetInventory
+      : (turnsTargetInventory + historicalTargetInventory) / 2;
 
     const postSalesInventory = Math.max(0, safeNumber(inventory - inventoryCogs, 0));
     const purchaseForTarget = Math.max(0, safeNumber(targetInventory - postSalesInventory, 0));

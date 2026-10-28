@@ -29,6 +29,7 @@ import {
   type HistoricalApPaymentProfile,
   type HistoricalArCollectionProfile,
   type HistoricalDebtServiceProfile,
+  type InventoryTargetProfile,
   type MonthRevenueSeries,
   type MonthlyBaseRef,
   type OpexPaymentTreatment,
@@ -316,6 +317,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
   const [historicalApPaymentProfile, setHistoricalApPaymentProfile] = useState<HistoricalApPaymentProfile | null>(null);
   const [historicalArCollectionProfile, setHistoricalArCollectionProfile] = useState<HistoricalArCollectionProfile | null>(null);
   const [historicalDebtServiceProfile, setHistoricalDebtServiceProfile] = useState<HistoricalDebtServiceProfile | null>(null);
+  const [inventoryTargetProfile, setInventoryTargetProfile] = useState<InventoryTargetProfile | null>(null);
   const liveMonthSeriesRef = useRef<MonthRevenueSeries | null>(null);
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
@@ -382,6 +384,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setHistoricalApPaymentProfile(derived.historicalApPaymentProfile || null);
           setHistoricalArCollectionProfile(derived.historicalArCollectionProfile || null);
           setHistoricalDebtServiceProfile(derived.historicalDebtServiceProfile || null);
+          setInventoryTargetProfile(derived.inventoryTargetProfile || null);
           setWeekMonthLabels(buildWeekMonthLabels(derived.forecastMonthRefs));
           setInputs(derived.inputs);
           setHistoricalAverages(derived.historicalAverages);
@@ -409,6 +412,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           setHistoricalApPaymentProfile(null);
           setHistoricalArCollectionProfile(null);
           setHistoricalDebtServiceProfile(null);
+          setInventoryTargetProfile(null);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
@@ -469,7 +473,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     historicalApPaymentProfile,
     historicalArCollectionProfile,
     historicalDebtServiceProfile,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, useHistoricalOpeningApPaydown, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile, historicalDebtServiceProfile]);
+    inventoryTargetProfile,
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, useHistoricalOpeningApPaydown, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile, historicalDebtServiceProfile, inventoryTargetProfile]);
+  const inventoryTargetNote = inventoryTargetProfile && inventoryTargetProfile.targetInventory > 0 ? (
+    <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginTop: '4px' }}>
+      {`Target inventory holds at ${formatCurrency(inventoryTargetProfile.targetInventory)}, the average of the last ${inventoryTargetProfile.monthEnds.length} month-end balances (${inventoryTargetProfile.monthEnds.map((row) => `${row.date.slice(5, 7)}/${row.date.slice(0, 4)}`).reverse().join(', ')}); purchases replace material COGS used. Inventory turns do not set the target.`}
+    </div>
+  ) : null;
   const historicalArTimingActive = Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0) > 0;
   const historicalApTimingActive =
     Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0) > 0 &&
@@ -853,6 +863,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Inventory Turns (Annual)</label>
                       <input type="number" value={inputs.inventoryTurns} onChange={(e) => updateNumberInput('inventoryTurns', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                      {inventoryTargetNote}
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Minimum Cash Buffer</label>
@@ -1040,6 +1051,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Inventory Turns (Annual)</label>
                   <input type="number" value={inputs.inventoryTurns} onChange={(e) => updateNumberInput('inventoryTurns', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                  {inventoryTargetNote}
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Minimum Cash Buffer</label>

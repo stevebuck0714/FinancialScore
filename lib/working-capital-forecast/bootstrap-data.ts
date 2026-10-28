@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import type { ForecastBasisMode } from '@/lib/working-capital-forecast/engine';
+import type { ForecastBasisMode, InventoryTargetProfile } from '@/lib/working-capital-forecast/engine';
 import {
   buildAmortizationSchedule,
   missingAmortizationTerms,
@@ -504,6 +504,33 @@ async function pickAgingSnapshots(
   return loadOpenInvoiceAgingFallback(companyId, kind);
 }
 
+const INVENTORY_TARGET_MONTHS = 3;
+
+/**
+ * Atlantic holds inventory near a steady balance regardless of COGS, so its
+ * target is the average of the last completed month-end balances. The
+ * current month is excluded until it closes.
+ */
+function buildInventoryTargetProfile(dailyRecords: any[]): InventoryTargetProfile | null {
+  if (!Array.isArray(dailyRecords) || dailyRecords.length === 0) return null;
+  const currentMonth = formatEstDate().slice(0, 7);
+  const latestByMonth = new Map<string, { date: string; inventory: number }>();
+  for (const row of dailyRecords) {
+    const date = new Date(row.snapshotDate).toISOString().slice(0, 10);
+    const month = date.slice(0, 7);
+    const inventory = Number(row.inventory);
+    if (month >= currentMonth || !Number.isFinite(inventory) || inventory <= 0) continue;
+    const existing = latestByMonth.get(month);
+    if (!existing || date > existing.date) latestByMonth.set(month, { date, inventory });
+  }
+  const monthEnds = Array.from(latestByMonth.values())
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, INVENTORY_TARGET_MONTHS);
+  if (monthEnds.length === 0) return null;
+  const targetInventory = monthEnds.reduce((sum, row) => sum + row.inventory, 0) / monthEnds.length;
+  return { targetInventory: Math.round(targetInventory), monthEnds };
+}
+
 function synthesizeHistoryFromDaily(
   dailyRecords: any[],
 ): {
@@ -778,6 +805,9 @@ export async function loadWorkingCapitalForecastBootstrap(companyId: string, bas
       historicalApPaymentProfile,
       historicalArCollectionProfile,
       historicalDebtServiceProfile,
+      inventoryTargetProfile: isAtlanticPrecisionCompany(companyId)
+        ? buildInventoryTargetProfile(dailyFinancials.records)
+        : null,
       inventoryHistory,
       productHistory,
       productMarginHistory,
