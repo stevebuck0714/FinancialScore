@@ -282,7 +282,9 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
            SELECT "frequency" AS f
            FROM "APOpenBillSnapshot"
            WHERE "companyId" = $1
-           ORDER BY "snapshotDate" DESC
+             AND "snapshotDate" >= CURRENT_DATE - INTERVAL '105 days'
+           GROUP BY "frequency"
+           ORDER BY COUNT(DISTINCT "snapshotDate") DESC
            LIMIT 1
          ),
          base AS (
@@ -305,7 +307,7 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
          pairs AS (
            SELECT a.d AS start_d, MIN(b.d) AS end_d
            FROM dates a
-           JOIN dates b ON b.d >= a.d + 7 AND b.d <= a.d + 14
+           JOIN dates b ON b.d >= a.d + 7 AND b.d <= a.d + 45
            GROUP BY a.d
          )
          SELECT sb.bucket,
