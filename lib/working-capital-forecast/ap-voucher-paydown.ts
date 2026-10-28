@@ -15,10 +15,19 @@ export type ApVoucherPaydownProfile = {
    * a time and pay at the rate of the bucket they are in that week.
    */
   shareOfOpeningPaidByWeek: number[];
+  /** Amount-weighted days past due (negative = before due) of vouchers entered in the last 13 weeks, at entry. */
+  newVoucherEntryDaysPastDue: number;
+  /**
+   * Share of a new voucher paid in each week of its life, indexed by weeks since
+   * it was booked (index 0 is the booking week and is always 0). It ages from
+   * newVoucherEntryDaysPastDue and pays at its bucket's weekly rate.
+   */
+  shareOfNewVoucherPaidByAgeWeek: number[];
 };
 
 const HISTORY_WEEKS = 13;
 const FORECAST_WEEKS = 13;
+const DEFAULT_ENTRY_DAYS_PAST_DUE = -30;
 
 function bucketForDaysPastDue(daysPastDue: number): BucketKey {
   if (daysPastDue < 0) return 'current';
@@ -214,6 +223,14 @@ export async function loadApVoucherPaydownProfile(companyId: string): Promise<Ap
         AND (s.start_d + 7) >= vs.from_dt
         AND (vs.to_dt IS NULL OR (s.start_d + 7) < vs.to_dt)
        WHERE s.kind = 'roll'
+     ),
+     recent_entries AS (
+       SELECT (vc.created_at - vd.due_date) AS entry_dpd, ed.amt
+       FROM voucher_creates vc
+       JOIN voucher_due vd ON vd.voucher = vc.voucher
+       JOIN event_daily ed ON ed.voucher = vc.voucher AND ed.dt = vc.created_at
+       WHERE vc.created_at > $3::date - ${HISTORY_WEEKS * 7}
+         AND ed.amt > 0
      )
      SELECT s.kind, s.bucket,
             CASE WHEN s.kind = 'mix' THEN s.dpd END AS dpd,
@@ -221,7 +238,10 @@ export async function loadApVoucherPaydownProfile(companyId: string): Promise<Ap
             SUM(CASE WHEN s.kind = 'roll' THEN GREATEST(0, s.open_amt - COALESCE(w.open_amt, 0)) ELSE 0 END)::float8 AS paid_amt
      FROM open_at_start s
      LEFT JOIN open_a_week_later w ON s.kind = 'roll' AND w.start_d = s.start_d AND w.voucher = s.voucher
-     GROUP BY 1, 2, 3`,
+     GROUP BY 1, 2, 3
+     UNION ALL
+     SELECT 'entry', 'current', ROUND(SUM(entry_dpd * amt) / NULLIF(SUM(amt), 0))::int, SUM(amt)::float8, 0
+     FROM recent_entries`,
     companyId,
     apAcct,
     asOfDate,
@@ -231,8 +251,11 @@ export async function loadApVoucherPaydownProfile(companyId: string): Promise<Ap
   const roll = new Map<string, { start: number; paid: number }>();
   const mix = new Map<string, number>();
   const openingByDaysPastDue: Array<{ dpd: number; amount: number }> = [];
+  let newVoucherEntryDaysPastDue = DEFAULT_ENTRY_DAYS_PAST_DUE;
   for (const row of rows) {
-    if (row.kind === 'roll') {
+    if (row.kind === 'entry') {
+      if (row.dpd !== null && Number(row.start_amt || 0) > 0) newVoucherEntryDaysPastDue = Number(row.dpd);
+    } else if (row.kind === 'roll') {
       roll.set(row.bucket, { start: Number(row.start_amt || 0), paid: Number(row.paid_amt || 0) });
     } else {
       const amount = Number(row.start_amt || 0);
@@ -269,5 +292,21 @@ export async function loadApVoucherPaydownProfile(companyId: string): Promise<Ap
     }
   }
 
-  return { asOfDate, weeklyPaydownRateByBucket, openingBucketShares, shareOfOpeningPaidByWeek };
+  const shareOfNewVoucherPaidByAgeWeek = new Array<number>(FORECAST_WEEKS + 1).fill(0);
+  let newRemaining = 1;
+  for (let ageWeeks = 1; ageWeeks <= FORECAST_WEEKS; ageWeeks += 1) {
+    const dpd = newVoucherEntryDaysPastDue + (ageWeeks - 1) * 7;
+    const paid = newRemaining * weeklyPaydownRateByBucket[bucketForDaysPastDue(dpd)];
+    shareOfNewVoucherPaidByAgeWeek[ageWeeks] = paid;
+    newRemaining -= paid;
+  }
+
+  return {
+    asOfDate,
+    weeklyPaydownRateByBucket,
+    openingBucketShares,
+    shareOfOpeningPaidByWeek,
+    newVoucherEntryDaysPastDue,
+    shareOfNewVoucherPaidByAgeWeek,
+  };
 }

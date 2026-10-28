@@ -495,6 +495,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           ['61+', atlanticApBucketRates.bucket90plus],
         ].map(([label, rate]) => `${label} ${(Number(rate) * 100).toFixed(1)}%/wk`).join(', ')
       : '';
+  const atlanticNewVoucherEntryDpd = Number(historicalApPaymentProfile?.openingApPaydown?.newVoucherEntryDaysPastDue ?? -30);
+  const atlanticNewVoucherDueText = atlanticNewVoucherEntryDpd < 0
+    ? `about ${Math.abs(atlanticNewVoucherEntryDpd)} days before due (the average for vouchers booked in the last 13 weeks)`
+    : `about ${atlanticNewVoucherEntryDpd} days past due (the average for vouchers booked in the last 13 weeks)`;
   const historicalArCollectionLagWeeks = historicalArTimingActive
     ? clampNumber(
         Math.round(startingBalances.ar / Number(historicalArCollectionProfile?.weeklyCollectionAmount || 1)),
@@ -990,7 +994,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               {useHistoricalOpeningApPaydown && (
                 <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
                   {atlanticApBucketRateSummary
-                    ? `Atlantic’s opening AP pays down each week at the share of each aging bucket paid over the last 13 weeks of voucher history: ${atlanticApBucketRateSummary}. Open bills move into older buckets as they age.`
+                    ? `Atlantic’s opening AP pays down each week at the share of each aging bucket paid over the last 13 weeks of voucher history: ${atlanticApBucketRateSummary}. Open bills move into older buckets as they age. New purchases enter AP ${atlanticNewVoucherDueText} and pay down at the same bucket rates starting the week after they are booked.`
                     : `Atlantic’s historical AP aging-bucket paydown rates could not be calculated from voucher history, so opening AP uses ${historicalApTimingAppliesToOpening ? 'the historical AP payment schedule' : 'the aging assumptions below'}.`}
                 </div>
               )}

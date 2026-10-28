@@ -58,6 +58,8 @@ export type HistoricalApPaymentProfile = {
     weeklyPaydownRateByBucket: Record<keyof AgingBuckets, number>;
     openingBucketShares: Record<keyof AgingBuckets, number>;
     shareOfOpeningPaidByWeek: number[];
+    newVoucherEntryDaysPastDue?: number;
+    shareOfNewVoucherPaidByAgeWeek?: number[];
   } | null;
   purchasePaymentLagWeeks: number;
   matchedPaymentCount: number;
@@ -1060,7 +1062,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     1,
     FORECAST_WEEKS,
   );
-  type Cohort = { remaining: number; ageWeeks: number; scheduledThisWindow?: number };
+  type Cohort = { remaining: number; ageWeeks: number; scheduledThisWindow?: number; original?: number };
   const getPhaseRate = (
     ageWeeks: number,
     currentRate: number,
@@ -1118,6 +1120,17 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       const scheduled = Math.max(0, Number(cohort.scheduledThisWindow || 0)) *
         (arWeeklyWeights[cohort.ageWeeks % 4] || 0);
       const realized = Math.min(cohort.remaining, scheduled);
+      cohort.remaining = Math.max(0, cohort.remaining - realized);
+      total += realized;
+    }
+    return total;
+  };
+  const processCohortsByAgeShare = (cohorts: Cohort[], shareByAgeWeek: number[]): number => {
+    let total = 0;
+    for (const cohort of cohorts) {
+      if (cohort.remaining <= 0) continue;
+      const share = clampNumber(Number(shareByAgeWeek[cohort.ageWeeks] || 0), 0, 1);
+      const realized = Math.min(cohort.remaining, Math.max(0, cohort.original ?? cohort.remaining) * share);
       cohort.remaining = Math.max(0, cohort.remaining - realized);
       total += realized;
     }
@@ -1199,6 +1212,10 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     ? historicalApPaymentProfile?.openingApPaydown?.shareOfOpeningPaidByWeek
     : undefined;
   const applyHistoricalOpeningApPaydown = Array.isArray(openingApPaidShareByWeek) && openingApPaidShareByWeek.length > 0;
+  const newApPaidShareByAgeWeek = applyHistoricalOpeningApPaydown
+    ? historicalApPaymentProfile?.openingApPaydown?.shareOfNewVoucherPaidByAgeWeek
+    : undefined;
+  const applyHistoricalNewApPaydown = Array.isArray(newApPaidShareByAgeWeek) && newApPaidShareByAgeWeek.length > 1;
   const startingApTotal = Math.max(0, Number(startingBalances.ap || 0));
   let openingApOutstanding = startingApTotal;
 
@@ -1379,7 +1396,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
         ? processCohortsAtPaymentLag(arCohorts, historicalArCollectionLagWeeks)
         : processArCollections(arCohorts)
     );
-    const recurringApPayments = useHistoricalApPaymentProfile
+    const recurringApPayments = applyHistoricalNewApPaydown
+      ? processCohortsByAgeShare(apCohorts, newApPaidShareByAgeWeek as number[])
+      : useHistoricalApPaymentProfile
       ? processCohortsAtPaymentLag(apCohorts, historicalPurchasePaymentLagWeeks)
       : processCohorts(
           apCohorts,
@@ -1404,7 +1423,8 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     );
     // Add this week's new AP after payout processing so newly incurred AP
     // starts paying in following weeks rather than being paid immediately.
-    apCohorts.push({ remaining: Math.max(0, purchases + nonInventoryApCogs + apScheduledOpex), ageWeeks: 0 });
+    const newAp = Math.max(0, purchases + nonInventoryApCogs + apScheduledOpex);
+    apCohorts.push({ remaining: newAp, ageWeeks: 0, original: newAp });
     const receipts = Math.max(0, safeNumber(scheduledArReceipts + cashSalesReceipts, 0));
 
     const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
