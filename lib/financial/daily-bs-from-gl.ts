@@ -37,7 +37,9 @@
  * plus YTD P&L and a derived rolling Retained Earnings.
  */
 
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
+import { atlanticGlRowsSql, isAtlanticPrecisionGlCompany } from '@/lib/financial/atlantic-gl-source';
 import { BS_LAST_DAY_FIELDS, PNL_SUM_FIELDS } from '@/lib/financial/month-publish';
 import { formatEstDate, isEstBusinessDay } from '@/lib/time/eastern';
 
@@ -56,10 +58,6 @@ function shouldBlockPollutedGlFinancialRebuild(companyId: string, startDate?: Da
     !startsAtOrAfterTrustedAnchor &&
     process.env.ALLOW_ATLANTIC_POLLUTED_GL_REBUILD !== '1'
   );
-}
-
-function shouldUseAtlanticCleanSLLedgersOnly(companyId: string): boolean {
-  return companyId === ATLANTIC_PRECISION_COMPANY_ID;
 }
 
 const ASSET_TARGET_FIELDS = new Set<string>([
@@ -468,24 +466,21 @@ export async function sumGLByAccount(
 
   // Three query shapes (no lower bound, inclusive lower, exclusive lower).
   // Each is its own template-literal call to preserve Prisma parameter typing
-  // and keep the SQL trivially auditable.
+  // and keep the SQL trivially auditable. Atlantic reads its own GL source.
   let rows: GlSumRow[];
-  if (lowerBoundExclusive) {
-    rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
-      ? await prisma.$queryRaw<GlSumRow[]>`
-          SELECT
-            "accountId",
-            SUM("signedAmount")::float AS balance
-          FROM "GLTransactionFact"
-          WHERE "companyId" = ${companyId}
-            AND "accountId" = ANY(${accountIds}::text[])
-            AND "sourceProgram" = 'SLLedgers'
-            AND "sourceTransaction" = 'RAW_REPLAY'
-            AND "transDate" > ${lowerBoundExclusive}
-            AND "transDate" <= ${endInclusive}
-          GROUP BY "accountId"
-        `
-      : await prisma.$queryRaw<GlSumRow[]>`
+  if (isAtlanticPrecisionGlCompany(companyId)) {
+    const dateFilter = lowerBoundExclusive
+      ? Prisma.sql`"transDate" > ${lowerBoundExclusive} AND "transDate" <= ${endInclusive}`
+      : lowerBoundInclusive
+        ? Prisma.sql`"transDate" >= ${lowerBoundInclusive} AND "transDate" <= ${endInclusive}`
+        : Prisma.sql`"transDate" <= ${endInclusive}`;
+    rows = await prisma.$queryRaw<GlSumRow[]>`
+      SELECT "accountId", SUM("signedAmount")::float AS balance
+      FROM ${atlanticGlRowsSql(companyId, accountIds, dateFilter)} gl
+      GROUP BY "accountId"
+    `;
+  } else if (lowerBoundExclusive) {
+    rows = await prisma.$queryRaw<GlSumRow[]>`
           SELECT
             "accountId",
             SUM("signedAmount")::float AS balance
@@ -497,21 +492,7 @@ export async function sumGLByAccount(
           GROUP BY "accountId"
         `;
   } else if (lowerBoundInclusive) {
-    rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
-      ? await prisma.$queryRaw<GlSumRow[]>`
-          SELECT
-            "accountId",
-            SUM("signedAmount")::float AS balance
-          FROM "GLTransactionFact"
-          WHERE "companyId" = ${companyId}
-            AND "accountId" = ANY(${accountIds}::text[])
-            AND "sourceProgram" = 'SLLedgers'
-            AND "sourceTransaction" = 'RAW_REPLAY'
-            AND "transDate" >= ${lowerBoundInclusive}
-            AND "transDate" <= ${endInclusive}
-          GROUP BY "accountId"
-        `
-      : await prisma.$queryRaw<GlSumRow[]>`
+    rows = await prisma.$queryRaw<GlSumRow[]>`
           SELECT
             "accountId",
             SUM("signedAmount")::float AS balance
@@ -523,20 +504,7 @@ export async function sumGLByAccount(
           GROUP BY "accountId"
         `;
   } else {
-    rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
-      ? await prisma.$queryRaw<GlSumRow[]>`
-          SELECT
-            "accountId",
-            SUM("signedAmount")::float AS balance
-          FROM "GLTransactionFact"
-          WHERE "companyId" = ${companyId}
-            AND "accountId" = ANY(${accountIds}::text[])
-            AND "sourceProgram" = 'SLLedgers'
-            AND "sourceTransaction" = 'RAW_REPLAY'
-            AND "transDate" <= ${endInclusive}
-          GROUP BY "accountId"
-        `
-      : await prisma.$queryRaw<GlSumRow[]>`
+    rows = await prisma.$queryRaw<GlSumRow[]>`
           SELECT
             "accountId",
             SUM("signedAmount")::float AS balance
@@ -555,7 +523,7 @@ export async function sumGLByAccount(
 }
 
 /**
- * Daily income-statement activity. Same Atlantic SLLedgers filter as the
+ * Daily income-statement activity. Same Atlantic GL source as the
  * monthly IS, plus Income Summary excluded so year-end closes do not reverse
  * operating P&L on the close day.
  */
@@ -568,19 +536,15 @@ async function sumDailyPnlGLByAccount(
   const out = new Map<string, number>();
   if (accountIds.length === 0) return out;
 
-  const rows = shouldUseAtlanticCleanSLLedgersOnly(companyId)
+  const rows = isAtlanticPrecisionGlCompany(companyId)
     ? await prisma.$queryRaw<GlSumRow[]>`
-        SELECT
-          "accountId",
-          SUM("signedAmount")::float AS balance
-        FROM "GLTransactionFact"
-        WHERE "companyId" = ${companyId}
-          AND "accountId" = ANY(${accountIds}::text[])
-          AND "sourceProgram" = 'SLLedgers'
-          AND "sourceTransaction" = 'RAW_REPLAY'
-          AND "transDate" >= ${dayStart}
-          AND "transDate" <= ${dayEnd}
-          AND LOWER(BTRIM(COALESCE("ref", ''))) <> 'income summary'
+        SELECT "accountId", SUM("signedAmount")::float AS balance
+        FROM ${atlanticGlRowsSql(
+          companyId,
+          accountIds,
+          Prisma.sql`"transDate" >= ${dayStart} AND "transDate" <= ${dayEnd}`,
+        )} gl
+        WHERE LOWER(BTRIM(COALESCE("ref", ''))) <> 'income summary'
         GROUP BY "accountId"
       `
     : await prisma.$queryRaw<GlSumRow[]>`
