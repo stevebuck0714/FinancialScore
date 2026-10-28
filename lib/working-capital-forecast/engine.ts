@@ -540,6 +540,12 @@ export const normalizeInputs = (raw: any, fallback: ForecastInputs): ForecastInp
 
 export type ForecastProjectionInput = {
   basisMode: ForecastBasisMode;
+  /**
+   * Use the AP aging schedule for opening AP even when historical payment
+   * activity is available. Atlantic's payment volume can exceed the open AP
+   * snapshot and otherwise clears its opening balance in Week 1.
+   */
+  scheduleOpeningApByAging?: boolean;
   inputs: ForecastInputs;
   startingBalances: StartingBalances;
   startingArBuckets: AgingBuckets;
@@ -973,6 +979,7 @@ export function deriveForecastStateFromBootstrap(
 export function projectWorkingCapitalForecast(params: ForecastProjectionInput): ForecastRow[] {
   const {
     basisMode,
+    scheduleOpeningApByAging = false,
     inputs,
     startingBalances,
     startingArBuckets,
@@ -1359,7 +1366,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
           ap90plusRate,
           apWeeklyWeights
         );
-    const openingApPayment = useHistoricalApPaymentProfile
+    const openingApPayment = useHistoricalApPaymentProfile && !scheduleOpeningApByAging
       ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
       : Math.max(0, safeNumber(openingApPayments[i] || 0));
     const apPayments = openingApPayment + recurringApPayments;
