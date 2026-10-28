@@ -52,8 +52,13 @@ export type AgingBuckets = {
 
 export type HistoricalApPaymentProfile = {
   weeklyPaymentAmount: number;
-  /** Historical weekly paydown rates for opening AP by aging bucket. */
-  weeklyPaydownRateByBucket?: Partial<Record<keyof AgingBuckets, number>>;
+  /** Opening AP paydown measured on voucher aging history (Atlantic). */
+  openingApPaydown?: {
+    asOfDate: string;
+    weeklyPaydownRateByBucket: Record<keyof AgingBuckets, number>;
+    openingBucketShares: Record<keyof AgingBuckets, number>;
+    shareOfOpeningPaidByWeek: number[];
+  } | null;
   purchasePaymentLagWeeks: number;
   matchedPaymentCount: number;
 };
@@ -1180,35 +1185,12 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
   ];
   const arCohorts: Cohort[] = seededArCohorts;
   const apCohorts: Cohort[] = [];
-  type OpeningApCohort = { remaining: number; weeklyPaydownRate: number };
-  const historicalApRates = historicalApPaymentProfile?.weeklyPaydownRateByBucket || {};
-  const hasHistoricalApBucketRates =
-    historicalApRates.current != null &&
-    historicalApRates.bucket30to60 != null &&
-    historicalApRates.bucket60to90 != null &&
-    historicalApRates.bucket90plus != null;
-  const applyHistoricalOpeningApPaydown = useHistoricalOpeningApPaydown && hasHistoricalApBucketRates;
-  const historicalOpeningApCohorts: OpeningApCohort[] = applyHistoricalOpeningApPaydown
-    ? [
-        { remaining: Math.max(0, apBuckets.current), weeklyPaydownRate: clampNumber(Number(historicalApRates.current), 0, 1) },
-        { remaining: Math.max(0, apBuckets.bucket30to60), weeklyPaydownRate: clampNumber(Number(historicalApRates.bucket30to60), 0, 1) },
-        { remaining: Math.max(0, apBuckets.bucket60to90), weeklyPaydownRate: clampNumber(Number(historicalApRates.bucket60to90), 0, 1) },
-        { remaining: Math.max(0, apBuckets.bucket90plus), weeklyPaydownRate: clampNumber(Number(historicalApRates.bucket90plus), 0, 1) },
-      ]
-    : [];
-  const payHistoricalOpeningAp = (): number => {
-    let total = 0;
-    for (const cohort of historicalOpeningApCohorts) {
-      if (cohort.remaining <= 0) continue;
-      const payment = Math.min(cohort.remaining, cohort.remaining * cohort.weeklyPaydownRate);
-      cohort.remaining = Math.max(0, cohort.remaining - payment);
-      total += payment;
-    }
-    return total;
-  };
-  let openingApOutstanding = applyHistoricalOpeningApPaydown
-    ? 0
-    : Math.max(0, Number(startingBalances.ap || 0));
+  const openingApPaidShareByWeek = useHistoricalOpeningApPaydown
+    ? historicalApPaymentProfile?.openingApPaydown?.shareOfOpeningPaidByWeek
+    : undefined;
+  const applyHistoricalOpeningApPaydown = Array.isArray(openingApPaidShareByWeek) && openingApPaidShareByWeek.length > 0;
+  const startingApTotal = Math.max(0, Number(startingBalances.ap || 0));
+  let openingApOutstanding = startingApTotal;
 
   const allocatedForecastSales = allocateForecastSalesByWeek(
     parseMonthRevenueSeries({ monthRefs: forecastMonthRefs, monthTotals: forecastMonthTotals }),
@@ -1396,7 +1378,7 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
           apWeeklyWeights
         );
     const openingApPayment = applyHistoricalOpeningApPaydown
-      ? payHistoricalOpeningAp()
+      ? Math.min(openingApOutstanding, startingApTotal * clampNumber(Number(openingApPaidShareByWeek?.[i] || 0), 0, 1))
       : useHistoricalApPaymentProfile
         ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
         : Math.max(0, safeNumber(openingApPayments[i] || 0));
@@ -1450,7 +1432,6 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
       0,
       safeNumber(
         openingApOutstanding +
-          historicalOpeningApCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0) +
           apCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0),
         ap
       )

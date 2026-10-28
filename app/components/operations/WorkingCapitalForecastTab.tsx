@@ -475,13 +475,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0) > 0 &&
     Number(historicalApPaymentProfile?.purchasePaymentLagWeeks || 0) >= 1;
   const historicalApTimingAppliesToOpening = historicalApTimingActive;
-  const atlanticApBucketRates = historicalApPaymentProfile?.weeklyPaydownRateByBucket;
+  const atlanticApBucketRates = historicalApPaymentProfile?.openingApPaydown?.weeklyPaydownRateByBucket;
   const atlanticApBucketRateSummary =
-    useHistoricalOpeningApPaydown &&
-    atlanticApBucketRates?.current != null &&
-    atlanticApBucketRates.bucket30to60 != null &&
-    atlanticApBucketRates.bucket60to90 != null &&
-    atlanticApBucketRates.bucket90plus != null
+    useHistoricalOpeningApPaydown && atlanticApBucketRates
       ? [
           ['Current', atlanticApBucketRates.current],
           ['1–30', atlanticApBucketRates.bucket30to60],
@@ -980,13 +976,16 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   ? 'Historical AP payments determine forecast timing. The aging assumptions below are retained only when payment history is unavailable.'
                   : 'Set the share of each opening AP aging bucket expected to be paid over the next four weeks; the weekly weights allocate those expected payments across Weeks 1–4 and should total 100%.'}
               </div>
-              {historicalApPaymentProfile && (
+              {useHistoricalOpeningApPaydown && (
                 <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
-                  {useHistoricalOpeningApPaydown
-                    ? atlanticApBucketRateSummary
-                      ? `Atlantic’s opening AP pays down each week at the share of each aging bucket paid in the last 13 weeks of open-bill history: ${atlanticApBucketRateSummary}. New supplier purchases follow the historical payment lag.`
-                      : 'Atlantic’s historical AP aging-bucket paydown rates could not be calculated from open-bill history, so opening AP uses the standard historical payment schedule.'
-                    : historicalApTimingAppliesToOpening
+                  {atlanticApBucketRateSummary
+                    ? `Atlantic’s opening AP pays down each week at the share of each aging bucket paid over the last 13 weeks of voucher history: ${atlanticApBucketRateSummary}. Open bills move into older buckets as they age.`
+                    : `Atlantic’s historical AP aging-bucket paydown rates could not be calculated from voucher history, so opening AP uses ${historicalApTimingAppliesToOpening ? 'the historical AP payment schedule' : 'the aging assumptions below'}.`}
+                </div>
+              )}
+              {historicalApPaymentProfile && !useHistoricalOpeningApPaydown && (
+                <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
+                  {historicalApTimingAppliesToOpening
                     ? `Forecast payment timing uses the last 13 weeks of imported AP payments: about ${formatCurrency(historicalApPaymentProfile.weeklyPaymentAmount)} per week, with new supplier purchases paid after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}${historicalApPaymentProfile.matchedPaymentCount > 0 ? ` (based on ${historicalApPaymentProfile.matchedPaymentCount} matched bills).` : ' (four-week fallback because no bill/payment matches were available).'}.`
                     : `Imported AP history schedules new supplier purchases after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}.`}
                 </div>

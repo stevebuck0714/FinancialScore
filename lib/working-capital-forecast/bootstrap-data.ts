@@ -6,6 +6,8 @@ import {
   sumScheduledPrincipalByWeek,
 } from '@/lib/loans/amortization';
 import { addEstCalendarDays, formatEstDate, utcMidnightForEstDate } from '@/lib/time/eastern';
+import { isAtlanticPrecisionCompany } from '@/lib/operations/company-specific-reports';
+import { loadApVoucherPaydownProfile } from '@/lib/working-capital-forecast/ap-voucher-paydown';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -247,7 +249,7 @@ const median = (values: number[]): number | null => {
 
 async function loadHistoricalApPaymentProfile(companyId: string) {
   try {
-    const [paymentRows, matchedBillRows, bucketRollRows] = await Promise.all([
+    const [paymentRows, matchedBillRows, openingApPaydown] = await Promise.all([
       prisma.$queryRawUnsafe<Array<{ paidAmountHome: number }>>(
         `SELECT "paidAmountHome"::float8 AS "paidAmountHome"
          FROM "APPaymentFact"
@@ -273,97 +275,28 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
            AND NULLIF(TRIM(COALESCE(p."billNo", '')), '') IS NOT NULL`,
         companyId,
       ),
-      // Follows the same open bills from one snapshot to the snapshot about a
-      // week later. Payments alone can't give a bucket rate: bills entered and
-      // paid between snapshots never sit in the aging, which pushes
-      // payments/balance past 100%.
-      prisma.$queryRawUnsafe<Array<{ bucket: string; startAmount: number; paidAmount: number; avgDays: number }>>(
-        `WITH freq AS (
-           SELECT "frequency" AS f
-           FROM "APOpenBillSnapshot"
-           WHERE "companyId" = $1
-             AND "snapshotDate" >= CURRENT_DATE - INTERVAL '105 days'
-           GROUP BY "frequency"
-           ORDER BY COUNT(DISTINCT "snapshotDate") DESC
-           LIMIT 1
-         ),
-         base AS (
-           SELECT s."snapshotDate"::date AS d,
-                  s."billNo",
-                  LOWER(s."vendorName") AS v,
-                  GREATEST(0, s."amountDueHome")::float8 AS amt,
-                  CASE
-                    WHEN COALESCE(s.current, 0) > 0 THEN 'current'
-                    WHEN COALESCE(s."days1to30", 0) > 0 THEN 'bucket30to60'
-                    WHEN COALESCE(s."days31to60", 0) > 0 THEN 'bucket60to90'
-                    WHEN COALESCE(s."days61to90", 0) + COALESCE(s."days90plus", 0) > 0 THEN 'bucket90plus'
-                  END AS bucket
-           FROM "APOpenBillSnapshot" s, freq
-           WHERE s."companyId" = $1
-             AND s."frequency" = freq.f
-             AND s."snapshotDate" >= CURRENT_DATE - INTERVAL '105 days'
-         ),
-         dates AS (SELECT DISTINCT d FROM base),
-         pairs AS (
-           SELECT a.d AS start_d, MIN(b.d) AS end_d
-           FROM dates a
-           JOIN dates b ON b.d >= a.d + 7 AND b.d <= a.d + 45
-           GROUP BY a.d
-         )
-         SELECT sb.bucket,
-                SUM(sb.amt)::float8 AS "startAmount",
-                SUM(GREATEST(0, sb.amt - COALESCE(e.amt, 0)))::float8 AS "paidAmount",
-                AVG(p.end_d - p.start_d)::float8 AS "avgDays"
-         FROM pairs p
-         JOIN base sb ON sb.d = p.start_d AND sb.bucket IS NOT NULL AND sb.amt > 0
-         LEFT JOIN base e ON e.d = p.end_d AND e."billNo" = sb."billNo" AND e.v = sb.v
-         GROUP BY sb.bucket`,
-        companyId,
-      ).catch(() => []),
+      isAtlanticPrecisionCompany(companyId)
+        ? loadApVoucherPaydownProfile(companyId).catch((error) => {
+            console.warn('[working-capital-forecast] AP voucher paydown unavailable', { companyId, error });
+            return null;
+          })
+        : Promise.resolve(null),
     ]);
     const weeklyPaymentAmount = paymentRows.reduce(
       (sum, row) => sum + Math.max(0, Number(row.paidAmountHome || 0)),
       0,
     ) / 13;
-    const toWeeklyRate = (startAmount: number, paidAmount: number, avgDays: number): number | null => {
-      if (!(startAmount > 0) || !(avgDays > 0)) return null;
-      const periodRate = Math.min(1, Math.max(0, paidAmount / startAmount));
-      return 1 - Math.pow(1 - periodRate, 7 / avgDays);
-    };
-    const weeklyPaydownRateByBucket: Partial<Record<'current' | 'bucket30to60' | 'bucket60to90' | 'bucket90plus', number>> = {};
-    let totalStart = 0;
-    let totalPaid = 0;
-    let weightedDays = 0;
-    for (const row of bucketRollRows) {
-      const startAmount = Number(row.startAmount || 0);
-      const paidAmount = Number(row.paidAmount || 0);
-      const avgDays = Number(row.avgDays || 0);
-      const rate = toWeeklyRate(startAmount, paidAmount, avgDays);
-      if (rate == null) continue;
-      if (row.bucket === 'current' || row.bucket === 'bucket30to60' || row.bucket === 'bucket60to90' || row.bucket === 'bucket90plus') {
-        weeklyPaydownRateByBucket[row.bucket] = rate;
-      }
-      totalStart += startAmount;
-      totalPaid += paidAmount;
-      weightedDays += avgDays * startAmount;
-    }
-    const overallRate = toWeeklyRate(totalStart, totalPaid, totalStart > 0 ? weightedDays / totalStart : 0);
-    if (overallRate != null) {
-      for (const key of ['current', 'bucket30to60', 'bucket60to90', 'bucket90plus'] as const) {
-        if (weeklyPaydownRateByBucket[key] == null) weeklyPaydownRateByBucket[key] = overallRate;
-      }
-    }
     const paymentLagDays = matchedBillRows
       .map((row) => {
         if (!row.billDate || !row.paymentDate) return Number.NaN;
         return Math.max(0, Math.round((new Date(row.paymentDate).getTime() - new Date(row.billDate).getTime()) / 86_400_000));
       })
       .filter((value) => Number.isFinite(value) && value <= 180);
-    if (weeklyPaymentAmount <= 0) return null;
+    if (weeklyPaymentAmount <= 0 && !openingApPaydown) return null;
     const medianLagDays = median(paymentLagDays);
     return {
       weeklyPaymentAmount: Math.round(weeklyPaymentAmount),
-      weeklyPaydownRateByBucket,
+      openingApPaydown,
       purchasePaymentLagWeeks: Math.max(1, Math.min(13, Math.round((medianLagDays ?? 28) / 7))),
       matchedPaymentCount: paymentLagDays.length,
     };
