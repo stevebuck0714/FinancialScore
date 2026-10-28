@@ -197,13 +197,42 @@ const formatDollar = (value: number, currency: string = 'USD'): string => {
   return formatMoney(Math.round(Math.abs(value)), { currency, decimals: 0 });
 };
 
-const resolveCompanyLandingView = (user: any, company?: any): 'operations' | 'daily-alerts' | 'my-accounts' => {
+const COMPANY_USER_LANDING_ORDER = [
+  { section: 'business-pulse', view: 'daily-alerts' },
+  { section: 'operational-dashboard', view: 'operations' },
+  { section: 'financial-reports', view: 'dashboard' },
+  { section: 'ask-corelytics', view: 'ai-analysis' },
+  { section: 'financial-score', view: 'fs-score' },
+  { section: 'standard-reports', view: 'custom-print' },
+  { section: 'valuation', view: 'valuation' },
+  { section: 'expert-analysis', view: 'pa-overview' },
+  { section: 'management-assessment', view: 'ma-welcome' },
+  { section: 'dataroom', view: 'dataroom' },
+  { section: 'custom-reports', view: 'custom-reports' },
+] as const;
+type CompanyLandingView = (typeof COMPANY_USER_LANDING_ORDER)[number]['view'] | 'my-accounts';
+
+// Mirrors hasCompanySectionAccess: only non-admin company users with a saved
+// sidebarAccess list are restricted.
+const restrictedCompanyUserSections = (user: any): string[] | null => {
+  const isCompanyUser =
+    String(user?.role || '').toLowerCase() === 'user' &&
+    String(user?.userType || '').toLowerCase() === 'company';
+  if (!isCompanyUser || String(user?.companyRole || '').toLowerCase() === 'admin') return null;
+  return Array.isArray(user?.sidebarAccess) ? (user.sidebarAccess as string[]) : null;
+};
+
+const resolveCompanyLandingView = (user: any, company?: any): CompanyLandingView => {
   if (shouldLandOnMyAccounts(user)) return 'my-accounts';
   const userIsDemo = Boolean(user?.demoCompany || user?.isDemoSignup);
   const companyStatus = String(company?.subscriptionStatus || '').trim().toLowerCase();
   const companyAffiliateCode = String(company?.affiliateCode || '').trim().toUpperCase();
   const companyIsDemo = companyStatus.startsWith('demo') || companyAffiliateCode === 'SEVENDAYDEMO';
-  return userIsDemo || companyIsDemo ? 'operations' : 'daily-alerts';
+  if (userIsDemo || companyIsDemo) return 'operations';
+  const allowed = restrictedCompanyUserSections(user);
+  if (!allowed) return 'daily-alerts';
+  const landing = COMPANY_USER_LANDING_ORDER.find(({ section }) => allowed.includes(section));
+  return landing ? landing.view : 'operations';
 };
 
 type ValuationTab = 'sde' | 'ebitda' | 'dcf' | 'business-overview';
@@ -14723,6 +14752,7 @@ function FinancialScorePage() {
               ‹
             </button>
             {currentUser?.userType !== 'assessment' && null}
+            {hasCompanySectionAccess('business-pulse') && (
             <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={() => handleNavigation('daily-alerts')}
@@ -14741,6 +14771,7 @@ function FinancialScorePage() {
                 {currentView === 'daily-alerts' && '› '}DAILY ALERTS
               </h3>
             </div>
+            )}
 
             {isOperationalReportingEnabledByAdmin && hasCompanySectionAccess('operational-dashboard') && (
             <div style={{ marginBottom: '16px' }}>
