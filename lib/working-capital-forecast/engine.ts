@@ -52,9 +52,8 @@ export type AgingBuckets = {
 
 export type HistoricalApPaymentProfile = {
   weeklyPaymentAmount: number;
-  /** Net weekly reduction in the AP balance observed across recent snapshots. */
-  weeklyOpeningApReductionAmount?: number;
-  observedApBalanceWeeks?: number;
+  /** Historical weekly paydown rates for opening AP by aging bucket. */
+  weeklyPaydownRateByBucket?: Partial<Record<keyof AgingBuckets, number>>;
   purchasePaymentLagWeeks: number;
   matchedPaymentCount: number;
 };
@@ -544,11 +543,10 @@ export const normalizeInputs = (raw: any, fallback: ForecastInputs): ForecastInp
 export type ForecastProjectionInput = {
   basisMode: ForecastBasisMode;
   /**
-   * Use historical AP balance reduction for opening AP. Atlantic's payment
-   * history is used to forecast its planned AP reduction instead of applying
-   * manual aging weights or clearing the balance in Week 1.
+   * Use historical AP aging-bucket paydown rates for opening AP. Atlantic's
+   * payment history replaces manual aging assumptions for its opening balance.
    */
-  useHistoricalOpeningApReductionPlan?: boolean;
+  useHistoricalOpeningApPaydown?: boolean;
   inputs: ForecastInputs;
   startingBalances: StartingBalances;
   startingArBuckets: AgingBuckets;
@@ -982,7 +980,7 @@ export function deriveForecastStateFromBootstrap(
 export function projectWorkingCapitalForecast(params: ForecastProjectionInput): ForecastRow[] {
   const {
     basisMode,
-    useHistoricalOpeningApReductionPlan = false,
+    useHistoricalOpeningApPaydown = false,
     inputs,
     startingBalances,
     startingArBuckets,
@@ -1035,10 +1033,6 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
   const useHistoricalArPaymentProfile =
     Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0) > 0;
   const historicalWeeklyApPayment = Math.max(0, Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0));
-  const historicalWeeklyOpeningApReduction = Math.max(
-    0,
-    Number(historicalApPaymentProfile?.weeklyOpeningApReductionAmount || 0),
-  );
   const historicalWeeklyArCollection = Math.max(0, Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0));
   // Principal is a balance-sheet repayment; interest already flows through the
   // Income Statement Forecast opex lines, so only principal is deducted here.
@@ -1186,7 +1180,34 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
   ];
   const arCohorts: Cohort[] = seededArCohorts;
   const apCohorts: Cohort[] = [];
-  let openingApOutstanding = Math.max(0, Number(startingBalances.ap || 0));
+  type OpeningApCohort = { remaining: number; weeklyPaydownRate: number };
+  const historicalApGlobalPaydownRate = clampNumber(
+    historicalWeeklyApPayment / Math.max(1, Number(startingBalances.ap || 0)),
+    0,
+    1,
+  );
+  const historicalApRates = historicalApPaymentProfile?.weeklyPaydownRateByBucket || {};
+  const historicalOpeningApCohorts: OpeningApCohort[] = useHistoricalOpeningApPaydown
+    ? [
+        { remaining: Math.max(0, apBuckets.current), weeklyPaydownRate: clampNumber(Number(historicalApRates.current ?? historicalApGlobalPaydownRate), 0, 1) },
+        { remaining: Math.max(0, apBuckets.bucket30to60), weeklyPaydownRate: clampNumber(Number(historicalApRates.bucket30to60 ?? historicalApGlobalPaydownRate), 0, 1) },
+        { remaining: Math.max(0, apBuckets.bucket60to90), weeklyPaydownRate: clampNumber(Number(historicalApRates.bucket60to90 ?? historicalApGlobalPaydownRate), 0, 1) },
+        { remaining: Math.max(0, apBuckets.bucket90plus), weeklyPaydownRate: clampNumber(Number(historicalApRates.bucket90plus ?? historicalApGlobalPaydownRate), 0, 1) },
+      ]
+    : [];
+  const payHistoricalOpeningAp = (): number => {
+    let total = 0;
+    for (const cohort of historicalOpeningApCohorts) {
+      if (cohort.remaining <= 0) continue;
+      const payment = Math.min(cohort.remaining, cohort.remaining * cohort.weeklyPaydownRate);
+      cohort.remaining = Math.max(0, cohort.remaining - payment);
+      total += payment;
+    }
+    return total;
+  };
+  let openingApOutstanding = useHistoricalOpeningApPaydown
+    ? 0
+    : Math.max(0, Number(startingBalances.ap || 0));
 
   const allocatedForecastSales = allocateForecastSalesByWeek(
     parseMonthRevenueSeries({ monthRefs: forecastMonthRefs, monthTotals: forecastMonthTotals }),
@@ -1373,13 +1394,8 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
           ap90plusRate,
           apWeeklyWeights
         );
-    const openingApPayment = useHistoricalApPaymentProfile && useHistoricalOpeningApReductionPlan
-      ? Math.min(
-          openingApOutstanding,
-          historicalWeeklyOpeningApReduction > 0
-            ? historicalWeeklyOpeningApReduction
-            : Math.min(historicalWeeklyApPayment, openingApOutstanding / Math.max(1, weeks - i)),
-        )
+    const openingApPayment = useHistoricalApPaymentProfile && useHistoricalOpeningApPaydown
+      ? payHistoricalOpeningAp()
       : useHistoricalApPaymentProfile
         ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
         : Math.max(0, safeNumber(openingApPayments[i] || 0));
@@ -1432,7 +1448,9 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
     const endingAp = Math.max(
       0,
       safeNumber(
-        openingApOutstanding + apCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0),
+        openingApOutstanding +
+          historicalOpeningApCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0) +
+          apCohorts.reduce((sum, cohort) => sum + Math.max(0, cohort.remaining), 0),
         ap
       )
     );

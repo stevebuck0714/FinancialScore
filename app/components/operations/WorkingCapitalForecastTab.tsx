@@ -291,7 +291,7 @@ const buildScheduledOpexByWeek = (
 
 export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode = 'cash', viewMode = 'full', onToolbarReady = null }: WorkingCapitalForecastTabProps) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
-  const useHistoricalOpeningApReductionPlan = isAtlanticPrecisionCompany(selectedCompanyId);
+  const useHistoricalOpeningApPaydown = isAtlanticPrecisionCompany(selectedCompanyId);
   const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const formatCurrencyInput = (value: number): string => money.fmt(Number(value || 0), 0);
   const isInputsOnly = viewMode === 'inputs-only';
@@ -450,7 +450,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
 
   const rows = useMemo<ForecastRow[]>(() => projectWorkingCapitalForecast({
     basisMode,
-    useHistoricalOpeningApReductionPlan,
+    useHistoricalOpeningApPaydown,
     inputs,
     startingBalances,
     startingArBuckets,
@@ -469,7 +469,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     historicalApPaymentProfile,
     historicalArCollectionProfile,
     historicalDebtServiceProfile,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, useHistoricalOpeningApReductionPlan, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile, historicalDebtServiceProfile]);
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, useHistoricalOpeningApPaydown, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile, historicalDebtServiceProfile]);
   const historicalArTimingActive = Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0) > 0;
   const historicalApTimingActive =
     Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0) > 0 &&
@@ -968,8 +968,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               </div>
               {historicalApPaymentProfile && (
                 <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
-                  {useHistoricalOpeningApReductionPlan
-                    ? `Atlantic’s opening AP follows the historical AP balance reduction of about ${formatCurrency(historicalApPaymentProfile.weeklyOpeningApReductionAmount || 0)} per week${historicalApPaymentProfile.observedApBalanceWeeks ? ` across the last ${historicalApPaymentProfile.observedApBalanceWeeks.toFixed(1)} weeks` : ''}. New supplier purchases are paid after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}.`
+                  {useHistoricalOpeningApPaydown
+                    ? 'Atlantic’s opening AP pays down using its historical AP aging-bucket payment rates. New supplier purchases follow the historical payment lag.'
                     : historicalApTimingAppliesToOpening
                     ? `Forecast payment timing uses the last 13 weeks of imported AP payments: about ${formatCurrency(historicalApPaymentProfile.weeklyPaymentAmount)} per week, with new supplier purchases paid after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}${historicalApPaymentProfile.matchedPaymentCount > 0 ? ` (based on ${historicalApPaymentProfile.matchedPaymentCount} matched bills).` : ' (four-week fallback because no bill/payment matches were available).'}.`
                     : `Imported AP history schedules new supplier purchases after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}.`}

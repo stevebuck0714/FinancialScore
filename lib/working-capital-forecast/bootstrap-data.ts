@@ -257,11 +257,21 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
            AND "paymentDate" >= CURRENT_DATE - INTERVAL '91 days'`,
         companyId,
       ),
-      prisma.$queryRawUnsafe<Array<{ paymentDate: Date; billDate: Date | null }>>(
-        `SELECT p."paymentDate", bill."billDate"
+      prisma.$queryRawUnsafe<Array<{
+        paymentDate: Date;
+        billDate: Date | null;
+        paidAmountHome: number;
+        current: number | null;
+        days1to30: number | null;
+        days31to60: number | null;
+        days61to90: number | null;
+        days90plus: number | null;
+      }>>(
+        `SELECT p."paymentDate", p."paidAmountHome"::float8 AS "paidAmountHome", bill."billDate",
+                bill.current, bill."days1to30", bill."days31to60", bill."days61to90", bill."days90plus"
          FROM "APPaymentFact" p
          JOIN LATERAL (
-           SELECT s."billDate"
+           SELECT s."billDate", s.current, s."days1to30", s."days31to60", s."days61to90", s."days90plus"
            FROM "APOpenBillSnapshot" s
            WHERE s."companyId" = p."companyId"
              AND s."billNo" = p."billNo"
@@ -271,7 +281,7 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
            LIMIT 1
          ) bill ON true
          WHERE p."companyId" = $1
-           AND p."paymentDate" >= CURRENT_DATE - INTERVAL '365 days'
+           AND p."paymentDate" >= CURRENT_DATE - INTERVAL '91 days'
            AND NULLIF(TRIM(COALESCE(p."billNo", '')), '') IS NOT NULL`,
         companyId,
       ),
@@ -284,6 +294,11 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
         select: {
           snapshotDate: true,
           totalAP: true,
+          current: true,
+          days1to30: true,
+          days31to60: true,
+          days61to90: true,
+          days90plus: true,
         },
       }),
     ]);
@@ -291,22 +306,50 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
       (sum, row) => sum + Math.max(0, Number(row.paidAmountHome || 0)),
       0,
     ) / 13;
-    const balanceRows = apBalanceRows
-      .map((row) => ({
-        at: new Date(row.snapshotDate).getTime(),
-        total: Math.max(0, Number(row.totalAP || 0)),
-      }))
-      .filter((row) => Number.isFinite(row.at) && Number.isFinite(row.total));
-    const firstBalance = balanceRows[0];
-    const lastBalance = balanceRows[balanceRows.length - 1];
-    const observedApBalanceWeeks =
-      firstBalance && lastBalance && lastBalance.at > firstBalance.at
-        ? (lastBalance.at - firstBalance.at) / (7 * 86_400_000)
-        : 0;
-    const weeklyOpeningApReductionAmount =
-      firstBalance && lastBalance && observedApBalanceWeeks > 0
-        ? Math.max(0, (firstBalance.total - lastBalance.total) / observedApBalanceWeeks)
-        : 0;
+    const bucketKeys = ['current', 'bucket30to60', 'bucket60to90', 'bucket90plus'] as const;
+    const historicalBucketBalances = apBalanceRows.reduce<Record<(typeof bucketKeys)[number], number[]>>(
+      (acc, row) => {
+        acc.current.push(Math.max(0, Number(row.current || 0)));
+        acc.bucket30to60.push(Math.max(0, Number(row.days1to30 || 0)));
+        acc.bucket60to90.push(Math.max(0, Number(row.days31to60 || 0)));
+        acc.bucket90plus.push(Math.max(0, Number(row.days61to90 || 0) + Number(row.days90plus || 0)));
+        return acc;
+      },
+      { current: [], bucket30to60: [], bucket60to90: [], bucket90plus: [] },
+    );
+    const averageBucketBalance = bucketKeys.reduce<Record<(typeof bucketKeys)[number], number>>(
+      (acc, key) => {
+        const values = historicalBucketBalances[key];
+        acc[key] = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+        return acc;
+      },
+      { current: 0, bucket30to60: 0, bucket60to90: 0, bucket90plus: 0 },
+    );
+    const historicalBucketPayments = matchedBillRows.reduce<Record<(typeof bucketKeys)[number], number>>(
+      (acc, row) => {
+        const bucket =
+          Number(row.current || 0) > 0 ? 'current'
+            : Number(row.days1to30 || 0) > 0 ? 'bucket30to60'
+              : Number(row.days31to60 || 0) > 0 ? 'bucket60to90'
+                : Number(row.days61to90 || 0) > 0 || Number(row.days90plus || 0) > 0 ? 'bucket90plus'
+                  : null;
+        if (bucket) acc[bucket] += Math.max(0, Number(row.paidAmountHome || 0));
+        return acc;
+      },
+      { current: 0, bucket30to60: 0, bucket60to90: 0, bucket90plus: 0 },
+    );
+    const averageTotalAp = bucketKeys.reduce((sum, key) => sum + averageBucketBalance[key], 0);
+    const fallbackWeeklyPaydownRate = Math.min(1, weeklyPaymentAmount / Math.max(1, averageTotalAp));
+    const weeklyPaydownRateByBucket = bucketKeys.reduce<Record<(typeof bucketKeys)[number], number>>(
+      (acc, key) => {
+        const balance = averageBucketBalance[key];
+        acc[key] = balance > 0 && historicalBucketPayments[key] > 0
+          ? Math.min(1, (historicalBucketPayments[key] / 13) / balance)
+          : fallbackWeeklyPaydownRate;
+        return acc;
+      },
+      { current: 0, bucket30to60: 0, bucket60to90: 0, bucket90plus: 0 },
+    );
     const paymentLagDays = matchedBillRows
       .map((row) => {
         if (!row.billDate || !row.paymentDate) return Number.NaN;
@@ -317,8 +360,7 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
     const medianLagDays = median(paymentLagDays);
     return {
       weeklyPaymentAmount: Math.round(weeklyPaymentAmount),
-      weeklyOpeningApReductionAmount: Math.round(weeklyOpeningApReductionAmount),
-      observedApBalanceWeeks: Math.round(observedApBalanceWeeks * 10) / 10,
+      weeklyPaydownRateByBucket,
       purchasePaymentLagWeeks: Math.max(1, Math.min(13, Math.round((medianLagDays ?? 28) / 7))),
       matchedPaymentCount: paymentLagDays.length,
     };
