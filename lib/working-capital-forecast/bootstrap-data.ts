@@ -247,7 +247,9 @@ const median = (values: number[]): number | null => {
 
 async function loadHistoricalApPaymentProfile(companyId: string) {
   try {
-    const [paymentRows, matchedBillRows] = await Promise.all([
+    const historyStart = new Date();
+    historyStart.setDate(historyStart.getDate() - 91);
+    const [paymentRows, matchedBillRows, apBalanceRows] = await Promise.all([
       prisma.$queryRawUnsafe<Array<{ paidAmountHome: number }>>(
         `SELECT "paidAmountHome"::float8 AS "paidAmountHome"
          FROM "APPaymentFact"
@@ -273,11 +275,38 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
            AND NULLIF(TRIM(COALESCE(p."billNo", '')), '') IS NOT NULL`,
         companyId,
       ),
+      prisma.aPAgingSnapshot.findMany({
+        where: {
+          companyId,
+          snapshotDate: { gte: historyStart },
+        },
+        orderBy: { snapshotDate: 'asc' },
+        select: {
+          snapshotDate: true,
+          totalAP: true,
+        },
+      }),
     ]);
     const weeklyPaymentAmount = paymentRows.reduce(
       (sum, row) => sum + Math.max(0, Number(row.paidAmountHome || 0)),
       0,
     ) / 13;
+    const balanceRows = apBalanceRows
+      .map((row) => ({
+        at: new Date(row.snapshotDate).getTime(),
+        total: Math.max(0, Number(row.totalAP || 0)),
+      }))
+      .filter((row) => Number.isFinite(row.at) && Number.isFinite(row.total));
+    const firstBalance = balanceRows[0];
+    const lastBalance = balanceRows[balanceRows.length - 1];
+    const observedApBalanceWeeks =
+      firstBalance && lastBalance && lastBalance.at > firstBalance.at
+        ? (lastBalance.at - firstBalance.at) / (7 * 86_400_000)
+        : 0;
+    const weeklyOpeningApReductionAmount =
+      firstBalance && lastBalance && observedApBalanceWeeks > 0
+        ? Math.max(0, (firstBalance.total - lastBalance.total) / observedApBalanceWeeks)
+        : 0;
     const paymentLagDays = matchedBillRows
       .map((row) => {
         if (!row.billDate || !row.paymentDate) return Number.NaN;
@@ -288,6 +317,8 @@ async function loadHistoricalApPaymentProfile(companyId: string) {
     const medianLagDays = median(paymentLagDays);
     return {
       weeklyPaymentAmount: Math.round(weeklyPaymentAmount),
+      weeklyOpeningApReductionAmount: Math.round(weeklyOpeningApReductionAmount),
+      observedApBalanceWeeks: Math.round(observedApBalanceWeeks * 10) / 10,
       purchasePaymentLagWeeks: Math.max(1, Math.min(13, Math.round((medianLagDays ?? 28) / 7))),
       matchedPaymentCount: paymentLagDays.length,
     };

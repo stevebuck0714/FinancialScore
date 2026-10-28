@@ -291,7 +291,7 @@ const buildScheduledOpexByWeek = (
 
 export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode = 'cash', viewMode = 'full', onToolbarReady = null }: WorkingCapitalForecastTabProps) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
-  const scheduleOpeningApByAging = isAtlanticPrecisionCompany(selectedCompanyId);
+  const useHistoricalOpeningApReductionPlan = isAtlanticPrecisionCompany(selectedCompanyId);
   const formatCurrency = (value: number) => money.fmt(Number(value || 0), 0);
   const formatCurrencyInput = (value: number): string => money.fmt(Number(value || 0), 0);
   const isInputsOnly = viewMode === 'inputs-only';
@@ -450,7 +450,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
 
   const rows = useMemo<ForecastRow[]>(() => projectWorkingCapitalForecast({
     basisMode,
-    scheduleOpeningApByAging,
+    useHistoricalOpeningApReductionPlan,
     inputs,
     startingBalances,
     startingArBuckets,
@@ -469,12 +469,12 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     historicalApPaymentProfile,
     historicalArCollectionProfile,
     historicalDebtServiceProfile,
-  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, scheduleOpeningApByAging, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile, historicalDebtServiceProfile]);
+  }), [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, useHistoricalOpeningApReductionPlan, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey, forecastMonthRefs, forecastMonthTotals, forecastDirectLaborMonthTotals, forecastMaterialCogsMonthTotals, forecastApCogsMonthTotals, historicalApPaymentProfile, historicalArCollectionProfile, historicalDebtServiceProfile]);
   const historicalArTimingActive = Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0) > 0;
   const historicalApTimingActive =
     Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0) > 0 &&
     Number(historicalApPaymentProfile?.purchasePaymentLagWeeks || 0) >= 1;
-  const historicalApTimingAppliesToOpening = historicalApTimingActive && !scheduleOpeningApByAging;
+  const historicalApTimingAppliesToOpening = historicalApTimingActive;
   const historicalArCollectionLagWeeks = historicalArTimingActive
     ? clampNumber(
         Math.round(startingBalances.ar / Number(historicalArCollectionProfile?.weeklyCollectionAmount || 1)),
@@ -964,13 +964,15 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35, marginBottom: '6px' }}>
                 {historicalApTimingAppliesToOpening
                   ? 'Historical AP payments determine forecast timing. The aging assumptions below are retained only when payment history is unavailable.'
-                  : `Set the share of each opening AP aging bucket expected to be paid over the next four weeks; the weekly weights allocate those expected payments across Weeks 1–4 and should total 100%.${scheduleOpeningApByAging ? ' Atlantic uses this schedule for opening AP.' : ''}`}
+                  : 'Set the share of each opening AP aging bucket expected to be paid over the next four weeks; the weekly weights allocate those expected payments across Weeks 1–4 and should total 100%.'}
               </div>
               {historicalApPaymentProfile && (
                 <div style={{ fontSize: '10px', color: '#1e3a8a', lineHeight: 1.35, marginBottom: '6px' }}>
-                  {historicalApTimingAppliesToOpening
+                  {useHistoricalOpeningApReductionPlan
+                    ? `Atlantic’s opening AP follows the historical AP balance reduction of about ${formatCurrency(historicalApPaymentProfile.weeklyOpeningApReductionAmount || 0)} per week${historicalApPaymentProfile.observedApBalanceWeeks ? ` across the last ${historicalApPaymentProfile.observedApBalanceWeeks.toFixed(1)} weeks` : ''}. New supplier purchases are paid after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}.`
+                    : historicalApTimingAppliesToOpening
                     ? `Forecast payment timing uses the last 13 weeks of imported AP payments: about ${formatCurrency(historicalApPaymentProfile.weeklyPaymentAmount)} per week, with new supplier purchases paid after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}${historicalApPaymentProfile.matchedPaymentCount > 0 ? ` (based on ${historicalApPaymentProfile.matchedPaymentCount} matched bills).` : ' (four-week fallback because no bill/payment matches were available).'}.`
-                    : `Imported AP history schedules new supplier purchases after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}; opening AP follows the aging schedule below.`}
+                    : `Imported AP history schedules new supplier purchases after approximately ${historicalApPaymentProfile.purchasePaymentLagWeeks} week${historicalApPaymentProfile.purchasePaymentLagWeeks === 1 ? '' : 's'}.`}
                 </div>
               )}
               <div style={{ fontSize: '11px', color: historicalApTimingAppliesToOpening ? '#64748b' : '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Aging Buckets (% paid next 4 weeks){historicalApTimingAppliesToOpening ? ' — Fallback assumptions' : ''}</div>

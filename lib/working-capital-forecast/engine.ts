@@ -52,6 +52,9 @@ export type AgingBuckets = {
 
 export type HistoricalApPaymentProfile = {
   weeklyPaymentAmount: number;
+  /** Net weekly reduction in the AP balance observed across recent snapshots. */
+  weeklyOpeningApReductionAmount?: number;
+  observedApBalanceWeeks?: number;
   purchasePaymentLagWeeks: number;
   matchedPaymentCount: number;
 };
@@ -541,11 +544,11 @@ export const normalizeInputs = (raw: any, fallback: ForecastInputs): ForecastInp
 export type ForecastProjectionInput = {
   basisMode: ForecastBasisMode;
   /**
-   * Use the AP aging schedule for opening AP even when historical payment
-   * activity is available. Atlantic's payment volume can exceed the open AP
-   * snapshot and otherwise clears its opening balance in Week 1.
+   * Use historical AP balance reduction for opening AP. Atlantic's payment
+   * history is used to forecast its planned AP reduction instead of applying
+   * manual aging weights or clearing the balance in Week 1.
    */
-  scheduleOpeningApByAging?: boolean;
+  useHistoricalOpeningApReductionPlan?: boolean;
   inputs: ForecastInputs;
   startingBalances: StartingBalances;
   startingArBuckets: AgingBuckets;
@@ -979,7 +982,7 @@ export function deriveForecastStateFromBootstrap(
 export function projectWorkingCapitalForecast(params: ForecastProjectionInput): ForecastRow[] {
   const {
     basisMode,
-    scheduleOpeningApByAging = false,
+    useHistoricalOpeningApReductionPlan = false,
     inputs,
     startingBalances,
     startingArBuckets,
@@ -1032,6 +1035,10 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
   const useHistoricalArPaymentProfile =
     Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0) > 0;
   const historicalWeeklyApPayment = Math.max(0, Number(historicalApPaymentProfile?.weeklyPaymentAmount || 0));
+  const historicalWeeklyOpeningApReduction = Math.max(
+    0,
+    Number(historicalApPaymentProfile?.weeklyOpeningApReductionAmount || 0),
+  );
   const historicalWeeklyArCollection = Math.max(0, Number(historicalArCollectionProfile?.weeklyCollectionAmount || 0));
   // Principal is a balance-sheet repayment; interest already flows through the
   // Income Statement Forecast opex lines, so only principal is deducted here.
@@ -1366,9 +1373,16 @@ export function projectWorkingCapitalForecast(params: ForecastProjectionInput): 
           ap90plusRate,
           apWeeklyWeights
         );
-    const openingApPayment = useHistoricalApPaymentProfile && !scheduleOpeningApByAging
-      ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
-      : Math.max(0, safeNumber(openingApPayments[i] || 0));
+    const openingApPayment = useHistoricalApPaymentProfile && useHistoricalOpeningApReductionPlan
+      ? Math.min(
+          openingApOutstanding,
+          historicalWeeklyOpeningApReduction > 0
+            ? historicalWeeklyOpeningApReduction
+            : Math.min(historicalWeeklyApPayment, openingApOutstanding / Math.max(1, weeks - i)),
+        )
+      : useHistoricalApPaymentProfile
+        ? Math.min(openingApOutstanding, Math.max(0, historicalWeeklyApPayment - recurringApPayments))
+        : Math.max(0, safeNumber(openingApPayments[i] || 0));
     const apPayments = openingApPayment + recurringApPayments;
     if (useHistoricalArInvoiceSchedule || useHistoricalArSeededCadence || useHistoricalArPaymentCadence) {
       openingArInvoiceOutstanding = Math.max(0, openingArInvoiceOutstanding - openingArReceipts);
