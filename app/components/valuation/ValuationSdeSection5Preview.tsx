@@ -317,10 +317,10 @@ export default function ValuationSdeSection5Preview(props: Props) {
             width: 7.9in !important;
             max-width: 100% !important;
           }
-          /* The modal report header only belongs to the on-screen preview.
-             Hiding it in print lets every selected section begin at the page top. */
           .valuation-sde-print-root > div:first-of-type {
-            display: none !important;
+            display: block !important;
+            padding: 0.75in 0 8px !important;
+            border-bottom: 1px solid #e2e8f0 !important;
           }
           .valuation-sde-print-root > div:last-child {
             padding: 0 !important;
@@ -338,10 +338,12 @@ export default function ValuationSdeSection5Preview(props: Props) {
             break-before: page;
             page-break-before: always;
           }
+          .valuation-sde-print-root > div:last-child > .valuation-print-category:first-child {
+            min-height: 9.2in !important;
+            padding-top: 6px !important;
+          }
           .valuation-sde-print-root .valuation-print-category > div:first-child {
-            font-size: 12px !important;
-            margin: 7px 0 5px !important;
-            padding-bottom: 3px !important;
+            margin-top: 7px !important;
           }
           .valuation-sde-print-root .sde-executive-summary {
             margin: 0 0 6px !important;
@@ -350,40 +352,14 @@ export default function ValuationSdeSection5Preview(props: Props) {
             border-radius: 5px !important;
             background: #eff6ff !important;
             color: #334155 !important;
-            font-size: 9px !important;
-            line-height: 1.35 !important;
           }
           .valuation-sde-print-root .sde-executive-summary-title {
             margin-bottom: 2px !important;
             color: #1e3a8a !important;
-            font-size: 10px !important;
             font-weight: 800 !important;
           }
           .valuation-sde-print-root .sde-executive-summary p {
             margin: 0 !important;
-          }
-          .valuation-sde-print-root div[style*="font-size: 18px"] {
-            font-size: 14px !important;
-          }
-          .valuation-sde-print-root div[style*="font-size: 16px"] {
-            font-size: 12px !important;
-          }
-          .valuation-sde-print-root div[style*="font-size: 15px"] {
-            font-size: 11px !important;
-          }
-          .valuation-sde-print-root div[style*="font-size: 14px"] {
-            font-size: 10px !important;
-          }
-          .valuation-sde-print-root div[style*="font-size: 13px"] {
-            font-size: 9px !important;
-          }
-          .valuation-sde-print-root div[style*="font-size: 12px"] {
-            font-size: 8px !important;
-          }
-          .valuation-sde-print-root p {
-            font-size: 9px !important;
-            line-height: 1.35 !important;
-            margin-bottom: 5px !important;
           }
           .valuation-sde-print-root div[style*="padding: 12px"] {
             padding: 7px !important;
@@ -420,13 +396,9 @@ export default function ValuationSdeSection5Preview(props: Props) {
             padding: 4px !important;
           }
           .valuation-sde-print-root .sde-ebitda-adjustment-card > div:first-child {
-            font-size: 8px !important;
-            line-height: 1.15 !important;
             margin-bottom: 3px !important;
           }
           .valuation-sde-print-root .sde-ebitda-adjustment-card > div:not(:first-child) {
-            font-size: 7px !important;
-            line-height: 1.15 !important;
             padding-top: 0 !important;
             padding-bottom: 1px !important;
           }
