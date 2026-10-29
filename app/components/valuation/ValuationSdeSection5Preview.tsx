@@ -319,7 +319,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
           }
           .valuation-sde-print-root > div:first-of-type {
             display: block !important;
-            padding: 0.75in 0 8px !important;
+            padding: 0.5in 0 8px !important;
             border-bottom: 1px solid #e2e8f0 !important;
           }
           .valuation-sde-print-root > div:last-child {
@@ -329,7 +329,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
           .valuation-sde-print-root .valuation-print-category {
             box-sizing: border-box !important;
             min-height: 10.7in !important;
-            padding: 0.75in 0 0 !important;
+            padding: 0.5in 0 0 !important;
             border-bottom: none !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
@@ -339,8 +339,10 @@ export default function ValuationSdeSection5Preview(props: Props) {
             page-break-before: always;
           }
           .valuation-sde-print-root > div:last-child > .valuation-print-category:first-child {
-            min-height: 9.2in !important;
+            min-height: auto !important;
             padding-top: 6px !important;
+            break-before: auto !important;
+            page-break-before: auto !important;
           }
           .valuation-sde-print-root .valuation-print-category > div:first-child {
             margin-top: 7px !important;
@@ -424,6 +426,10 @@ export default function ValuationSdeSection5Preview(props: Props) {
           }
           .valuation-sde-print-root .sde-ebitda-charts svg {
             max-height: 1.35in !important;
+          }
+          .valuation-sde-print-root .sde-revenue-quality-chart-row {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
@@ -665,41 +671,53 @@ export default function ValuationSdeSection5Preview(props: Props) {
               ))}
             </div>
             <div style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>Revenue Quality Graphs</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-              <LineChart
-                title="Revenue-to-Cash Gap (Last 12 Months)"
-                data={model.revenueQualityInsights.revenueToCashGapSeries}
-                color="#ef4444"
-                compact
-                formatter={(v) => `${v.toFixed(1)}%`}
-                showTrendLine
-              />
-              <LineChart
-                title="DSO Trend (Last 12 Months)"
-                data={model.revenueQualityInsights.dsoMiniSeries}
-                color="#0ea5e9"
-                compact
-                formatter={(v) => `${v.toFixed(1)} days`}
-                benchmarkValue={model.sdeSectorBenchmarks.benchmarkTargets.dso}
-                showTrendLine
-              />
-              <LineChart
-                title="AR Growth vs Revenue Growth Spread"
-                data={model.revenueQualityInsights.arRevenueSpreadSeries.filter((row) => row.hasData)}
-                color="#f59e0b"
-                compact
-                formatter={(v) => `${v.toFixed(1)} pts`}
-                showTrendLine
-              />
-              <LineChart
-                title="Revenue Volatility (12M Coefficient of Variation)"
-                data={model.revenueQualityInsights.volatilitySeries.filter((row) => row.hasData)}
-                color="#8b5cf6"
-                compact
-                formatter={(v) => v.toFixed(2)}
-                benchmarkValue={model.sdeSectorBenchmarks.dso.volatilityWarn}
-                showTrendLine
-              />
+            <div style={{ display: 'grid', gap: '10px', marginBottom: '10px' }}>
+              <div className="sde-revenue-quality-chart-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <LineChart
+                    title="Revenue-to-Cash Gap (Last 12 Months)"
+                    data={model.revenueQualityInsights.revenueToCashGapSeries}
+                    color="#ef4444"
+                    compact
+                    formatter={(v) => `${v.toFixed(1)}%`}
+                    showTrendLine
+                  />
+                </div>
+                <div>
+                  <LineChart
+                    title="DSO Trend (Last 12 Months)"
+                    data={model.revenueQualityInsights.dsoMiniSeries}
+                    color="#0ea5e9"
+                    compact
+                    formatter={(v) => `${v.toFixed(1)} days`}
+                    benchmarkValue={model.sdeSectorBenchmarks.benchmarkTargets.dso}
+                    showTrendLine
+                  />
+                </div>
+              </div>
+              <div className="sde-revenue-quality-chart-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <LineChart
+                    title="AR Growth vs Revenue Growth Spread"
+                    data={model.revenueQualityInsights.arRevenueSpreadSeries.filter((row) => row.hasData)}
+                    color="#f59e0b"
+                    compact
+                    formatter={(v) => `${v.toFixed(1)} pts`}
+                    showTrendLine
+                  />
+                </div>
+                <div>
+                  <LineChart
+                    title="Revenue Volatility (12M Coefficient of Variation)"
+                    data={model.revenueQualityInsights.volatilitySeries.filter((row) => row.hasData)}
+                    color="#8b5cf6"
+                    compact
+                    formatter={(v) => v.toFixed(2)}
+                    benchmarkValue={model.sdeSectorBenchmarks.dso.volatilityWarn}
+                    showTrendLine
+                  />
+                </div>
+              </div>
             </div>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
