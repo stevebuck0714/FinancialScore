@@ -16,9 +16,11 @@ type Props = {
   className?: string;
   /** Shown under the section title */
   description?: string;
+  /** Short decision-focused summary for the report printout. */
+  executiveSummary?: string;
 };
 
-export default function ValuationBalanceSheetQualityPreview({ monthly, className, description }: Props) {
+export default function ValuationBalanceSheetQualityPreview({ monthly, className, description, executiveSummary }: Props) {
   const safeDiv = (num: number, den: number) => (Math.abs(den) > 0 ? num / den : 0);
   const bsTrendRows = monthly.slice(-36).map((m) => {
     const equityFromDetail =
@@ -124,6 +126,12 @@ export default function ValuationBalanceSheetQualityPreview({ monthly, className
   return (
     <div className={className}>
       {sectionTitle('Balance Sheet Quality')}
+      {executiveSummary && (
+        <div className="sde-executive-summary">
+          <div className="sde-executive-summary-title">Executive Summary</div>
+          <p>{executiveSummary}</p>
+        </div>
+      )}
       <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '10px' }}>{desc}</p>
       <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 0.8fr 0.8fr 0.7fr', gap: '8px', marginBottom: '12px' }}>
         <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Scorecard</div>

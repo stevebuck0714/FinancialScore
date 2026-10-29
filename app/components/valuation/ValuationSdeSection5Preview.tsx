@@ -30,6 +30,15 @@ const sectionTitle = (title: string) => (
   </div>
 );
 
+function ExecutiveSummary({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sde-executive-summary">
+      <div className="sde-executive-summary-title">Executive Summary</div>
+      <p>{children}</p>
+    </div>
+  );
+}
+
 export function EbitdaMarginComboChart({
   data,
   currency,
@@ -270,14 +279,114 @@ export default function ValuationSdeSection5Preview(props: Props) {
           }
         }
         @media print {
+          @page {
+            size: letter portrait;
+            margin: 0.3in;
+          }
+          html,
+          body {
+            width: 8.5in !important;
+            min-height: 11in !important;
+            background: #fff !important;
+          }
+          .valuation-sde-print-root {
+            border: none !important;
+            border-radius: 0 !important;
+            width: 100% !important;
+          }
+          /* The modal report header only belongs to the on-screen preview.
+             Hiding it in print lets every selected section begin at the page top. */
+          .valuation-sde-print-root > div:first-of-type {
+            display: none !important;
+          }
+          .valuation-sde-print-root > div:last-child {
+            padding: 0 !important;
+            display: block !important;
+          }
           .valuation-sde-print-root .valuation-print-category {
-            min-height: auto !important;
-            padding-bottom: 0 !important;
+            box-sizing: border-box !important;
+            min-height: 10.28in !important;
+            padding: 0 !important;
             border-bottom: none !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           .valuation-sde-print-root .valuation-print-category + .valuation-print-category {
             break-before: page;
             page-break-before: always;
+          }
+          .valuation-sde-print-root .valuation-print-category > div:first-child {
+            font-size: 12px !important;
+            margin: 7px 0 5px !important;
+            padding-bottom: 3px !important;
+          }
+          .valuation-sde-print-root .sde-executive-summary {
+            margin: 0 0 6px !important;
+            padding: 6px 8px !important;
+            border: 1px solid #bfdbfe !important;
+            border-radius: 5px !important;
+            background: #eff6ff !important;
+            color: #334155 !important;
+            font-size: 9px !important;
+            line-height: 1.35 !important;
+          }
+          .valuation-sde-print-root .sde-executive-summary-title {
+            margin-bottom: 2px !important;
+            color: #1e3a8a !important;
+            font-size: 10px !important;
+            font-weight: 800 !important;
+          }
+          .valuation-sde-print-root .sde-executive-summary p {
+            margin: 0 !important;
+          }
+          .valuation-sde-print-root div[style*="font-size: 18px"] {
+            font-size: 14px !important;
+          }
+          .valuation-sde-print-root div[style*="font-size: 16px"] {
+            font-size: 12px !important;
+          }
+          .valuation-sde-print-root div[style*="font-size: 15px"] {
+            font-size: 11px !important;
+          }
+          .valuation-sde-print-root div[style*="font-size: 14px"] {
+            font-size: 10px !important;
+          }
+          .valuation-sde-print-root div[style*="font-size: 13px"] {
+            font-size: 9px !important;
+          }
+          .valuation-sde-print-root div[style*="font-size: 12px"] {
+            font-size: 8px !important;
+          }
+          .valuation-sde-print-root p {
+            font-size: 9px !important;
+            line-height: 1.35 !important;
+            margin-bottom: 5px !important;
+          }
+          .valuation-sde-print-root div[style*="padding: 12px"] {
+            padding: 7px !important;
+          }
+          .valuation-sde-print-root div[style*="padding: 10px"] {
+            padding: 6px !important;
+          }
+          .valuation-sde-print-root div[style*="margin-bottom: 10px"] {
+            margin-bottom: 5px !important;
+          }
+          .valuation-sde-print-root div[style*="margin-top: 12px"] {
+            margin-top: 6px !important;
+          }
+          .valuation-sde-print-root svg,
+          .valuation-sde-print-root .recharts-wrapper {
+            max-height: 1.65in !important;
+          }
+          .valuation-sde-print-root svg {
+            width: 100% !important;
+            height: auto !important;
+          }
+          .valuation-sde-print-root table,
+          .valuation-sde-print-root svg,
+          .valuation-sde-print-root .recharts-wrapper {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
@@ -293,6 +402,9 @@ export default function ValuationSdeSection5Preview(props: Props) {
         {selections.sde_executiveSummary && (
           <div className="valuation-print-category">
             {sectionTitle('Executive Summary')}
+            <ExecutiveSummary>
+              Trailing 12-month SDE is {fmt(model.ttmSDE)} and the indicated business value is {fmt(model.sdeValuation)} at a {model.sdeMultiplier.toFixed(1)}x SDE multiple. Review the readiness score, flagged diligence items, and recommendations below before relying on the estimate.
+            </ExecutiveSummary>
             <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '10px' }}>Seller&apos;s Discretionary Earnings (SDE) Method</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
@@ -358,6 +470,9 @@ export default function ValuationSdeSection5Preview(props: Props) {
         {selections.sde_ebitdaAdjustments && (
           <div className="valuation-print-category">
             {sectionTitle('EBITDA Adjustments')}
+            <ExecutiveSummary>
+              Quality of earnings is {fmt(model.qualityOfEarnings)} after {fmt(model.qoeTotalAdjustments)} of owner compensation, discretionary, non-recurring, and one-time revenue adjustments. These normalization items explain the difference from trailing 12-month EBITDA of {fmt(model.ttmEbitdaAnalysis)} and should be supported in diligence.
+            </ExecutiveSummary>
             <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>SDE Analysis</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
@@ -476,6 +591,9 @@ export default function ValuationSdeSection5Preview(props: Props) {
         {selections.sde_revenueQuality && (
           <div className="valuation-print-category">
             {sectionTitle('Revenue Quality')}
+            <ExecutiveSummary>
+              Revenue quality is assessed through cash conversion, collection trends, concentration proxy, and receivables growth. The latest DSO is {model.revenueQualityInsights.currentDso.toFixed(1)} days and the average 12-month revenue-to-cash gap is {model.revenueQualityInsights.avgGap12.toFixed(1)}%, highlighting the principal reliability signals for a buyer.
+            </ExecutiveSummary>
             <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '10px' }}>Buyer-focused revenue reliability checks (same signals as SDE module).</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
@@ -601,6 +719,11 @@ export default function ValuationSdeSection5Preview(props: Props) {
         {selections.sde_customerQuality && (
           <div className="valuation-print-category">
             {sectionTitle('Customer Quality')}
+            <ExecutiveSummary>
+              {model.customerQualityInsights.hasData
+                ? `Customer concentration is measured across ${model.customerQualityInsights.customerCount.toLocaleString()} customers, with the top customer representing ${model.customerQualityInsights.top1Pct.toFixed(1)}% of trailing-12-month revenue. Review the concentration flags and trend charts to identify customer-retention risk.`
+                : 'Customer-level sales data is not available for this report. Load or generate customer sales records before using this section to assess concentration and retention risk.'}
+            </ExecutiveSummary>
             {!model.customerQualityInsights.hasData && (
               <div style={{ border: '1px solid #fbbf24', borderRadius: '8px', padding: '10px', background: '#fffbeb', color: '#92400e', fontSize: '13px', lineHeight: 1.5, marginBottom: '10px' }}>
                 Customer-level monthly sales records are not available for this report yet. Open the Customer Quality tab or generate/load customer sales data to populate this section.
@@ -654,6 +777,9 @@ export default function ValuationSdeSection5Preview(props: Props) {
         {selections.sde_workingCapital && (
           <div className="valuation-print-category">
             {sectionTitle('Working Capital')}
+            <ExecutiveSummary>
+              Current operating working capital is {fmt(model.workingCapitalInsights.currentWc)} versus a normalized target of {fmt(model.workingCapitalInsights.normalizedTarget)}, producing a {fmt(model.workingCapitalInsights.wcAdjustment)} transaction adjustment. The latest cash conversion cycle is {model.workingCapitalInsights.currentCcc.toFixed(1)} days; review the flags for potential closing and liquidity implications.
+            </ExecutiveSummary>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>Normalized WC target</div>
@@ -692,6 +818,9 @@ export default function ValuationSdeSection5Preview(props: Props) {
         {selections.sde_cashFlowQuality && (
           <div className="valuation-print-category">
             {sectionTitle('Cash Flow Quality')}
+            <ExecutiveSummary>
+              The business converts {model.cashFlowQualityInsights.cashConversionPct.toFixed(1)}% of earnings to cash and free-cash-flow durability is {model.cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}% of EBITDA. Maintenance CapEx is estimated at {fmt(model.cashFlowQualityInsights.maintenanceCapexEstimate)}, so the CapEx gap and flagged items should be considered when assessing sustainable SDE.
+            </ExecutiveSummary>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>Cash conversion % (TTM)</div>
@@ -742,7 +871,16 @@ export default function ValuationSdeSection5Preview(props: Props) {
         )}
 
         {selections.sde_balanceSheetQuality && (
-          <ValuationBalanceSheetQualityPreview monthly={monthly} className="valuation-print-category" />
+          <ValuationBalanceSheetQualityPreview
+            monthly={monthly}
+            className="valuation-print-category"
+            executiveSummary={`Liquidity coverage is ${(() => {
+              const latest = monthly[monthly.length - 1];
+              const currentAssets = Number(latest?.tca ?? 0);
+              const currentLiabilities = Number(latest?.tcl ?? 0);
+              return currentLiabilities > 0 ? `${(currentAssets / currentLiabilities).toFixed(2)}x` : 'not available';
+            })()} and the balance sheet should be reviewed for leverage, equity cushion, and any integrity gap before finalizing the SDE conclusion.`}
+          />
         )}
       </div>
     </div>
