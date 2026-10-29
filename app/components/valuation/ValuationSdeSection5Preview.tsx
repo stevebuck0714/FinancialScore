@@ -244,6 +244,28 @@ export default function ValuationSdeSection5Preview(props: Props) {
   const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale } = props;
   const fmt = model.formatDollars;
   const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
+  const adjustmentValuationImpactSummary = [
+    { label: 'Owner compensation normalization', adjustment: model.qoeOwnerSalaryAdjustment },
+    { label: 'Personal / discretionary expense removal', adjustment: model.qoePersonalAutoLease },
+    { label: 'Non-recurring expense removal', adjustment: model.qoeOneTimeExpenses },
+    { label: 'One-time revenue removal', adjustment: model.qoeOneTimeRevenue },
+  ]
+    .filter(({ adjustment }) => Math.abs(adjustment) >= 0.5)
+    .map(({ label, adjustment }) => {
+      const direction = adjustment > 0 ? 'increases' : 'reduces';
+      return `${label} ${direction} normalized earnings by ${fmt(Math.abs(adjustment))} and indicated value by ${fmt(Math.abs(adjustment) * model.sdeMultiplier)}`;
+    })
+    .join('; ');
+  const sectorMultipleRange = model.sdeSectorBenchmarks.sdeMultipleRange;
+  const sectorMultipleMidpoint = (sectorMultipleRange.low + sectorMultipleRange.high) / 2;
+  const sectorMultiplePosition =
+    model.sdeMultiplier < sectorMultipleRange.low
+      ? 'below'
+      : model.sdeMultiplier > sectorMultipleRange.high
+        ? 'above'
+        : model.sdeMultiplier <= sectorMultipleMidpoint
+          ? 'within the lower half of'
+          : 'within the upper half of';
 
   const flagBadge = (triggered: boolean, severity: string) => (
     <span
@@ -281,7 +303,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
         @media print {
           @page {
             size: letter portrait;
-            margin: 0.3in;
+            margin: 0.75in 0.3in 0.3in;
           }
           html,
           body {
@@ -305,7 +327,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
           }
           .valuation-sde-print-root .valuation-print-category {
             box-sizing: border-box !important;
-            min-height: 10.28in !important;
+            min-height: 9.95in !important;
             padding: 0 !important;
             border-bottom: none !important;
             break-inside: avoid !important;
@@ -388,6 +410,40 @@ export default function ValuationSdeSection5Preview(props: Props) {
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
+          .valuation-sde-print-root .sde-ebitda-adjustment-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 4px !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-adjustment-card {
+            min-width: 0 !important;
+            padding: 4px !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-adjustment-card > div:first-child {
+            font-size: 8px !important;
+            line-height: 1.15 !important;
+            margin-bottom: 3px !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-adjustment-card > div:not(:first-child) {
+            font-size: 7px !important;
+            line-height: 1.15 !important;
+            padding-top: 1px !important;
+            padding-bottom: 1px !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-adjustment-card > div[style*="display: flex"] {
+            gap: 3px !important;
+            white-space: nowrap !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-adjustment-card > div[style*="margin-top: 8px"] {
+            margin-top: 3px !important;
+            padding-top: 3px !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-charts {
+            gap: 4px !important;
+            margin-top: 5px !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-charts svg {
+            max-height: 1.35in !important;
+          }
         }
       `}</style>
       <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
@@ -403,7 +459,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
           <div className="valuation-print-category">
             {sectionTitle('Executive Summary')}
             <ExecutiveSummary>
-              Trailing 12-month SDE is {fmt(model.ttmSDE)} and the indicated business value is {fmt(model.sdeValuation)} at a {model.sdeMultiplier.toFixed(1)}x SDE multiple.
+              Trailing 12-month SDE is {fmt(model.ttmSDE)} and the indicated business value is {fmt(model.sdeValuation)} at a {model.sdeMultiplier.toFixed(1)}x SDE multiple. The multiple applies to each dollar of normalized SDE and is {sectorMultiplePosition} the {model.sdeSectorBenchmarks.sectorLabel} sector range of {sectorMultipleRange.low.toFixed(1)}x–{sectorMultipleRange.high.toFixed(1)}x.
             </ExecutiveSummary>
             <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '10px' }}>Seller&apos;s Discretionary Earnings (SDE) Method</div>
@@ -462,11 +518,11 @@ export default function ValuationSdeSection5Preview(props: Props) {
           <div className="valuation-print-category">
             {sectionTitle('EBITDA Adjustments')}
             <ExecutiveSummary>
-              Quality of earnings is {fmt(model.qualityOfEarnings)} after {fmt(model.qoeTotalAdjustments)} of owner compensation, discretionary, non-recurring, and one-time revenue adjustments. These normalization items explain the difference from trailing 12-month EBITDA of {fmt(model.ttmEbitdaAnalysis)} and should be supported in diligence.
+              Quality of earnings is {fmt(model.qualityOfEarnings)} after {fmt(model.qoeTotalAdjustments)} of owner compensation, discretionary, non-recurring, and one-time revenue adjustments. These normalization items explain the difference from trailing 12-month EBITDA of {fmt(model.ttmEbitdaAnalysis)}. {adjustmentValuationImpactSummary ? `At the ${model.sdeMultiplier.toFixed(1)}x SDE multiple, ${adjustmentValuationImpactSummary}.` : 'No material normalization adjustments were recorded, so there is no direct valuation impact from these categories.'}
             </ExecutiveSummary>
             <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>SDE Analysis</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+            <div className="sde-ebitda-adjustment-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+              <div className="sde-ebitda-adjustment-card" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>EBITDA, Trailing 12 Months</div>
                 {[
                   ['Net Income', fmt(model.ttmNetIncomeAfterTax)],
@@ -483,7 +539,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 ))}
               </div>
 
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+              <div className="sde-ebitda-adjustment-card" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>1. Owner Compensation Adjustment</div>
                 <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Replace owner pay with market salary.</div>
                 {model.ownerCompRows.map((row) => (
@@ -494,7 +550,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 ))}
               </div>
 
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+              <div className="sde-ebitda-adjustment-card" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>2. Personal / Discretionary Expenses</div>
                 {model.personalRows.map((row) => (
                   <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
@@ -508,7 +564,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 </div>
               </div>
 
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+              <div className="sde-ebitda-adjustment-card" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>QoE Adjustments</div>
                 {[
                   ['1. Owner Compensation Adjustment', fmt(model.qoeOwnerSalaryAdjustment)],
@@ -528,7 +584,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 </div>
               </div>
 
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+              <div className="sde-ebitda-adjustment-card" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>3. Non-Recurring Expenses</div>
                 {model.nonRecurringRows.map((row) => (
                   <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
@@ -542,7 +598,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 </div>
               </div>
 
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+              <div className="sde-ebitda-adjustment-card" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>4. One-Time Revenue</div>
                 {model.oneTimeRevenueRows.map((row) => (
                   <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
@@ -557,7 +613,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+            <div className="sde-ebitda-charts" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>EBITDA Margin and Total Revenue</div>
                 <EbitdaMarginComboChart data={model.annualRevenueEbitdaData} currency={currency} locale={locale} />

@@ -1,5 +1,9 @@
 export type SdeSectorBenchmarks = {
   sectorLabel: string;
+  sdeMultipleRange: {
+    low: number;
+    high: number;
+  };
   benchmarkTargets: {
     dso: number;
     ccc: number;
@@ -46,6 +50,7 @@ export type SdeSectorBenchmarks = {
 
 const DEFAULT_BENCHMARKS: SdeSectorBenchmarks = {
   sectorLabel: 'General',
+  sdeMultipleRange: { low: 1.5, high: 3.5 },
   benchmarkTargets: {
     dso: 45,
     ccc: 70,
@@ -93,6 +98,7 @@ const DEFAULT_BENCHMARKS: SdeSectorBenchmarks = {
 const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = {
   '23': {
     sectorLabel: 'Construction',
+    sdeMultipleRange: { low: 1.5, high: 3.0 },
     benchmarkTargets: { dso: 90, ccc: 95, inventoryDays: 70 },
     customerQuality: { top1Warn: 25, top1High: 40, top5Warn: 65, top5High: 80, hhiWarn: 2200, hhiHigh: 3000 },
     dso: { min: 60, max: 120, trendWarn: 15, trendHigh: 30, spreadWarn: 20, spreadHigh: 40, gapWarn: 10, gapHigh: 18, volatilityWarn: 0.3, volatilityHigh: 0.45 },
@@ -101,6 +107,7 @@ const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = 
   },
   '32': {
     sectorLabel: 'Manufacturing',
+    sdeMultipleRange: { low: 1.5, high: 3.0 },
     benchmarkTargets: { dso: 60, ccc: 70, inventoryDays: 60 },
     customerQuality: { top1Warn: 22, top1High: 35, top5Warn: 60, top5High: 75, hhiWarn: 2000, hhiHigh: 2800 },
     dso: { min: 45, max: 75, trendWarn: 12, trendHigh: 24, spreadWarn: 18, spreadHigh: 35, gapWarn: 9, gapHigh: 16, volatilityWarn: 0.28, volatilityHigh: 0.42 },
@@ -109,6 +116,7 @@ const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = 
   },
   '42': {
     sectorLabel: 'Wholesale Trade',
+    sdeMultipleRange: { low: 1.5, high: 3.0 },
     benchmarkTargets: { dso: 52, ccc: 55, inventoryDays: 60 },
     customerQuality: { top1Warn: 20, top1High: 32, top5Warn: 58, top5High: 72, hhiWarn: 1900, hhiHigh: 2600 },
     dso: { min: 40, max: 65, trendWarn: 10, trendHigh: 20, spreadWarn: 16, spreadHigh: 32, gapWarn: 8, gapHigh: 15, volatilityWarn: 0.26, volatilityHigh: 0.4 },
@@ -116,6 +124,7 @@ const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = 
   },
   '45': {
     sectorLabel: 'Retail',
+    sdeMultipleRange: { low: 1.5, high: 2.5 },
     benchmarkTargets: { dso: 2, ccc: 25, inventoryDays: 35 },
     customerQuality: { top1Warn: 12, top1High: 20, top5Warn: 35, top5High: 50, hhiWarn: 1200, hhiHigh: 1800 },
     dso: { min: 0, max: 5, trendWarn: 4, trendHigh: 8, spreadWarn: 10, spreadHigh: 22, gapWarn: 6, gapHigh: 12, volatilityWarn: 0.22, volatilityHigh: 0.35 },
@@ -124,6 +133,7 @@ const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = 
   },
   '51': {
     sectorLabel: 'Software / Subscription',
+    sdeMultipleRange: { low: 2.5, high: 4.5 },
     benchmarkTargets: { dso: 15, ccc: 35, inventoryDays: 20 },
     customerQuality: { top1Warn: 18, top1High: 30, top5Warn: 50, top5High: 65, hhiWarn: 1700, hhiHigh: 2400 },
     dso: { min: 0, max: 30, trendWarn: 8, trendHigh: 15, spreadWarn: 12, spreadHigh: 24, gapWarn: 7, gapHigh: 14, volatilityWarn: 0.2, volatilityHigh: 0.32 },
@@ -132,6 +142,7 @@ const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = 
   },
   '54': {
     sectorLabel: 'Professional Services',
+    sdeMultipleRange: { low: 2.0, high: 4.0 },
     benchmarkTargets: { dso: 55, ccc: 65, inventoryDays: 45 },
     customerQuality: { top1Warn: 25, top1High: 40, top5Warn: 65, top5High: 80, hhiWarn: 2200, hhiHigh: 3000 },
     dso: { min: 40, max: 70, trendWarn: 10, trendHigh: 20, spreadWarn: 16, spreadHigh: 32, gapWarn: 8, gapHigh: 15, volatilityWarn: 0.24, volatilityHigh: 0.38 },
@@ -139,6 +150,7 @@ const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = 
   },
   '62': {
     sectorLabel: 'Healthcare',
+    sdeMultipleRange: { low: 2.0, high: 4.0 },
     benchmarkTargets: { dso: 45, ccc: 70, inventoryDays: 40 },
     customerQuality: { top1Warn: 20, top1High: 32, top5Warn: 55, top5High: 70, hhiWarn: 1800, hhiHigh: 2500 },
     dso: { min: 30, max: 60, trendWarn: 10, trendHigh: 20, spreadWarn: 15, spreadHigh: 30, gapWarn: 8, gapHigh: 15, volatilityWarn: 0.23, volatilityHigh: 0.36 },
@@ -146,6 +158,7 @@ const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = 
   },
   '72': {
     sectorLabel: 'Restaurants & Hospitality',
+    sdeMultipleRange: { low: 1.5, high: 3.0 },
     benchmarkTargets: { dso: 1, ccc: 20, inventoryDays: 20 },
     customerQuality: { top1Warn: 10, top1High: 18, top5Warn: 32, top5High: 45, hhiWarn: 1100, hhiHigh: 1700 },
     dso: { min: 0, max: 3, trendWarn: 3, trendHigh: 6, spreadWarn: 10, spreadHigh: 20, gapWarn: 6, gapHigh: 12, volatilityWarn: 0.25, volatilityHigh: 0.38 },
@@ -157,6 +170,7 @@ const SECTOR_BENCHMARKS_BY_CODE: Record<string, Partial<SdeSectorBenchmarks>> = 
 function mergeBenchmarks(base: SdeSectorBenchmarks, partial: Partial<SdeSectorBenchmarks>): SdeSectorBenchmarks {
   return {
     sectorLabel: partial.sectorLabel || base.sectorLabel,
+    sdeMultipleRange: { ...base.sdeMultipleRange, ...(partial.sdeMultipleRange || {}) },
     benchmarkTargets: { ...base.benchmarkTargets, ...(partial.benchmarkTargets || {}) },
     customerQuality: { ...base.customerQuality, ...(partial.customerQuality || {}) },
     dso: { ...base.dso, ...(partial.dso || {}) },
