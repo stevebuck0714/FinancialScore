@@ -241,7 +241,7 @@ function QoeWaterfallChart({
 }
 
 export default function ValuationSdeSection5Preview(props: Props) {
-  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveSummaryApi, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale } = props;
+  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale } = props;
   const fmt = model.formatDollars;
   const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
 
@@ -403,7 +403,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
           <div className="valuation-print-category">
             {sectionTitle('Executive Summary')}
             <ExecutiveSummary>
-              Trailing 12-month SDE is {fmt(model.ttmSDE)} and the indicated business value is {fmt(model.sdeValuation)} at a {model.sdeMultiplier.toFixed(1)}x SDE multiple. Review the readiness score, flagged diligence items, and recommendations below before relying on the estimate.
+              Trailing 12-month SDE is {fmt(model.ttmSDE)} and the indicated business value is {fmt(model.sdeValuation)} at a {model.sdeMultiplier.toFixed(1)}x SDE multiple.
             </ExecutiveSummary>
             <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '10px' }}>Seller&apos;s Discretionary Earnings (SDE) Method</div>
@@ -421,15 +421,6 @@ export default function ValuationSdeSection5Preview(props: Props) {
                   <div style={{ fontSize: '22px', fontWeight: 800, color: '#14532d' }}>{model.sdeMultiplier.toFixed(1)}x</div>
                 </div>
               </div>
-              {sdeExecutiveSummaryApi && (
-                <div style={{ marginTop: '10px', padding: '10px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Readiness (API)</div>
-                  <div style={{ fontSize: '13px', color: '#475569' }}>
-                    Score: <strong>{sdeExecutiveSummaryApi.readinessScore}</strong> · Rating: <strong>{sdeExecutiveSummaryApi.rating}</strong> · High/Med/Low flags:{' '}
-                    {sdeExecutiveSummaryApi.highCount}/{sdeExecutiveSummaryApi.mediumCount}/{sdeExecutiveSummaryApi.lowCount}
-                  </div>
-                </div>
-              )}
               {sdeExecutiveFinancialSummaryApi?.scorecard && sdeExecutiveFinancialSummaryApi.scorecard.length > 0 && (
                 <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '8px' }}>
                   {sdeExecutiveFinancialSummaryApi.scorecard.map((row) => (
@@ -592,7 +583,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
           <div className="valuation-print-category">
             {sectionTitle('Revenue Quality')}
             <ExecutiveSummary>
-              Revenue quality is assessed through cash conversion, collection trends, concentration proxy, and receivables growth. The latest DSO is {model.revenueQualityInsights.currentDso.toFixed(1)} days and the average 12-month revenue-to-cash gap is {model.revenueQualityInsights.avgGap12.toFixed(1)}%, highlighting the principal reliability signals for a buyer.
+              Revenue quality is assessed through cash conversion, collection trends, concentration proxy, and receivables growth. The latest DSO is {model.revenueQualityInsights.currentDso.toFixed(1)} days and the average 12-month revenue-to-cash gap is {model.revenueQualityInsights.avgGap12.toFixed(1)}%, highlighting principal reliability signals.
             </ExecutiveSummary>
             <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '10px' }}>Buyer-focused revenue reliability checks (same signals as SDE module).</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>

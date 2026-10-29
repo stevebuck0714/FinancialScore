@@ -88,7 +88,7 @@ const PRODUCT_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const INVENTORY_OPERATIONAL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const CUSTOMER_CONCENTRATION_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v10';
+const CUSTOMER_CONCENTRATION_CACHE_VERSION = 'customer-concentration-exposure-v11';
 const CUSTOMER_REVENUE_SOURCE_VERSION = 'customer-revenue-source-v13-financial-gross-margin-fallback';
 const CUSTOMER_WIP_SOURCE_VERSION = 'customer-backlog-source-v4';
 const HIRING_SOURCE_VERSION = 'bamboohr-hiring-full-pagination-v2';
@@ -4419,7 +4419,7 @@ export async function GET(request: NextRequest) {
               startDate.toISOString(),
               endDate.toISOString(),
               sectorCategory,
-              'last-12-completed-months',
+              'last-36-completed-months',
             ]),
             dataVersion: CUSTOMER_CONCENTRATION_CACHE_VERSION,
           };
@@ -4454,7 +4454,7 @@ export async function GET(request: NextRequest) {
             const endMonth = day >= lastDayOfMonth
               ? new Date(Date.UTC(year, month, 1))
               : new Date(Date.UTC(year, month - 1, 1));
-            return Array.from({ length: 12 }, (_, index) => {
+            return Array.from({ length: 36 }, (_, index) => {
               const d = new Date(Date.UTC(endMonth.getUTCFullYear(), endMonth.getUTCMonth() - index, 1));
               return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
             });

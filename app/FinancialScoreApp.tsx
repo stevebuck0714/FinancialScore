@@ -5172,7 +5172,10 @@ function FinancialScorePage() {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
     });
-    if (currentView === 'valuation-reports') {
+    if (
+      currentView === 'valuation-reports' ||
+      (currentView === 'valuation' && valuationMethodTab === 'sde' && sdeModuleTab === 'customer-quality')
+    ) {
       customerQualityParams.set('refreshConcentration', '1');
     }
 
