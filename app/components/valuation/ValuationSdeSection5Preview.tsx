@@ -303,18 +303,19 @@ export default function ValuationSdeSection5Preview(props: Props) {
         @media print {
           @page {
             size: letter portrait;
-            margin: 0.75in 0.3in 0.3in;
+            margin: 0 0.3in 0.3in;
           }
           html,
           body {
-            width: 8.5in !important;
+            width: auto !important;
             min-height: 11in !important;
             background: #fff !important;
           }
           .valuation-sde-print-root {
             border: none !important;
             border-radius: 0 !important;
-            width: 100% !important;
+            width: 7.9in !important;
+            max-width: 100% !important;
           }
           /* The modal report header only belongs to the on-screen preview.
              Hiding it in print lets every selected section begin at the page top. */
@@ -327,8 +328,8 @@ export default function ValuationSdeSection5Preview(props: Props) {
           }
           .valuation-sde-print-root .valuation-print-category {
             box-sizing: border-box !important;
-            min-height: 9.95in !important;
-            padding: 0 !important;
+            min-height: 10.7in !important;
+            padding: 0.75in 0 0 !important;
             border-bottom: none !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
@@ -426,16 +427,24 @@ export default function ValuationSdeSection5Preview(props: Props) {
           .valuation-sde-print-root .sde-ebitda-adjustment-card > div:not(:first-child) {
             font-size: 7px !important;
             line-height: 1.15 !important;
-            padding-top: 1px !important;
+            padding-top: 0 !important;
             padding-bottom: 1px !important;
           }
           .valuation-sde-print-root .sde-ebitda-adjustment-card > div[style*="display: flex"] {
-            gap: 3px !important;
+            align-items: flex-start !important;
+            gap: 2px !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-adjustment-card > div[style*="display: flex"] > span:first-child {
+            min-width: 0 !important;
+            overflow-wrap: anywhere !important;
+          }
+          .valuation-sde-print-root .sde-ebitda-adjustment-card > div[style*="display: flex"] > span:last-child {
+            flex-shrink: 0 !important;
             white-space: nowrap !important;
           }
           .valuation-sde-print-root .sde-ebitda-adjustment-card > div[style*="margin-top: 8px"] {
-            margin-top: 3px !important;
-            padding-top: 3px !important;
+            margin-top: 2px !important;
+            padding-top: 2px !important;
           }
           .valuation-sde-print-root .sde-ebitda-charts {
             gap: 4px !important;
