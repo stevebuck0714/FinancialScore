@@ -38,6 +38,8 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
   const money = (value: number | null) => value == null ? '—' : formatMoney(value, { currency, locale, decimals: 4 });
   const cell = { padding: '9px 10px', borderTop: '1px solid #e2e8f0', fontSize: 13, color: '#1e293b' };
   const right = { ...cell, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' };
+  const hasData = Boolean(payload?.hasData);
+  const inputStyle: CSSProperties = { display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, fontSize: 13, background: hasData ? 'white' : '#f1f5f9' };
   const normalizedVendorSearch = vendorSearch.trim().toLowerCase();
   const visibleVendors = payload?.vendors.filter((vendor) =>
     !normalizedVendorSearch ||
@@ -66,44 +68,54 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
     <OperationalReportPanel reportKey="vendorsItemOrderHistory" canReorder={canReorder} isSaving={isSaving} onMove={onMove} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24, ...panelStyle }}>
       <div style={{ marginBottom: 16 }}>
         <h2 style={{ margin: '0 0 5px', color: '#1e293b', fontSize: 24 }}>Item order history by vendor</h2>
-        <div style={{ color: '#64748b', fontSize: 12 }}>
-          Select a vendor, then expand an item to review its purchase-order history.
-          {payload?.syncedAt ? ` Last refreshed ${formatEstDateTime(payload.syncedAt)}.` : ''}
-        </div>
+        {payload?.syncedAt ? (
+          <div style={{ color: '#64748b', fontSize: 12 }}>Last refreshed {formatEstDateTime(payload.syncedAt)}.</div>
+        ) : null}
       </div>
-      {error ? <div style={{ color: '#b91c1c', fontSize: 13 }}>{error}</div> : !payload ? <div style={{ color: '#64748b', fontSize: 13 }}>Loading order history…</div> : !payload.hasData ? <div style={{ color: '#64748b', fontSize: 13 }}>No imported purchase-order data is available yet.</div> : <>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 440px) minmax(260px, 440px)', gap: 12, marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
-            Search vendor
-            <input value={vendorSearch} onChange={(event) => setVendorSearch(event.target.value)} placeholder="Vendor name or ID" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, fontSize: 13 }} />
-          </label>
-          <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
-            Search items or PO number
-            <input value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} placeholder="Item ID, description, or PO number" style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, fontSize: 13 }} />
-          </label>
-          <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
-            Order date from
-            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, fontSize: 13 }} />
-          </label>
-          <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
-            Order date to
-            <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, fontSize: 13 }} />
-          </label>
-          <label style={{ display: 'block', gridColumn: '1 / -1', maxWidth: 440, fontSize: 12, color: '#334155', fontWeight: 700 }}>
-            Vendor
-            <select value={vendorId} onChange={(event) => { setExpanded(new Set()); load(event.target.value); }} style={{ display: 'block', width: '100%', marginTop: 5, border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, background: 'white', fontSize: 13 }}>
-              {visibleVendors.map((vendor) => <option key={vendor.vendorId} value={vendor.vendorId}>{vendor.vendorName} ({vendor.vendorId}) · {vendor.orderCount.toLocaleString()} POs</option>)}
-            </select>
-          </label>
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse' }}>
-            <thead><tr>{['Item', 'POs', 'Ordered qty', 'Latest order', ''].map((label) => <th key={label || 'expand'} style={{ padding: '9px 10px', background: '#f8fafc', color: '#475569', textAlign: label === 'POs' || label === 'Ordered qty' ? 'right' : 'left', fontSize: 11, textTransform: 'uppercase' as const }}>{label}</th>)}</tr></thead>
-            <tbody>{visibleItems.map((item) => <ItemRows key={item.itemSku} item={item} expanded={expanded.has(item.itemSku)} onToggle={() => setExpanded((current) => { const next = new Set(current); next.has(item.itemSku) ? next.delete(item.itemSku) : next.add(item.itemSku); return next; })} cell={cell} right={right} money={money} />)}</tbody>
-          </table>
-          {visibleItems.length === 0 && <div style={{ padding: 20, color: '#64748b', fontSize: 13 }}>{payload.items.length === 0 ? 'No PO line items were matched to this vendor.' : 'No items or purchase orders match the search.'}</div>}
-        </div>
-      </>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(220px, 1.4fr) minmax(180px, 1.2fr) minmax(140px, 0.8fr) minmax(140px, 0.8fr)', gap: 12, marginBottom: 16, alignItems: 'end' }}>
+        <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
+          Search vendor
+          <input value={vendorSearch} disabled={!hasData} onChange={(event) => setVendorSearch(event.target.value)} placeholder="Vendor name or ID" style={inputStyle} />
+        </label>
+        <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
+          Vendor
+          <select value={vendorId} disabled={!hasData} onChange={(event) => { setExpanded(new Set()); load(event.target.value); }} style={inputStyle}>
+            {!hasData && <option value="">No vendors available</option>}
+            {visibleVendors.map((vendor) => <option key={vendor.vendorId} value={vendor.vendorId}>{vendor.vendorName} ({vendor.vendorId}) · {vendor.orderCount.toLocaleString()} POs</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
+          Search items or PO number
+          <input value={itemSearch} disabled={!hasData} onChange={(event) => setItemSearch(event.target.value)} placeholder="Item ID, description, or PO number" style={inputStyle} />
+        </label>
+        <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
+          Order date from
+          <input type="date" value={startDate} disabled={!hasData} onChange={(event) => setStartDate(event.target.value)} style={inputStyle} />
+        </label>
+        <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
+          Order date to
+          <input type="date" value={endDate} disabled={!hasData} onChange={(event) => setEndDate(event.target.value)} style={inputStyle} />
+        </label>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse' }}>
+          <thead><tr>{['Item', 'POs', 'Ordered qty', 'Latest order', ''].map((label) => <th key={label || 'expand'} style={{ padding: '9px 10px', background: '#f8fafc', color: '#475569', textAlign: label === 'POs' || label === 'Ordered qty' ? 'right' : 'left', fontSize: 11, textTransform: 'uppercase' as const }}>{label}</th>)}</tr></thead>
+          <tbody>{visibleItems.map((item) => <ItemRows key={item.itemSku} item={item} expanded={expanded.has(item.itemSku)} onToggle={() => setExpanded((current) => { const next = new Set(current); next.has(item.itemSku) ? next.delete(item.itemSku) : next.add(item.itemSku); return next; })} cell={cell} right={right} money={money} />)}</tbody>
+        </table>
+        {visibleItems.length === 0 && (
+          <div style={{ padding: 20, color: error ? '#b91c1c' : '#64748b', fontSize: 13 }}>
+            {error
+              ? error
+              : !payload
+                ? 'Loading order history…'
+                : !hasData
+                  ? 'No imported purchase-order data is available yet.'
+                  : payload.items.length === 0
+                    ? 'No PO line items were matched to this vendor.'
+                    : 'No items or purchase orders match the search.'}
+          </div>
+        )}
+      </div>
     </OperationalReportPanel>
   );
 }
