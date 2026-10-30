@@ -42,6 +42,7 @@ type SyncCursor = {
   mode: SyncMode;
   syncRunId: string;
   salesOnly?: boolean;
+  programIds?: string[];
   businessDayFanout?: boolean;
   businessDateIso?: string;
   programOffset: number;
@@ -370,6 +371,9 @@ export async function runOperationalSyncRequest(
   const forceIngestOnly = body.forceIngestOnly === true;
   const deferDailySnapshotHydration = forceIngestOnly || body.deferDailySnapshotHydration === true;
   const salesOnly = body.salesOnly === true || String(body.scope || '').trim().toLowerCase() === 'sales';
+  const programIds = Array.isArray(body.programIds)
+    ? Array.from(new Set(body.programIds.map((value) => String(value || '').trim().toUpperCase()).filter(Boolean)))
+    : undefined;
   const hasContinuationCursor = requestedProgramOffset > 0 || requestedRequestOffset > 0 || Boolean(requestedBookmark);
   const resetContinuationForMissingRunId = hasContinuationCursor && !requestedSyncRunId;
   const effectiveSyncRunId = requestedSyncRunId || randomUUID();
@@ -496,6 +500,7 @@ export async function runOperationalSyncRequest(
         bookmark: effectiveBookmark,
         syncRunId: effectiveSyncRunId,
         salesOnly,
+        programIds,
         arOnlyBackfill: isArHistoryRebuild,
         fullArFactHistory: isArHistoryRebuild,
         apOnlyBackfill: isApHistoryRebuild,
@@ -631,6 +636,7 @@ export async function runOperationalSyncRequest(
     bookmark: effectiveBookmark,
     syncRunId: effectiveSyncRunId,
     salesOnly,
+    programIds,
     arOnlyBackfill: isArHistoryRebuild,
     fullArFactHistory: isArHistoryRebuild,
     apOnlyBackfill: isApHistoryRebuild,

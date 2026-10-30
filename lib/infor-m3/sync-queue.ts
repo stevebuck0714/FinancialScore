@@ -988,6 +988,9 @@ function buildSkippedCursorFromPayload(payload: Record<string, unknown>): Record
   if (workerBaseUrl) {
     cursor.workerBaseUrl = workerBaseUrl;
   }
+  if (Array.isArray(payload.programIds)) {
+    cursor.programIds = payload.programIds;
+  }
   return cursor;
 }
 
@@ -1072,6 +1075,8 @@ export async function startQueueRun(input: {
   startDate?: string;
   endDate?: string;
   salesOnly?: boolean;
+  /** Immutable IDO scope for this queued run; carried by every task. */
+  programIds?: string[];
   workerBaseUrl?: string;
 }): Promise<{ alreadyRunning: boolean; queued: boolean; run: QueueRunRecord }> {
   const running = await getRunningQueueRun(input.companyId, input.platform);
@@ -1106,7 +1111,11 @@ export async function startQueueRun(input: {
     const endDate = new Date(String(input.endDate));
     const businessDates = enumerateBusinessDates(startDate, endDate);
     const shardSize = resolveAdaptiveFanoutDayProgramShardSize(businessDates.length);
-    const programHint = await resolveFanoutProgramUpperBound(input.companyId, input.platform);
+    const explicitProgramIds = Array.from(
+      new Set((input.programIds || []).map((value) => String(value || '').trim().toUpperCase()).filter(Boolean))
+    );
+    const programHint =
+      explicitProgramIds.length > 0 ? explicitProgramIds.length : await resolveFanoutProgramUpperBound(input.companyId, input.platform);
     if (businessDates.length > 0) {
       const shardRanges: Array<{ start: number; end: number }> = [];
       for (let offset = 0; offset < programHint; offset += shardSize) {
@@ -1129,6 +1138,7 @@ export async function startQueueRun(input: {
             bookmark: null,
             stagnantCursorCount: 0,
             workerBaseUrl: normalizeWorkerBaseUrl(input.workerBaseUrl),
+            ...(explicitProgramIds.length > 0 ? { programIds: explicitProgramIds } : {}),
           }),
         }))
       );
@@ -1150,6 +1160,9 @@ export async function startQueueRun(input: {
           maxAttempts: DEFAULT_MAX_ATTEMPTS,
           payload: buildTaskPayload(runRecord, {
             workerBaseUrl: normalizeWorkerBaseUrl(input.workerBaseUrl),
+            ...(Array.isArray(input.programIds) && input.programIds.length > 0
+              ? { programIds: input.programIds }
+              : {}),
           }),
         },
       });
@@ -1163,6 +1176,9 @@ export async function startQueueRun(input: {
         maxAttempts: DEFAULT_MAX_ATTEMPTS,
         payload: buildTaskPayload(runRecord, {
           workerBaseUrl: normalizeWorkerBaseUrl(input.workerBaseUrl),
+          ...(Array.isArray(input.programIds) && input.programIds.length > 0
+            ? { programIds: input.programIds }
+            : {}),
         }),
       },
     });
@@ -1902,6 +1918,7 @@ async function processTask(
             }
           : {}),
         ...cursor,
+        ...(Array.isArray(taskPayload.programIds) ? { programIds: taskPayload.programIds } : {}),
         glNoForwardProgressCount: nextNoProgressCount,
         glLastObservedMaxBusinessDate: glMaxAfter ? glMaxAfter.toISOString() : (glMaxBefore ? glMaxBefore.toISOString() : null),
         workerBaseUrl: taskWorkerBaseUrl,

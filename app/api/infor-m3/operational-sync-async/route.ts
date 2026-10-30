@@ -48,6 +48,14 @@ function normalizePositiveInt(value: unknown): number | undefined {
   return Math.floor(parsed);
 }
 
+function normalizeProgramIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = Array.from(
+    new Set(value.map((entry) => String(entry || '').trim().toUpperCase()).filter(Boolean))
+  );
+  return ids.length > 0 ? ids : undefined;
+}
+
 function normalizeIsoDate(value: unknown): string | undefined {
   const raw = String(value || '').trim();
   if (!raw) return undefined;
@@ -205,6 +213,7 @@ export async function POST(request: NextRequest) {
     let startDate = normalizeIsoDate(body.startDate);
     let endDate = normalizeIsoDate(body.endDate);
     const salesOnly = body.salesOnly === true || String(body.scope || '').trim().toLowerCase() === 'sales';
+    const programIds = normalizeProgramIds(body.programIds);
 
     if (rawIngestOnlyMode && !allowRawIngestOnly) {
       return NextResponse.json(
@@ -316,6 +325,7 @@ export async function POST(request: NextRequest) {
         startDate,
         endDate,
         salesOnly,
+        programIds,
         workerBaseUrl: request.nextUrl.origin,
       });
       return NextResponse.json({
@@ -345,6 +355,7 @@ export async function POST(request: NextRequest) {
       startDate,
       endDate,
       salesOnly,
+      programIds,
       cursor: null,
       chunkCount: 0,
       recordsCreated: 0,

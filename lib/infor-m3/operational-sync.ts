@@ -52,6 +52,8 @@ type SyncOptions = {
   preserveCashSnapshot?: boolean;
   skipPrune?: boolean;
   syncRunId?: string;
+  /** Explicit IDO scope supplied by a user-initiated targeted sync. */
+  programIds?: string[];
   salesOnly?: boolean;
   ingestOnly?: boolean;
   businessDayFanout?: boolean;
@@ -207,6 +209,30 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     miProgram: 'SLVendors',
     endpointPath:
       '/APR_PRD/CSI/IDORequestService/ido/load/SLVendors?properties=VendNum,Name,RecordDate,LastPaid,LastPurch,PayYtd,PayLstYr,PurchYtd,PurchLstYr,CurrCode,TermsCode,PayType,Phone,Stat,VadAddr_1,VadCity,VadState,VadZip,VadCountry,DerAgeBal1,DerAgeBal2,DerAgeBal3,DerAgeBal4,DerAgeBal5,DerAgeBal6,DerNewAmount,DerOldAmount&recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Purchasing',
+    miProgram: 'SLPos',
+    // CSI's PO header IDO. Request the complete supported property set so
+    // tenant-specific PO fields can be inspected and mapped without making
+    // an invalid-property request on a customized IDO.
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLPos?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Purchasing',
+    miProgram: 'SLPoItems',
+    // Includes regular and blanket PO line/release data. Receipt quantities
+    // exposed by this IDO will be retained in the raw payload for the later
+    // vendor-item order-history normalization.
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLPoItems?recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -9413,6 +9439,13 @@ export async function syncInforM3OperationalData(
     inforSystem === 'INFOR_CSI'
       ? applyCsiFinancialIdoContract(baseProgramRowsRaw, csiFinancialIdoContract)
       : baseProgramRowsRaw;
+  const requestedProgramIds = new Set(
+    (options?.programIds || []).map((value) => String(value || '').trim().toUpperCase()).filter(Boolean)
+  );
+  const explicitlyScopedProgramRows =
+    requestedProgramIds.size > 0
+      ? baseProgramRows.filter((row) => requestedProgramIds.has(resolveCsiProgramId(row, row.endpointPath)))
+      : baseProgramRows;
   if (persistedArHistoryRebuildRun === null) {
     const rebuildRun = await prisma.inforSyncRun.findFirst({
       where: { id: syncRunId, companyId, mode: 'ar_history_rebuild' },
@@ -9454,11 +9487,11 @@ export async function syncInforM3OperationalData(
   ];
   const isApBackfillFastPath = options?.apOnlyBackfill === true && Boolean(syncWindow);
   const filteredProgramRows = isApBackfillFastPath
-    ? baseProgramRows.filter((row) =>
+    ? explicitlyScopedProgramRows.filter((row) =>
         AP_REBUILD_PROGRAM_IDS.includes(resolveCsiProgramId(row, row.endpointPath))
       )
     : isArBackfillFastPath
-    ? baseProgramRows.filter((row) =>
+    ? explicitlyScopedProgramRows.filter((row) =>
         isArHistoryRebuild
           // CSI needs both its transaction history and its current open-item
           // population. Restricting rebuilds to SLArtrans leaves the current
@@ -9466,7 +9499,7 @@ export async function syncInforM3OperationalData(
           ? ['SLARTRANS', 'SLCUSTDRFTS'].includes(resolveCsiProgramId(row, row.endpointPath))
           : classifyModule(row.module) === 'ar'
       )
-    : baseProgramRows;
+    : explicitlyScopedProgramRows;
   const salesOnly = options?.salesOnly === true;
   const SALES_ONLY_PROGRAM_IDS = new Set(['SLCOHDRS', 'SLCOS', 'SLCOITEMS']);
   const programRows = salesOnly

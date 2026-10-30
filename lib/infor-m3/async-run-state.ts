@@ -14,6 +14,7 @@ export type InforOperationalAsyncRun = {
   startDate?: string;
   endDate?: string;
   salesOnly?: boolean;
+  programIds?: string[];
   cursor?: Record<string, unknown> | null;
   chunkCount: number;
   recordsCreated: number;
@@ -55,6 +56,9 @@ export function getRunStateFromMetadata(metadata: unknown): InforOperationalAsyn
     startDate: String(run.startDate || '').trim() || undefined,
     endDate: String(run.endDate || '').trim() || undefined,
     salesOnly: run.salesOnly === true,
+    programIds: Array.isArray(run.programIds)
+      ? Array.from(new Set(run.programIds.map((value) => String(value || '').trim().toUpperCase()).filter(Boolean)))
+      : undefined,
     cursor:
       run.cursor && typeof run.cursor === 'object' && !Array.isArray(run.cursor)
         ? (run.cursor as Record<string, unknown>)

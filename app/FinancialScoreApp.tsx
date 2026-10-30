@@ -9391,6 +9391,7 @@ function FinancialScorePage() {
       startDate?: string;
       endDate?: string;
       salesOnly?: boolean;
+      programIds?: string[];
     }
   ) => {
     const companyId = targetCompanyId || selectedCompanyId;
@@ -9446,6 +9447,9 @@ function FinancialScorePage() {
       }
       if (options?.startDate) payload.startDate = options.startDate;
       if (options?.endDate) payload.endDate = options.endDate;
+      if (Array.isArray(options?.programIds) && options.programIds.length > 0) {
+        payload.programIds = options.programIds;
+      }
 
       const response = await fetch('/api/infor-m3/operational-sync-async', {
         method: 'POST',
