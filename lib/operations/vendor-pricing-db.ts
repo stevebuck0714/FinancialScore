@@ -165,7 +165,8 @@ export async function loadCurrentVendorContracts(companyId: string): Promise<Map
 
 type ForecastFacts = { qty: number; mto: string | null };
 
-async function loadForecastFactsByItem(companyId: string, year: number): Promise<Map<string, ForecastFacts>> {
+/** Monthly Forecast totals for the year, keyed by upper-cased, trimmed item SKU. */
+export async function loadForecastFactsByItem(companyId: string, year: number): Promise<Map<string, ForecastFacts>> {
   const result = new Map<string, ForecastFacts>();
   try {
     await ensureVendorMonthlyForecastTables();

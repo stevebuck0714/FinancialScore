@@ -205,11 +205,11 @@ function tariffChangeAlert(summary: TariffChangeSummary, money: (value: number) 
     explainability: {
       triggerName: 'Daily Tariff Rate Change',
       formula:
-        'Per item: total rate = applied duty % + special % + Section 301/232/IEEPA/additional %; annual impact = (today − previous) rate ÷ 100 × value per piece × units sold in the last 365 days',
+        'Per item: total rate = applied duty % + special % + Section 301/232/IEEPA/additional %; annual impact = (today − previous) rate ÷ 100 × value per piece × annual units (units sold in the last 365 days, or this year\'s Monthly Forecast for items with no sales)',
       threshold: `|annual impact| >= ${money(minAnnualImpact)} per item; items whose HTS codes, origin, or trade program changed are excluded`,
       reasonNow: `${summary.currentDate} vs ${summary.previousDate}${summary.releaseName ? ` (HTS ${summary.releaseName})` : ''}: ${increases} increases, ${decreases} decreases; net ${signed(netImpact)}/yr, gross ${money(grossImpact)}/yr`,
       policySource: 'Company Pulse policy',
-      dataRefs: ['CompanyItemDutyDailySnapshot', 'CompanyItemDutyApplication', 'USITC HTS'],
+      dataRefs: ['CompanyItemDutyDailySnapshot', 'CompanyItemDutyApplication', 'VendorMonthlyForecastLine', 'USITC HTS'],
       sourceTimestamp: `${summary.currentDate}T00:00:00.000Z`,
       tariffChanges: { ...summary, changes: changes.slice(0, MAX_STORED_TARIFF_CHANGES) },
     },

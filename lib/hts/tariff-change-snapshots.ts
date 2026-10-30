@@ -1,5 +1,7 @@
 import prisma from '@/lib/prisma';
 import { ensureCompanyItemDutyTable } from '@/lib/hts/item-duty-overlay';
+import { loadForecastFactsByItem } from '@/lib/operations/vendor-pricing-db';
+import { estYear } from '@/lib/time/eastern';
 
 export type TariffRateComponent = 'duty' | 'special' | 'section301' | 'section232' | 'ieepa' | 'additional';
 
@@ -13,6 +15,8 @@ export type TariffChange = {
   currentRatePct: number;
   deltaPts: number;
   annualQty: number;
+  /** Units sold in the last 365 days, or this year's Monthly Forecast for items with no sales. */
+  qtySource: 'sales' | 'forecast' | null;
   valuePerPiece: number;
   annualImpact: number;
 };
@@ -196,10 +200,11 @@ export async function loadLatestTariffChanges(
   `;
   if (dates.length < 2) return null;
   const [currentDate, previousDate] = [dates[0].snapshotDate, dates[1].snapshotDate];
-  const [current, previous, quantities] = await Promise.all([
+  const [current, previous, quantities, forecast] = await Promise.all([
     loadSnapshot(companyId, currentDate),
     loadSnapshot(companyId, previousDate),
     loadTrailingYearQuantities(companyId),
+    loadForecastFactsByItem(companyId, estYear()),
   ]);
 
   const changes: TariffChange[] = [];
@@ -216,7 +221,10 @@ export async function loadLatestTariffChanges(
     const currentRatePct = Number(now.totalRatePct ?? 0);
     const deltaPts = currentRatePct - previousRatePct;
     const valuePerPiece = Number(now.enteredValuePerPiece ?? 0);
-    const annualQty = quantities.get(itemSku) || 0;
+    const soldQty = quantities.get(itemSku) || 0;
+    const forecastQty = forecast.get(itemSku.trim().toUpperCase())?.qty || 0;
+    const qtySource = soldQty > 0 ? 'sales' : forecastQty > 0 ? 'forecast' : null;
+    const annualQty = soldQty > 0 ? soldQty : forecastQty;
     const annualImpact = (deltaPts / 100) * valuePerPiece * annualQty;
     if (Math.abs(annualImpact) < minAnnualImpact) continue;
     changes.push({
@@ -229,6 +237,7 @@ export async function loadLatestTariffChanges(
       currentRatePct,
       deltaPts,
       annualQty,
+      qtySource,
       valuePerPiece,
       annualImpact,
     });

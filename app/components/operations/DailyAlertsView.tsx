@@ -3436,7 +3436,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             'Current Rate %': Number(change.currentRatePct.toFixed(4)),
             'Change (pts)': Number(change.deltaPts.toFixed(4)),
             'Value per Piece': change.valuePerPiece,
-            'Units Sold (12 mo)': change.annualQty,
+            'Annual Units': change.annualQty,
+            'Units Source': change.qtySource === 'forecast' ? 'Monthly Forecast' : change.qtySource === 'sales' ? 'Sold, last 12 months' : '',
             'Annual Impact': Math.round(change.annualImpact),
           })));
           const workbook = XLSX.utils.book_new();
@@ -3514,7 +3515,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                       {sortHeader('previousRatePct', 'Previous', 'right')}
                       {sortHeader('currentRatePct', 'Current', 'right')}
                       {sortHeader('deltaPts', 'Change', 'right')}
-                      {sortHeader('annualQty', 'Units (12 mo)', 'right')}
+                      {sortHeader('annualQty', 'Annual Units', 'right')}
                       {sortHeader('annualImpact', 'Annual Impact', 'right')}
                     </tr>
                   </thead>
@@ -3533,7 +3534,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                         <td style={{ ...bodyCell, textAlign: 'right' }}>{formatRatePct(change.previousRatePct)}</td>
                         <td style={{ ...bodyCell, textAlign: 'right' }}>{formatRatePct(change.currentRatePct)}</td>
                         <td style={{ ...bodyCell, textAlign: 'right', color: change.deltaPts > 0 ? '#b91c1c' : '#15803d' }}>{formatRatePts(change.deltaPts)}</td>
-                        <td style={{ ...bodyCell, textAlign: 'right' }}>{Math.round(change.annualQty).toLocaleString()}</td>
+                        <td style={{ ...bodyCell, textAlign: 'right' }}>
+                          {Math.round(change.annualQty).toLocaleString()}
+                          {change.qtySource === 'forecast' && (
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>Forecast</div>
+                          )}
+                        </td>
                         <td style={{ ...bodyCell, textAlign: 'right', fontWeight: 600, color: change.annualImpact > 0 ? '#b91c1c' : '#15803d' }}>
                           {money.fmtSigned(change.annualImpact, 0)}
                         </td>
