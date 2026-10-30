@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { readLatestDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 
@@ -88,17 +87,20 @@ async function loadRunPayloads(companyId: string, syncRunId: string, miProgram: 
 
 /** Newest completed sync run that imported CSI purchase-order headers. */
 async function findLatestCompletedPoRun(companyId: string): Promise<string | null> {
-  const rows = await prisma.$queryRaw<Array<{ syncRunId: string }>>(Prisma.sql`
-    SELECT r."syncRunId"
-    FROM "InforRawRecord" r
-    INNER JOIN "InforSyncRun" s ON s.id = r."syncRunId" AND s.status = 'done'
-    WHERE r."companyId" = ${companyId}
-      AND r."miProgram" = 'SLPos'
-    GROUP BY r."syncRunId", s."finishedAt"
-    ORDER BY s."finishedAt" DESC NULLS LAST
-    LIMIT 1
-  `);
-  return rows[0]?.syncRunId || null;
+  const runs = await prisma.inforSyncRun.findMany({
+    where: { companyId, status: 'done' },
+    select: { id: true },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+  for (const run of runs) {
+    const header = await prisma.inforRawRecord.findFirst({
+      where: { companyId, syncRunId: run.id, miProgram: 'SLPos' },
+      select: { id: true },
+    });
+    if (header) return run.id;
+  }
+  return null;
 }
 
 export async function buildVendorItemOrderHistory(
@@ -167,7 +169,7 @@ export async function buildVendorItemOrderHistory(
       orderDate: header.orderDate,
       quantity,
       receivedQty: number(payload, 'QtyReceived', 'QtyRcvd'),
-      unitPrice: number(payload, 'ItemCost', 'ItemCostConv', 'UnitCost', 'PlanCost', 'Price'),
+      unitPrice: number(payload, 'ItemCost'),
       dueDate: date(text(payload, 'DueDate', 'PromiseDate')),
       customer: header.customer,
       status: text(payload, 'Stat', 'Status') || header.status,

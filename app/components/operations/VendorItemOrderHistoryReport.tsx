@@ -67,7 +67,7 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
   return (
     <OperationalReportPanel reportKey="vendorsItemOrderHistory" canReorder={canReorder} isSaving={isSaving} onMove={onMove} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24, ...panelStyle }}>
       <div style={{ marginBottom: 16 }}>
-        <h2 style={{ margin: '0 0 5px', color: '#1e293b', fontSize: 24 }}>Item order history by vendor</h2>
+        <h2 style={{ margin: '0 0 5px', color: '#1e293b', fontSize: 24 }}>Order History</h2>
         {payload?.syncedAt ? (
           <div style={{ color: '#64748b', fontSize: 12 }}>Last refreshed {formatEstDateTime(payload.syncedAt)}.</div>
         ) : null}

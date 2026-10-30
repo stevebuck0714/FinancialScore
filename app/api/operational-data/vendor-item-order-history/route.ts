@@ -3,6 +3,7 @@ import { assertVendorsForecastAccess } from '@/lib/operations/vendor-monthly-for
 import { loadVendorItemOrderHistory } from '@/lib/operations/vendor-item-order-history';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   try {
