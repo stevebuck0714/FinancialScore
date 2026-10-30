@@ -232,7 +232,7 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     // Includes regular and blanket PO line/release data. Receipt quantities
     // exposed by this IDO will be retained in the raw payload for the later
     // vendor-item order-history normalization.
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLPoItems?recordCap=1000',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLPoItems?properties=PoNum,PoLine,PoRelease,Item,Description,QtyOrdered,QtyReceived,Cost,DueDate,Stat&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -1814,6 +1814,18 @@ const SL_COITEMS_SAFE_PROPERTIES = [
   'Whse',
   'DueDate',
 ];
+const SL_POITEMS_SAFE_PROPERTIES = [
+  'PoNum',
+  'PoLine',
+  'PoRelease',
+  'Item',
+  'Description',
+  'QtyOrdered',
+  'QtyReceived',
+  'Cost',
+  'DueDate',
+  'Stat',
+];
 const MAX_CSI_PAGES_PER_REQUEST = 20;
 // Required by the SGP Freight report. These are unioned with a company's saved
 // SLItems projection at request time, preserving any company-specific fields.
@@ -1941,6 +1953,11 @@ function buildGlTransactionCandidatePaths(endpointPath: string): string[] {
 function resolveSlCoitemsSafePath(endpointPath: string): string | null {
   if (!/\/load\/SLCoitems/i.test(endpointPath)) return null;
   return ensureCsiProperties(endpointPath, SL_COITEMS_SAFE_PROPERTIES);
+}
+
+function resolveSlPoItemsSafePath(endpointPath: string): string | null {
+  if (!/\/load\/SLPoItems/i.test(endpointPath)) return null;
+  return ensureCsiProperties(endpointPath, SL_POITEMS_SAFE_PROPERTIES);
 }
 
 function resolveCsiProgramId(row: InforProgramRow, endpointPath?: string): string {
@@ -9801,7 +9818,9 @@ export async function syncInforM3OperationalData(
       }
 
       const normalizedInitialEndpointPath = applyProgramEndpointPropertyPolicy(
-        resolveSlCoitemsSafePath(initialEndpointPath) || initialEndpointPath,
+        resolveSlPoItemsSafePath(initialEndpointPath) ||
+          resolveSlCoitemsSafePath(initialEndpointPath) ||
+          initialEndpointPath,
         programId
       );
       const isSlVchHdrs = isSlVchHdrsProgramLike({ programId, row, endpointPath: req.endpointPath });

@@ -38,6 +38,21 @@ const SL_COITEMS_SAFE_PROPERTIES = [
   'Whse',
   'DueDate',
 ];
+// SLPOItems' default CSI projection can include tenant-customized columns
+// which are invalid in some deployments (including VendNum). PO headers
+// provide the supplier; the line feed only needs its purchase-order fields.
+const SL_POITEMS_SAFE_PROPERTIES = [
+  'PoNum',
+  'PoLine',
+  'PoRelease',
+  'Item',
+  'Description',
+  'QtyOrdered',
+  'QtyReceived',
+  'Cost',
+  'DueDate',
+  'Stat',
+];
 
 function resolveCsiSitePolicy(program: AccountingProgram): SitePolicy {
   const ido = String(program.miProgram || '').trim().toUpperCase();
@@ -77,6 +92,18 @@ function enforceSlCoitemsSafeEndpoint(endpointPath: string, miProgram: string): 
   const [base, queryString = ''] = path.split('?');
   const params = new URLSearchParams(queryString);
   params.set('properties', SL_COITEMS_SAFE_PROPERTIES.join(','));
+  if (!params.get('recordCap')) params.set('recordCap', '1000');
+  const next = params.toString();
+  return next ? `${base}?${next}` : base;
+}
+
+function enforceSlPoItemsSafeEndpoint(endpointPath: string, miProgram: string): string {
+  const path = String(endpointPath || '').trim();
+  const isProgram = String(miProgram || '').trim().toUpperCase() === 'SLPOITEMS';
+  if (!path || (!isProgram && !/\/ido\/load\/slpoitems/i.test(path))) return path;
+  const [base, queryString = ''] = path.split('?');
+  const params = new URLSearchParams(queryString);
+  params.set('properties', SL_POITEMS_SAFE_PROPERTIES.join(','));
   if (!params.get('recordCap')) params.set('recordCap', '1000');
   const next = params.toString();
   return next ? `${base}?${next}` : base;
@@ -151,6 +178,7 @@ function sanitizePrograms(
       throw new Error('Each accounting program row must include module plus MI program or endpoint path.');
     }
     endpointPath = enforceSlCoitemsSafeEndpoint(endpointPath, miProgram);
+    endpointPath = enforceSlPoItemsSafeEndpoint(endpointPath, miProgram);
     if (requireComplete && inforSystem === 'INFOR_CSI' && enabled) {
       // For CSI, incomplete rows are automatically disabled instead of
       // blocking save, so the Enabled toggle behaves as operators expect.
@@ -200,7 +228,10 @@ function addMissingCsiPurchaseOrderPrograms(programs: AccountingProgram[]): Acco
     additions.push({
       module: 'Purchasing',
       miProgram,
-      endpointPath: `${endpointPrefix}${miProgram}?recordCap=1000`,
+      endpointPath:
+        miProgram === 'SLPoItems'
+          ? `${endpointPrefix}${miProgram}?properties=${encodeURIComponent(SL_POITEMS_SAFE_PROPERTIES.join(','))}&recordCap=1000`
+          : `${endpointPrefix}${miProgram}?recordCap=1000`,
       mongooseConfig: template.mongooseConfig,
       site: template.site,
       transactions: ['CSI_LOAD'],

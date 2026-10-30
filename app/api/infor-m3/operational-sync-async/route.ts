@@ -231,6 +231,11 @@ export async function POST(request: NextRequest) {
       select: { accountingSystem: true },
     });
     const inforSystem = normalizeInforSystem(company?.accountingSystem);
+    const isPurchaseOrderOnly =
+      queuePlatform === 'INFOR_M3' &&
+      inforSystem === 'INFOR_CSI' &&
+      Boolean(programIds?.length) &&
+      programIds!.every((programId) => programId === 'SLPOS' || programId === 'SLPOITEMS');
     if (queuePlatform === 'INFOR_M3' && inforSystem === 'INFOR_CSI' && !site) {
       return NextResponse.json(
         {
@@ -239,6 +244,11 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+    // PO header/line IDOs are not business-date filtered. Running them once
+    // per day re-fetches the same records hundreds of times.
+    if (isPurchaseOrderOnly && mode === 'business_day_backfill') {
+      mode = 'backfill';
     }
 
     // Large CSI backfills can exceed per-request limits if run as broad windows.
@@ -257,7 +267,7 @@ export async function POST(request: NextRequest) {
       : backfillMonths;
     const allowSingleShotBackfill =
       body.allowSingleShotBackfill === true || isInforSyncInProcessWorkerEnabled();
-    if (queuePlatform === 'INFOR_M3' && inforSystem === 'INFOR_CSI' && frequency === 'daily') {
+    if (queuePlatform === 'INFOR_M3' && inforSystem === 'INFOR_CSI' && frequency === 'daily' && !isPurchaseOrderOnly) {
       const requestedMode = mode;
       const looksLikeLargeManualWindow =
         requestedMode === 'manual' &&
