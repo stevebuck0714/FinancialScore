@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PULSE_POLICY_DEFINITIONS,
   PULSE_POLICY_OVERRIDE_KEY,
@@ -14,7 +14,7 @@ import {
   type PulsePolicyValues,
 } from '@/lib/company-pulse/policy';
 import { toLocalInputDate } from '@/app/utils/date';
-import { formatEstDateLabel, formatEstDateTime } from '@/lib/time/eastern';
+import { formatEstDate, formatEstDateLabel, formatEstDateTime } from '@/lib/time/eastern';
 import IndustryBriefPanel from '@/app/components/industry-brief/IndustryBriefPanel';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
@@ -439,6 +439,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [dailyBriefingMode, setDailyBriefingMode] = useState<'full' | 'ops-only' | 'none' | null>(null);
   const [pulseRefreshing, setPulseRefreshing] = useState(false);
   const [pulseGeneratedAt, setPulseGeneratedAt] = useState<string | null>(null);
+  const [pulseCacheCompanyId, setPulseCacheCompanyId] = useState<string | null>(null);
   const [showPolicySettings, setShowPolicySettings] = useState(false);
 
   useEffect(() => {
@@ -478,6 +479,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           setPolicyOverrides(data?.policyOverrides && typeof data.policyOverrides === 'object' ? data.policyOverrides : {});
           setIndustrySectorCategory(data?.industrySectorCategory || null);
           setPulseGeneratedAt(cache?.generatedAt || null);
+          setPulseCacheCompanyId(companyId);
           setLoading(false);
         }
         return;
@@ -2064,6 +2066,21 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       setPulseRefreshing(false);
     }
   };
+
+  // Regenerate once per company when the cached Pulse was not built today (EST).
+  const autoRefreshedCompanyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (loading || pulseRefreshing || !companyId || pulseCacheCompanyId !== companyId) return;
+    if (autoRefreshedCompanyRef.current === companyId) return;
+    const generatedAt = pulseGeneratedAt ? new Date(pulseGeneratedAt) : null;
+    const isStale = !generatedAt || Number.isNaN(generatedAt.getTime()) || formatEstDate(generatedAt) !== formatEstDate();
+    if (!isStale) return;
+    const timer = window.setTimeout(() => {
+      autoRefreshedCompanyRef.current = companyId;
+      void refreshCompanyPulse();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  });
 
   const activeAlerts = useMemo(
     () => alerts.filter((a) => a.status !== 'resolved' && a.isActive !== false),

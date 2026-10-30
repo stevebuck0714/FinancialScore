@@ -99,6 +99,53 @@ function compareText(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+type SortValue = string | number | null | undefined;
+type SortDirection = 'asc' | 'desc';
+type Calc = ReturnType<typeof calculateVendorPricing>;
+
+const SORT_VALUES: Record<string, (row: VendorPricingRow, calc: Calc) => SortValue> = {
+  itemSku: (row) => row.itemSku,
+  vendorId: (row) => row.vendorId,
+  vendorName: (row) => row.vendorName,
+  subsupplier: (row) => row.subsupplier,
+  mto: (row) => row.mtoOverride ?? row.inforMto,
+  currentCostEffectiveDate: (row) => row.currentCostEffectiveDate,
+  currentCost: (row) => row.currentCost,
+  newCost: (row) => row.newCost,
+  pctChange: (_row, calc) => calc.pctChange,
+  approvalStatus: (row) => row.approvalStatus,
+  forecastQty: (row) => row.forecastQty,
+  material: (row) => row.material,
+  currentMaterialCost: (row) => row.currentMaterialCost,
+  newMaterialCost: (row) => row.newMaterialCost,
+  pctChangeMaterial: (_row, calc) => calc.pctChangeMaterial,
+  partWeightKg: (row) => row.partWeightKgOverride ?? row.inforPartWeightKg,
+  priceChange: (_row, calc) => calc.priceChange,
+  currentUsdPerKg: (_row, calc) => calc.currentUsdPerKg,
+  newUsdPerKg: (_row, calc) => calc.newUsdPerKg,
+  pctChangeUsdPerKg: (_row, calc) => calc.pctChangeUsdPerKg,
+  startDate: (row) => row.startDate,
+  endDate: (row) => row.endDate,
+  requiredLoadDate: (row) => row.requiredLoadDate,
+};
+
+/** Blank values stay at the bottom in either direction. */
+function compareSortValues(a: SortValue, b: SortValue, direction: SortDirection): number {
+  const aBlank = a == null || a === '' || (typeof a === 'number' && !Number.isFinite(a));
+  const bBlank = b == null || b === '' || (typeof b === 'number' && !Number.isFinite(b));
+  if (aBlank || bBlank) return aBlank === bBlank ? 0 : aBlank ? 1 : -1;
+  const comparison = typeof a === 'number' && typeof b === 'number' ? a - b : compareText(String(a), String(b));
+  return direction === 'asc' ? comparison : -comparison;
+}
+
+function rankRows(rows: VendorPricingRow[], key: string, direction: SortDirection): Map<string, number> {
+  const getValue = SORT_VALUES[key];
+  const ranked = rows
+    .map((row) => ({ key: rowKey(row), value: getValue(row, calculateVendorPricing(row)) }))
+    .sort((a, b) => compareSortValues(a.value, b.value, direction));
+  return new Map(ranked.map((entry, index) => [entry.key, index]));
+}
+
 export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: VendorPricingReportProps) {
   const [rows, setRows] = useState<VendorPricingRow[]>([]);
   const [forecastYear, setForecastYear] = useState<number | null>(null);
@@ -110,6 +157,8 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
   const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  // The rank is captured on header click and after save, not on every edit, so rows stay put while typing.
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection; rank: Map<string, number> } | null>(null);
   const [savedSignatures, setSavedSignatures] = useState<Map<string, string>>(() => new Map());
   const applyRows = useCallback((next: VendorPricingRow[]) => {
     setSavedSignatures(new Map(next.map((row) => [rowKey(row), editSignature(row)])));
@@ -128,6 +177,7 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
       .then((payload) => {
         if (cancelled) return;
         setError(null);
+        setSort(null);
         applyRows(Array.isArray(payload.rows) ? payload.rows : []);
         setForecastYear(Number(payload.forecastYear) || null);
       })
@@ -185,7 +235,10 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Failed to save');
-      if (Array.isArray(payload.rows)) applyRows(payload.rows);
+      if (Array.isArray(payload.rows)) {
+        applyRows(payload.rows);
+        if (sort) setSort({ ...sort, rank: rankRows(payload.rows, sort.key, sort.direction) });
+      }
       setNotice(`Saved ${changedRows.length.toLocaleString()} changed rows.`);
     } catch (err: any) {
       setError(err?.message || 'Failed to save vendor pricing');
@@ -202,7 +255,7 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
 
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return rows.filter((row) => {
+    const matches = rows.filter((row) => {
       if (vendorFilter !== 'all' && row.vendorId !== vendorFilter) return false;
       if (statusFilter === 'none' && row.approvalStatus) return false;
       if (statusFilter !== 'all' && statusFilter !== 'none' && row.approvalStatus !== statusFilter) return false;
@@ -210,7 +263,27 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
       return [row.itemSku, row.vendorId, row.vendorName, row.subsupplier, row.material]
         .some((value) => String(value || '').toLowerCase().includes(term));
     });
-  }, [rows, search, statusFilter, vendorFilter]);
+    if (!sort) return matches;
+    return matches.sort((a, b) => (sort.rank.get(rowKey(a)) ?? 0) - (sort.rank.get(rowKey(b)) ?? 0));
+  }, [rows, search, sort, statusFilter, vendorFilter]);
+
+  const sortableHeader = (key: string, label: string, align: 'left' | 'right', style?: React.CSSProperties) => {
+    const active = sort?.key === key;
+    return (
+      <th key={key} style={{ ...headerStyle, textAlign: align, ...style }} aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+        <button
+          type="button"
+          onClick={() => {
+            const direction: SortDirection = active && sort.direction === 'asc' ? 'desc' : 'asc';
+            setSort({ key, direction, rank: rankRows(rows, key, direction) });
+          }}
+          style={{ padding: 0, border: 0, background: 'transparent', color: 'inherit', font: 'inherit', fontWeight: active ? 800 : 700, textAlign: align, cursor: 'pointer' }}
+        >
+          {label}{active ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+        </button>
+      </th>
+    );
+  };
   const visibleRows = filteredRows.slice(0, MAX_VISIBLE_ROWS);
 
   const statusCounts = useMemo(() => {
@@ -363,33 +436,31 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
           <table style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: showVendorColumns ? 2600 : 2300, fontSize: 12 }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
               <tr>
-                <th style={{ ...headerStyle, textAlign: 'left', position: 'sticky', left: 0, zIndex: 3, minWidth: 130 }}>Item</th>
+                {sortableHeader('itemSku', 'Item', 'left', { position: 'sticky', left: 0, zIndex: 3, minWidth: 130 })}
                 {showVendorColumns && (
                   <>
-                    <th style={{ ...headerStyle, textAlign: 'left' }}>Vendor #</th>
-                    <th style={{ ...headerStyle, textAlign: 'left', minWidth: 200 }}>Vendor Name</th>
+                    {sortableHeader('vendorId', 'Vendor #', 'left')}
+                    {sortableHeader('vendorName', 'Vendor Name', 'left', { minWidth: 200 })}
                   </>
                 )}
-                <th style={{ ...headerStyle, textAlign: 'left', minWidth: 140 }}>Subsupplier</th>
-                <th style={{ ...headerStyle, textAlign: 'left', minWidth: 70 }}>MTO or Not</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>Current Cost Effective date</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>Current Cost</th>
-                <th style={{ ...headerStyle, textAlign: 'right', minWidth: 90 }}>New Cost</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>% Change</th>
-                <th style={{ ...headerStyle, textAlign: 'left', minWidth: 110 }}>Approval Status</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>{fcstLabel}</th>
-                <th style={{ ...headerStyle, textAlign: 'left', minWidth: 110 }}>Material</th>
-                <th style={{ ...headerStyle, textAlign: 'right', minWidth: 90 }}>Current Material Cost (USD/KG)</th>
-                <th style={{ ...headerStyle, textAlign: 'right', minWidth: 90 }}>New Material Cost (USD/KG)</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>% Change Material</th>
-                <th style={{ ...headerStyle, textAlign: 'right', minWidth: 100 }}>Part Weight (kg)</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>Price change</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>Current (USD/KG)</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>New (USD/KG)</th>
-                <th style={{ ...headerStyle, textAlign: 'right' }}>%Change</th>
-                <th style={{ ...headerStyle, textAlign: 'left', minWidth: 130 }}>Start Date</th>
-                <th style={{ ...headerStyle, textAlign: 'left', minWidth: 130 }}>End Date</th>
-                <th style={{ ...headerStyle, textAlign: 'left', minWidth: 130 }}>Required Load Date</th>
+                {sortableHeader('subsupplier', 'Subsupplier', 'left', { minWidth: 140 })}
+                {sortableHeader('mto', 'MTO or Not', 'left', { minWidth: 70 })}
+                {sortableHeader('currentCostEffectiveDate', 'Current Cost Effective date', 'right')}
+                {sortableHeader('currentCost', 'Current Cost', 'right')}
+                {sortableHeader('newCost', 'New Cost', 'right', { minWidth: 90 })}
+                {sortableHeader('pctChange', '% Change', 'right')}
+                {sortableHeader('approvalStatus', 'Approval Status', 'left', { minWidth: 110 })}
+                {sortableHeader('forecastQty', fcstLabel, 'right')}
+                {sortableHeader('material', 'Material', 'left', { minWidth: 110 })}
+                {sortableHeader('currentMaterialCost', 'Current Material Cost (USD/KG)', 'right', { minWidth: 90 })}
+                {sortableHeader('newMaterialCost', 'New Material Cost (USD/KG)', 'right', { minWidth: 90 })}
+                {sortableHeader('pctChangeMaterial', '% Change Material', 'right')}
+                {sortableHeader('partWeightKg', 'Part Weight (kg)', 'right', { minWidth: 100 })}
+                {sortableHeader('priceChange', 'Price change', 'right')}
+                {sortableHeader('currentUsdPerKg', 'Current (USD/KG)', 'right')}
+                {sortableHeader('newUsdPerKg', 'New (USD/KG)', 'right')}
+                {sortableHeader('pctChangeUsdPerKg', '%Change', 'right')}
+                {DATE_COLUMNS.map(({ field, label }) => sortableHeader(field, label, 'left', { minWidth: 130 }))}
               </tr>
             </thead>
             <tbody>

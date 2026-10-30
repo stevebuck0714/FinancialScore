@@ -615,7 +615,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
     })
   );
 
-  if (latestAr && priorAr) {
+  if (latestAr && priorAr && freshnessStatus(latestAr.snapshotDate) !== 'missing') {
     const latestOver30 = agingOver30(latestAr, 'totalAR');
     const priorOver30 = agingOver30(priorAr, 'totalAR');
     const deltaPts = latestOver30 - priorOver30;
@@ -671,7 +671,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
     }
   }
 
-  if (latestAp && priorAp) {
+  if (latestAp && priorAp && freshnessStatus(latestAp.snapshotDate) !== 'missing') {
     const latestOver30 = agingOver30(latestAp, 'totalAP');
     const priorOver30 = agingOver30(priorAp, 'totalAP');
     const deltaPts = latestOver30 - priorOver30;

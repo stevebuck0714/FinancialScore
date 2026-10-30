@@ -29,37 +29,19 @@ function isAuthorized(request: NextRequest): boolean {
   return request.headers.get('authorization') === `Bearer ${cronSecret}`;
 }
 
+/**
+ * Only a queued or running sync run holds Pulse back. Leftover pending tasks and
+ * incomplete-day markers from finished or abandoned runs never clear on their own.
+ */
 async function hasUnsettledImports(companyId: string): Promise<boolean> {
-  const [inforRuns, inforTasks, rawCompleteness] = await Promise.all([
-    prisma.$queryRawUnsafe<Array<{ count: string }>>(
-      `SELECT COUNT(*)::text AS count
-       FROM "InforSyncRun"
-       WHERE "companyId" = $1
-         AND "status" IN ('queued', 'running')`,
-      companyId
-    ).catch(() => [{ count: '0' }]),
-    prisma.$queryRawUnsafe<Array<{ count: string }>>(
-      `SELECT COUNT(*)::text AS count
-       FROM "InforSyncTask"
-       WHERE "companyId" = $1
-         AND "status" IN ('pending', 'leased')`,
-      companyId
-    ).catch(() => [{ count: '0' }]),
-    prisma.$queryRawUnsafe<Array<{ count: string }>>(
-      `SELECT COUNT(*)::text AS count
-       FROM "InforRawCompleteness"
-       WHERE "companyId" = $1
-         AND "isComplete" = FALSE
-         AND COALESCE("statusMessage", '') NOT LIKE 'raw_missing:%'`,
-      companyId
-    ).catch(() => [{ count: '0' }]),
-  ]);
-
-  return (
-    Number(inforRuns[0]?.count || 0) > 0 ||
-    Number(inforTasks[0]?.count || 0) > 0 ||
-    Number(rawCompleteness[0]?.count || 0) > 0
-  );
+  const inforRuns = await prisma.$queryRawUnsafe<Array<{ count: string }>>(
+    `SELECT COUNT(*)::text AS count
+     FROM "InforSyncRun"
+     WHERE "companyId" = $1
+       AND "status" IN ('queued', 'running')`,
+    companyId
+  ).catch(() => [{ count: '0' }]);
+  return Number(inforRuns[0]?.count || 0) > 0;
 }
 
 async function resolveCompanyIds(request: NextRequest): Promise<string[]> {
