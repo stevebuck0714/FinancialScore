@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { readLatestDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 
@@ -85,6 +86,28 @@ async function loadRunPayloads(companyId: string, syncRunId: string, miProgram: 
   return payloads;
 }
 
+/** Customer for each referenced customer order, from the newest imported SLCos row. */
+async function loadCustomerByOrder(companyId: string, orderNumbers: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (orderNumbers.length === 0) return result;
+  const rows = await prisma.$queryRaw<Array<{ orderNumber: string; customerNumber: string | null; customerName: string | null }>>(Prisma.sql`
+    SELECT DISTINCT ON (TRIM(payload->>'CoNum'))
+      TRIM(payload->>'CoNum') AS "orderNumber",
+      NULLIF(TRIM(payload->>'CustNum'), '') AS "customerNumber",
+      NULLIF(TRIM(payload->>'DerCustNoName'), '') AS "customerName"
+    FROM "InforRawRecord"
+    WHERE "companyId" = ${companyId}
+      AND "miProgram" = 'SLCos'
+      AND TRIM(payload->>'CoNum') IN (${Prisma.join(orderNumbers)})
+    ORDER BY TRIM(payload->>'CoNum'), "fetchedAt" DESC
+  `);
+  for (const row of rows) {
+    const customer = row.customerName || row.customerNumber;
+    if (customer) result.set(row.orderNumber, customer);
+  }
+  return result;
+}
+
 /** Newest completed sync run that imported CSI purchase-order headers. */
 async function findLatestCompletedPoRun(companyId: string): Promise<string | null> {
   const runs = await prisma.inforSyncRun.findMany({
@@ -135,6 +158,13 @@ export async function buildVendorItemOrderHistory(
     vendors.set(vendorKey, vendor);
   }
 
+  const customerOrderRef = (payload: Payload) =>
+    text(payload, 'RefType').toUpperCase() === 'O' ? text(payload, 'RefNum') : '';
+  const customerByOrder = await loadCustomerByOrder(
+    companyId,
+    [...new Set(lineRows.map(customerOrderRef).filter(Boolean))]
+  );
+
   const itemsByVendor = new Map<string, Map<string, VendorItemOrderHistoryItem>>();
   const seenLines = new Set<string>();
   for (const payload of lineRows) {
@@ -171,7 +201,7 @@ export async function buildVendorItemOrderHistory(
       receivedQty: number(payload, 'QtyReceived', 'QtyRcvd'),
       unitPrice: number(payload, 'ItemCost'),
       dueDate: date(text(payload, 'DueDate', 'PromiseDate')),
-      customer: header.customer,
+      customer: customerByOrder.get(customerOrderRef(payload)) || header.customer,
       status: text(payload, 'Stat', 'Status') || header.status,
     });
     vendorItems.set(itemSku, item);

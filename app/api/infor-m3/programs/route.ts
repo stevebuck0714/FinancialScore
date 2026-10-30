@@ -50,6 +50,9 @@ const SL_POITEMS_SAFE_PROPERTIES = [
   'QtyOrdered',
   'QtyReceived',
   'ItemCost',
+  'RefType',
+  'RefNum',
+  'RefLineSuf',
   'DueDate',
   'Stat',
 ];

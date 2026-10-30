@@ -7,6 +7,8 @@ import OperationalReportPanel from './OperationalReportPanel';
 
 type Order = { poNumber: string; line: string; orderDate: string | null; quantity: number | null; receivedQty: number | null; unitPrice: number | null; dueDate: string | null; customer: string; status: string };
 type Item = { itemSku: string; description: string; orderCount: number; totalQty: number; latestOrderDate: string | null; orders: Order[] };
+type ItemSortKey = 'itemSku' | 'orderCount' | 'totalQty' | 'latestOrderDate';
+const headerStyle: CSSProperties = { padding: '9px 10px', background: '#f8fafc', color: '#475569', textAlign: 'left', fontSize: 11, textTransform: 'uppercase' };
 type Payload = { hasData: boolean; syncedAt?: string; vendors: Array<{ vendorId: string; vendorName: string; orderCount: number }>; selectedVendorId: string; items: Item[] };
 
 export default function VendorItemOrderHistoryReport({ companyId, currency, locale, canReorder, isSaving, onMove, panelStyle }: {
@@ -20,6 +22,7 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [sort, setSort] = useState<{ key: ItemSortKey; direction: 'asc' | 'desc' }>({ key: 'totalQty', direction: 'desc' });
   const [error, setError] = useState('');
   const load = (selectedVendorId = '') => {
     setError('');
@@ -63,7 +66,28 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
       totalQty: orders.reduce((sum, order) => sum + (order.quantity || 0), 0),
       latestOrderDate: orders[0]?.orderDate || null,
     }];
+  }).sort((left, right) => {
+    const leftValue = left[sort.key] ?? '';
+    const rightValue = right[sort.key] ?? '';
+    const comparison = typeof leftValue === 'number' && typeof rightValue === 'number'
+      ? leftValue - rightValue
+      : String(leftValue).localeCompare(String(rightValue));
+    return sort.direction === 'asc' ? comparison : -comparison;
   });
+  const sortableHeader = (key: ItemSortKey, label: string, align: 'left' | 'right' = 'left') => {
+    const active = sort.key === key;
+    return (
+      <th key={key} style={{ ...headerStyle, textAlign: align }}>
+        <button
+          type="button"
+          onClick={() => setSort((current) => current.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' })}
+          style={{ padding: 0, border: 0, background: 'transparent', color: 'inherit', font: 'inherit', fontWeight: active ? 800 : 700, cursor: 'pointer', textTransform: 'inherit' }}
+        >
+          {label}{active ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+        </button>
+      </th>
+    );
+  };
   return (
     <OperationalReportPanel reportKey="vendorsItemOrderHistory" canReorder={canReorder} isSaving={isSaving} onMove={onMove} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24, ...panelStyle }}>
       <div style={{ marginBottom: 16 }}>
@@ -99,7 +123,13 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse' }}>
-          <thead><tr>{['Item', 'POs', 'Ordered qty', 'Latest order', ''].map((label) => <th key={label || 'expand'} style={{ padding: '9px 10px', background: '#f8fafc', color: '#475569', textAlign: label === 'POs' || label === 'Ordered qty' ? 'right' : 'left', fontSize: 11, textTransform: 'uppercase' as const }}>{label}</th>)}</tr></thead>
+          <thead><tr>
+            {sortableHeader('itemSku', 'Item')}
+            {sortableHeader('orderCount', 'POs', 'right')}
+            {sortableHeader('totalQty', 'Ordered qty', 'right')}
+            {sortableHeader('latestOrderDate', 'Latest order')}
+            <th style={headerStyle} />
+          </tr></thead>
           <tbody>{visibleItems.map((item) => <ItemRows key={item.itemSku} item={item} expanded={expanded.has(item.itemSku)} onToggle={() => setExpanded((current) => { const next = new Set(current); next.has(item.itemSku) ? next.delete(item.itemSku) : next.add(item.itemSku); return next; })} cell={cell} right={right} money={money} />)}</tbody>
         </table>
         {visibleItems.length === 0 && (

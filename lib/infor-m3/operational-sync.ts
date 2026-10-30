@@ -232,7 +232,7 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     // Includes regular and blanket PO line/release data. Receipt quantities
     // exposed by this IDO will be retained in the raw payload for the later
     // vendor-item order-history normalization.
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLPoItems?properties=PoNum,PoLine,PoRelease,Item,Description,QtyOrdered,QtyReceived,ItemCost,DueDate,Stat&recordCap=1000',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLPoItems?properties=PoNum,PoLine,PoRelease,Item,Description,QtyOrdered,QtyReceived,ItemCost,RefType,RefNum,RefLineSuf,DueDate,Stat&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -1823,6 +1823,9 @@ const SL_POITEMS_SAFE_PROPERTIES = [
   'QtyOrdered',
   'QtyReceived',
   'ItemCost',
+  'RefType',
+  'RefNum',
+  'RefLineSuf',
   'DueDate',
   'Stat',
 ];
