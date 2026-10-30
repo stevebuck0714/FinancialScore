@@ -232,7 +232,7 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     // Includes regular and blanket PO line/release data. Receipt quantities
     // exposed by this IDO will be retained in the raw payload for the later
     // vendor-item order-history normalization.
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLPoItems?properties=PoNum,PoLine,PoRelease,Item,Description,QtyOrdered,QtyReceived,Cost,DueDate,Stat&recordCap=1000',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLPoItems?properties=PoNum,PoLine,PoRelease,Item,Description,QtyOrdered,QtyReceived,DueDate,Stat&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -1822,7 +1822,6 @@ const SL_POITEMS_SAFE_PROPERTIES = [
   'Description',
   'QtyOrdered',
   'QtyReceived',
-  'Cost',
   'DueDate',
   'Stat',
 ];
@@ -9941,7 +9940,7 @@ export async function syncInforM3OperationalData(
         }
         if (
           !isTransportAndPayloadSuccess(response) &&
-          moduleType === 'ap' &&
+          (moduleType === 'ap' || programId === 'SLPOITEMS') &&
           /\/IDORequestService\/ido\/load\//i.test(effectiveEndpointPath)
         ) {
           // AP IDOs vary by tenant/version; peel rejected projected fields in-place.

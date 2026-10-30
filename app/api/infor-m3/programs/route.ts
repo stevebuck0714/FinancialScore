@@ -49,7 +49,6 @@ const SL_POITEMS_SAFE_PROPERTIES = [
   'Description',
   'QtyOrdered',
   'QtyReceived',
-  'Cost',
   'DueDate',
   'Stat',
 ];
