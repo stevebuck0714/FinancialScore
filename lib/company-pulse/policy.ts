@@ -21,6 +21,7 @@ export type PulsePolicyKey =
   | 'cash_open_critical.allow_proxy_runway'
   | 'cash_open_critical.min_consecutive_days'
   | 'cash_forecast_buffer.warning_pct'
+  | 'tariff_change.min_annual_impact'
   | 'unresolved_findings.max_age_days_without_owner'
   | 'unresolved_findings.max_age_days_unacknowledged'
   | 'freshness.max_snapshot_age_hours'
@@ -32,6 +33,7 @@ export type PulsePolicySection =
   | 'AR'
   | 'AP'
   | 'Cash'
+  | 'Tariffs'
   | 'Findings & Freshness'
   | 'Buckets';
 
@@ -270,6 +272,18 @@ const POLICY_DEFINITIONS = [
     min: 0,
     max: 100,
     defaultValue: 10,
+  },
+  {
+    key: 'tariff_change.min_annual_impact',
+    label: 'Tariff change minimum annual impact',
+    description:
+      'Smallest estimated yearly cost change (up or down) for an item before a day-over-day tariff rate change is included in the Tariff Changes alert.',
+    section: 'Tariffs',
+    unit: 'currency',
+    step: 100,
+    min: 0,
+    max: 1000000000,
+    defaultValue: 1000,
   },
   {
     key: 'unresolved_findings.max_age_days_without_owner',

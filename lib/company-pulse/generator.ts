@@ -21,6 +21,7 @@ import {
   loadSectorMetricRows,
 } from '@/lib/company-pulse/sector-exceptions';
 import { buildCashForecastBufferAlerts } from '@/lib/company-pulse/cash-forecast-buffer';
+import { loadLatestTariffChanges, type TariffChangeSummary } from '@/lib/hts/tariff-change-snapshots';
 
 export type PulseReadinessStatus = 'ready' | 'partial' | 'missing';
 
@@ -165,6 +166,54 @@ function agingOver30(snapshot: AgingSnapshot, totalKey: 'totalAR' | 'totalAP'): 
     asNumber(snapshot.days31to60) + asNumber(snapshot.days61to90) + asNumber(snapshot.days90plus),
     asNumber(snapshot[totalKey])
   );
+}
+
+/** Days between two `YYYY-MM-DD` calendar dates. */
+function calendarDaysBetween(from: string, to: string): number {
+  const parse = (value: string) => {
+    const [year, month, day] = value.split('-').map(Number);
+    return Date.UTC(year, month - 1, day);
+  };
+  return Math.round((parse(to) - parse(from)) / 864e5);
+}
+
+const MAX_TARIFF_SNAPSHOT_AGE_DAYS = 4;
+const MAX_STORED_TARIFF_CHANGES = 2000;
+
+function tariffChangeAlert(summary: TariffChangeSummary, money: (value: number) => string, minAnnualImpact: number): PulseAlertInput | null {
+  const { changes } = summary;
+  if (changes.length === 0) return null;
+  const increases = changes.filter((change) => change.deltaPts > 0).length;
+  const decreases = changes.length - increases;
+  const netImpact = changes.reduce((sum, change) => sum + change.annualImpact, 0);
+  const grossImpact = changes.reduce((sum, change) => sum + Math.abs(change.annualImpact), 0);
+  const signed = (value: number) => `${value >= 0 ? '+' : '-'}${money(Math.abs(value))}`;
+  const priorityScore = grossImpact >= 100000 ? 90 : grossImpact >= 25000 ? 80 : grossImpact >= 5000 ? 72 : 60;
+  const itemWord = changes.length === 1 ? 'item' : 'items';
+  return {
+    fingerprint: `tariff-change:${summary.currentDate}`,
+    source: 'daily-change',
+    title: 'Tariff rates changed',
+    detail: `Tariff rates changed on ${changes.length} ${itemWord} since ${summary.previousDate}: ${increases} up, ${decreases} down. Estimated ${signed(netImpact)}/yr.`,
+    owner: 'Finance Owner',
+    drillView: 'operations',
+    deltaText: `${signed(netImpact)}/yr`,
+    updatedAt: `${summary.currentDate}T00:00:00.000Z`,
+    itemLabel: 'Duties & Tariffs',
+    priorityScore,
+    bucket: priorityScore >= 70 ? 'attention' : 'monitoring',
+    explainability: {
+      triggerName: 'Daily Tariff Rate Change',
+      formula:
+        'Per item: total rate = applied duty % + special % + Section 301/232/IEEPA/additional %; annual impact = (today − previous) rate ÷ 100 × value per piece × units sold in the last 365 days',
+      threshold: `|annual impact| >= ${money(minAnnualImpact)} per item; items whose HTS codes, origin, or trade program changed are excluded`,
+      reasonNow: `${summary.currentDate} vs ${summary.previousDate}${summary.releaseName ? ` (HTS ${summary.releaseName})` : ''}: ${increases} increases, ${decreases} decreases; net ${signed(netImpact)}/yr, gross ${money(grossImpact)}/yr`,
+      policySource: 'Company Pulse policy',
+      dataRefs: ['CompanyItemDutyDailySnapshot', 'CompanyItemDutyApplication', 'USITC HTS'],
+      sourceTimestamp: `${summary.currentDate}T00:00:00.000Z`,
+      tariffChanges: { ...summary, changes: changes.slice(0, MAX_STORED_TARIFF_CHANGES) },
+    },
+  };
 }
 
 function freshnessStatus(latest?: Date | null): PulseReadinessStatus {
@@ -727,6 +776,15 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
     }
   }
 
+  const tariffSummary = await loadLatestTariffChanges(companyId, policy['tariff_change.min_annual_impact']).catch((error) => {
+    console.warn('Tariff change comparison failed:', { companyId, error: error instanceof Error ? error.message : error });
+    return null;
+  });
+  if (tariffSummary && calendarDaysBetween(tariffSummary.currentDate, formatEstDate()) <= MAX_TARIFF_SNAPSHOT_AGE_DAYS) {
+    const tariffAlert = tariffChangeAlert(tariffSummary, money, policy['tariff_change.min_annual_impact']);
+    if (tariffAlert) alerts.push(tariffAlert);
+  }
+
   if (latestCash && priorCash) {
     const cashDelta = latestCash.totalCash - priorCash.totalCash;
     const cashDeltaPct = dayOverDayPct(latestCash.totalCash, priorCash.totalCash);
@@ -986,6 +1044,7 @@ export async function generateCompanyPulse(companyId: string, options: GenerateO
         companyId,
         latestAr: iso(latestAr?.snapshotDate),
         latestAp: iso(latestAp?.snapshotDate),
+        latestTariffSnapshot: tariffSummary?.currentDate || null,
         latestCash: iso(latestCash?.snapshotDate),
         latestDaily: iso(latestDaily?.snapshotDate),
         latestCustomer: iso(latestCustomer?.snapshotDate),

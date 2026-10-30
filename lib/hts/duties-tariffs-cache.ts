@@ -188,7 +188,11 @@ export async function refreshAndWarmDutiesTariffsCache(companyId: string): Promi
   // Rate quotes are keyed by the Eastern calendar date, so repeated sync
   // completions on the same day reuse the stored quote instead of re-fetching it.
   const { refreshCompanyItemDutyRates } = await import('@/lib/hts/refresh-item-duty-rates');
-  await refreshCompanyItemDutyRates(companyId);
+  const rates = await refreshCompanyItemDutyRates(companyId);
+  const { recordCompanyItemDutySnapshot } = await import('@/lib/hts/tariff-change-snapshots');
+  await recordCompanyItemDutySnapshot(companyId, rates.asOfDate).catch((error) => {
+    console.warn('Tariff daily snapshot failed:', { companyId, error: error instanceof Error ? error.message : error });
+  });
   const { rebuildCompanyItemDutyApplications } = await import('@/lib/hts/apply-duty-cogs');
   await rebuildCompanyItemDutyApplications(companyId);
   const payload = await buildDutiesTariffsPayload(companyId, refreshed.discovered);

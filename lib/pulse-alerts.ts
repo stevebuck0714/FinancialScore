@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import type { TariffChangeSummary } from '@/lib/hts/tariff-change-snapshots';
 
 export type PulseAlertStatus = 'new' | 'acknowledged' | 'snoozed' | 'resolved';
 
@@ -23,6 +24,7 @@ export type PulseAlertInput = {
     policySource: string;
     dataRefs: string[];
     sourceTimestamp?: string;
+    tariffChanges?: TariffChangeSummary;
   };
 };
 

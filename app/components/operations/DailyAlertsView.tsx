@@ -15,6 +15,7 @@ import {
 } from '@/lib/company-pulse/policy';
 import { toLocalInputDate } from '@/app/utils/date';
 import { formatEstDate, formatEstDateLabel, formatEstDateTime } from '@/lib/time/eastern';
+import type { TariffChange, TariffChangeSummary, TariffRateComponent } from '@/lib/hts/tariff-change-snapshots';
 import IndustryBriefPanel from '@/app/components/industry-brief/IndustryBriefPanel';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
@@ -48,8 +49,28 @@ type AlertItem = {
     sourceTimestamp?: string;
     readinessStatus?: ReadinessStatus;
     readinessReason?: string;
+    tariffChanges?: TariffChangeSummary;
   };
 };
+
+const TARIFF_COMPONENT_LABELS: Record<TariffRateComponent, string> = {
+  duty: 'Base duty',
+  special: 'Special',
+  section301: 'Section 301',
+  section232: 'Section 232',
+  ieepa: 'IEEPA',
+  additional: 'Additional',
+};
+
+type TariffChangeSortKey = 'itemSku' | 'htsCode' | 'countryOfOrigin' | 'previousRatePct' | 'currentRatePct' | 'deltaPts' | 'annualQty' | 'annualImpact';
+
+function formatRatePct(value: number): string {
+  return `${value.toFixed(2)}%`;
+}
+
+function formatRatePts(value: number): string {
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)} pts`;
+}
 
 type AlertEvent = {
   id: string;
@@ -423,6 +444,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [explainabilityAlert, setExplainabilityAlert] = useState<AlertItem | null>(null);
+  const [tariffChangesAlert, setTariffChangesAlert] = useState<AlertItem | null>(null);
+  const [tariffChangeSearch, setTariffChangeSearch] = useState('');
+  const [tariffChangeSort, setTariffChangeSort] = useState<{ key: TariffChangeSortKey; direction: 'asc' | 'desc' }>({ key: 'annualImpact', direction: 'desc' });
   const [focusScoreHelpAlertId, setFocusScoreHelpAlertId] = useState<string | null>(null);
   const [policyDetailKey, setPolicyDetailKey] = useState<PulsePolicyKey | null>(null);
   const [previewAlert, setPreviewAlert] = useState<AlertItem | null>(null);
@@ -2130,7 +2154,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     [policyOverrides, industrySectorCategory]
   );
   const policySections = useMemo(() => {
-    const sectionOrder: PulsePolicySection[] = ['AR', 'AP', 'Cash', 'Findings & Freshness', 'Buckets'];
+    const sectionOrder: PulsePolicySection[] = ['AR', 'AP', 'Cash', 'Tariffs', 'Findings & Freshness', 'Buckets'];
     return sectionOrder.map((section) => ({
       section,
       items: PULSE_POLICY_DEFINITIONS.filter((def) => def.section === section),
@@ -2410,6 +2434,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   };
 
   const getPreviewSpecs = (alert: AlertItem): PreviewSpec[] => {
+    if (alert.explainability?.tariffChanges) return [];
     const text = `${alert.title} ${alert.detail}`.toLowerCase();
     const specs: PreviewSpec[] = [];
     if (text.includes('ar')) {
@@ -2493,6 +2518,35 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     if (status === 'snoozed') return { bg: '#fef3c7', fg: '#92400e', border: '#fde68a' };
     if (status === 'acknowledged') return { bg: '#dbeafe', fg: '#1d4ed8', border: '#93c5fd' };
     return { bg: '#fee2e2', fg: '#991b1b', border: '#fecaca' };
+  };
+
+  const renderTariffChangePreview = (alert: AlertItem) => {
+    const summary = alert.explainability?.tariffChanges;
+    if (!summary || summary.changes.length === 0) return null;
+    return (
+      <div style={{ marginTop: '6px', fontSize: '13px', color: '#334155' }}>
+        {summary.changes.slice(0, 3).map((change) => (
+          <div key={change.itemSku} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <strong>{change.itemSku}</strong>
+            <span>{formatRatePct(change.previousRatePct)} → {formatRatePct(change.currentRatePct)}</span>
+            <span style={{ color: change.annualImpact > 0 ? '#b91c1c' : '#15803d', fontWeight: 600 }}>
+              {money.fmtSigned(change.annualImpact, 0)}/yr
+            </span>
+            <span style={{ color: '#64748b' }}>{change.changedComponents.map((component) => TARIFF_COMPONENT_LABELS[component]).join(', ')}</span>
+          </div>
+        ))}
+        <button
+          onClick={() => {
+            setTariffChangeSearch('');
+            setTariffChangeSort({ key: 'annualImpact', direction: 'desc' });
+            setTariffChangesAlert(alert);
+          }}
+          style={{ marginTop: '4px', fontSize: '12px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
+        >
+          View all {summary.changes.length.toLocaleString()} changes
+        </button>
+      </div>
+    );
   };
 
   const renderLifecycleActions = (alert: AlertItem) => {
@@ -2857,6 +2911,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                         </div>
                       </div>
                       <div style={{ fontSize: '14px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
+                      {renderTariffChangePreview(alert)}
                       <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
                         <strong>Owner:</strong> {alert.owner}
                         {alert.itemLabel ? ` | ${alert.itemLabel}` : ''}
@@ -2921,6 +2976,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                         </div>
                       </div>
                       <div style={{ fontSize: '14px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
+                      {renderTariffChangePreview(alert)}
                       <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
                         <strong>Owner:</strong> {alert.owner}
                         {alert.itemLabel ? ` | ${alert.itemLabel}` : ''}
@@ -3350,6 +3406,151 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           </div>
         </div>
       )}
+
+      {tariffChangesAlert?.explainability?.tariffChanges && (() => {
+        const summary = tariffChangesAlert.explainability.tariffChanges;
+        const term = tariffChangeSearch.trim().toLowerCase();
+        const rows = summary.changes
+          .filter((change) =>
+            !term ||
+            [change.itemSku, change.description, change.htsCode, change.countryOfOrigin]
+              .some((value) => String(value || '').toLowerCase().includes(term))
+          )
+          .sort((a, b) => {
+            const left = a[tariffChangeSort.key];
+            const right = b[tariffChangeSort.key];
+            const comparison = typeof left === 'number' && typeof right === 'number'
+              ? left - right
+              : String(left || '').localeCompare(String(right || ''), undefined, { numeric: true });
+            return tariffChangeSort.direction === 'asc' ? comparison : -comparison;
+          });
+        const exportRows = async () => {
+          const XLSX = await import('xlsx');
+          const sheet = XLSX.utils.json_to_sheet(rows.map((change: TariffChange) => ({
+            Item: change.itemSku,
+            Description: change.description || '',
+            'HTS Code': change.htsCode || '',
+            Origin: change.countryOfOrigin || '',
+            'Changed Rates': change.changedComponents.map((component) => TARIFF_COMPONENT_LABELS[component]).join(', '),
+            'Previous Rate %': Number(change.previousRatePct.toFixed(4)),
+            'Current Rate %': Number(change.currentRatePct.toFixed(4)),
+            'Change (pts)': Number(change.deltaPts.toFixed(4)),
+            'Value per Piece': change.valuePerPiece,
+            'Units Sold (12 mo)': change.annualQty,
+            'Annual Impact': Math.round(change.annualImpact),
+          })));
+          const workbook = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(workbook, sheet, 'Tariff Changes');
+          XLSX.writeFile(workbook, `${companyName || 'Company'}_TariffChanges_${summary.currentDate}.xlsx`);
+        };
+        const headerCell: React.CSSProperties = { padding: '8px', fontSize: '11px', fontWeight: 700, color: '#475569', background: '#f8fafc', textTransform: 'uppercase', position: 'sticky', top: 0, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' };
+        const bodyCell: React.CSSProperties = { padding: '6px 8px', fontSize: '12px', color: '#334155', borderTop: '1px solid #f1f5f9', whiteSpace: 'nowrap' };
+        const sortHeader = (key: TariffChangeSortKey, label: string, align: 'left' | 'right' = 'left') => {
+          const active = tariffChangeSort.key === key;
+          return (
+            <th style={{ ...headerCell, textAlign: align }}>
+              <button
+                type="button"
+                onClick={() => setTariffChangeSort((current) =>
+                  current.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' })}
+                style={{ padding: 0, border: 0, background: 'transparent', color: 'inherit', font: 'inherit', fontWeight: active ? 800 : 700, textTransform: 'inherit', cursor: 'pointer' }}
+              >
+                {label}{active ? (tariffChangeSort.direction === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+              </button>
+            </th>
+          );
+        };
+        return (
+          <div
+            onClick={() => setTariffChangesAlert(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)', zIndex: 2150, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ width: 'min(1100px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 16px 40px rgba(15, 23, 42, 0.25)', padding: '16px' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>Tariff Changes</div>
+                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>
+                    {formatReportDate(summary.previousDate)} → {formatReportDate(summary.currentDate)}
+                    {summary.releaseName ? ` | HTS ${summary.releaseName}` : ''}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setTariffChangesAlert(null)}
+                  style={{ border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '12px', flexWrap: 'wrap' }}>
+                <input
+                  type="search"
+                  value={tariffChangeSearch}
+                  onChange={(e) => setTariffChangeSearch(e.target.value)}
+                  placeholder="Search item, description, HTS, origin..."
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '7px 8px', fontSize: '12px', width: '280px' }}
+                />
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  {rows.length.toLocaleString()} of {summary.changes.length.toLocaleString()} items
+                </span>
+                <button
+                  onClick={() => void exportRows()}
+                  disabled={rows.length === 0}
+                  style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: 700, color: '#334155', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '7px', padding: '6px 10px', cursor: rows.length === 0 ? 'not-allowed' : 'pointer' }}
+                >
+                  Export to Excel
+                </button>
+              </div>
+              <div style={{ marginTop: '10px', overflow: 'auto', flex: '1 1 auto', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+                <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                  <thead>
+                    <tr>
+                      {sortHeader('itemSku', 'Item')}
+                      {sortHeader('htsCode', 'HTS Code')}
+                      {sortHeader('countryOfOrigin', 'Origin')}
+                      <th style={{ ...headerCell, textAlign: 'left' }}>Changed Rates</th>
+                      {sortHeader('previousRatePct', 'Previous', 'right')}
+                      {sortHeader('currentRatePct', 'Current', 'right')}
+                      {sortHeader('deltaPts', 'Change', 'right')}
+                      {sortHeader('annualQty', 'Units (12 mo)', 'right')}
+                      {sortHeader('annualImpact', 'Annual Impact', 'right')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((change) => (
+                      <tr key={change.itemSku}>
+                        <td style={bodyCell} title={change.description || undefined}>
+                          <div style={{ fontWeight: 600 }}>{change.itemSku}</div>
+                          {change.description && (
+                            <div style={{ color: '#64748b', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{change.description}</div>
+                          )}
+                        </td>
+                        <td style={bodyCell}>{change.htsCode || '—'}</td>
+                        <td style={bodyCell}>{change.countryOfOrigin || '—'}</td>
+                        <td style={bodyCell}>{change.changedComponents.map((component) => TARIFF_COMPONENT_LABELS[component]).join(', ')}</td>
+                        <td style={{ ...bodyCell, textAlign: 'right' }}>{formatRatePct(change.previousRatePct)}</td>
+                        <td style={{ ...bodyCell, textAlign: 'right' }}>{formatRatePct(change.currentRatePct)}</td>
+                        <td style={{ ...bodyCell, textAlign: 'right', color: change.deltaPts > 0 ? '#b91c1c' : '#15803d' }}>{formatRatePts(change.deltaPts)}</td>
+                        <td style={{ ...bodyCell, textAlign: 'right' }}>{Math.round(change.annualQty).toLocaleString()}</td>
+                        <td style={{ ...bodyCell, textAlign: 'right', fontWeight: 600, color: change.annualImpact > 0 ? '#b91c1c' : '#15803d' }}>
+                          {money.fmtSigned(change.annualImpact, 0)}
+                        </td>
+                      </tr>
+                    ))}
+                    {rows.length === 0 && (
+                      <tr>
+                        <td colSpan={9} style={{ ...bodyCell, padding: '16px', color: '#64748b' }}>No changes match the search.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {explainabilityAlert && (
         <div
