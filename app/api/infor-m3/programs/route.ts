@@ -182,6 +182,34 @@ function sanitizePrograms(
   return cleaned;
 }
 
+/**
+ * Existing CSI tenants save their program list per company, so newly supported
+ * programs are not picked up from the fallback list. Surface these PO sources
+ * with the tenant's existing endpoint/config/site values; the operator's
+ * normal Save button then persists them with the rest of the program list.
+ */
+function addMissingCsiPurchaseOrderPrograms(programs: AccountingProgram[]): AccountingProgram[] {
+  const configured = new Set(programs.map((program) => String(program.miProgram || '').trim().toUpperCase()));
+  const template = programs.find((program) => /\/ido\/load\/[^?]+/i.test(String(program.endpointPath || '')));
+  const endpointPrefix = String(template?.endpointPath || '').match(/^(.*\/ido\/load\/)[^?]+/i)?.[1];
+  if (!template || !endpointPrefix) return programs;
+
+  const additions: AccountingProgram[] = [];
+  for (const miProgram of ['SLPos', 'SLPoItems']) {
+    if (configured.has(miProgram.toUpperCase())) continue;
+    additions.push({
+      module: 'Purchasing',
+      miProgram,
+      endpointPath: `${endpointPrefix}${miProgram}?recordCap=1000`,
+      mongooseConfig: template.mongooseConfig,
+      site: template.site,
+      transactions: ['CSI_LOAD'],
+      enabled: true,
+    });
+  }
+  return additions.length ? [...programs, ...additions] : programs;
+}
+
 function inferInforSystemFromPrograms(programs: AccountingProgram[]): InforSystem {
   for (const program of programs) {
     const endpointPath = String(program.endpointPath || '').toLowerCase();
@@ -253,7 +281,9 @@ export async function GET(request: NextRequest) {
       }
     }
     // Return only company-saved programs; no default bootstrapping.
-    const effectivePrograms = programs;
+    const effectivePrograms = inforSystem === 'INFOR_CSI'
+      ? addMissingCsiPurchaseOrderPrograms(programs)
+      : programs;
     const programsWithSitePolicy =
       inforSystem === 'INFOR_CSI'
         ? effectivePrograms.map((program) => ({ ...program, sitePolicy: resolveCsiSitePolicy(program) }))

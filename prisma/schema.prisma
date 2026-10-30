@@ -1495,6 +1495,7 @@ enum OperationalSystemProvider {
   SPREADSHEET_UPLOAD
   ISOLVED
   HIGHLEVEL
+  JOBBOSS
 }
 
 enum ConnectionStatus {

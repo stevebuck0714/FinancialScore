@@ -6,7 +6,7 @@ import { RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsme
 import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 import { ISOLVED_PEOPLE_CLOUD_LABEL, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
 
-export type OperationalSourceProvider = 'BAMBOOHR' | 'HUBSPOT' | 'SPREADSHEET_UPLOAD' | 'ISOLVED' | 'HIGHLEVEL';
+export type OperationalSourceProvider = 'BAMBOOHR' | 'HUBSPOT' | 'SPREADSHEET_UPLOAD' | 'ISOLVED' | 'HIGHLEVEL' | 'JOBBOSS';
 
 export type OperationalSourceDefinition = {
   provider: OperationalSourceProvider;
@@ -41,6 +41,7 @@ export const OPERATIONAL_SOURCE_DEFINITIONS = [
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },
   { provider: 'HUBSPOT', sourceCode: 'HUBSPOT_STANDARD', label: 'HubSpot', sectorCategories: ['54', '56'], allSectors: true, crm: true },
   { provider: 'HIGHLEVEL', sourceCode: 'HIGHLEVEL_STANDARD', label: 'HighLevel', sectorCategories: [], allSectors: true, crm: true },
+  { provider: 'JOBBOSS', sourceCode: 'JOBBOSS2_STANDARD', label: 'JobBOSS²', sectorCategories: ['32'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: COGENT_RATE_CARD_SOURCE_CODE, label: COGENT_RATE_CARD_LABEL, sectorCategories: ['56'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_CLOSET_STORE_VISIT', label: 'MONTHLY STORE VISIT REPORT', sectorCategories: ['45'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'PLATOS_INVENTORY', label: 'Monthly Inventory Report', sectorCategories: ['45'] },
