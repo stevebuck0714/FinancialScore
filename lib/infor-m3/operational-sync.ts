@@ -9700,6 +9700,10 @@ export async function syncInforM3OperationalData(
       const moduleType = classifyModuleFromProgramId(programId) ?? classifyModule(row.module);
       const syncType = `operational_${moduleType}_${req.transaction}`;
       const isSlCoitemsProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
+      // PO feeds can contain years of line history. Limit each queue lease to
+      // one CSI page; the bookmark continuation schedules the next page and
+      // avoids exceeding the 300-second Vercel worker limit.
+      const isPurchaseOrderProgram = programId === 'SLPOS' || programId === 'SLPOITEMS';
       const isSlArtransProgram = moduleType === 'ar' && programId === 'SLARTRANS';
       const isFullArFactHistoryBackfill =
         isSlArtransProgram && options?.fullArFactHistory === true;
@@ -9713,7 +9717,9 @@ export async function syncInforM3OperationalData(
         Math.floor(baseRequestTimeoutMs * adaptiveTimeoutScale)
       );
       const baseMaxPagesPerRequest =
-        isSlCoitemsProgram
+        isPurchaseOrderProgram
+          ? 1
+          : isSlCoitemsProgram
           ? slCoitemsMaxPagesPerRequest
           : isGlAcctPeriodBalancesProgram && isFanoutHistoricalDailySlice
             ? fanoutGlPeriodMaxPagesPerRequest
