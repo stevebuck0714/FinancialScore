@@ -158,6 +158,7 @@ const SECTOR_23_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
 };
 
 const STANDARD_VENDOR_REPORTS: OperationalHubReportDefinition[] = [
+  { key: 'vendorsItemOrderHistory', label: 'Item order history by vendor', group: 'Vendors' },
   { key: 'vendorsCatalogPurchaseHistory', label: 'Vendor catalog & purchase history', group: 'Vendors' },
   { key: 'vendorsItemVolumePricing6mo', label: '6-month item volume and pricing', group: 'Vendors' },
   { key: 'vendorsPaymentHistoryByMonth', label: 'Payment history by month', group: 'Vendors' },

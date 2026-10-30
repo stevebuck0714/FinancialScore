@@ -45,6 +45,7 @@ import VendorMonthlyForecastReport from './VendorMonthlyForecastReport';
 import VendorForecastRollupReport from './VendorForecastRollupReport';
 import VendorPricingReport from './VendorPricingReport';
 import DefaultVendorReport from './DefaultVendorReport';
+import VendorItemOrderHistoryReport from './VendorItemOrderHistoryReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
 import PayrollBureauOpsViews from './PayrollBureauOpsViews';
@@ -1049,6 +1050,7 @@ export default function OperationsTab({
   const [customerMetricModalTitle, setCustomerMetricModalTitle] = useState('');
   const [customerMetricModalNames, setCustomerMetricModalNames] = useState<string[]>([]);
   const [customerConcentrationMetricChart, setCustomerConcentrationMetricChart] = useState<any | null>(null);
+  const operationalExportRef = useRef<HTMLDivElement | null>(null);
   const operationalDataCacheRef = useRef(operationalDataCacheStore);
   const operationalDataInflightRef = useRef(operationalDataInflightStore);
   const latestTabLoadKeyRef = useRef<string>('');
@@ -1082,7 +1084,7 @@ export default function OperationsTab({
   const [productForecastItemIdFilter, setProductForecastItemIdFilter] = useState('');
   const [productForecastItemFocus, setProductForecastItemFocus] = useState<{ itemId: string; requestId: number } | null>(null);
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
-  const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('');
+  const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('vendorsItemOrderHistory');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('');
   const [productMarginCustomerGroupFilter, setProductMarginCustomerGroupFilter] = useState('');
   const [productMarginCustomerIdSearch, setProductMarginCustomerIdSearch] = useState('');
@@ -1246,6 +1248,47 @@ export default function OperationsTab({
       ? (companyOperationalHubConfig.sections as Record<string, any>)
       : {};
   const isAtlanticCompany = isAtlanticPrecisionCompany(selectedCompanyId, companyName);
+  const activeOperationalModuleKey = resolveModuleKey(activeTab);
+  const canExportAtlanticOperationalPage =
+    isAtlanticCompany && ['projections', 'products', 'vendors'].includes(activeOperationalModuleKey);
+  const exportAtlanticOperationalPage = async () => {
+    const root = operationalExportRef.current;
+    const tables = root ? Array.from(root.querySelectorAll('table')) : [];
+    if (!tables.length) {
+      alert('There is no tabular data on this page to export.');
+      return;
+    }
+
+    const xlsxModule = await import('xlsx');
+    const XLSX = xlsxModule.default ?? xlsxModule;
+    const workbook = XLSX.utils.book_new();
+    const usedSheetNames = new Set<string>();
+    tables.forEach((table, index) => {
+      const sheet = XLSX.utils.table_to_sheet(table, { raw: true });
+      const nearbyHeading = table.closest('[data-report-title]')?.getAttribute('data-report-title')
+        || table.closest('section')?.querySelector('h1, h2, h3, h4')?.textContent
+        || `Report ${index + 1}`;
+      const baseName = String(nearbyHeading || `Report ${index + 1}`)
+        .replace(/[\\/?*[\]:]/g, '')
+        .trim()
+        .slice(0, 31) || `Report ${index + 1}`;
+      let sheetName = baseName;
+      let suffix = 2;
+      while (usedSheetNames.has(sheetName)) {
+        sheetName = `${baseName.slice(0, Math.max(1, 31 - String(suffix).length - 1))}-${suffix}`;
+        suffix += 1;
+      }
+      usedSheetNames.add(sheetName);
+      XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+    });
+    const pageLabel = activeOperationalModuleKey === 'projections'
+      ? 'Projections'
+      : activeOperationalModuleKey === 'products'
+        ? 'Products'
+        : 'Vendors';
+    const fileCompany = String(companyName || 'Atlantic-Precision').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+    XLSX.writeFile(workbook, `${fileCompany}-${pageLabel}-${formatEstDate()}.xlsx`);
+  };
   const companyCustomTabs = parseOperationalHubCustomTabs(companyOperationalHubConfig).filter((tab) => {
     if (!isAtlanticCompany) return true;
     return !['group', 'cap table'].includes(tab.label.trim().toLowerCase());
@@ -13857,7 +13900,20 @@ export default function OperationsTab({
             )}
           </div>
           {activeStandardReport ? (
-            <DefaultVendorReport
+            activeStandardReport.key === 'vendorsItemOrderHistory' ? (
+              <VendorItemOrderHistoryReport
+                key={`${selectedCompanyId}-${activeStandardReport.key}`}
+                companyId={selectedCompanyId}
+                currency={moneyCurrency}
+                locale={moneyLocale}
+                canReorder={canManageReportLayout}
+                isSaving={savingReportLayout}
+                onMove={(sourceReportKey, targetReportKey) =>
+                  moveStandardReport(sourceReportKey, targetReportKey, 'vendors')
+                }
+                panelStyle={getReportPanelStyle(activeStandardReport.key, {}, 'vendors')}
+              />
+            ) : <DefaultVendorReport
               key={`${selectedCompanyId}-${activeStandardReport.key}`}
               companyId={selectedCompanyId}
               reportKey={activeStandardReport.key}
@@ -31759,6 +31815,25 @@ Strategies to Improve the CCC
           </button>
         ))}
         <div style={{ marginLeft: 'auto', padding: '6px 0 8px 16px', flexShrink: 0 }}>
+          {canExportAtlanticOperationalPage && (
+            <button
+              type="button"
+              onClick={() => void exportAtlanticOperationalPage()}
+              style={{
+                marginRight: '8px',
+                padding: '6px 10px',
+                border: '1px solid #2563eb',
+                borderRadius: '6px',
+                background: '#2563eb',
+                color: '#ffffff',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 600,
+              }}
+            >
+              Export to Excel
+            </button>
+          )}
           <PageCurrencyBadge
             currency={moneyCurrency}
             locale={moneyLocale}
@@ -31777,8 +31852,10 @@ Strategies to Improve the CCC
       )}
 
       {/* Content */}
-      {activeTab === 'dashboard' && renderDashboardOverviewContent()}
-      {activeTab !== 'dashboard' && renderModuleTabContent(activeTab)}
+      <div ref={operationalExportRef}>
+        {activeTab === 'dashboard' && renderDashboardOverviewContent()}
+        {activeTab !== 'dashboard' && renderModuleTabContent(activeTab)}
+      </div>
     </div>
   );
 }

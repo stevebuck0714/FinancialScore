@@ -38,6 +38,7 @@ const tableStyle = { width: '100%', borderCollapse: 'collapse' as const, minWidt
 const headerStyle = { padding: '9px 10px', textAlign: 'left' as const, background: '#f8fafc', color: '#475569', fontSize: 11, textTransform: 'uppercase' as const };
 const cellStyle = { padding: '9px 10px', borderTop: '1px solid #e2e8f0', color: '#1e293b', fontSize: 13 };
 const rightCellStyle = { ...cellStyle, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' };
+type CatalogSortKey = 'vendorName' | 'termsCode' | 'lastPurchaseDate' | 'purchaseYtd' | 'purchaseLastYear' | 'payYtd';
 
 export default function DefaultVendorReport({
   companyId,
@@ -53,6 +54,7 @@ export default function DefaultVendorReport({
   const [payload, setPayload] = useState<VendorReportPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [catalogSort, setCatalogSort] = useState<{ key: CatalogSortKey; direction: 'asc' | 'desc' }>({ key: 'purchaseYtd', direction: 'desc' });
   const money = (value: number) => formatMoney(Number(value || 0), { currency, locale, decimals: 0 });
   const unitPrice = (value: number) => formatMoney(Number(value || 0), { currency, locale, decimals: 4 });
   const wrapPanel = (children: ReactNode) => (
@@ -116,11 +118,34 @@ export default function DefaultVendorReport({
   const noRows = <div style={{ padding: 20, color: '#64748b', fontSize: 13 }}>No rows are available for this report.</div>;
 
   if (reportKey === 'vendorsCatalogPurchaseHistory') {
+    const sortedCatalog = [...payload.catalog].sort((left, right) => {
+      const key = catalogSort.key;
+      const leftValue = left[key] ?? '';
+      const rightValue = right[key] ?? '';
+      const comparison = typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? leftValue - rightValue
+        : String(leftValue).localeCompare(String(rightValue));
+      return catalogSort.direction === 'asc' ? comparison : -comparison;
+    });
+    const sortableHeader = (key: CatalogSortKey, label: string, align: 'left' | 'right' = 'left') => {
+      const active = catalogSort.key === key;
+      return (
+        <th style={{ ...headerStyle, textAlign: align }}>
+          <button
+            type="button"
+            onClick={() => setCatalogSort((current) => current.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' })}
+            style={{ padding: 0, border: 0, background: 'transparent', color: 'inherit', font: 'inherit', fontWeight: active ? 800 : 700, cursor: 'pointer', textTransform: 'inherit' }}
+          >
+            {label}{active ? (catalogSort.direction === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+          </button>
+        </th>
+      );
+    };
     return wrapPanel(<>{reportHeading}<div style={{ overflowX: 'auto' }}><table style={tableStyle}><thead><tr>
-      <th style={headerStyle}>Vendor</th><th style={headerStyle}>Terms</th><th style={headerStyle}>Last purchase</th>
-      <th style={{ ...headerStyle, textAlign: 'right' }}>Purchase YTD</th><th style={{ ...headerStyle, textAlign: 'right' }}>Prior year</th>
-      <th style={{ ...headerStyle, textAlign: 'right' }}>Payments YTD</th>
-    </tr></thead><tbody>{payload.catalog.slice(0, 30).map((row) => <tr key={row.vendorId}>
+      {sortableHeader('vendorName', 'Vendor')}{sortableHeader('termsCode', 'Terms')}{sortableHeader('lastPurchaseDate', 'Last purchase')}
+      {sortableHeader('purchaseYtd', 'Purchase YTD', 'right')}{sortableHeader('purchaseLastYear', 'Prior year', 'right')}
+      {sortableHeader('payYtd', 'Payments YTD', 'right')}
+    </tr></thead><tbody>{sortedCatalog.slice(0, 30).map((row) => <tr key={row.vendorId}>
       <td style={cellStyle}><strong>{row.vendorName}</strong><div style={{ color: '#64748b', fontSize: 11 }}>{row.status}</div></td>
       <td style={cellStyle}>{row.termsCode}</td><td style={cellStyle}>{row.lastPurchaseDate || '—'}</td>
       <td style={rightCellStyle}>{money(row.purchaseYtd)}</td><td style={rightCellStyle}>{money(row.purchaseLastYear)}</td><td style={rightCellStyle}>{money(row.payYtd)}</td>
