@@ -244,6 +244,35 @@ const SECTOR_62_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
 };
 
 const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition[]> = {
+  entity_financials: [
+    { key: 'entityDetailedIncomeStatement', label: 'Detailed Income Statement', group: 'Entity Financials' },
+    { key: 'entityBookToTaxReconciliation', label: 'Book-to-Tax Reconciliation', group: 'Entity Financials' },
+    { key: 'entityBooksIntegrityExceptions', label: 'Books Integrity Exceptions', group: 'Entity Financials' },
+  ],
+  construction_assets: [
+    { key: 'constructionDrawHistory', label: 'Construction Cost & Draw History', group: 'Construction & Fixed Assets' },
+    { key: 'constructionSourcesUses', label: 'Sources & Uses / Capital Stack', group: 'Construction & Fixed Assets' },
+    { key: 'fixedAssetRegister', label: 'Fixed Asset Register & Depreciation', group: 'Construction & Fixed Assets' },
+    { key: 'constructionDebtSchedule', label: 'Loan Schedule', group: 'Construction & Fixed Assets' },
+  ],
+  property_financials: [
+    { key: 'propertyFinancialOverview', label: 'Financial Overview', group: 'Property Financials' },
+    { key: 'propertyIncomeDetail', label: 'Income Detail', group: 'Property Financials' },
+    { key: 'propertyExpenseAnalysis', label: 'Property Expense Analysis', group: 'Property Financials' },
+    { key: 'propertyIncomeExpenseTrend', label: 'Monthly Income vs. Expense', group: 'Property Financials' },
+    { key: 'propertyOccupancyTrend', label: 'Occupancy Trends', group: 'Property Financials' },
+    { key: 'propertySourceReconciliation', label: 'BGAH / SLN Source Reconciliation', group: 'Property Financials' },
+  ],
+  investor_ledger: [
+    { key: 'investorCapitalRollforward', label: 'Member Capital Rollforward', group: 'Investor Ledger' },
+    { key: 'investorContributionsDistributions', label: 'Contributions and Distributions', group: 'Investor Ledger' },
+    { key: 'investorAllocatedProfitLoss', label: 'Allocated Profit and Loss', group: 'Investor Ledger' },
+    { key: 'investorPreferredReturnAccrual', label: 'Preferred Return Accrual', group: 'Investor Ledger' },
+    { key: 'investorEvenUpBalances', label: 'Even-Up Balances', group: 'Investor Ledger' },
+    { key: 'investorWaterfallPreview', label: 'Waterfall Distribution Preview', group: 'Investor Ledger' },
+    { key: 'investorAnnualCapitalRollforward', label: 'Annual Capital Account Rollforward', group: 'Investor Ledger' },
+    { key: 'investorMemberStatements', label: 'Member Statements', group: 'Investor Ledger' },
+  ],
   firm: [
     { key: 'firmDivisionScorecard', label: 'Division Scorecard', group: 'Firm' },
     { key: 'firmRevenueByDivision', label: 'Revenue by Division', group: 'Firm' },

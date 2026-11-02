@@ -1,3 +1,5 @@
+import { PROPERTY_EXPENSE_TARGET_OPTIONS, PROPERTY_REVENUE_TARGET_OPTIONS } from '@/lib/real-estate/property-income-statement';
+
 export interface TargetFieldOption {
   value: string;
   label: string;
@@ -6,6 +8,10 @@ export interface TargetFieldOption {
 type SectorSchema = {
   revenue: string[];
   cogs: string[];
+  // Additional options offered alongside the standard lists (never replacing them,
+  // so mappings already saved for the sector stay valid).
+  extraRevenueOptions?: TargetFieldOption[];
+  extraExpenseOptions?: TargetFieldOption[];
   asset?: TargetFieldOption[];
   liability?: TargetFieldOption[];
   equity?: TargetFieldOption[];
@@ -263,6 +269,8 @@ const SECTOR_SCHEMA_BY_CODE: Record<string, SectorSchema> = {
       'Building Depreciation',
       'Other COGS',
     ],
+    extraRevenueOptions: PROPERTY_REVENUE_TARGET_OPTIONS,
+    extraExpenseOptions: PROPERTY_EXPENSE_TARGET_OPTIONS,
   },
   '54': {
     revenue: [
@@ -377,7 +385,7 @@ export function getSectorSchema(industrySectorCategory?: string | null): SectorS
 export function getRevenueTargetFieldOptions(industrySectorCategory?: string | null): TargetFieldOption[] {
   const schema = getSectorSchema(industrySectorCategory);
   if (!schema) return LEGACY_REVENUE_OPTIONS;
-  return buildOptions('rev', schema.revenue);
+  return [...buildOptions('rev', schema.revenue), ...(schema.extraRevenueOptions || [])];
 }
 
 export function getCogsTargetFieldOptions(industrySectorCategory?: string | null): TargetFieldOption[] {
@@ -391,7 +399,7 @@ export function getTargetFieldOptions(industrySectorCategory?: string | null) {
   return {
     revenue: getRevenueTargetFieldOptions(industrySectorCategory),
     cogs: getCogsTargetFieldOptions(industrySectorCategory),
-    expense: STATIC_TARGET_FIELD_OPTIONS.expense,
+    expense: [...STATIC_TARGET_FIELD_OPTIONS.expense, ...(schema?.extraExpenseOptions || [])],
     nonOperating: STATIC_TARGET_FIELD_OPTIONS.nonOperating,
     asset: [...STATIC_TARGET_FIELD_OPTIONS.asset, ...(schema?.asset || [])],
     liability: [...STATIC_TARGET_FIELD_OPTIONS.liability, ...(schema?.liability || [])],

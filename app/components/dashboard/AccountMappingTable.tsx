@@ -177,6 +177,7 @@ export default function AccountMappingTable({
           'expense',
           'operatingexpensetotal',
         ].includes(compactTarget)
+        || normalizedTarget.startsWith('opex_')
       ) return 'expense';
       if (
         [
