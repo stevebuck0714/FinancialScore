@@ -188,22 +188,28 @@ export async function POST(request: NextRequest) {
 
         const insertSql = `
           INSERT INTO ${quoteIdentifier(tableName)} (${columns.map((column) => quoteIdentifier(column.columnName)).join(', ')})
-          VALUES (${columns.map((column, index) => sqlValue(column, index + 1)).join(', ')})
+          VALUES ${table.rows
+            .map((_, rowIndex) =>
+              `(${columns
+                .map((column, columnIndex) => sqlValue(column, rowIndex * columns.length + columnIndex + 1))
+                .join(', ')})`,
+            )
+            .join(', ')}
         `;
 
-        for (const row of table.rows) {
-          const values = columns.map((column, index) =>
+        const values = table.rows.flatMap((row) =>
+          columns.map((column, index) =>
             serializedValue(column, index === companyIdIndex ? targetCompanyId : row[column.columnName]),
-          );
-          await tx.$executeRawUnsafe(insertSql, ...values);
-        }
+          ),
+        );
+        await tx.$executeRawUnsafe(insertSql, ...values);
       }
 
       await tx.company.update({
         where: { id: targetCompanyId },
         data: promotionPackage.companyConfiguration as any,
       });
-    });
+    }, { maxWait: 20_000, timeout: 120_000 });
 
     return NextResponse.json({
       ok: true,
