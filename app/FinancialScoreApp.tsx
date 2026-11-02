@@ -33,6 +33,7 @@ import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-reso
 import { getOverviewPrintOptions } from '@/lib/operations/overview-print-options';
 import { waitForNextAuthSession } from '@/lib/auth/wait-for-nextauth-session';
 import { calculateEbitda } from '@/lib/financial/ebitda';
+import CombinedEntityFinancialStatements from '@/app/components/financial/CombinedEntityFinancialStatements';
 
 const PERFORMANCE_ANALYSIS_TABS = [
   { id: 'pa-overview', label: 'Overview' },
@@ -138,6 +139,7 @@ import {
 import type { SdeExecutiveFinancialSummary, SdeExecutiveSummary, SdeRecommendation } from '@/lib/sde-recommendations';
 import { buildSdeValuationPreviewModel } from '@/lib/sde-valuation-preview-model';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
+const RealEstateFeedMappingPanel = dynamic(() => import('./components/dashboard/RealEstateFeedMappingPanel'), { ssr: false });
 const LOBManager = dynamic(() => import('./components/dashboard/LOBManager'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
 const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false });
@@ -4216,6 +4218,11 @@ function FinancialScorePage() {
   const [isGeneratingMappings, setIsGeneratingMappings] = useState(false);
   const [isSavingMappings, setIsSavingMappings] = useState(false);
   const [showOnlyActionableMappings, setShowOnlyActionableMappings] = useState(false);
+  // 'PRIMARY' = the company's accounting system; other values are entity feeds (e.g. BGAH, SLN).
+  const [dataMappingFeed, setDataMappingFeed] = useState('PRIMARY');
+  useEffect(() => {
+    setDataMappingFeed('PRIMARY');
+  }, [selectedCompanyId]);
   const [mappingSourceSummary, setMappingSourceSummary] = useState<{
     total: number;
     new: number;
@@ -18268,7 +18275,17 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && selectedAccountingSystem === 'CSV_FILE' && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && String(resolveCompanyIndustrySectorCategory(companies.find(c => c.id === selectedCompanyId), industrySectorCategory) || '').trim() === '53' && (
+            <RealEstateFeedMappingPanel
+              companyId={selectedCompanyId}
+              industrySectorCategory={resolveCompanyIndustrySectorCategory(companies.find(c => c.id === selectedCompanyId), industrySectorCategory)}
+              primaryFeedLabel={selectedAccountingSystemLabel || 'Primary accounting system'}
+              feed={dataMappingFeed}
+              onFeedChange={setDataMappingFeed}
+            />
+          )}
+
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && dataMappingFeed === 'PRIMARY' && selectedAccountingSystem === 'CSV_FILE' && (
             <div style={{ maxWidth: '1280px', margin: '0 auto 6px auto', padding: '0 16px', display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '10px 12px', width: '52%', minWidth: '520px', maxWidth: '640px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'nowrap' }}>
                 <div style={{ minWidth: 0 }}>
@@ -18335,6 +18352,7 @@ function FinancialScorePage() {
 
           {adminDashboardTab === 'data-mapping' &&
             selectedCompanyId &&
+            dataMappingFeed === 'PRIMARY' &&
             aiMappings.length === 0 &&
             !hasCsvDataForSelectedCompany &&
             (selectedAccountingSystem === 'CSV_FILE' || !qbRawData) && (
@@ -18487,7 +18505,7 @@ function FinancialScorePage() {
           )}
 
           {/* Account Mapping Interface - Shows after CSV is uploaded */}
-          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId) && (() => {
+          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && dataMappingFeed === 'PRIMARY') && (() => {
             const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
             const aiMappingsForSelectedCompany =
               aiMappingsCompanyId === selectedCompanyId ? aiMappings : [];
@@ -30373,20 +30391,9 @@ function FinancialScorePage() {
 
       {/* Financial Statements View - No Data Available */}
       {currentView === 'financial-statements' && selectedCompanyId && monthly.length === 0 && (
-        <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Financial Statements</h1>
-            {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-          </div>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '48px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minHeight: '400px', textAlign: 'center', marginTop: '32px' }}>
-            <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>
-              📋 No Financial Data Available
-            </div>
-            <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
-              Please import financial data via CSV or sync from QuickBooks to view financial statements.
-            </p>
-          </div>
-        </div>
+        String(selectedCompany?.industrySectorCategory || '').trim() === '53'
+          ? <CombinedEntityFinancialStatements companyId={selectedCompanyId} companyName={companyName || 'Company'} />
+          : <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px', textAlign: 'center', color: '#64748b' }}>No Financial Data Available. Please import financial data or sync an accounting source.</div>
       )}
 
       {/* Team Assessment - Questionnaire View */}

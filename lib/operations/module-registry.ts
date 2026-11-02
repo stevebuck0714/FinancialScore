@@ -15,6 +15,10 @@ export type OpsDataType =
   | 'daily-financials'
   | 'revenue-billables'
   | 'unit-economics'
+  | 'property-financials'
+  | 'investor-ledger'
+  | 'entity-financials'
+  | 'construction-assets'
   // Construction-sector (industrySectorCategory === '23') native modules.
   // Backed by /api/operational-data?type=… mock for M2-M5 and by Vista Cloud
   // snapshot tables in M6+. See docs/CONSTRUCTION_SECTOR_DASHBOARD_DESIGN.md.
@@ -122,6 +126,10 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'rates_revenue', label: 'Rates & Revenue', dataType: 'customers' },
   { key: 'revenue_billables', label: 'Revenue & Billables', dataType: 'revenue-billables' },
   { key: 'unit_economics', label: 'Unit Economics', dataType: 'unit-economics' },
+  { key: 'property_financials', label: 'Property Financials', dataType: 'property-financials' },
+  { key: 'investor_ledger', label: 'Investor Ledger', dataType: 'investor-ledger' },
+  { key: 'entity_financials', label: 'Entity Financials', dataType: 'entity-financials' },
+  { key: 'construction_assets', label: 'Construction & Fixed Assets', dataType: 'construction-assets' },
   // --- Construction sector ('23') native modules ---
   { key: 'job_cost_control', label: 'Job Cost Control', dataType: 'job-cost-control' },
   { key: 'project_portfolio', label: 'Project Portfolio', dataType: 'project-portfolio' },

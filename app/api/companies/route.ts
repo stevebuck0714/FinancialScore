@@ -1222,37 +1222,33 @@ export async function PATCH(request: NextRequest) {
     } = await import('@/lib/constants/currencies');
 
     if (updateFields.baseCurrency !== undefined) {
-      if (!(await hasCompanyColumn('baseCurrency'))) {
-        return NextResponse.json(
-          { error: 'baseCurrency column is not available in this environment' },
-          { status: 400 }
-        );
-      }
-      const nextBase = normalizeCurrencyCode(updateFields.baseCurrency, DEFAULT_BASE_CURRENCY);
-      if (!isSupportedCurrency(nextBase)) {
-        return NextResponse.json({ error: 'Unsupported baseCurrency' }, { status: 400 });
-      }
-      updateData.baseCurrency = nextBase;
-      if (updateFields.locale === undefined && (await hasCompanyColumn('locale'))) {
-        updateData.locale = localeForCurrency(nextBase);
+      if (await hasCompanyColumn('baseCurrency')) {
+        const nextBase = normalizeCurrencyCode(updateFields.baseCurrency, DEFAULT_BASE_CURRENCY);
+        if (!isSupportedCurrency(nextBase)) {
+          return NextResponse.json({ error: 'Unsupported baseCurrency' }, { status: 400 });
+        }
+        updateData.baseCurrency = nextBase;
+        if (updateFields.locale === undefined && (await hasCompanyColumn('locale'))) {
+          updateData.locale = localeForCurrency(nextBase);
+        }
+      } else {
+        console.warn('Company update: baseCurrency column missing, skipping currency update');
       }
     }
 
     if (updateFields.reportingCurrency !== undefined) {
-      if (!(await hasCompanyColumn('reportingCurrency'))) {
-        return NextResponse.json(
-          { error: 'reportingCurrency column is not available in this environment' },
-          { status: 400 }
-        );
-      }
-      if (updateFields.reportingCurrency === null || updateFields.reportingCurrency === '') {
-        updateData.reportingCurrency = null;
-      } else {
-        const nextReporting = normalizeCurrencyCode(String(updateFields.reportingCurrency));
-        if (!isSupportedCurrency(nextReporting)) {
-          return NextResponse.json({ error: 'Unsupported reportingCurrency' }, { status: 400 });
+      if (await hasCompanyColumn('reportingCurrency')) {
+        if (updateFields.reportingCurrency === null || updateFields.reportingCurrency === '') {
+          updateData.reportingCurrency = null;
+        } else {
+          const nextReporting = normalizeCurrencyCode(String(updateFields.reportingCurrency));
+          if (!isSupportedCurrency(nextReporting)) {
+            return NextResponse.json({ error: 'Unsupported reportingCurrency' }, { status: 400 });
+          }
+          updateData.reportingCurrency = nextReporting;
         }
-        updateData.reportingCurrency = nextReporting;
+      } else {
+        console.warn('Company update: reportingCurrency column missing, skipping currency update');
       }
     }
 

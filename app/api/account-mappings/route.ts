@@ -190,6 +190,7 @@ function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expens
   ) {
     return "cogs";
   }
+  if (normalized.startsWith("opex_")) return "expense";
   if (
     [
       "payroll",

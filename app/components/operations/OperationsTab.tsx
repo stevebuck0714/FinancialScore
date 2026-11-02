@@ -48,6 +48,8 @@ import DefaultVendorReport from './DefaultVendorReport';
 import VendorItemOrderHistoryReport from './VendorItemOrderHistoryReport';
 import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
+import RealEstateOperationsTab from './RealEstateOperationsTab';
+import RealEstateConstructionTab from './RealEstateConstructionTab';
 import PayrollBureauOpsViews from './PayrollBureauOpsViews';
 import PayrollBureauExecutiveScorecard, {
   PAYROLL_BUREAU_EXECUTIVE_CHART_KEYS,
@@ -1701,7 +1703,17 @@ export default function OperationsTab({
     .map((moduleKey) => resolveModuleKey(moduleKey))
     .filter((moduleKey) => moduleKey && !['dashboard', 'forecast'].includes(moduleKey));
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
-  const resolvedModulesBase = moduleSource === 'layout-config' ? layoutModules : sectorModules;
+  // Layout configurations predate the real-estate financial modules. Keep
+  // company-specific layout ordering, but do not let an older saved layout
+  // remove these sector-standard modules from the Operations header.
+  const requiredSectorModules =
+    String(industrySectorCategory || '').trim() === '53'
+      ? ['property_financials', 'investor_ledger', 'entity_financials', 'construction_assets']
+      : [];
+  const resolvedModulesBase = Array.from(new Set([
+    ...(moduleSource === 'layout-config' ? layoutModules : sectorModules),
+    ...requiredSectorModules,
+  ]));
   const resolvedModulesWithVendors =
     ['32', '42'].includes(String(industrySectorCategory || '').trim()) && !resolvedModulesBase.includes('vendors')
       ? (() => {
@@ -30878,6 +30890,18 @@ Strategies to Improve the CCC
       );
     }
     if (dataType === 'daily-financials') return renderDailyFinancials();
+    if (dataType === 'property-financials') {
+      return <RealEstateOperationsTab selectedCompanyId={selectedCompanyId} mode="property" operationalHubSections={operationalHubSections} />;
+    }
+    if (dataType === 'investor-ledger') {
+      return <RealEstateOperationsTab selectedCompanyId={selectedCompanyId} mode="investors" operationalHubSections={operationalHubSections} />;
+    }
+    if (dataType === 'entity-financials') {
+      return <RealEstateOperationsTab selectedCompanyId={selectedCompanyId} mode="entity-financials" operationalHubSections={operationalHubSections} />;
+    }
+    if (dataType === 'construction-assets') {
+      return <RealEstateConstructionTab selectedCompanyId={selectedCompanyId} operationalHubSections={operationalHubSections} />;
+    }
     if (dataType === 'revenue-billables') return withReportLayout(renderRevenueBillables());
     if (dataType === 'unit-economics') return withReportLayout(renderUnitEconomics());
     if (dataType === 'job-cost-control') return withReportLayout(renderJobCostControl());
