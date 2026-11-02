@@ -161,15 +161,17 @@ export async function POST(request: NextRequest) {
 
     const tablesByName = new Map(promotionPackage.tables.map((table) => [table.name, table]));
 
+    const destinationColumnsByTable = new Map<string, Column[]>();
     for (const tableName of TRANSFER_TABLES) {
       const source = tablesByName.get(tableName);
       if (!source) throw new Error(`Promotion package is missing ${tableName}.`);
       const destination = await targetColumns(tableName);
-      const expected = destination.map((column) => column.columnName).join('|');
-      const received = source.columns.map((column) => column.columnName).join('|');
+      const expected = destination.map((column) => column.columnName).sort().join('|');
+      const received = source.columns.map((column) => column.columnName).sort().join('|');
       if (!destination.length || expected !== received) {
         throw new Error(`Schema mismatch for ${tableName}; deploy the current production migrations before importing.`);
       }
+      destinationColumnsByTable.set(tableName, destination);
     }
 
     await prisma.$transaction(async (tx) => {
@@ -180,17 +182,17 @@ export async function POST(request: NextRequest) {
       for (const tableName of INSERT_ORDER) {
         const table = tablesByName.get(tableName);
         if (!table?.rows.length) continue;
-        const companyIdIndex = table.columns.findIndex((column) => column.columnName === 'companyId');
+        const columns = destinationColumnsByTable.get(tableName) || [];
+        const companyIdIndex = columns.findIndex((column) => column.columnName === 'companyId');
         if (companyIdIndex < 0) throw new Error(`${tableName} is missing companyId.`);
 
-        const columns = table.columns.map((column) => column.columnName);
         const insertSql = `
-          INSERT INTO ${quoteIdentifier(tableName)} (${columns.map(quoteIdentifier).join(', ')})
-          VALUES (${table.columns.map((column, index) => sqlValue(column, index + 1)).join(', ')})
+          INSERT INTO ${quoteIdentifier(tableName)} (${columns.map((column) => quoteIdentifier(column.columnName)).join(', ')})
+          VALUES (${columns.map((column, index) => sqlValue(column, index + 1)).join(', ')})
         `;
 
         for (const row of table.rows) {
-          const values = table.columns.map((column, index) =>
+          const values = columns.map((column, index) =>
             serializedValue(column, index === companyIdIndex ? targetCompanyId : row[column.columnName]),
           );
           await tx.$executeRawUnsafe(insertSql, ...values);
