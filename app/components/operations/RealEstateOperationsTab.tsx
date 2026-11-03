@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import PropertyIncomeStatementTable from '@/app/components/financial/PropertyIncomeStatementTable';
@@ -59,6 +59,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
   const [entityStatementDisplay, setEntityStatementDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
   const [reportRangeDrafts, setReportRangeDrafts] = useState<Record<string, ReportRange>>({});
   const [reportRanges, setReportRanges] = useState<Record<string, ReportRange>>({});
+  const reportRangesRef = useRef<Record<string, ReportRange>>({});
   const [vendorSearch, setVendorSearch] = useState('');
   const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
   const fmt = (value: unknown) => Number(value || 0).toLocaleString(undefined, { style: 'currency', currency: money.currency, maximumFractionDigits: 0 });
@@ -66,6 +67,25 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
   const toggleExpanded = (table: string) => setExpandedTables((current) => ({ ...current, [table]: !current[table] }));
   const tableToggle = (table: string, count: number) => count > 12 ? <button type="button" onClick={() => toggleExpanded(table)} style={{ margin: '10px', border: 0, borderRadius: 6, background: '#eff6ff', color: '#1e3a8a', padding: '6px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{expandedTables[table] ? 'Collapse table' : `Show all ${count} rows`}</button> : null;
   const rangeFor = useCallback((key: string) => reportRanges[key] || { startDate: '', endDate: '' }, [reportRanges]);
+  const saveReportRange = useCallback((key: string, range: ReportRange) => {
+    const normalizedRange = {
+      startDate: String(range.startDate || ''),
+      endDate: String(range.endDate || ''),
+    };
+    const next = { ...reportRangesRef.current, [key]: normalizedRange };
+    reportRangesRef.current = next;
+    setReportRanges(next);
+    try {
+      window.localStorage.setItem(`real-estate:report-ranges:${selectedCompanyId}`, JSON.stringify(next));
+    } catch {
+      // Server persistence below remains available when local storage is unavailable.
+    }
+    void fetch('/api/ops-dashboard-prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId: selectedCompanyId, preferences: { realEstateReportRanges: next } }),
+    });
+  }, [selectedCompanyId]);
   const withinRange = useCallback((key: string, value: unknown) => {
     const date = String(value || '').slice(0, 10);
     const range = rangeFor(key);
@@ -78,9 +98,43 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
       {showFrequency && <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700, color: '#475569' }}>Frequency<select value="monthly" disabled style={{ padding: '6px 8px', border: '1px solid #e2e8f0', borderRadius: 6, color: '#64748b', background: '#f8fafc' }}><option>Monthly</option></select></label>}
       <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700, color: '#475569' }}>From<input type="date" value={draft.startDate} max={draft.endDate || undefined} onChange={(event) => update({ startDate: event.target.value })} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', borderRadius: 6 }} /></label>
       <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700, color: '#475569' }}>To<input type="date" value={draft.endDate} min={draft.startDate || undefined} onChange={(event) => update({ endDate: event.target.value })} style={{ padding: '6px 8px', border: '1px solid #e2e8f0', borderRadius: 6 }} /></label>
-      <button type="button" onClick={() => setReportRanges((current) => ({ ...current, [key]: draft }))} style={{ padding: '7px 11px', border: '1px solid #1d4ed8', borderRadius: 6, background: '#2563eb', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Save</button>
+      <button type="button" onClick={() => saveReportRange(key, draft)} style={{ padding: '7px 11px', border: '1px solid #1d4ed8', borderRadius: 6, background: '#2563eb', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Save</button>
     </div>;
   };
+
+  useEffect(() => {
+    let active = true;
+    reportRangesRef.current = {};
+    setReportRanges({});
+    setReportRangeDrafts({});
+    const loadReportRanges = async () => {
+      let ranges: Record<string, ReportRange> = {};
+      try {
+        const response = await fetch(`/api/ops-dashboard-prefs?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' });
+        const payload = response.ok ? await response.json() : null;
+        const saved = payload?.preferences?.realEstateReportRanges;
+        if (saved && typeof saved === 'object' && !Array.isArray(saved)) ranges = saved;
+      } catch {
+        // Fall through to this browser's last saved values.
+      }
+      if (!Object.keys(ranges).length) {
+        try {
+          const saved = window.localStorage.getItem(`real-estate:report-ranges:${selectedCompanyId}`);
+          const parsed = saved ? JSON.parse(saved) : null;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ranges = parsed;
+        } catch {
+          ranges = {};
+        }
+      }
+      if (active) {
+        reportRangesRef.current = ranges;
+        setReportRanges(ranges);
+        setReportRangeDrafts(ranges);
+      }
+    };
+    void loadReportRanges();
+    return () => { active = false; };
+  }, [selectedCompanyId]);
 
   useEffect(() => {
     let active = true;
