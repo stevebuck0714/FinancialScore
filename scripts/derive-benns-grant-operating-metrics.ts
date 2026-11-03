@@ -21,11 +21,15 @@ const normalize = (value: unknown) => String(value || '').toLowerCase().replace(
 
 async function main() {
   const companyName = argument('--company');
-  if (!companyName) throw new Error('Pass --company "BGAH Demo".');
+  const companyId = argument('--company-id');
+  if (!companyName && !companyId) throw new Error('Pass --company-id for the target company, or an exact --company name.');
   enforceDatabaseSecurity();
-  if (validateDatabaseConnection().isProduction) throw new Error('Development-only import.');
-  const company = await prisma.company.findFirst({ where: { name: companyName }, select: { id: true, name: true } });
-  if (!company) throw new Error(`Company "${companyName}" was not found.`);
+  const db = validateDatabaseConnection();
+  if (db.isProduction && (argument('--production') !== 'true' || !companyId)) {
+    throw new Error('Production derivation requires --production true and an explicit --company-id.');
+  }
+  const company = await prisma.company.findFirst({ where: companyId ? { id: companyId } : { name: companyName }, select: { id: true, name: true } });
+  if (!company) throw new Error(companyId ? `Company ID "${companyId}" was not found.` : `Company "${companyName}" was not found.`);
 
   const lines = await prisma.$queryRawUnsafe<Array<{ periodEnd: string; reportType: string; accountName: string; amount: number; sourceFileName: string | null }>>(
     `SELECT "periodEnd"::text AS "periodEnd","reportType","accountName","amount"::float AS "amount","sourceFileName"

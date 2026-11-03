@@ -33,11 +33,15 @@ const argument = (name: string) => {
 
 async function main() {
   const companyName = argument('--company');
-  if (!companyName) throw new Error('Pass --company "BGAH Demo".');
+  const companyId = argument('--company-id');
+  if (!companyName && !companyId) throw new Error('Pass --company-id for the target company, or an exact --company name.');
   enforceDatabaseSecurity();
-  if (validateDatabaseConnection().isProduction) throw new Error('Development-only crosswalk.');
-  const company = await prisma.company.findFirst({ where: { name: companyName }, select: { id: true, name: true } });
-  if (!company) throw new Error(`Company "${companyName}" was not found.`);
+  const db = validateDatabaseConnection();
+  if (db.isProduction && (argument('--production') !== 'true' || !companyId)) {
+    throw new Error('Production crosswalk requires --production true and an explicit --company-id.');
+  }
+  const company = await prisma.company.findFirst({ where: companyId ? { id: companyId } : { name: companyName }, select: { id: true, name: true } });
+  if (!company) throw new Error(companyId ? `Company ID "${companyId}" was not found.` : `Company "${companyName}" was not found.`);
 
   const canonicalRows = await prisma.$queryRawUnsafe<Array<{ accountCode: string; accountName: string }>>(
     `SELECT DISTINCT "accountCode","accountName" FROM "RealEstateFinancialLine"

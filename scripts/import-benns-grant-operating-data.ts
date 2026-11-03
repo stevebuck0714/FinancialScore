@@ -474,12 +474,19 @@ async function importCashTrackers(companyId: string, files: string[], summary: S
 
 async function main() {
   const companyName = argument('--company');
-  if (!companyName) throw new Error('Pass the exact development target, e.g. --company "BGAH Demo".');
+  const companyId = argument('--company-id');
+  if (!companyName && !companyId) throw new Error('Pass --company-id for the target company, or an exact --company name.');
   enforceDatabaseSecurity();
   const db = validateDatabaseConnection();
-  if (db.isProduction) throw new Error('This importer is development-only and will not run against production.');
-  const companies = await prisma.company.findMany({ where: { name: companyName }, select: { id: true, name: true } });
-  if (companies.length !== 1) throw new Error(`Expected one company named "${companyName}", found ${companies.length}.`);
+  if (db.isProduction && argument('--production') !== 'true') {
+    throw new Error('Production import requires --production true and an explicit --company-id.');
+  }
+  if (db.isProduction && !companyId) throw new Error('Production import requires an explicit --company-id.');
+  const companies = await prisma.company.findMany({
+    where: companyId ? { id: companyId } : { name: companyName },
+    select: { id: true, name: true },
+  });
+  if (companies.length !== 1) throw new Error(companyId ? `Expected one company with ID "${companyId}", found ${companies.length}.` : `Expected one company named "${companyName}", found ${companies.length}.`);
 
   await ensureSourcedOperatingTables();
   const files = (await Promise.all(FINANCIAL_ROOTS.map((root) => walk(path.join(SOURCE_ROOT, root))))).flat();
