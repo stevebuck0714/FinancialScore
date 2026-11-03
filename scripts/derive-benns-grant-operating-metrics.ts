@@ -31,8 +31,8 @@ async function main() {
   const company = await prisma.company.findFirst({ where: companyId ? { id: companyId } : { name: companyName }, select: { id: true, name: true } });
   if (!company) throw new Error(companyId ? `Company ID "${companyId}" was not found.` : `Company "${companyName}" was not found.`);
 
-  const lines = await prisma.$queryRawUnsafe<Array<{ periodEnd: string; reportType: string; accountName: string; amount: number; sourceFileName: string | null }>>(
-    `SELECT "periodEnd"::text AS "periodEnd","reportType","accountName","amount"::float AS "amount","sourceFileName"
+  const lines = await prisma.$queryRawUnsafe<Array<{ periodEnd: string; reportType: string; accountCode: string; accountName: string; amount: number; sourceFileName: string | null }>>(
+    `SELECT "periodEnd"::text AS "periodEnd","reportType","accountCode","accountName","amount"::float AS "amount","sourceFileName"
      FROM "RealEstateFinancialLine"
      WHERE "companyId"=$1 AND "sourceEntity"='SLN' AND "reportType" IN ('ACTIVITY','BALANCE')`,
     company.id,
@@ -45,8 +45,13 @@ async function main() {
 
   let inserted = 0;
   for (const [periodEnd, periodLines] of byPeriod) {
-    const values = (test: (name: string) => boolean, reportType: string, absolute = false) =>
-      periodLines.filter((line) => line.reportType === reportType && test(normalize(line.accountName))).reduce((sum, line) => sum + (absolute ? Math.abs(Number(line.amount)) : Number(line.amount)), 0);
+    const values = (test: (name: string) => boolean, reportType: string, absolute = false) => {
+      const matches = periodLines.filter((line) => line.reportType === reportType && test(normalize(line.accountName)));
+      // Numeric account codes are the approved 2026 ledger. Historical
+      // synthetic IDs are retained only when no approved code exists.
+      const approved = matches.filter((line) => !String(line.accountCode).startsWith('sln_'));
+      return (approved.length ? approved : matches).reduce((sum, line) => sum + (absolute ? Math.abs(Number(line.amount)) : Number(line.amount)), 0);
+    };
     const grossPotential = values((name) => name === 'grosspotentialrent', 'ACTIVITY');
     const vacancy = values((name) => name === 'lessvacancies', 'ACTIVITY', true);
     const concessions = values((name) => name === 'modelsemployeeconcessio' || name === 'modelsemployeeconcession' || name === 'onetimerentconcession', 'ACTIVITY', true);
@@ -64,7 +69,9 @@ async function main() {
       const result = await prisma.$executeRawUnsafe(
         `INSERT INTO "RealEstateOperationalMetric" ("id","companyId","periodEnd","metric","value","unit","sourceReference","updatedAt")
          VALUES ($1,$2,$3::date,$4,$5,'USD',$6,NOW())
-         ON CONFLICT ("companyId","periodEnd","metric") DO NOTHING`,
+         ON CONFLICT ("companyId","periodEnd","metric") DO UPDATE SET
+           "value"=EXCLUDED."value","unit"=EXCLUDED."unit","sourceReference"=EXCLUDED."sourceReference","updatedAt"=NOW()
+         WHERE "RealEstateOperationalMetric"."sourceReference" LIKE 'Derived from SLN financial statements%'`,
         randomUUID(), company.id, periodEnd, metric, value, source,
       );
       inserted += Number(result);
