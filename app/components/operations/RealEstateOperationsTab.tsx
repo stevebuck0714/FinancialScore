@@ -60,6 +60,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
   const [reportRangeDrafts, setReportRangeDrafts] = useState<Record<string, ReportRange>>({});
   const [reportRanges, setReportRanges] = useState<Record<string, ReportRange>>({});
   const [vendorSearch, setVendorSearch] = useState('');
+  const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
   const fmt = (value: unknown) => Number(value || 0).toLocaleString(undefined, { style: 'currency', currency: money.currency, maximumFractionDigits: 0 });
   const { sortRows, sortableHeader } = useTableSort(th);
   const toggleExpanded = (table: string) => setExpandedTables((current) => ({ ...current, [table]: !current[table] }));
@@ -165,6 +166,11 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     () => vendorSpendRows.filter((row) => row.vendor.toLowerCase().includes(vendorSearch.trim().toLowerCase())),
     [vendorSpendRows, vendorSearch],
   );
+  const selectedVendorPayments = useMemo(() => selectedVendor
+    ? data.cashActivities
+      .filter((activity) => Number(activity.amount) < 0 && activity.counterparty === selectedVendor && withinRange('vendorSpend', activity.periodEnd))
+      .sort((a, b) => String(b.activityDate || b.periodEnd).localeCompare(String(a.activityDate || a.periodEnd)))
+    : [], [data.cashActivities, selectedVendor, withinRange]);
   const latestMetrics = useMemo(() => {
     const byMetric = new Map<string, any>();
     data.operationalMetrics.filter((metric) => withinRange('operatingMetrics', metric.periodEnd)).forEach((metric) => {
@@ -409,7 +415,11 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     {reportEnabled('propertyVendorSpend') && <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
       <div style={{ padding: '14px 18px 0' }}><h3 style={{ margin: 0 }}>Vendor spend</h3><p style={{ margin: '6px 0 12px', color: '#64748b', fontSize: 13 }}>Cash-tracker disbursements by vendor; tenant and employee-level records are excluded.</p></div>
       <div style={{ padding: '0 18px', display: 'flex', alignItems: 'end', gap: 12, flexWrap: 'wrap' }}>{reportRangeControls('vendorSpend')}<label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700, color: '#475569' }}>Vendor<input type="search" value={vendorSearch} onChange={(event) => setVendorSearch(event.target.value)} placeholder="Search vendor" style={{ minWidth: 220, padding: '6px 8px', border: '1px solid #e2e8f0', borderRadius: 6 }} /></label></div>
-      {filteredVendorSpendRows.length ? <><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('vendorSpend', 'vendor', 'Vendor')}{sortableHeader('vendorSpend', 'payments', 'Payments', 'right')}{sortableHeader('vendorSpend', 'latestDate', 'Latest Payment', 'right')}{sortableHeader('vendorSpend', 'spend', 'Total Spend', 'right')}</tr></thead><tbody>{sortRows('vendorSpend', filteredVendorSpendRows, (row, key) => key === 'vendor' || key === 'latestDate' ? (row as any)[key] : Number((row as any)[key])).slice(0, expandedTables.vendorSpend ? undefined : 12).map((row) => <tr key={row.vendor}><td style={{ ...td, fontWeight: 700 }}>{row.vendor}</td><td style={{ ...td, textAlign: 'right' }}>{row.payments}</td><td style={{ ...td, textAlign: 'right' }}>{row.latestDate ? String(row.latestDate).slice(0, 10) : '-'}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(row.spend)}</td></tr>)}</tbody></table>{tableToggle('vendorSpend', filteredVendorSpendRows.length)}</> : <div style={{ padding: 18, color: '#64748b' }}>{vendorSearch ? 'No vendors match this search and date range.' : 'No vendor disbursements have been loaded.'}</div>}
+      {filteredVendorSpendRows.length ? <><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('vendorSpend', 'vendor', 'Vendor')}{sortableHeader('vendorSpend', 'payments', 'Payments', 'right')}{sortableHeader('vendorSpend', 'latestDate', 'Latest Payment', 'right')}{sortableHeader('vendorSpend', 'spend', 'Total Spend', 'right')}</tr></thead><tbody>{sortRows('vendorSpend', filteredVendorSpendRows, (row, key) => key === 'vendor' || key === 'latestDate' ? (row as any)[key] : Number((row as any)[key])).slice(0, expandedTables.vendorSpend ? undefined : 12).map((row) => {
+        const isSelected = selectedVendor === row.vendor;
+        return <tr key={row.vendor} style={{ background: isSelected ? '#dbeafe' : undefined }}><td style={{ ...td, fontWeight: 700 }}><button type="button" onClick={() => setSelectedVendor(isSelected ? null : row.vendor)} style={{ border: 0, padding: 0, background: 'transparent', color: '#1e3a8a', font: 'inherit', fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}>{row.vendor}</button></td><td style={{ ...td, textAlign: 'right' }}>{row.payments}</td><td style={{ ...td, textAlign: 'right' }}>{row.latestDate ? String(row.latestDate).slice(0, 10) : '-'}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(row.spend)}</td></tr>;
+      })}</tbody></table>{tableToggle('vendorSpend', filteredVendorSpendRows.length)}
+      {selectedVendor && <div style={{ margin: '0 18px 18px', border: '1px solid #bfdbfe', borderRadius: 8, overflowX: 'auto' }}><div style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, color: '#1e3a8a' }}>{selectedVendor} payments</div><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}><thead><tr><th style={th}>Date</th><th style={th}>Description</th><th style={{ ...th, textAlign: 'right' }}>Payment</th></tr></thead><tbody>{selectedVendorPayments.map((activity) => <tr key={activity.id}><td style={td}>{String(activity.activityDate || activity.periodEnd).slice(0, 10)}</td><td style={td}>{activity.description || '-'}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(Math.abs(Number(activity.amount)))}</td></tr>)}</tbody></table>{!selectedVendorPayments.length && <div style={{ padding: 12, color: '#64748b' }}>No payments match the current date range.</div>}</div>}</> : <div style={{ padding: 18, color: '#64748b' }}>{vendorSearch ? 'No vendors match this search and date range.' : 'No vendor disbursements have been loaded.'}</div>}
     </div>}
     {reportEnabled('propertyOperatingMetrics') && <div style={card}>
       <h3 style={{ marginTop: 0 }}>Apartment operating metrics</h3>
