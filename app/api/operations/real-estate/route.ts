@@ -20,13 +20,17 @@ async function ensureTables() {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RealEstateFinancialLine" (
       "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text, "companyId" TEXT NOT NULL,
-      "sourceEntity" TEXT NOT NULL, "reportType" TEXT NOT NULL, "periodEnd" DATE NOT NULL,
+      "sourceEntity" TEXT NOT NULL, "legalEntity" TEXT, "reportType" TEXT NOT NULL, "periodEnd" DATE NOT NULL,
       "accountCode" TEXT NOT NULL, "accountName" TEXT NOT NULL, "accountType" TEXT NOT NULL,
       "canonicalAccountCode" TEXT, "amount" NUMERIC(18,2) NOT NULL, "sourceFileName" TEXT,
       "sourceSheetName" TEXT, "sourceRowNumber" INTEGER, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE ("companyId","sourceEntity","reportType","periodEnd","accountCode")
     )
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "RealEstateFinancialLine"
+    ADD COLUMN IF NOT EXISTS "legalEntity" TEXT
   `);
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RealEstateInvestor" (
@@ -54,6 +58,23 @@ async function ensureTables() {
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE ("companyId","periodEnd")
     )
   `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RealEstateCashActivity" (
+      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text, "companyId" TEXT NOT NULL,
+      "periodEnd" DATE NOT NULL, "activityDate" DATE, "activityType" TEXT NOT NULL,
+      "counterparty" TEXT, "description" TEXT, "amount" NUMERIC(18,2) NOT NULL,
+      "sourceReference" TEXT NOT NULL, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE ("companyId","sourceReference")
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RealEstateOperationalMetric" (
+      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text, "companyId" TEXT NOT NULL,
+      "periodEnd" DATE NOT NULL, "metric" TEXT NOT NULL, "value" NUMERIC(18,4) NOT NULL,
+      "unit" TEXT, "sourceReference" TEXT, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE ("companyId","periodEnd","metric")
+    )
+  `);
 }
 
 export async function GET(request: NextRequest) {
@@ -65,13 +86,15 @@ export async function GET(request: NextRequest) {
   try {
     await ensureTables();
     await ensureRealEstateWaterfallTables();
-    const [lines, investors, occupancy, mappings, settingsRows, aliases] = await Promise.all([
+    const [lines, investors, occupancy, cashActivities, operationalMetrics, mappings, settingsRows, aliases] = await Promise.all([
       prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateFinancialLine" WHERE "companyId"=$1 ORDER BY "periodEnd", "accountCode"`, companyId),
       prisma.$queryRawUnsafe<any[]>(`
         SELECT i.*, COALESCE(jsonb_agg(jsonb_build_object('entryType',e."entryType",'amount',e."amount",'effectiveDate',e."effectiveDate") ORDER BY e."effectiveDate") FILTER (WHERE e.id IS NOT NULL), '[]') AS entries
         FROM "RealEstateInvestor" i LEFT JOIN "RealEstateInvestorLedgerEntry" e ON e."investorId"=i.id
         WHERE i."companyId"=$1 GROUP BY i.id ORDER BY i."legalName"`, companyId),
       prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateOccupancySnapshot" WHERE "companyId"=$1 ORDER BY "periodEnd"`, companyId),
+      prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateCashActivity" WHERE "companyId"=$1 ORDER BY "periodEnd", "activityDate", "counterparty"`, companyId),
+      prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateOperationalMetric" WHERE "companyId"=$1 ORDER BY "periodEnd", "metric"`, companyId),
       ensureRealEstateAccountMappingTable().then(() => prisma.$queryRawUnsafe<any[]>(
         `SELECT "financialFeed", "accountCode", "targetField", "bookTreatment" FROM "RealEstateAccountMapping" WHERE "companyId"=$1`,
         companyId,
@@ -83,7 +106,7 @@ export async function GET(request: NextRequest) {
       prisma.$queryRawUnsafe<any[]>(`SELECT "alias", "investorId" FROM "RealEstateInvestorAlias" WHERE "companyId"=$1`, companyId),
     ]);
     const waterfallSettings = settingsRows[0] || { stabilizationDate: null, preferredReturnRate: 6 };
-    return NextResponse.json({ lines, investors, occupancy, mappings, waterfallSettings, aliases });
+    return NextResponse.json({ lines, investors, occupancy, cashActivities, operationalMetrics, mappings, waterfallSettings, aliases });
   } catch (error: any) {
     return NextResponse.json({ error: 'Failed to load real-estate operations', details: String(error?.message || error) }, { status: 500 });
   }

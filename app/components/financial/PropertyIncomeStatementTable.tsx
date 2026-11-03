@@ -60,11 +60,11 @@ export default function PropertyIncomeStatementTable({ lines, mappings, scope, v
         </label>
       </div>
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 + columns.length * 110 }}>
+        <table style={{ width: 'max-content', borderCollapse: 'collapse', minWidth: 220 + columns.length * 84 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              <th style={{ ...cell, textAlign: 'left', fontSize: 11, color: '#475569', textTransform: 'uppercase' }}>Line</th>
-              {columns.map((column) => <th key={column} style={{ ...cell, fontSize: 11, color: '#475569' }}>{column}</th>)}
+              <th style={{ ...cell, width: 220, minWidth: 220, textAlign: 'left', fontSize: 11, color: '#475569', textTransform: 'uppercase' }}>Line</th>
+              {columns.map((column) => <th key={column} style={{ ...cell, width: 84, minWidth: 84, padding: '5px 7px', fontSize: 11, color: '#475569' }}>{column}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -82,7 +82,7 @@ export default function PropertyIncomeStatementTable({ lines, mappings, scope, v
               return (
                 <Fragment key={`${row.label}-${statementIndex}`}>
                   <tr style={{ background: isSelected ? '#dbeafe' : isKeyResult ? '#eff6ff' : undefined }}>
-                    <td style={{ padding: '5px 10px', paddingLeft: row.kind === 'line' ? 24 : 10, fontSize: 13, borderTop: emphasized ? '1px solid #cbd5e1' : undefined }}>
+                    <td style={{ width: 220, maxWidth: 220, padding: '4px 8px', paddingLeft: row.kind === 'line' ? 20 : 8, fontSize: 13, borderTop: emphasized ? '1px solid #cbd5e1' : undefined }}>
                       <button
                         type="button"
                         title="Show trend"
@@ -93,7 +93,7 @@ export default function PropertyIncomeStatementTable({ lines, mappings, scope, v
                       </button>
                     </td>
                     {columns.map((column) => (
-                      <td key={column} style={{ ...cell, fontWeight: emphasized ? 700 : 400, borderTop: emphasized ? '1px solid #cbd5e1' : undefined }}>{statementNumber(row.values[column])}</td>
+                      <td key={column} style={{ ...cell, width: 84, minWidth: 84, padding: '4px 7px', fontWeight: emphasized ? 700 : 400, borderTop: emphasized ? '1px solid #cbd5e1' : undefined }}>{statementNumber(row.values[column])}</td>
                     ))}
                   </tr>
                 </Fragment>

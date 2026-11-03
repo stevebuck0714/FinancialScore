@@ -4047,6 +4047,7 @@ export default function OperationsTab({
       activeDataType === 'payroll-bureau-ops' ||
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast' ||
+      activeDataType === 'property-financials' ||
       isWholesaleRawViewActive ||
       isWholesaleSgpPriceChangesViewActive ||
       isWholesaleRevenueForecastViewActive ||

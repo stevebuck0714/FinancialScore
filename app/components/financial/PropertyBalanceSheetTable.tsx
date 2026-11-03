@@ -41,6 +41,37 @@ const SIDES: Side[] = [
 ];
 
 const normalizeType = (type: unknown) => String(type || '').toLowerCase().replace(/[^a-z]/g, '');
+const canonicalBalanceName = (name: unknown) => {
+  const value = String(name || '').trim();
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const aliases: Record<string, string> = {
+    projectoperatingacct: 'Operating/Checking Account',
+    mmisecuritydeposits: 'Security Deposit Cash',
+    securitydepositescrow: 'Security Deposit',
+    acctpayableoperating: 'Acct Payable-Operating',
+    accountpayableother: 'Account Payable-Other',
+    acctpayablesecuritydep: 'Acct Payable-Security Dep',
+    accountsreceivablerentprepaidrent: 'Accounts Receivable Rent / (Prepaid Rent)',
+    retaxescacctmortgco: 'R/E Tax Esc Acct/Mortg Co',
+  };
+  return aliases[normalized] || value;
+};
+const presentationType = (type: unknown, name: unknown) => {
+  if (/replacement reserve|operating acct|money market|petty cash/i.test(String(name || ''))) return 'bank';
+  return normalizeType(type);
+};
+const canonicalDisplayCode = (code: unknown, name: unknown) => {
+  const existingCode = String(code || '');
+  if (!existingCode.startsWith('sln_')) return existingCode;
+  const byName: Record<string, string> = {
+    'A/R Other': '1390',
+    'R/E Tax Esc Acct/Mortg Co': '1110',
+    'Insurance Escrow/Mortg Co': '1120',
+    'Capital Improvements': '1530',
+    'Mortgage Payable': '2501',
+  };
+  return byName[String(name || '')] || '';
+};
 
 const statementNumber = (value: number | null | undefined) => {
   if (value === null || value === undefined) return '';
@@ -57,13 +88,17 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
   const { rows, unclassified } = useMemo(() => {
     const accounts = new Map<string, { code: string; name: string; type: string; values: Record<string, number> }>();
     lines.forEach((line) => {
-      if (String(line.reportType).toUpperCase() === 'ACTIVITY') return;
+      if (String(line.reportType).toUpperCase() !== 'BALANCE') return;
       if (scope !== 'COMBINED' && line.sourceEntity !== scope) return;
       const month = String(line.periodEnd).slice(0, 7);
       columns.forEach((column) => {
         if (balanceMonthByColumn[column] !== month) return;
-        const key = `${normalizeType(line.accountType)}|${line.accountCode}|${line.accountName}`;
-        const account = accounts.get(key) || { code: line.accountCode, name: line.accountName, type: normalizeType(line.accountType), values: {} };
+        const name = canonicalBalanceName(line.accountName);
+        const type = presentationType(line.accountType, line.accountName);
+        const key = `${type}|${name}`;
+        const sourceCode = line.canonicalAccountCode || line.accountCode;
+        const account = accounts.get(key) || { code: canonicalDisplayCode(sourceCode, name), name, type, values: {} };
+        if (/^\d/.test(String(sourceCode)) && !/^\d/.test(account.code)) account.code = sourceCode;
         account.values[column] = (account.values[column] || 0) + Number(line.amount || 0);
         accounts.set(key, account);
       });
@@ -81,7 +116,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
         const groupAccounts = sorted.filter((account) => group.types.includes(account.type));
         sideAccounts.push(...groupAccounts);
         if (side.groups.length > 1) output.push({ kind: 'subheading', label: group.label, values: {} });
-        groupAccounts.forEach((account) => output.push({ kind: 'line', label: `${account.code} · ${account.name}`, values: account.values }));
+        groupAccounts.forEach((account) => output.push({ kind: 'line', label: account.code ? `${account.code} · ${account.name}` : account.name, values: account.values }));
         if (side.groups.length > 1) output.push({ kind: 'total', label: group.total, values: sum(groupAccounts) });
       });
       sideTotals[side.label] = sum(sideAccounts);
@@ -120,11 +155,11 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
         </label>
       </div>
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 + columns.length * 110 }}>
+        <table style={{ width: 'max-content', borderCollapse: 'collapse', minWidth: 220 + columns.length * 84 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              <th style={{ ...cell, textAlign: 'left', fontSize: 11, color: '#475569', textTransform: 'uppercase' }}>Line</th>
-              {columns.map((column) => <th key={column} style={{ ...cell, fontSize: 11, color: '#475569' }}>{column}</th>)}
+              <th style={{ ...cell, width: 220, minWidth: 220, textAlign: 'left', fontSize: 11, color: '#475569', textTransform: 'uppercase' }}>Line</th>
+              {columns.map((column) => <th key={column} style={{ ...cell, width: 84, minWidth: 84, padding: '5px 7px', fontSize: 11, color: '#475569' }}>{column}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -142,7 +177,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
               const isSelected = selectedRowIndex === index;
               return (
                 <tr key={`${row.label}-${index}`} style={{ background: isSelected ? '#dbeafe' : background }}>
-                  <td style={{ padding: '5px 10px', paddingLeft: row.kind === 'line' ? 28 : row.kind === 'total' ? 16 : 10, fontSize: 13, borderTop: emphasized ? '1px solid #cbd5e1' : undefined }}>
+                  <td style={{ width: 220, maxWidth: 220, padding: '4px 8px', paddingLeft: row.kind === 'line' ? 20 : row.kind === 'total' ? 14 : 8, fontSize: 13, borderTop: emphasized ? '1px solid #cbd5e1' : undefined }}>
                     <button
                       type="button"
                       title="Show trend"
@@ -153,7 +188,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
                     </button>
                   </td>
                   {columns.map((column) => (
-                    <td key={column} style={{ ...cell, color, fontWeight: emphasized ? 700 : 400, borderTop: emphasized ? '1px solid #cbd5e1' : undefined }}>{statementNumber(row.values[column])}</td>
+                    <td key={column} style={{ ...cell, width: 84, minWidth: 84, padding: '4px 7px', color, fontWeight: emphasized ? 700 : 400, borderTop: emphasized ? '1px solid #cbd5e1' : undefined }}>{statementNumber(row.values[column])}</td>
                   ))}
                 </tr>
               );

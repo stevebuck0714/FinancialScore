@@ -261,6 +261,10 @@ const SECTOR_53_REPORTS_BY_MODULE: Record<string, OperationalHubReportDefinition
     { key: 'propertyExpenseAnalysis', label: 'Property Expense Analysis', group: 'Property Financials' },
     { key: 'propertyIncomeExpenseTrend', label: 'Monthly Income vs. Expense', group: 'Property Financials' },
     { key: 'propertyOccupancyTrend', label: 'Occupancy Trends', group: 'Property Financials' },
+    { key: 'propertyCashActivity', label: 'Cash Activity', group: 'Property Financials' },
+    { key: 'propertyVendorSpend', label: 'Vendor Spend', group: 'Property Financials' },
+    { key: 'propertyOperatingMetrics', label: 'Apartment Operating Metrics', group: 'Property Financials' },
+    { key: 'propertyDebtService', label: 'Debt Service', group: 'Property Financials' },
     { key: 'propertySourceReconciliation', label: 'BGAH / SLN Source Reconciliation', group: 'Property Financials' },
   ],
   investor_ledger: [

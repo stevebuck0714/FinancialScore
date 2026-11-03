@@ -8,34 +8,34 @@ datasource db {
 }
 
 model Consultant {
-  id                    String              @id @default(cuid())
-  userId                String              @unique
-  type                  String?
-  fullName              String
-  address               String?
-  phone                 String?
-  revenueSharePercentage Float              @default(50.0) // Consultant's share of revenue (50% default)
-  paymentMethod         String?             // check, ACH, wire, etc.
-  taxId                 String?             // For 1099 reporting
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  companyAddress1       String?
-  companyAddress2       String?
-  companyCity           String?
-  companyName           String?
-  companyState          String?
-  companyWebsite        String?
-  companyZip            String?
-  referralPartnerId     String?
-  referralSetupFeePercentage Float?
+  id                             String              @id @default(cuid())
+  userId                         String              @unique
+  type                           String?
+  fullName                       String
+  address                        String?
+  phone                          String?
+  revenueSharePercentage         Float               @default(50.0) // Consultant's share of revenue (50% default)
+  paymentMethod                  String? // check, ACH, wire, etc.
+  taxId                          String? // For 1099 reporting
+  createdAt                      DateTime            @default(now())
+  updatedAt                      DateTime            @updatedAt
+  companyAddress1                String?
+  companyAddress2                String?
+  companyCity                    String?
+  companyName                    String?
+  companyState                   String?
+  companyWebsite                 String?
+  companyZip                     String?
+  referralPartnerId              String?
+  referralSetupFeePercentage     Float?
   referralRecurringFeePercentage Float?
-  companies             Company[]
-  referredCompanies     Company[]           @relation("CompanyReferralPartner")
-  referralPartner       ReferralPartner?    @relation("ConsultantReferralPartner", fields: [referralPartnerId], references: [id], onDelete: SetNull)
-  revenueRecords        RevenueRecord[]
-  payables              ConsultantPayable[]
-  teamMembers           User[]              @relation("ConsultantTeamMembers")
-  user                  User                @relation("PrimaryConsultant", fields: [userId], references: [id], onDelete: Cascade)
+  companies                      Company[]
+  referredCompanies              Company[]           @relation("CompanyReferralPartner")
+  referralPartner                ReferralPartner?    @relation("ConsultantReferralPartner", fields: [referralPartnerId], references: [id], onDelete: SetNull)
+  revenueRecords                 RevenueRecord[]
+  payables                       ConsultantPayable[]
+  teamMembers                    User[]              @relation("ConsultantTeamMembers")
+  user                           User                @relation("PrimaryConsultant", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([referralPartnerId])
@@ -69,108 +69,122 @@ model ReferralPartner {
 }
 
 model Company {
-  id                         String                 @id @default(cuid())
-  name                       String
-  consultantId               String?                // Optional - NULL for standalone businesses
+  id                              String                           @id @default(cuid())
+  name                            String
+  consultantId                    String? // Optional - NULL for standalone businesses
   // Tier 1 support routing: CONSULTANT or CORELYTICS
-  tier1SupportOwner          String?                @default("CORELYTICS")
+  tier1SupportOwner               String?                          @default("CORELYTICS")
   // Consultant that owns Tier 1 support when owner is CONSULTANT
-  tier1SupportConsultantId   String?
+  tier1SupportConsultantId        String?
   // Optional per-company Tier 1 contact email override
-  tier1SupportContactEmail   String?
+  tier1SupportContactEmail        String?
   // Once true, operational APIs never serve mock data for this company.
-  hasRealOperationalData     Boolean                @default(false)
+  hasRealOperationalData          Boolean                          @default(false)
   // When any real operational snapshot is first detected.
-  realDataActivatedAt        DateTime?
+  realDataActivatedAt             DateTime?
   // Site-admin override to force demo/mock operational responses.
-  forceOperationalMockData   Boolean                @default(false)
-  addressStreet              String?
-  addressCity                String?
-  addressState               String?
-  addressZip                 String?
-  addressCountry             String?
+  forceOperationalMockData        Boolean                          @default(false)
+  addressStreet                   String?
+  addressCity                     String?
+  addressState                    String?
+  addressZip                      String?
+  addressCountry                  String?
   // Primary company contact shown and managed in Site Admin Business Information.
   // This must not depend on which company user happens to sign in.
-  contactEmail               String?
-  contactName                String?
-  contactPhone               String?
+  contactEmail                    String?
+  contactName                     String?
+  contactPhone                    String?
   // ISO 4217 books/home currency for synced financials (default USD)
-  baseCurrency               String                 @default("USD")
+  baseCurrency                    String                           @default("USD")
   // Optional alternate reporting currency for presentation (FX convert on read)
-  reportingCurrency          String?
+  reportingCurrency               String?
   // BCP 47 locale for money/number formatting (derived from currency when unset in UI)
-  locale                     String                 @default("en-US")
-  industrySector             Int?                   // Existing industry classification for benchmarks (keep as "Industry Group" in UI)
-  accountingSystem           String?                // QuickBooks, Xero, NetSuite, Sage, etc.
-  companySizeCategory        String?                // DEFAULT, SMB, MID_MARKET, ENTERPRISE
-  industrySectorCategory     String?                // For specialized reporting (Agriculture, Mining, Construction, etc.)
-  subscriptionMonthlyPrice   Float?
-  subscriptionQuarterlyPrice Float?
-  subscriptionAnnualPrice    Float?
+  locale                          String                           @default("en-US")
+  industrySector                  Int? // Existing industry classification for benchmarks (keep as "Industry Group" in UI)
+  accountingSystem                String? // QuickBooks, Xero, NetSuite, Sage, etc.
+  companySizeCategory             String? // DEFAULT, SMB, MID_MARKET, ENTERPRISE
+  industrySectorCategory          String? // For specialized reporting (Agriculture, Mining, Construction, etc.)
+  subscriptionMonthlyPrice        Float?
+  subscriptionQuarterlyPrice      Float?
+  subscriptionAnnualPrice         Float?
   // One-time setup fee charged at onboarding (before recurring begins)
-  subscriptionSetupFee       Float?                 @default(0)
-  createdAt                  DateTime               @default(now())
-  updatedAt                  DateTime               @updatedAt
-  selectedSubscriptionPlan   String?
-  affiliateCode              String?
-  affiliateId                String?
-  referralPartnerId          String?
-  referralPartnerConsultantId String?
-  referralSetupFeePercentage  Float                  @default(0)
-  referralRecurringFeePercentage Float               @default(0)
-  commercialBillingMethod    String                  @default("usaepay") // usaepay, quickbooks_invoice, manual_external, no_platform_payment
-  commercialPaymentStatus    String                  @default("not_billed") // not_billed, invoiced, paid, overdue, waived, no_payment_required, external_paid
-  commercialInvoiceNumber    String?
-  commercialInvoiceUrl       String?
-  commercialInvoiceDate      DateTime?
-  commercialPaymentDate      DateTime?
-  commercialNextDueDate      DateTime?
-  commercialTermsNotes       String?
-  subscriptionStatus         String?                @default("active") // 'active', 'paused', 'cancelled'
-  subscriptionStartDate      DateTime?
-  nextBillingDate            DateTime?
-  lastBillingDate            DateTime?
-  linesOfBusiness            Json?                  // Array of LOB objects: [{name: string, headcountPercentage: number}]
-  headcountAllocations       Json?                  // Array of headcount allocation objects: [{lobName: string, percentage: number}]
-  userDefinedAllocations     Json?                  // Array of user defined allocation templates: [{lobName: string, percentage: number}]
-  accountMappings            AccountMapping[]
-  accountingConnections      AccountingConnection[]
-  quickBooksDesktopBackfillPages QuickBooksDesktopBackfillPage[]
-  operationalSystemConnections OperationalSystemConnection[]
-  operationalSourceStates    OperationalSourceState[]
-  operationalDatasets        OperationalDataset[]
-  operationalRecords         OperationalRecord[]
-  platosClosetWorkbookSnapshots PlatosClosetWorkbookSnapshot[]
-  platosClosetMonthlyFacts   PlatosClosetMonthlyFact[]
-  bakersCogsFacts            BakersCogsFact[]
-  companyItemDuties          CompanyItemDuty[]
-  companyItemDutyApplications CompanyItemDutyApplication[]
-  apiSyncLogs                ApiSyncLog[]
-  inforRawBatches            InforRawBatch[]
-  inforRawRecords            InforRawRecord[]
-  inforRawCompleteness       InforRawCompleteness[]
-  assessmentRecords          AssessmentRecord[]
-  revenueRecords             RevenueRecord[]
-  subscriptionEvents         SubscriptionEvent[]
-  affiliate                  Affiliate?             @relation(fields: [affiliateId], references: [id])
-  consultant                 Consultant?            @relation(fields: [consultantId], references: [id], onDelete: SetNull)
-  referralPartner            Consultant?            @relation("CompanyReferralPartner", fields: [referralPartnerConsultantId], references: [id], onDelete: SetNull)
-  directReferralPartner      ReferralPartner?       @relation("CompanyDirectReferralPartner", fields: [referralPartnerId], references: [id], onDelete: SetNull)
-  profile                    CompanyProfile?
-  financialRecords           FinancialRecord[]
-  subscription               Subscription?
-  users                      User[]
-  userAccess                 UserCompanyAccess[]
-  documents                  CompanyDocument[]
-  dataRoomDocuments          DataRoomDocument[]
-  documentChunks             CompanyDocumentChunk[]
-  loans                      Loan[]
-  xeroTransactions           XeroTransaction[]
-  financialForecastInputSettings FinancialForecastInputSettings?
+  subscriptionSetupFee            Float?                           @default(0)
+  createdAt                       DateTime                         @default(now())
+  updatedAt                       DateTime                         @updatedAt
+  selectedSubscriptionPlan        String?
+  affiliateCode                   String?
+  affiliateId                     String?
+  referralPartnerId               String?
+  referralPartnerConsultantId     String?
+  referralSetupFeePercentage      Float                            @default(0)
+  referralRecurringFeePercentage  Float                            @default(0)
+  commercialBillingMethod         String                           @default("usaepay") // usaepay, quickbooks_invoice, manual_external, no_platform_payment
+  commercialPaymentStatus         String                           @default("not_billed") // not_billed, invoiced, paid, overdue, waived, no_payment_required, external_paid
+  commercialInvoiceNumber         String?
+  commercialInvoiceUrl            String?
+  commercialInvoiceDate           DateTime?
+  commercialPaymentDate           DateTime?
+  commercialNextDueDate           DateTime?
+  commercialTermsNotes            String?
+  subscriptionStatus              String?                          @default("active") // 'active', 'paused', 'cancelled'
+  subscriptionStartDate           DateTime?
+  nextBillingDate                 DateTime?
+  lastBillingDate                 DateTime?
+  linesOfBusiness                 Json? // Array of LOB objects: [{name: string, headcountPercentage: number}]
+  headcountAllocations            Json? // Array of headcount allocation objects: [{lobName: string, percentage: number}]
+  userDefinedAllocations          Json? // Array of user defined allocation templates: [{lobName: string, percentage: number}]
+  accountMappings                 AccountMapping[]
+  accountingConnections           AccountingConnection[]
+  quickBooksDesktopBackfillPages  QuickBooksDesktopBackfillPage[]
+  operationalSystemConnections    OperationalSystemConnection[]
+  operationalSourceStates         OperationalSourceState[]
+  operationalDatasets             OperationalDataset[]
+  operationalRecords              OperationalRecord[]
+  platosClosetWorkbookSnapshots   PlatosClosetWorkbookSnapshot[]
+  platosClosetMonthlyFacts        PlatosClosetMonthlyFact[]
+  bakersCogsFacts                 BakersCogsFact[]
+  companyItemDuties               CompanyItemDuty[]
+  companyItemDutyApplications     CompanyItemDutyApplication[]
+  apiSyncLogs                     ApiSyncLog[]
+  inforRawBatches                 InforRawBatch[]
+  inforRawRecords                 InforRawRecord[]
+  inforRawCompleteness            InforRawCompleteness[]
+  assessmentRecords               AssessmentRecord[]
+  revenueRecords                  RevenueRecord[]
+  subscriptionEvents              SubscriptionEvent[]
+  affiliate                       Affiliate?                       @relation(fields: [affiliateId], references: [id])
+  consultant                      Consultant?                      @relation(fields: [consultantId], references: [id], onDelete: SetNull)
+  referralPartner                 Consultant?                      @relation("CompanyReferralPartner", fields: [referralPartnerConsultantId], references: [id], onDelete: SetNull)
+  directReferralPartner           ReferralPartner?                 @relation("CompanyDirectReferralPartner", fields: [referralPartnerId], references: [id], onDelete: SetNull)
+  profile                         CompanyProfile?
+  financialRecords                FinancialRecord[]
+  realEstateFinancialLines        RealEstateFinancialLine[]
+  realEstateAccountMappings       RealEstateAccountMapping[]
+  realEstateInvestors             RealEstateInvestor[]
+  realEstateInvestorEntries       RealEstateInvestorLedgerEntry[]
+  realEstateOccupancySnapshots    RealEstateOccupancySnapshot[]
+  realEstateWaterfallSettings     RealEstateWaterfallSettings?
+  realEstateInvestorAliases       RealEstateInvestorAlias[]
+  realEstateConstructionDraws     RealEstateConstructionDraw[]
+  realEstateConstructionBudgetLines RealEstateConstructionBudgetLine[]
+  realEstateConstructionInvoices  RealEstateConstructionInvoice[]
+  realEstateFundingSources        RealEstateFundingSource[]
+  realEstateFixedAssets           RealEstateFixedAsset[]
+  realEstateCashActivities        RealEstateCashActivity[]
+  realEstateOperationalMetrics    RealEstateOperationalMetric[]
+  subscription                    Subscription?
+  users                           User[]
+  userAccess                      UserCompanyAccess[]
+  documents                       CompanyDocument[]
+  dataRoomDocuments               DataRoomDocument[]
+  documentChunks                  CompanyDocumentChunk[]
+  loans                           Loan[]
+  xeroTransactions                XeroTransaction[]
+  financialForecastInputSettings  FinancialForecastInputSettings?
   financialForecastBudgetArchives FinancialForecastBudgetArchive[]
-  customReports              CustomReport[]
-  askThreads                 AskThread[]
-  sectionViews               SectionView[]
+  customReports                   CustomReport[]
+  askThreads                      AskThread[]
+  sectionViews                    SectionView[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
@@ -206,43 +220,43 @@ model FinancialForecastBudgetArchive {
 }
 
 model User {
-  id                   String             @id @default(cuid())
-  email                String             @unique
-  passwordHash         String
-  name                 String
-  title                String?
-  phone                String?
-  role                 UserRole
-  userType             UserType?
-  companyId            String?
-  consultantId         String?
-  isPrimaryContact     Boolean            @default(false)
-  isAccountManager     Boolean            @default(false)
-  companyRole          String?            @default("user") // 'user' or 'admin' - for company users only
-  sidebarAccess        Json?              // Array of accessible sidebar sections
-  operationalDashboardAccess Json?        // Array of accessible Operational Dashboard module/page keys
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  passwordResetExpires DateTime?
-  passwordResetToken   String?            @unique
-  backupCodes          String?
-  mfaEnabled           Boolean            @default(false)
-  mfaSecret            String?
-  assessmentRecords    AssessmentRecord[]
-  primaryConsultant    Consultant?        @relation("PrimaryConsultant")
-  consultantFirm       Consultant?        @relation("ConsultantTeamMembers", fields: [consultantId], references: [id], onDelete: Cascade)
-  financialRecords     FinancialRecord[]
-  company              Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  companyAccess        UserCompanyAccess[]
-  trustedDevices       TrustedDevice[]
-  uploadedDocuments    CompanyDocument[]  @relation("CompanyDocumentUploadedBy")
-  uploadedDataRoomDocuments DataRoomDocument[] @relation("DataRoomDocumentUploadedBy")
-  customReportsCreated CustomReport[]     @relation("CustomReportCreatedBy")
-  askThreadsOwned      AskThread[]        @relation("AskThreadOwner")
-  askThreadSharesReceived AskThreadShare[] @relation("AskThreadShareRecipient")
-  askThreadSharesSent  AskThreadShare[]   @relation("AskThreadShareSender")
-  askThreadEmailsSent  AskThreadEmail[]   @relation("AskThreadEmailSender")
-  sectionViews         SectionView[]
+  id                         String              @id @default(cuid())
+  email                      String              @unique
+  passwordHash               String
+  name                       String
+  title                      String?
+  phone                      String?
+  role                       UserRole
+  userType                   UserType?
+  companyId                  String?
+  consultantId               String?
+  isPrimaryContact           Boolean             @default(false)
+  isAccountManager           Boolean             @default(false)
+  companyRole                String?             @default("user") // 'user' or 'admin' - for company users only
+  sidebarAccess              Json? // Array of accessible sidebar sections
+  operationalDashboardAccess Json? // Array of accessible Operational Dashboard module/page keys
+  createdAt                  DateTime            @default(now())
+  updatedAt                  DateTime            @updatedAt
+  passwordResetExpires       DateTime?
+  passwordResetToken         String?             @unique
+  backupCodes                String?
+  mfaEnabled                 Boolean             @default(false)
+  mfaSecret                  String?
+  assessmentRecords          AssessmentRecord[]
+  primaryConsultant          Consultant?         @relation("PrimaryConsultant")
+  consultantFirm             Consultant?         @relation("ConsultantTeamMembers", fields: [consultantId], references: [id], onDelete: Cascade)
+  financialRecords           FinancialRecord[]
+  company                    Company?            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyAccess              UserCompanyAccess[]
+  trustedDevices             TrustedDevice[]
+  uploadedDocuments          CompanyDocument[]   @relation("CompanyDocumentUploadedBy")
+  uploadedDataRoomDocuments  DataRoomDocument[]  @relation("DataRoomDocumentUploadedBy")
+  customReportsCreated       CustomReport[]      @relation("CustomReportCreatedBy")
+  askThreadsOwned            AskThread[]         @relation("AskThreadOwner")
+  askThreadSharesReceived    AskThreadShare[]    @relation("AskThreadShareRecipient")
+  askThreadSharesSent        AskThreadShare[]    @relation("AskThreadShareSender")
+  askThreadEmailsSent        AskThreadEmail[]    @relation("AskThreadEmailSender")
+  sectionViews               SectionView[]
 
   @@index([email])
   @@index([companyId])
@@ -263,8 +277,8 @@ model SectionView {
   startedAt  DateTime
   createdAt  DateTime @default(now())
 
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([startedAt])
   @@index([companyId, startedAt])
@@ -283,8 +297,8 @@ model CustomReport {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  createdBy       User?    @relation("CustomReportCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("CustomReportCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([companyId, updatedAt(sort: Desc)])
   @@index([createdByUserId])
@@ -292,37 +306,37 @@ model CustomReport {
 
 // Ask Corelytics conversation thread. Auto-saved per user and company.
 model AskThread {
-  id                 String           @id @default(cuid())
+  id                 String   @id @default(cuid())
   companyId          String
   ownerUserId        String
   title              String
   // Set when a recipient continues a thread that was shared with them.
   forkedFromThreadId String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  company            Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  owner              User             @relation("AskThreadOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  forkedFrom         AskThread?       @relation("AskThreadForks", fields: [forkedFromThreadId], references: [id], onDelete: SetNull)
-  forks              AskThread[]      @relation("AskThreadForks")
-  turns              AskThreadTurn[]
-  shares             AskThreadShare[]
-  emails             AskThreadEmail[]
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  owner      User             @relation("AskThreadOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  forkedFrom AskThread?       @relation("AskThreadForks", fields: [forkedFromThreadId], references: [id], onDelete: SetNull)
+  forks      AskThread[]      @relation("AskThreadForks")
+  turns      AskThreadTurn[]
+  shares     AskThreadShare[]
+  emails     AskThreadEmail[]
 
   @@index([companyId, ownerUserId, updatedAt(sort: Desc)])
   @@index([forkedFromThreadId])
 }
 
 model AskThreadTurn {
-  id                 String    @id @default(cuid())
+  id                 String   @id @default(cuid())
   threadId           String
   position           Int
   question           String
-  useExternalSources Boolean   @default(false)
+  useExternalSources Boolean  @default(false)
   response           Json
-  askedAt            DateTime  @default(now())
+  askedAt            DateTime @default(now())
 
-  thread             AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
   @@unique([threadId, position])
 }
@@ -339,9 +353,9 @@ model AskThreadShare {
   sharedAt         DateTime  @default(now())
   viewedAt         DateTime?
 
-  thread           AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  sharedWith       User      @relation("AskThreadShareRecipient", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
-  sharedBy         User      @relation("AskThreadShareSender", fields: [sharedByUserId], references: [id], onDelete: Cascade)
+  thread     AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sharedWith User      @relation("AskThreadShareRecipient", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  sharedBy   User      @relation("AskThreadShareSender", fields: [sharedByUserId], references: [id], onDelete: Cascade)
 
   @@unique([threadId, sharedWithUserId])
   @@index([sharedWithUserId, sharedAt(sort: Desc)])
@@ -350,34 +364,34 @@ model AskThreadShare {
 
 // Copy of an AskThread emailed to any address. The email holds the content; it has no link back to the app.
 model AskThreadEmail {
-  id               String    @id @default(cuid())
-  threadId         String
-  sentByUserId     String
-  recipientEmail   String
-  sentTurnCount    Int
-  message          String?
+  id                String   @id @default(cuid())
+  threadId          String
+  sentByUserId      String
+  recipientEmail    String
+  sentTurnCount     Int
+  message           String?
   providerMessageId String?
-  sentAt           DateTime  @default(now())
+  sentAt            DateTime @default(now())
 
-  thread           AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  sentBy           User      @relation("AskThreadEmailSender", fields: [sentByUserId], references: [id], onDelete: Cascade)
+  thread AskThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sentBy User      @relation("AskThreadEmailSender", fields: [sentByUserId], references: [id], onDelete: Cascade)
 
   @@index([threadId, sentAt(sort: Desc)])
   @@index([sentByUserId, sentAt(sort: Desc)])
 }
 
 model UserCompanyAccess {
-  id          String   @id @default(cuid())
-  userId      String
-  companyId   String
-  companyRole String?  @default("user")
-  sidebarAccess Json?
+  id                         String   @id @default(cuid())
+  userId                     String
+  companyId                  String
+  companyRole                String?  @default("user")
+  sidebarAccess              Json?
   operationalDashboardAccess Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([userId, companyId])
   @@index([userId])
@@ -399,29 +413,29 @@ model CompanyDocument {
   category         CompanyDocumentCategory
 
   originalFileName String
-  blobUrl          String                  @unique
-  blobPathname     String?                 @unique
+  blobUrl          String  @unique
+  blobPathname     String? @unique
   contentType      String?
   sizeBytes        Int?
 
-  extractionStatus String                  @default("PENDING") // PENDING | DONE | FAILED | NO_TEXT
+  extractionStatus String  @default("PENDING") // PENDING | DONE | FAILED | NO_TEXT
   extractedText    String?
   extractionError  String?
 
   // Chunk/embedding index status for document search (RAG).
   // PENDING | DONE | FAILED
-  indexStatus      String                  @default("PENDING")
-  indexedAt        DateTime?
-  indexError       String?
-  embeddingModel   String?
-  embeddingDim     Int?
+  indexStatus    String    @default("PENDING")
+  indexedAt      DateTime?
+  indexError     String?
+  embeddingModel String?
+  embeddingDim   Int?
 
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  company          Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  uploadedBy       User                    @relation("CompanyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
-  chunks           CompanyDocumentChunk[]
+  company    Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy User                   @relation("CompanyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  chunks     CompanyDocumentChunk[]
 
   @@index([companyId])
   @@index([uploadedByUserId])
@@ -436,19 +450,19 @@ model DataRoomDocument {
   category         CompanyDocumentCategory
 
   originalFileName String
-  blobUrl          String                  @unique
-  blobPathname     String?                 @unique
+  blobUrl          String  @unique
+  blobPathname     String? @unique
   contentType      String?
   sizeBytes        Int?
 
-  extractionStatus String                  @default("PENDING")
+  extractionStatus String  @default("PENDING")
   extractionError  String?
 
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  company          Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  uploadedBy       User                    @relation("DataRoomDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation("DataRoomDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([uploadedByUserId])
@@ -457,26 +471,26 @@ model DataRoomDocument {
 }
 
 model CompanyDocumentChunk {
-  id         String          @id @default(cuid())
+  id         String @id @default(cuid())
   documentId String
   companyId  String
 
-  chunkIndex Int
+  chunkIndex  Int
   startOffset Int?
   endOffset   Int?
 
-  text       String
-  textHash   String
+  text     String
+  textHash String
 
   // Stored in Postgres as pgvector 'vector' type. Prisma does not natively support it,
   // but keeping the field here documents the column and allows raw SQL to reference it.
-  embedding  Unsupported("vector")
+  embedding Unsupported("vector")
 
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  document   CompanyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document CompanyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, chunkIndex])
   @@index([documentId])
@@ -535,9 +549,9 @@ model MonthlyFinancial {
   financialRecordId        String
   monthDate                DateTime
   revenue                  Float           @default(0)
-  revenueBreakdown         Json?           // LOB breakdown: { "LOB Name": amount, ... }
+  revenueBreakdown         Json? // LOB breakdown: { "LOB Name": amount, ... }
   expense                  Float           @default(0)
-  expenseBreakdown         Json?           // LOB breakdown for total expenses
+  expenseBreakdown         Json? // LOB breakdown for total expenses
   cogsPayroll              Float           @default(0)
   cogsOwnerPay             Float           @default(0)
   cogsContractors          Float           @default(0)
@@ -545,7 +559,7 @@ model MonthlyFinancial {
   cogsCommissions          Float           @default(0)
   cogsOther                Float           @default(0)
   cogsTotal                Float           @default(0)
-  cogsBreakdown            Json?           // LOB breakdown for total COGS
+  cogsBreakdown            Json? // LOB breakdown for total COGS
   payroll                  Float           @default(0)
   ownerBasePay             Float           @default(0)
   benefits                 Float           @default(0)
@@ -570,7 +584,7 @@ model MonthlyFinancial {
   nonOperatingIncome       Float           @default(0)
   nonOperatingExpense      Float           @default(0)
   extraordinaryItems       Float           @default(0)
-  lobBreakdowns            Json?           // Comprehensive LOB breakdowns for all fields
+  lobBreakdowns            Json? // Comprehensive LOB breakdowns for all fields
   cash                     Float           @default(0)
   ar                       Float           @default(0)
   retainageReceivables     Float           @default(0)
@@ -723,7 +737,7 @@ model QuickBooksDesktopBackfillPage {
   rawXmlPreview  String?
   createdAt      DateTime @default(now())
 
-  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, pageNumber])
   @@index([companyId, batchId])
@@ -760,18 +774,18 @@ model OperationalSystemConnection {
 
 // Per company + source: whether mock data is materialized, and when live data replaced it.
 model OperationalSourceState {
-  id               String    @id @default(cuid())
-  companyId        String
-  sourceCode       String
-  mockEnabled      Boolean   @default(false)
-  liveSince        DateTime?
-  lastMockRunAt    DateTime?
-  lastLiveRunAt    DateTime?
-  lastRunStatus    String?
-  lastRunMessage   String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id             String    @id @default(cuid())
+  companyId      String
+  sourceCode     String
+  mockEnabled    Boolean   @default(false)
+  liveSince      DateTime?
+  lastMockRunAt  DateTime?
+  lastLiveRunAt  DateTime?
+  lastRunStatus  String?
+  lastRunMessage String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, sourceCode])
   @@index([mockEnabled])
@@ -827,55 +841,55 @@ model OperationalRecord {
 }
 
 model PlatosClosetWorkbookSnapshot {
-  id              String   @id @default(cuid())
-  companyId       String
-  sourceCode      String   @default("PLATOS_CLOSET_STORE_VISIT")
-  monthKey        String
-  frequency       String   @default("monthly")
-  documentId      String?
+  id               String   @id @default(cuid())
+  companyId        String
+  sourceCode       String   @default("PLATOS_CLOSET_STORE_VISIT")
+  monthKey         String
+  frequency        String   @default("monthly")
+  documentId       String?
   originalFileName String?
-  blobUrl         String?
-  workbookPeriod  String?
-  storeNumber     String?
-  cityState       String?
-  visitDateText   String?
-  openDateText    String?
-  salesTrend      Float?
-  buysTrend       Float?
-  rowCount        Int      @default(0)
-  departmentCount Int      @default(0)
-  categoryCount   Int      @default(0)
-  parsedWorkbook  Json
-  uploadedAt      DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  blobUrl          String?
+  workbookPeriod   String?
+  storeNumber      String?
+  cityState        String?
+  visitDateText    String?
+  openDateText     String?
+  salesTrend       Float?
+  buysTrend        Float?
+  rowCount         Int      @default(0)
+  departmentCount  Int      @default(0)
+  categoryCount    Int      @default(0)
+  parsedWorkbook   Json
+  uploadedAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@unique([companyId, sourceCode, monthKey])
   @@index([companyId, uploadedAt(sort: Desc)])
   @@index([companyId, sourceCode, uploadedAt(sort: Desc)])
   @@index([companyId, sourceCode, monthKey])
-  @@unique([companyId, sourceCode, monthKey])
 }
 
 model PlatosClosetMonthlyFact {
   id             String   @id @default(cuid())
-  companyId       String
-  sourceCode      String   @default("PLATOS_CLOSET_STORE_VISIT")
-  monthKey        String
-  monthStart      DateTime
-  factType        String
-  metricName      String
-  dimensionType   String   @default("")
-  dimensionKey    String   @default("")
-  dimensionLabel  String?
-  valueNumber     Float?
-  compareNumber   Float?
-  sharePct        Float?
-  auxNumber       Float?
-  metadata        Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId      String
+  sourceCode     String   @default("PLATOS_CLOSET_STORE_VISIT")
+  monthKey       String
+  monthStart     DateTime
+  factType       String
+  metricName     String
+  dimensionType  String   @default("")
+  dimensionKey   String   @default("")
+  dimensionLabel String?
+  valueNumber    Float?
+  compareNumber  Float?
+  sharePct       Float?
+  auxNumber      Float?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, sourceCode, monthKey, factType, metricName, dimensionType, dimensionKey])
   @@index([companyId, sourceCode, monthStart])
@@ -885,28 +899,28 @@ model PlatosClosetMonthlyFact {
 
 model BakersCogsFact {
   id             String   @id @default(cuid())
-  companyId       String
-  sourceCode      String   @default("BAKERS_COGS")
-  productId       String
-  productName     String
-  formulaDate     DateTime
-  formulaDateKey  String
-  sheetName       String
-  lineType        String
-  lineNumber      Int      @default(0)
-  metricName      String   @default("")
-  categoryNo      String   @default("")
-  description     String?
-  quantity        Float?
-  unitCost        Float?
-  lineCost        Float?
-  valueNumber     Float?
-  notes           String?
-  metadata        Json?
-  uploadedAt      DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId      String
+  sourceCode     String   @default("BAKERS_COGS")
+  productId      String
+  productName    String
+  formulaDate    DateTime
+  formulaDateKey String
+  sheetName      String
+  lineType       String
+  lineNumber     Int      @default(0)
+  metricName     String   @default("")
+  categoryNo     String   @default("")
+  description    String?
+  quantity       Float?
+  unitCost       Float?
+  lineCost       Float?
+  valueNumber    Float?
+  notes          String?
+  metadata       Json?
+  uploadedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, sourceCode, productId, formulaDateKey, lineType, lineNumber, metricName])
   @@index([companyId, sourceCode, formulaDate])
@@ -981,27 +995,27 @@ model DerivedApiCache {
 }
 
 model InforSyncRun {
-  id             String   @id
+  id             String          @id
   companyId      String
-  platform       String   @default("INFOR_M3")
-  status         String   @default("running") // queued | running | done | failed | cancelled
-  frequency      String   @default("daily")
+  platform       String          @default("INFOR_M3")
+  status         String          @default("running") // queued | running | done | failed | cancelled
+  frequency      String          @default("daily")
   site           String?
   mode           String?
   backfillMonths Int?
   lookbackDays   Int?
   startDate      DateTime?
   endDate        DateTime?
-  salesOnly      Boolean  @default(false)
-  chunkCount     Int      @default(0)
-  recordsCreated Int      @default(0)
-  warningCount   Int      @default(0)
-  retryCount     Int      @default(0)
+  salesOnly      Boolean         @default(false)
+  chunkCount     Int             @default(0)
+  recordsCreated Int             @default(0)
+  warningCount   Int             @default(0)
+  retryCount     Int             @default(0)
   message        String?
   lastError      String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  startedAt      DateTime @default(now())
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  startedAt      DateTime        @default(now())
   finishedAt     DateTime?
   lastChunkAt    DateTime?
   tasks          InforSyncTask[]
@@ -1014,24 +1028,24 @@ model InforSyncRun {
 }
 
 model InforSyncTask {
-  id            String                @id @default(cuid())
-  runId         String
-  companyId     String
-  status        String                @default("pending") // pending | leased | done | failed | cancelled
-  attemptCount  Int                   @default(0)
-  maxAttempts   Int                   @default(6)
-  availableAt   DateTime              @default(now())
-  leaseOwner    String?
+  id             String                 @id @default(cuid())
+  runId          String
+  companyId      String
+  status         String                 @default("pending") // pending | leased | done | failed | cancelled
+  attemptCount   Int                    @default(0)
+  maxAttempts    Int                    @default(6)
+  availableAt    DateTime               @default(now())
+  leaseOwner     String?
   leaseExpiresAt DateTime?
-  payload       Json
-  lastError     String?
-  lastResponse  Json?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-  startedAt     DateTime?
-  finishedAt    DateTime?
-  run           InforSyncRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
-  attempts      InforSyncTaskAttempt[]
+  payload        Json
+  lastError      String?
+  lastResponse   Json?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  run            InforSyncRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  attempts       InforSyncTaskAttempt[]
 
   @@index([runId, status])
   @@index([runId, status, availableAt])
@@ -1045,20 +1059,20 @@ model InforSyncTask {
 
 model InforSyncTaskAttempt {
   id              String        @id @default(cuid())
-  taskId           String
-  runId            String
-  companyId        String
-  attemptNo        Int
-  status           String       // success | retry | failed | skipped
-  httpStatus       Int?
-  errorMessage     String?
-  responseSnippet  String?
-  recordsCreated   Int          @default(0)
-  warningCount     Int          @default(0)
-  durationMs       Int?
-  startedAt        DateTime     @default(now())
-  finishedAt       DateTime?
-  task             InforSyncTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId          String
+  runId           String
+  companyId       String
+  attemptNo       Int
+  status          String // success | retry | failed | skipped
+  httpStatus      Int?
+  errorMessage    String?
+  responseSnippet String?
+  recordsCreated  Int           @default(0)
+  warningCount    Int           @default(0)
+  durationMs      Int?
+  startedAt       DateTime      @default(now())
+  finishedAt      DateTime?
+  task            InforSyncTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, attemptNo])
   @@index([runId, startedAt(sort: Desc)])
@@ -1066,32 +1080,32 @@ model InforSyncTaskAttempt {
 }
 
 model InforRawBatch {
-  id          String   @id @default(cuid())
-  companyId   String
-  platform    String   @default("INFOR_M3")
-  syncRunId   String?
-  frequency   String?
-  mode        String?
-  windowStart DateTime?
-  windowEnd   DateTime?
+  id           String           @id @default(cuid())
+  companyId    String
+  platform     String           @default("INFOR_M3")
+  syncRunId    String?
+  frequency    String?
+  mode         String?
+  windowStart  DateTime?
+  windowEnd    DateTime?
   businessDate DateTime?
-  module      String?
-  miProgram   String?
-  transaction String?
+  module       String?
+  miProgram    String?
+  transaction  String?
   endpointPath String?
-  pageNo      Int      @default(1)
-  bookmarkIn  String?
-  bookmarkOut String?
-  recordCount Int      @default(0)
-  httpStatus  Int?
-  durationMs  Int?
-  payloadHash String?
-  status      String   @default("success") // success | retry | failed | skipped
+  pageNo       Int              @default(1)
+  bookmarkIn   String?
+  bookmarkOut  String?
+  recordCount  Int              @default(0)
+  httpStatus   Int?
+  durationMs   Int?
+  payloadHash  String?
+  status       String           @default("success") // success | retry | failed | skipped
   errorMessage String?
-  fetchedAt   DateTime @default(now())
-  createdAt   DateTime @default(now())
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  records     InforRawRecord[]
+  fetchedAt    DateTime         @default(now())
+  createdAt    DateTime         @default(now())
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  records      InforRawRecord[]
 
   @@unique([companyId, platform, syncRunId, module, miProgram, transaction, businessDate, pageNo, bookmarkIn])
   @@index([companyId, platform, fetchedAt(sort: Desc)])
@@ -1101,10 +1115,10 @@ model InforRawBatch {
 }
 
 model InforRawRecord {
-  id               String   @id @default(cuid())
+  id               String        @id @default(cuid())
   batchId          String
   companyId        String
-  platform         String   @default("INFOR_M3")
+  platform         String        @default("INFOR_M3")
   syncRunId        String?
   businessDate     DateTime?
   module           String?
@@ -1113,10 +1127,10 @@ model InforRawRecord {
   sourceRecordId   String?
   sourceRecordHash String?
   payload          Json
-  fetchedAt        DateTime @default(now())
-  createdAt        DateTime @default(now())
+  fetchedAt        DateTime      @default(now())
+  createdAt        DateTime      @default(now())
   batch            InforRawBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company          Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, platform, syncRunId, businessDate, miProgram, transaction, sourceRecordHash])
   @@index([batchId, createdAt(sort: Desc)])
@@ -1146,9 +1160,9 @@ model InforRawCompleteness {
 }
 
 model InforItemOverviewCache {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   companyId   String
-  platform    String   @default("INFOR_M3")
+  platform    String    @default("INFOR_M3")
   itemNumber  String
   description String?
   overview    String?
@@ -1156,10 +1170,10 @@ model InforItemOverviewCache {
   recordDate  DateTime?
   changeDate  DateTime?
   rawPayload  Json?
-  fetchedAt   DateTime @default(now())
+  fetchedAt   DateTime  @default(now())
   expiresAt   DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([companyId, platform, itemNumber])
   @@index([companyId, platform, expiresAt])
@@ -1198,16 +1212,269 @@ model AccountMapping {
   @@index([companyId])
 }
 
+// Source-attributed monthly statement lines for real-estate operations.
+// Income/expense rows are period activity; balance-sheet rows are month-end balances.
+model RealEstateFinancialLine {
+  id                   String   @id @default(cuid())
+  companyId            String
+  sourceEntity         String
+  legalEntity          String?
+  reportType           String
+  periodEnd            DateTime @db.Date
+  accountCode          String
+  accountName          String
+  accountType          String
+  canonicalAccountCode String?
+  amount               Decimal  @db.Decimal(18, 2)
+  sourceFileName       String?
+  sourceSheetName      String?
+  sourceRowNumber      Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  company              Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceEntity, reportType, periodEnd, accountCode])
+  @@index([companyId, periodEnd])
+  @@index([companyId, sourceEntity, periodEnd])
+}
+
+// Account mappings for additional entity feeds (e.g. BGAH, SLN) on a
+// multi-entity real-estate company. Kept separate from AccountMapping so the
+// single-accounting-system mapping, apply, and push flows never read them.
+model RealEstateAccountMapping {
+  id            String   @id @default(cuid())
+  companyId     String
+  financialFeed String
+  accountCode   String
+  accountName   String
+  accountType   String
+  targetField   String
+  /// "expense" | "capitalize"; only set for nonrecurring repair lines.
+  bookTreatment String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, financialFeed, accountCode])
+  @@index([companyId, financialFeed])
+}
+
+model RealEstateInvestor {
+  id                  String                          @id @default(cuid())
+  companyId           String
+  legalName           String
+  memberGroup         String?
+  ownershipPercentage Decimal?                        @db.Decimal(9, 6)
+  preferredReturnRate Decimal?                        @db.Decimal(9, 6)
+  active              Boolean                         @default(true)
+  createdAt           DateTime                        @default(now())
+  updatedAt           DateTime                        @updatedAt
+  company             Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ledgerEntries       RealEstateInvestorLedgerEntry[]
+
+  @@unique([companyId, legalName])
+  @@index([companyId, active])
+}
+
+model RealEstateInvestorLedgerEntry {
+  id            String             @id @default(cuid())
+  companyId     String
+  investorId    String
+  entryType     String
+  effectiveDate DateTime           @db.Date
+  amount        Decimal            @db.Decimal(18, 2)
+  reference     String?
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  company       Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  investor      RealEstateInvestor @relation(fields: [investorId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, effectiveDate])
+  @@index([investorId, effectiveDate])
+}
+
+model RealEstateWaterfallSettings {
+  companyId           String    @id
+  stabilizationDate   DateTime? @db.Date
+  preferredReturnRate Decimal   @default(6) @db.Decimal(9, 6)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  company             Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// Payee names from distribution reports that map to a member (e.g. "Sam Stokes" → Samuel O. Stokes).
+model RealEstateInvestorAlias {
+  id         String   @id @default(cuid())
+  companyId  String
+  investorId String
+  alias      String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, alias])
+}
+
+/// One lender draw (Owner's Application for Disbursement) as signed.
+/// Budget used by the draw = equityFunded + loanFunded + retainageHeld.
+model RealEstateConstructionDraw {
+  id                String    @id @default(cuid())
+  companyId         String
+  sequence          Int
+  label             String
+  drawDate          DateTime? @db.Date
+  equityFunded      Decimal   @default(0) @db.Decimal(18, 2)
+  loanFunded        Decimal   @default(0) @db.Decimal(18, 2)
+  /// Retainage withheld from the contractor on this draw (negative = released).
+  retainageHeld     Decimal   @default(0) @db.Decimal(18, 2)
+  /// Liquidated damages withheld from the contractor on this draw (negative = released).
+  liquidatedDamages Decimal   @default(0) @db.Decimal(18, 2)
+  sourceDocument    String?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  company           Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sequence])
+}
+
+model RealEstateConstructionBudgetLine {
+  id             String   @id @default(cuid())
+  companyId      String
+  lineNumber     Int
+  name           String
+  revisedBudget  Decimal  @db.Decimal(18, 2)
+  /// Budget still open after the draw the budget was taken from.
+  remainingAfter Decimal  @db.Decimal(18, 2)
+  asOfSequence   Int
+  /// land | hard | soft | ffe | loan | expense
+  costClass      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, lineNumber])
+}
+
+model RealEstateConstructionInvoice {
+  id             String    @id @default(cuid())
+  companyId      String
+  drawSequence   Int
+  budgetLine     String
+  vendor         String
+  invoiceDate    DateTime? @db.Date
+  invoiceNumber  String?
+  debtAmount     Decimal   @default(0) @db.Decimal(18, 2)
+  equityAmount   Decimal   @default(0) @db.Decimal(18, 2)
+  sourceFileName String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, drawSequence])
+}
+
+/// Committed funding by source at a point in the construction (capital stack).
+model RealEstateFundingSource {
+  id                String   @id @default(cuid())
+  companyId         String
+  stage             String
+  effectiveSequence Int
+  sourceName        String
+  amount            Decimal  @db.Decimal(18, 2)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, effectiveSequence, sourceName])
+}
+
+model RealEstateFixedAsset {
+  id              String    @id @default(cuid())
+  companyId       String
+  name            String
+  /// land | building | land_improvements | equipment | ffe
+  assetClass      String
+  cost            Decimal   @db.Decimal(18, 2)
+  inServiceDate   DateTime? @db.Date
+  /// Null for non-depreciable assets (land).
+  usefulLifeYears Decimal?  @db.Decimal(6, 2)
+  basis           String?
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model RealEstateOccupancySnapshot {
+  id                   String   @id @default(cuid())
+  companyId            String
+  periodEnd            DateTime @db.Date
+  totalUnits           Int
+  occupiedUnits        Int
+  physicalOccupancyPct Decimal  @db.Decimal(7, 4)
+  economicOccupancyPct Decimal?
+  sourceReference      String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  company              Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, periodEnd])
+  @@index([companyId, periodEnd])
+}
+
+/// Non-PII cash-tracker rows. Counterparties that appear to be natural persons
+/// are excluded during import.
+model RealEstateCashActivity {
+  id              String   @id @default(cuid())
+  companyId       String
+  periodEnd       DateTime @db.Date
+  activityDate    DateTime? @db.Date
+  activityType    String
+  counterparty    String?
+  description     String?
+  amount          Decimal  @db.Decimal(18, 2)
+  sourceReference String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceReference])
+  @@index([companyId, periodEnd])
+  @@index([companyId, activityDate])
+}
+
+/// Source-attributed, non-PII property KPIs not represented by the occupancy snapshot.
+model RealEstateOperationalMetric {
+  id              String   @id @default(cuid())
+  companyId       String
+  periodEnd       DateTime @db.Date
+  metric          String
+  value           Decimal  @db.Decimal(18, 4)
+  unit            String?
+  sourceReference String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, periodEnd, metric])
+  @@index([companyId, periodEnd])
+}
+
 // Machine Learning: Stores learned patterns from account mappings across all companies
 model LearnedMapping {
-  id                      String   @id @default(cuid())
-  accountName             String   // Normalized account name
-  accountClassification   String?  // Asset, Liability, Revenue, Expense, etc.
-  targetField             String   // Where this account should be mapped
-  useCount                Int      @default(1) // How many times this mapping has been used
-  lastUsedAt              DateTime @default(now())
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  accountName           String // Normalized account name
+  accountClassification String? // Asset, Liability, Revenue, Expense, etc.
+  targetField           String // Where this account should be mapped
+  useCount              Int      @default(1) // How many times this mapping has been used
+  lastUsedAt            DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@unique([accountName, accountClassification, targetField])
   @@index([accountName])
@@ -1241,24 +1508,24 @@ model LearnedMapping {
 
 // Daily transaction data from Xero for operational reports
 model XeroTransaction {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   companyId       String
-  transactionId   String   // Xero's invoice/bill/transaction ID
-  transactionType String   // INVOICE, BILL, BANK_TRANSACTION, PAYMENT
+  transactionId   String // Xero's invoice/bill/transaction ID
+  transactionType String // INVOICE, BILL, BANK_TRANSACTION, PAYMENT
   date            DateTime
   dueDate         DateTime?
-  contact         String?  // Customer/Supplier name
-  reference       String?  // Invoice/Bill number
-  total           Float    @default(0)
-  amountPaid      Float    @default(0)
-  amountDue       Float    @default(0)
-  status          String?  // DRAFT, SUBMITTED, AUTHORISED, PAID, etc.
-  lineItems       Json?    // Array of line items with account details
-  rawData         Json?    // Full Xero transaction object
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contact         String? // Customer/Supplier name
+  reference       String? // Invoice/Bill number
+  total           Float     @default(0)
+  amountPaid      Float     @default(0)
+  amountDue       Float     @default(0)
+  status          String? // DRAFT, SUBMITTED, AUTHORISED, PAID, etc.
+  lineItems       Json? // Array of line items with account details
+  rawData         Json? // Full Xero transaction object
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, transactionId])
   @@index([companyId])
@@ -1326,35 +1593,35 @@ model AffiliateCode {
 }
 
 model Subscription {
-  id                 String               @id @default(cuid())
-  companyId          String               @unique
-  usaepayCustomerId  String?
-  usaepayBillingId   String?
+  id                     String               @id @default(cuid())
+  companyId              String               @unique
+  usaepayCustomerId      String?
+  usaepayBillingId       String?
   // One-time setup fee (required before recurring is activated)
-  setupFeeAmount         Float            @default(0)
-  setupFeeStatus         String           @default("PENDING") // PENDING | PAID | FAILED | WAIVED
+  setupFeeAmount         Float                @default(0)
+  setupFeeStatus         String               @default("PENDING") // PENDING | PAID | FAILED | WAIVED
   setupFeePaidAt         DateTime?
   setupFeeTransactionId  String?
   // Recurring billing schedule (anchored to setupFeePaidAt)
   billingAnchorDate      DateTime?
   firstRecurringBillDate DateTime?
-  plan               String
-  amount             Float
-  status             SubscriptionStatus   @default(PENDING)
-  nextBillingDate    DateTime?
-  lastPaymentDate    DateTime?
-  billingStartDate   DateTime?
-  billingEndDate     DateTime?
-  cardLast4          String?
-  cardType           String?
-  cardExpMonth       String?
-  cardExpYear        String?
-  failedPaymentCount Int                  @default(0)
-  lastFailureReason  String?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  transactions       PaymentTransaction[]
-  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  plan                   String
+  amount                 Float
+  status                 SubscriptionStatus   @default(PENDING)
+  nextBillingDate        DateTime?
+  lastPaymentDate        DateTime?
+  billingStartDate       DateTime?
+  billingEndDate         DateTime?
+  cardLast4              String?
+  cardType               String?
+  cardExpMonth           String?
+  cardExpYear            String?
+  failedPaymentCount     Int                  @default(0)
+  lastFailureReason      String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  transactions           PaymentTransaction[]
+  company                Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([status])
@@ -1386,24 +1653,24 @@ model PaymentTransaction {
 }
 
 model RevenueRecord {
-  id                    String   @id @default(cuid())
-  transactionId         String   @unique // USAePay or payment processor transaction ID
-  companyId             String
-  consultantId          String?  // NULL if direct business (no consultant)
-  serviceType           String   @default("core") // core, setup_fee, dataroom, valuation, digital_presence
-  amount                Float
-  paymentDate           DateTime
-  paymentStatus         String   @default("received") // 'received', 'failed', 'refunded', 'pending'
-  subscriptionPlan      String   // 'monthly', 'quarterly', 'annual'
-  billingPeriodStart    DateTime
-  billingPeriodEnd      DateTime
-  processorFee          Float?   // Payment processor fee (if tracked)
-  netAmount             Float?   // Amount after processor fee
-  notes                 String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  consultant            Consultant? @relation(fields: [consultantId], references: [id])
+  id                 String      @id @default(cuid())
+  transactionId      String      @unique // USAePay or payment processor transaction ID
+  companyId          String
+  consultantId       String? // NULL if direct business (no consultant)
+  serviceType        String      @default("core") // core, setup_fee, dataroom, valuation, digital_presence
+  amount             Float
+  paymentDate        DateTime
+  paymentStatus      String      @default("received") // 'received', 'failed', 'refunded', 'pending'
+  subscriptionPlan   String // 'monthly', 'quarterly', 'annual'
+  billingPeriodStart DateTime
+  billingPeriodEnd   DateTime
+  processorFee       Float? // Payment processor fee (if tracked)
+  netAmount          Float? // Amount after processor fee
+  notes              String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  company            Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  consultant         Consultant? @relation(fields: [consultantId], references: [id])
 
   @@index([companyId])
   @@index([consultantId])
@@ -1416,11 +1683,11 @@ model RevenueRecord {
 model SubscriptionEvent {
   id            String   @id @default(cuid())
   companyId     String
-  eventType     String   // 'created', 'plan_changed', 'price_changed', 'paused', 'cancelled', 'reactivated'
+  eventType     String // 'created', 'plan_changed', 'price_changed', 'paused', 'cancelled', 'reactivated'
   previousValue String?
   newValue      String?
   notes         String?
-  createdBy     String?  // User ID or email who made the change
+  createdBy     String? // User ID or email who made the change
   createdAt     DateTime @default(now())
   company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -1430,24 +1697,24 @@ model SubscriptionEvent {
 }
 
 model ConsultantPayable {
-  id                     String   @id @default(cuid())
+  id                     String           @id @default(cuid())
   consultantId           String?
   referralPartnerId      String?
   periodStart            DateTime
   periodEnd              DateTime
-  totalCompanyRevenue    Float    // Sum of all revenue from consultant's companies
-  revenueSharePercentage Float    // Consultant's share % at time of calculation
-  payableAmount          Float    // Amount owed to consultant (totalRevenue * share%)
-  platformAmount         Float    // Amount kept by platform (totalRevenue * (100-share%))
-  payableType            String   @default("consultant_revenue_share") // consultant_revenue_share, referral_partner
-  status                 String   @default("pending") // 'pending', 'paid', 'on_hold', 'cancelled'
+  totalCompanyRevenue    Float // Sum of all revenue from consultant's companies
+  revenueSharePercentage Float // Consultant's share % at time of calculation
+  payableAmount          Float // Amount owed to consultant (totalRevenue * share%)
+  platformAmount         Float // Amount kept by platform (totalRevenue * (100-share%))
+  payableType            String           @default("consultant_revenue_share") // consultant_revenue_share, referral_partner
+  status                 String           @default("pending") // 'pending', 'paid', 'on_hold', 'cancelled'
   paidDate               DateTime?
-  paymentMethod          String?  // How consultant was paid (check, ACH, wire, etc.)
-  paymentReference       String?  // Check number, transaction ID, etc.
+  paymentMethod          String? // How consultant was paid (check, ACH, wire, etc.)
+  paymentReference       String? // Check number, transaction ID, etc.
   notes                  String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
-  consultant             Consultant? @relation(fields: [consultantId], references: [id])
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  consultant             Consultant?      @relation(fields: [consultantId], references: [id])
   referralPartner        ReferralPartner? @relation(fields: [referralPartnerId], references: [id])
 
   @@index([consultantId])
@@ -1529,41 +1796,41 @@ enum PaymentType {
 }
 
 model Loan {
-  id            String      @id @default(cuid())
-  companyId     String
-  loanName      String
-  loanIdNumber  String?
-  lenderName    String
-  loanAmount    Float
-  interestRate  Float?
-  termMonths    Int?
-  startDate     DateTime
-  endDate       DateTime?
-  loanType      LoanType    @default(TERM)
-  status        LoanStatus  @default(ACTIVE)
-  notes         String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  covenants     Covenant[]
+  id           String     @id @default(cuid())
+  companyId    String
+  loanName     String
+  loanIdNumber String?
+  lenderName   String
+  loanAmount   Float
+  interestRate Float?
+  termMonths   Int?
+  startDate    DateTime
+  endDate      DateTime?
+  loanType     LoanType   @default(TERM)
+  status       LoanStatus @default(ACTIVE)
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  covenants    Covenant[]
 
   @@index([companyId])
   @@index([status])
 }
 
 model Covenant {
-  id               String         @id @default(cuid())
-  loanId           String
-  covenantName     String
-  covenantType     CovenantType   @default(MINIMUM)
-  threshold        Float?
-  currentValue     Float?
-  status           CovenantStatus @default(COMPLIANT)
-  description      String?
-  isApplicable     Boolean        @default(true)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  loan             Loan           @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  id           String         @id @default(cuid())
+  loanId       String
+  covenantName String
+  covenantType CovenantType   @default(MINIMUM)
+  threshold    Float?
+  currentValue Float?
+  status       CovenantStatus @default(COMPLIANT)
+  description  String?
+  isApplicable Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  loan         Loan           @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
   @@index([loanId])
   @@index([status])
@@ -1634,23 +1901,23 @@ model ARAgingSnapshot {
   // 5-bucket aging based on Days Past Due = today - dueDate
   // (falls back to invoiceDate when dueDate is null).
   // Current is strictly not-yet-due (DPD < 0). 1-30 starts at DPD = 0.
-  current      Float    // Current / Not Yet Due (DPD < 0)
-  days1to30    Float    // 1-30 Days Past Due (0 <= DPD <= 30)
-  days31to60   Float    // 31-60 Days Past Due
-  days61to90   Float    // 61-90 Days Past Due
-  days90plus   Float    // 90+ Days Past Due
+  current      Float // Current / Not Yet Due (DPD < 0)
+  days1to30    Float // 1-30 Days Past Due (0 <= DPD <= 30)
+  days31to60   Float // 31-60 Days Past Due
+  days61to90   Float // 61-90 Days Past Due
+  days90plus   Float // 90+ Days Past Due
   createdAt    DateTime @default(now())
-  
+
+  @@unique([companyId, snapshotDate, frequency])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
-  @@unique([companyId, snapshotDate, frequency])
 }
 
 model AROpenInvoiceSnapshot {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   companyId         String
   snapshotDate      DateTime
-  frequency         String   @default("daily")
+  frequency         String    @default("daily")
   customerId        String?
   customerName      String
   invoiceNo         String
@@ -1666,19 +1933,19 @@ model AROpenInvoiceSnapshot {
   days31to60        Float?
   days61to90        Float?
   days90plus        Float?
-  sourcePlatform    String?  @default("INFOR_M3")
+  sourcePlatform    String?   @default("INFOR_M3")
   sourceProgram     String?
   sourceTransaction String?
   cono              String?
   divi              String?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
+  @@unique([companyId, frequency, snapshotDate, invoiceNo, customerName])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, customerId])
   @@index([companyId, invoiceNo])
   @@index([companyId, customerName])
-  @@unique([companyId, frequency, snapshotDate, invoiceNo, customerName])
 }
 
 model ARPaymentFact {
@@ -1707,7 +1974,7 @@ model ARPaymentFact {
 }
 
 model GLTransactionFact {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   companyId         String
   transDate         DateTime
   distDate          DateTime?
@@ -1723,51 +1990,51 @@ model GLTransactionFact {
   ref               String?
   description       String?
   site              String?
-  sourcePlatform    String?  @default("INFOR_M3")
+  sourcePlatform    String?   @default("INFOR_M3")
   sourceProgram     String?
   sourceTransaction String?
   controlPeriod     Int?
   controlYear       Int?
   cono              String?
   divi              String?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
+  @@unique([companyId, transDate, accountId, transNum])
   @@index([companyId, transDate(sort: Desc)])
   @@index([companyId, accountId, transDate(sort: Desc)])
   @@index([companyId, transNum])
   @@index([companyId, ref])
   @@index([companyId, sourceProgram])
-  @@unique([companyId, transDate, accountId, transNum])
 }
 
 model APTransactionFact {
-  id              String   @id @default(cuid())
-  companyId       String
-  eventDate       DateTime    // DistDate — financial/accounting date
-  recordDate      DateTime?   // RecordDate — system entry timestamp
-  apAcct          String?
-  vendorId        String?
-  vendorName      String?
-  voucher         String
-  vouchSeq        String?
-  invoiceNum      String?
-  invoiceDate     DateTime?
-  distDate        DateTime?
-  transType       String
-  invoiceAmount   Float
+  id               String    @id @default(cuid())
+  companyId        String
+  eventDate        DateTime // DistDate — financial/accounting date
+  recordDate       DateTime? // RecordDate — system entry timestamp
+  apAcct           String?
+  vendorId         String?
+  vendorName       String?
+  voucher          String
+  vouchSeq         String?
+  invoiceNum       String?
+  invoiceDate      DateTime?
+  distDate         DateTime?
+  transType        String
+  invoiceAmount    Float
   normalizedAmount Float
-  exchangeRate    Float?
-  termsCode       String?
-  sourcePlatform  String?  @default("INFOR_CSI")
+  exchangeRate     Float?
+  termsCode        String?
+  sourcePlatform   String?   @default("INFOR_CSI")
   // Phase 4: harvest per-voucher payment events (Type=P) and adjustments
   // (Type=A) from SLAptrxps. sourceItemId is the CSI _ItemId / aptrxp.ID
   // UUID per payment line — needed because a single voucher can have
   // multiple partial payments. Type=V rows from SLVchHdrs continue to
   // use NULL sourceItemId (one row per voucher+vouchSeq), and the unique
   // index uses NULLS NOT DISTINCT so those still collapse correctly.
-  sourceItemId    String?
-  sourceProgram   String?
-  createdAt       DateTime @default(now())
+  sourceItemId     String?
+  sourceProgram    String?
+  createdAt        DateTime  @default(now())
 
   @@unique([companyId, voucher, vouchSeq, transType, sourceItemId], map: "APTransactionFact_event_uniq")
   @@index([companyId, eventDate(sort: Desc)])
@@ -1781,21 +2048,21 @@ model APTransactionFact {
 // (debit memo). Sourced primarily from SLArtrans CSI IDO. The unique index
 // uses NULLS NOT DISTINCT so NULL sourceItemId still collapses correctly.
 model ARTransactionFact {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   companyId        String
-  eventDate        DateTime    // InvDate — financial/accounting date
-  recordDate       DateTime?   // RecordDate — system entry timestamp
-  arAcct           String?     // AR control account (e.g. 11100)
-  customerId       String?     // CustNum
-  customerName     String?     // DerCustName
-  invoiceNum       String      // InvNum (for I) or ApplyToInvNum (for P/C/D)
-  invSeq           String?     // InvSeq
-  coNum            String?     // CoNum (company)
-  applyToInvNum   String?      // ApplyToInvNum (for P/C/D)
-  transType        String      // I, P, C, D
+  eventDate        DateTime // InvDate — financial/accounting date
+  recordDate       DateTime? // RecordDate — system entry timestamp
+  arAcct           String? // AR control account (e.g. 11100)
+  customerId       String? // CustNum
+  customerName     String? // DerCustName
+  invoiceNum       String // InvNum (for I) or ApplyToInvNum (for P/C/D)
+  invSeq           String? // InvSeq
+  coNum            String? // CoNum (company)
+  applyToInvNum    String? // ApplyToInvNum (for P/C/D)
+  transType        String // I, P, C, D
   invoiceDate      DateTime?
   dueDate          DateTime?
-  amount           Float       // raw Amount from SLArtrans (always positive in CSI)
+  amount           Float // raw Amount from SLArtrans (always positive in CSI)
   // Sign-normalized amount: I + |amt|, D + |amt|, P − |amt|, C − |amt|.
   // Sum of normalizedAmount across an invoice's events = its open balance
   // (capped at >= 0 by the read-side aging-rule helper).
@@ -1803,10 +2070,10 @@ model ARTransactionFact {
   currencyCode     String?
   termsCode        String?
   payType          String?
-  sourcePlatform   String?  @default("INFOR_CSI")
-  sourceItemId     String?  // CSI _ItemId per row
-  sourceProgram    String?  // SLArtrans
-  createdAt        DateTime @default(now())
+  sourcePlatform   String?   @default("INFOR_CSI")
+  sourceItemId     String? // CSI _ItemId per row
+  sourceProgram    String? // SLArtrans
+  createdAt        DateTime  @default(now())
 
   @@unique([companyId, coNum, customerId, invoiceNum, invSeq, transType, sourceItemId], map: "ARTransactionFact_event_uniq")
   @@index([companyId, eventDate(sort: Desc)])
@@ -1817,125 +2084,126 @@ model ARTransactionFact {
 }
 
 model ARInvoiceDetail {
-  id               String   @id @default(cuid())
-  companyId        String
-  asOfDate         DateTime
-  snapshotFrequency String  @default("daily")
-  customerId       String?
-  customerName     String
-  invoiceId        String
-  invoiceDate      DateTime?
-  dueDate          DateTime?
-  invoiceAmount    Float
-  amountPaid       Float
-  remainingBalance Float
-  sourceClass      String?  @default("UNKNOWN")
-  sourceSystem     String?
-  sourceDocId      String?
+  id                    String    @id @default(cuid())
+  companyId             String
+  asOfDate              DateTime
+  snapshotFrequency     String    @default("daily")
+  customerId            String?
+  customerName          String
+  invoiceId             String
+  invoiceDate           DateTime?
+  dueDate               DateTime?
+  invoiceAmount         Float
+  amountPaid            Float
+  remainingBalance      Float
+  sourceClass           String?   @default("UNKNOWN")
+  sourceSystem          String?
+  sourceDocId           String?
   sourceMatchConfidence String?
-  sourceMatchedBy  String?
-  daysOutstanding  Int?
-  agingBucket      String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  sourceMatchedBy       String?
+  daysOutstanding       Int?
+  agingBucket           String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
+  @@unique([companyId, asOfDate, snapshotFrequency, invoiceId, customerName])
   @@index([companyId, asOfDate(sort: Desc)])
   @@index([companyId, customerId, asOfDate(sort: Desc)])
   @@index([companyId, invoiceId])
   @@index([companyId, sourceClass, asOfDate(sort: Desc)])
-  @@unique([companyId, asOfDate, snapshotFrequency, invoiceId, customerName])
 }
 
 model ARInvoiceOriginMap {
-  id                 String   @id @default(cuid())
-  companyId          String
+  id                  String   @id @default(cuid())
+  companyId           String
   invoiceNoNormalized String
-  customerId         String?
-  customerKey        String   @default("")
-  sourceClass        String   @default("UNKNOWN")
-  sourceSystem       String
-  sourceDocId        String?
-  sourceInvoiceNoRaw String?
-  matchConfidence    String   @default("LOW")
-  matchedBy          String   @default("INVOICE_NO")
-  firstSeenAt        DateTime @default(now())
-  lastSeenAt         DateTime @default(now())
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  customerId          String?
+  customerKey         String   @default("")
+  sourceClass         String   @default("UNKNOWN")
+  sourceSystem        String
+  sourceDocId         String?
+  sourceInvoiceNoRaw  String?
+  matchConfidence     String   @default("LOW")
+  matchedBy           String   @default("INVOICE_NO")
+  firstSeenAt         DateTime @default(now())
+  lastSeenAt          DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
+  @@unique([companyId, invoiceNoNormalized, customerKey, sourceSystem])
   @@index([companyId, sourceClass])
   @@index([companyId, lastSeenAt(sort: Desc)])
   @@index([companyId, invoiceNoNormalized])
-  @@unique([companyId, invoiceNoNormalized, customerKey, sourceSystem])
 }
 
 model CustomerContractStatus {
-  id                    String   @id @default(cuid())
-  companyId             String
-  asOfDate              DateTime
-  customerId            String?
-  customerName          String
-  contractId            String
-  contractValue         Float
-  earnedToDate          Float
-  invoicedToDate        Float
-  remainingValue        Float
-  accruedRevenueUnbilled Float   @default(0)
-  arOutstanding         Float    @default(0)
-  cashCollectedToDate   Float    @default(0)
-  lastPaymentDate       DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  companyId              String
+  asOfDate               DateTime
+  customerId             String?
+  customerName           String
+  contractId             String
+  contractValue          Float
+  earnedToDate           Float
+  invoicedToDate         Float
+  remainingValue         Float
+  accruedRevenueUnbilled Float     @default(0)
+  arOutstanding          Float     @default(0)
+  cashCollectedToDate    Float     @default(0)
+  lastPaymentDate        DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
+  @@unique([companyId, asOfDate, customerName, contractId])
   @@index([companyId, asOfDate(sort: Desc)])
   @@index([companyId, customerId, asOfDate(sort: Desc)])
-  @@unique([companyId, asOfDate, customerName, contractId])
 }
 
 model CustomerCashFlow {
-  id          String   @id @default(cuid())
-  companyId   String
-  customerId  String?
+  id           String   @id @default(cuid())
+  companyId    String
+  customerId   String?
   customerName String
-  date        DateTime
-  cashInflow  Float
-  source      String
-  createdAt   DateTime @default(now())
+  date         DateTime
+  cashInflow   Float
+  source       String
+  createdAt    DateTime @default(now())
 
   @@index([companyId, date(sort: Desc)])
   @@index([companyId, customerId, date(sort: Desc)])
 }
 
 model CustomerOrderLineSnapshot {
-  id               String   @id @default(cuid())
-  companyId        String
-  snapshotDate     DateTime
-  frequency        String   @default("daily")
-  customerId       String?
-  customerName     String
-  orderId          String
-  lineId           String
-  orderDate        DateTime?
-  itemId           String?
-  itemName         String?
-  sku              String?
-  customerPn       String?
-  lineStat         String?
-  qtyOrdered       Float
-  qtyShipped       Float?
-  qtyInvoiced      Float
-  unitPrice        Float
-  contractValue    Float
-  invoicedAmount   Float
-  remainingAmount  Float
-  unbilledAccrual  Float    @default(0)
-  sourcePlatform   String?  @default("INFOR_M3")
-  sourceProgram    String?
+  id                String    @id @default(cuid())
+  companyId         String
+  snapshotDate      DateTime
+  frequency         String    @default("daily")
+  customerId        String?
+  customerName      String
+  orderId           String
+  lineId            String
+  orderDate         DateTime?
+  itemId            String?
+  itemName          String?
+  sku               String?
+  customerPn        String?
+  lineStat          String?
+  qtyOrdered        Float
+  qtyShipped        Float?
+  qtyInvoiced       Float
+  unitPrice         Float
+  contractValue     Float
+  invoicedAmount    Float
+  remainingAmount   Float
+  unbilledAccrual   Float     @default(0)
+  sourcePlatform    String?   @default("INFOR_M3")
+  sourceProgram     String?
   sourceTransaction String?
-  cono             String?
-  divi             String?
-  createdAt        DateTime @default(now())
+  cono              String?
+  divi              String?
+  createdAt         DateTime  @default(now())
 
+  @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, customerId, snapshotDate(sort: Desc)])
@@ -1943,11 +2211,10 @@ model CustomerOrderLineSnapshot {
   @@index([companyId, orderId])
   @@index([companyId, itemId])
   @@index([companyId, sku])
-  @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
 }
 
 model CustomerOrderLineFilled {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   companyId         String
   customerId        String?
   customerName      String
@@ -1967,13 +2234,13 @@ model CustomerOrderLineFilled {
   contractValue     Float
   invoicedAmount    Float
   remainingAmount   Float
-  unbilledAccrual   Float    @default(0)
-  sourcePlatform    String?  @default("INFOR_M3")
+  unbilledAccrual   Float     @default(0)
+  sourcePlatform    String?   @default("INFOR_M3")
   sourceProgram     String?
   sourceTransaction String?
   cono              String?
   divi              String?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
   @@unique([companyId, orderId, lineId, customerName])
   @@index([companyId, customerId, orderDate])
@@ -1990,7 +2257,7 @@ model ProductRevenueForecastSettings {
   companyId String
   year      Int
   dataThru  DateTime?
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime  @updatedAt
 
   @@id([companyId, year])
 }
@@ -2026,7 +2293,7 @@ model VendorMonthlyForecastSettings {
   companyId String
   year      Int
   dataThru  DateTime?
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime  @updatedAt
 
   @@id([companyId, year])
 }
@@ -2062,8 +2329,8 @@ model ProductRevenueSettings {
   companyId    String
   year         Int
   dataThru     DateTime?
-  shippingDays Json     @default("[]")
-  updatedAt    DateTime @updatedAt
+  shippingDays Json      @default("[]")
+  updatedAt    DateTime  @updatedAt
 
   @@id([companyId, year])
 }
@@ -2091,18 +2358,18 @@ model ProductRevenueLine {
 }
 
 model ProductRevenuePrice {
-  id            String   @id @default(cuid())
-  companyId     String
-  year          Int
-  customerGroup String   @default("")
-  itemSku       String
-  contractPrice Float?
-  sgpPrice      Float?
+  id                  String    @id @default(cuid())
+  companyId           String
+  year                Int
+  customerGroup       String    @default("")
+  itemSku             String
+  contractPrice       Float?
+  sgpPrice            Float?
   /// INFOR when the contract price came from the latest Infor order line; workbook imports then leave it alone.
   contractPriceSource String?
   contractPriceAsOf   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@unique([companyId, year, customerGroup, itemSku])
   @@index([companyId, year])
@@ -2112,9 +2379,9 @@ model ProductGoalUpdate {
   companyId  String
   year       Int
   dataThru   DateTime?
-  goalUpdate Json     @default("{}")
-  pyramid    Json     @default("{}")
-  updatedAt  DateTime @updatedAt
+  goalUpdate Json      @default("{}")
+  pyramid    Json      @default("{}")
+  updatedAt  DateTime  @updatedAt
 
   @@id([companyId, year])
 }
@@ -2167,26 +2434,26 @@ model CompanyItemDuty {
 }
 
 model CompanyItemDutyApplication {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   companyId            String
   itemSku              String
   eventDate            DateTime
-  quantity             Float    @default(0)
+  quantity             Float     @default(0)
   enteredValuePerPiece Float?
   dutyRatePct          Float?
   tariffRatePct        Float?
-  dutyAmount           Float    @default(0)
-  tariffAmount         Float    @default(0)
-  specialAmount        Float    @default(0)
-  section301Amount     Float    @default(0)
-  section232Amount     Float    @default(0)
-  ieepaAmount          Float    @default(0)
-  additionalAmount     Float    @default(0)
+  dutyAmount           Float     @default(0)
+  tariffAmount         Float     @default(0)
+  specialAmount        Float     @default(0)
+  section301Amount     Float     @default(0)
+  section232Amount     Float     @default(0)
+  ieepaAmount          Float     @default(0)
+  additionalAmount     Float     @default(0)
   quoteAsOfDate        DateTime?
-  rateSource           String   @default("hts")
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  company              Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  rateSource           String    @default("hts")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  company              Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, itemSku, eventDate])
   @@index([companyId, eventDate])
@@ -2218,35 +2485,35 @@ model HtsRateQuote {
 }
 
 model SalesInvoiceHeaderSnapshot {
-  id               String   @id @default(cuid())
-  companyId        String
-  snapshotDate     DateTime
-  frequency        String   @default("daily")
-  orderId          String
-  invoiceNo        String
-  customerId       String?
-  customerName     String?
-  invoiceDate      DateTime?
-  sourcePlatform   String?  @default("INFOR_M3")
-  sourceProgram    String?
+  id                String    @id @default(cuid())
+  companyId         String
+  snapshotDate      DateTime
+  frequency         String    @default("daily")
+  orderId           String
+  invoiceNo         String
+  customerId        String?
+  customerName      String?
+  invoiceDate       DateTime?
+  sourcePlatform    String?   @default("INFOR_M3")
+  sourceProgram     String?
   sourceTransaction String?
-  cono             String?
-  divi             String?
-  createdAt        DateTime @default(now())
+  cono              String?
+  divi              String?
+  createdAt         DateTime  @default(now())
 
+  @@unique([companyId, frequency, snapshotDate, orderId, invoiceNo, customerId])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, orderId])
   @@index([companyId, invoiceNo])
   @@index([companyId, customerId])
-  @@unique([companyId, frequency, snapshotDate, orderId, invoiceNo, customerId])
 }
 
 model APOpenBillSnapshot {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   companyId         String
   snapshotDate      DateTime
-  frequency         String   @default("daily")
+  frequency         String    @default("daily")
   vendorId          String?
   vendorName        String
   billNo            String
@@ -2262,19 +2529,19 @@ model APOpenBillSnapshot {
   days31to60        Float?
   days61to90        Float?
   days90plus        Float?
-  sourcePlatform    String?  @default("INFOR_M3")
+  sourcePlatform    String?   @default("INFOR_M3")
   sourceProgram     String?
   sourceTransaction String?
   cono              String?
   divi              String?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
+  @@unique([companyId, frequency, snapshotDate, billNo, vendorName])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, vendorId])
   @@index([companyId, billNo])
   @@index([companyId, vendorName])
-  @@unique([companyId, frequency, snapshotDate, billNo, vendorName])
 }
 
 model APPaymentFact {
@@ -2314,23 +2581,23 @@ model APAgingSnapshot {
   // 5-bucket aging based on Days Past Due = today - dueDate
   // (falls back to billDate when dueDate is null).
   // Current is strictly not-yet-due (DPD < 0). 1-30 starts at DPD = 0.
-  current      Float    // Current / Not Yet Due (DPD < 0)
-  days1to30    Float    // 1-30 Days Past Due (0 <= DPD <= 30)
-  days31to60   Float    // 31-60 Days Past Due
-  days61to90   Float    // 61-90 Days Past Due
-  days90plus   Float    // 90+ Days Past Due
+  current      Float // Current / Not Yet Due (DPD < 0)
+  days1to30    Float // 1-30 Days Past Due (0 <= DPD <= 30)
+  days31to60   Float // 31-60 Days Past Due
+  days61to90   Float // 61-90 Days Past Due
+  days90plus   Float // 90+ Days Past Due
   createdAt    DateTime @default(now())
-  
+
+  @@unique([companyId, snapshotDate, frequency])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
-  @@unique([companyId, snapshotDate, frequency])
 }
 
 model VendorSnapshot {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   companyId         String
   snapshotDate      DateTime
-  frequency         String   @default("daily") // 'daily', 'weekly', 'monthly'
+  frequency         String    @default("daily") // 'daily', 'weekly', 'monthly'
   vendorId          String
   vendorName        String
   sourceRecordDate  DateTime?
@@ -2358,35 +2625,35 @@ model VendorSnapshot {
   ageBalance6       Float?
   newAmount         Float?
   oldAmount         Float?
-  sourcePlatform    String?  @default("INFOR_M3")
+  sourcePlatform    String?   @default("INFOR_M3")
   sourceProgram     String?
   sourceTransaction String?
   cono              String?
   divi              String?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
+  @@unique([companyId, frequency, snapshotDate, vendorId])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, vendorId, snapshotDate(sort: Desc)])
   @@index([companyId, vendorName, snapshotDate(sort: Desc)])
-  @@unique([companyId, frequency, snapshotDate, vendorId])
 }
 
 model ProductSalesSnapshot {
-  id              String   @id @default(cuid())
-  companyId       String
-  snapshotDate    DateTime // Changed from 'month'
-  frequency       String   @default("monthly") // 'daily', 'weekly', 'monthly'
-  itemId          String?  // QuickBooks item ID
-  itemName        String
-  sku             String?
-  quantitySold    Float
-  revenue         Float
-  cogs            Float?
-  grossMargin     Float?
-  grossMarginPct  Float?
-  createdAt       DateTime @default(now())
-  
+  id             String   @id @default(cuid())
+  companyId      String
+  snapshotDate   DateTime // Changed from 'month'
+  frequency      String   @default("monthly") // 'daily', 'weekly', 'monthly'
+  itemId         String? // QuickBooks item ID
+  itemName       String
+  sku            String?
+  quantitySold   Float
+  revenue        Float
+  cogs           Float?
+  grossMargin    Float?
+  grossMarginPct Float?
+  createdAt      DateTime @default(now())
+
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, itemId])
@@ -2397,7 +2664,7 @@ model InventorySnapshot {
   companyId    String
   snapshotDate DateTime // Changed from 'month'
   frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
-  itemId       String?  // QuickBooks item ID
+  itemId       String? // QuickBooks item ID
   itemName     String
   sku          String?
   warehouse    String?
@@ -2407,143 +2674,143 @@ model InventorySnapshot {
   assetValue   Float
   avgCost      Float?
   createdAt    DateTime @default(now())
-  
+
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, itemId])
 }
 
 model CashSnapshot {
-  id              String   @id @default(cuid())
-  companyId       String
-  snapshotDate    DateTime
-  frequency       String   @default("daily") // 'daily', 'weekly', 'monthly'
-  accountId       String?  // QuickBooks account ID
-  accountName     String   // Bank account name
-  accountNumber   String?  // Last 4 digits (optional)
-  cashBalance     Float
-  changeAmount    Float?   // Change from previous period
-  changePercent   Float?   // % change from previous period
-  createdAt       DateTime @default(now())
-  
+  id            String   @id @default(cuid())
+  companyId     String
+  snapshotDate  DateTime
+  frequency     String   @default("daily") // 'daily', 'weekly', 'monthly'
+  accountId     String? // QuickBooks account ID
+  accountName   String // Bank account name
+  accountNumber String? // Last 4 digits (optional)
+  cashBalance   Float
+  changeAmount  Float? // Change from previous period
+  changePercent Float? // % change from previous period
+  createdAt     DateTime @default(now())
+
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, accountId])
 }
 
 model DailyFinancialSnapshot {
-  id                      String   @id @default(cuid())
-  companyId               String
-  snapshotDate            DateTime
-  frequency               String   @default("daily")
+  id           String   @id @default(cuid())
+  companyId    String
+  snapshotDate DateTime
+  frequency    String   @default("daily")
 
   // Income statement activity fields (daily movement)
-  revenue                 Float    @default(0)
-  expense                 Float    @default(0)
-  cogsPayroll             Float    @default(0)
-  cogsOwnerPay            Float    @default(0)
-  cogsContractors         Float    @default(0)
-  cogsMaterials           Float    @default(0)
-  cogsCommissions         Float    @default(0)
-  cogsOther               Float    @default(0)
-  cogsTotal               Float    @default(0)
-  payroll                 Float    @default(0)
-  ownerBasePay            Float    @default(0)
-  benefits                Float    @default(0)
-  insurance               Float    @default(0)
-  professionalFees        Float    @default(0)
-  subcontractors          Float    @default(0)
-  rent                    Float    @default(0)
-  taxLicense              Float    @default(0)
-  stateIncomeTaxes        Float    @default(0)
-  federalIncomeTaxes      Float    @default(0)
-  phoneComm               Float    @default(0)
-  infrastructure          Float    @default(0)
-  autoTravel              Float    @default(0)
-  salesExpense            Float    @default(0)
-  marketing               Float    @default(0)
-  trainingCert            Float    @default(0)
-  mealsEntertainment      Float    @default(0)
-  interestExpense         Float    @default(0)
-  depreciationAmortization Float   @default(0)
-  otherExpense            Float    @default(0)
-  nonOperatingIncome      Float    @default(0)
-  nonOperatingExpense     Float    @default(0)
-  extraordinaryItems      Float    @default(0)
+  revenue                  Float @default(0)
+  expense                  Float @default(0)
+  cogsPayroll              Float @default(0)
+  cogsOwnerPay             Float @default(0)
+  cogsContractors          Float @default(0)
+  cogsMaterials            Float @default(0)
+  cogsCommissions          Float @default(0)
+  cogsOther                Float @default(0)
+  cogsTotal                Float @default(0)
+  payroll                  Float @default(0)
+  ownerBasePay             Float @default(0)
+  benefits                 Float @default(0)
+  insurance                Float @default(0)
+  professionalFees         Float @default(0)
+  subcontractors           Float @default(0)
+  rent                     Float @default(0)
+  taxLicense               Float @default(0)
+  stateIncomeTaxes         Float @default(0)
+  federalIncomeTaxes       Float @default(0)
+  phoneComm                Float @default(0)
+  infrastructure           Float @default(0)
+  autoTravel               Float @default(0)
+  salesExpense             Float @default(0)
+  marketing                Float @default(0)
+  trainingCert             Float @default(0)
+  mealsEntertainment       Float @default(0)
+  interestExpense          Float @default(0)
+  depreciationAmortization Float @default(0)
+  otherExpense             Float @default(0)
+  nonOperatingIncome       Float @default(0)
+  nonOperatingExpense      Float @default(0)
+  extraordinaryItems       Float @default(0)
 
   // Balance sheet snapshot fields (point-in-time)
-  cash                    Float    @default(0)
-  ar                      Float    @default(0)
-  retainageReceivables    Float    @default(0)
-  contractAssets          Float    @default(0)
-  inventory               Float    @default(0)
-  otherCA                 Float    @default(0)
-  tca                     Float    @default(0)
-  fixedAssets             Float    @default(0)
-  constructionEquipment   Float    @default(0)
-  officeEquipment         Float    @default(0)
-  shopEquipment           Float    @default(0)
-  investments             Float    @default(0)
-  rightOfUseLeases        Float    @default(0)
-  otherAssets             Float    @default(0)
-  totalAssets             Float    @default(0)
-  ap                      Float    @default(0)
-  loc                     Float    @default(0)
-  contractLiabilities     Float    @default(0)
-  otherCL                 Float    @default(0)
-  tcl                     Float    @default(0)
-  ltd                     Float    @default(0)
-  totalLiab               Float    @default(0)
-  ownersCapital           Float    @default(0)
-  ownersDraw              Float    @default(0)
-  commonStock             Float    @default(0)
-  preferredStock          Float    @default(0)
-  retainedEarnings        Float    @default(0)
-  additionalPaidInCapital Float    @default(0)
-  treasuryStock           Float    @default(0)
-  totalEquity             Float    @default(0)
-  totalLAndE              Float    @default(0)
+  cash                    Float @default(0)
+  ar                      Float @default(0)
+  retainageReceivables    Float @default(0)
+  contractAssets          Float @default(0)
+  inventory               Float @default(0)
+  otherCA                 Float @default(0)
+  tca                     Float @default(0)
+  fixedAssets             Float @default(0)
+  constructionEquipment   Float @default(0)
+  officeEquipment         Float @default(0)
+  shopEquipment           Float @default(0)
+  investments             Float @default(0)
+  rightOfUseLeases        Float @default(0)
+  otherAssets             Float @default(0)
+  totalAssets             Float @default(0)
+  ap                      Float @default(0)
+  loc                     Float @default(0)
+  contractLiabilities     Float @default(0)
+  otherCL                 Float @default(0)
+  tcl                     Float @default(0)
+  ltd                     Float @default(0)
+  totalLiab               Float @default(0)
+  ownersCapital           Float @default(0)
+  ownersDraw              Float @default(0)
+  commonStock             Float @default(0)
+  preferredStock          Float @default(0)
+  retainedEarnings        Float @default(0)
+  additionalPaidInCapital Float @default(0)
+  treasuryStock           Float @default(0)
+  totalEquity             Float @default(0)
+  totalLAndE              Float @default(0)
 
-  sourcePlatform          String?  @default("SCHEDULED_INTEGRATION")
-  sourceRunId             String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  sourcePlatform String?  @default("SCHEDULED_INTEGRATION")
+  sourceRunId    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
+  @@unique([companyId, snapshotDate, frequency])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, sourceRunId])
-  @@unique([companyId, snapshotDate, frequency])
 }
 
 model DailyFinancialImportRun {
-  id               String   @id @default(cuid())
-  companyId        String
-  platform         String
-  runType          String   @default("daily")
-  status           String   // SUCCESS | PARTIAL | FAILED
-  snapshotDate     DateTime
-  recordsIngested  Int      @default(0)
-  errorMessage     String?
-  metadata         Json?
-  startedAt        DateTime @default(now())
-  finishedAt       DateTime?
+  id              String    @id @default(cuid())
+  companyId       String
+  platform        String
+  runType         String    @default("daily")
+  status          String // SUCCESS | PARTIAL | FAILED
+  snapshotDate    DateTime
+  recordsIngested Int       @default(0)
+  errorMessage    String?
+  metadata        Json?
+  startedAt       DateTime  @default(now())
+  finishedAt      DateTime?
 
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, status, startedAt(sort: Desc)])
 }
 
 model FinancialMonthPublish {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   companyId          String
   monthStart         DateTime
   monthEnd           DateTime
-  status             String   // OPEN | PUBLISHED | LOCKED
+  status             String // OPEN | PUBLISHED | LOCKED
   publishedAt        DateTime?
-  sourceSnapshotDays Int      @default(0)
+  sourceSnapshotDays Int       @default(0)
   sourceRunIds       Json?
   notes              String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@unique([companyId, monthStart])
   @@index([companyId, monthStart(sort: Desc)])
@@ -2565,12 +2832,12 @@ model DailyFinancialMappedLine {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  @@unique([companyId, snapshotDate, frequency, sourceAccountName, targetField])
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, targetField, snapshotDate(sort: Desc)])
   @@index([companyId, sourceRunId])
   @@index([companyId, sourceAccountName])
-  @@unique([companyId, snapshotDate, frequency, sourceAccountName, targetField])
 }
 
 // One-time-known balance-sheet anchor for a company, sourced from a trusted
@@ -2584,40 +2851,40 @@ model DailyFinancialMappedLine {
 // Multiple anchors per company are allowed (one per anchorDate); the rebuild
 // picks the most recent anchor with anchorDate <= snapshotDate.
 model BalanceSheetAnchor {
-  id                      String   @id @default(cuid())
-  companyId               String
-  anchorDate              DateTime // EOD balance-sheet date (UTC midnight)
+  id         String   @id @default(cuid())
+  companyId  String
+  anchorDate DateTime // EOD balance-sheet date (UTC midnight)
 
-  cash                    Float    @default(0)
-  ar                      Float    @default(0)
-  retainageReceivables    Float    @default(0)
-  contractAssets          Float    @default(0)
-  inventory               Float    @default(0)
-  otherCA                 Float    @default(0)
-  fixedAssets             Float    @default(0)
-  constructionEquipment   Float    @default(0)
-  officeEquipment         Float    @default(0)
-  shopEquipment           Float    @default(0)
-  investments             Float    @default(0)
-  rightOfUseLeases        Float    @default(0)
-  otherAssets             Float    @default(0)
-  ap                      Float    @default(0)
-  loc                     Float    @default(0)
-  contractLiabilities     Float    @default(0)
-  otherCL                 Float    @default(0)
-  ltd                     Float    @default(0)
-  ownersCapital           Float    @default(0)
-  ownersDraw              Float    @default(0)
-  commonStock             Float    @default(0)
-  preferredStock          Float    @default(0)
-  retainedEarnings        Float    @default(0)
-  additionalPaidInCapital Float    @default(0)
-  treasuryStock           Float    @default(0)
+  cash                    Float @default(0)
+  ar                      Float @default(0)
+  retainageReceivables    Float @default(0)
+  contractAssets          Float @default(0)
+  inventory               Float @default(0)
+  otherCA                 Float @default(0)
+  fixedAssets             Float @default(0)
+  constructionEquipment   Float @default(0)
+  officeEquipment         Float @default(0)
+  shopEquipment           Float @default(0)
+  investments             Float @default(0)
+  rightOfUseLeases        Float @default(0)
+  otherAssets             Float @default(0)
+  ap                      Float @default(0)
+  loc                     Float @default(0)
+  contractLiabilities     Float @default(0)
+  otherCL                 Float @default(0)
+  ltd                     Float @default(0)
+  ownersCapital           Float @default(0)
+  ownersDraw              Float @default(0)
+  commonStock             Float @default(0)
+  preferredStock          Float @default(0)
+  retainedEarnings        Float @default(0)
+  additionalPaidInCapital Float @default(0)
+  treasuryStock           Float @default(0)
 
-  source                  String?  // free-form provenance (e.g. "INFOR_M3_BS_2023-12-31")
-  notes                   String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  source    String? // free-form provenance (e.g. "INFOR_M3_BS_2023-12-31")
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([companyId, anchorDate])
   @@index([companyId, anchorDate(sort: Desc)])
@@ -2640,18 +2907,18 @@ model BalanceSheetAnchor {
 // Multiple anchor dates per company are allowed; consumers pick the most
 // recent anchorDate <= asOfDate.
 model BalanceSheetAccountAnchor {
-  id              String   @id @default(cuid())
-  companyId       String
-  anchorDate      DateTime // EOD balance-sheet date (UTC midnight)
-  accountId       String   // GL accountId as it appears in GLTransactionFact
-  accountName     String?  // human label captured at anchor time
-  accountCode     String?  // optional secondary identifier
-  openingBalance  Float    @default(0) // GL-signed (debit positive, credit negative)
+  id             String   @id @default(cuid())
+  companyId      String
+  anchorDate     DateTime // EOD balance-sheet date (UTC midnight)
+  accountId      String // GL accountId as it appears in GLTransactionFact
+  accountName    String? // human label captured at anchor time
+  accountCode    String? // optional secondary identifier
+  openingBalance Float    @default(0) // GL-signed (debit positive, credit negative)
 
-  source          String?  // provenance label (e.g. "INFOR_M3_TB_2023-12-31")
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  source    String? // provenance label (e.g. "INFOR_M3_TB_2023-12-31")
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([companyId, anchorDate, accountId])
   @@index([companyId, anchorDate(sort: Desc)])
@@ -2662,11 +2929,11 @@ model BalanceSheetAccountAnchor {
 // Rate dates follow America/New_York calendar days for EST EOD jobs.
 model FxRate {
   id               String    @id @default(cuid())
-  provider         String    // e.g. frankfurter
-  fromCurrency     String    // ISO 4217
-  toCurrency       String    // ISO 4217
-  rateDate         DateTime  // UTC midnight for the EST calendar date
-  rate             Float     // multiplier: amount_to = amount_from * rate
+  provider         String // e.g. frankfurter
+  fromCurrency     String // ISO 4217
+  toCurrency       String // ISO 4217
+  rateDate         DateTime // UTC midnight for the EST calendar date
+  rate             Float // multiplier: amount_to = amount_from * rate
   rateType         String    @default("daily_eod")
   isFallback       Boolean   @default(false)
   fallbackFromDate DateTime?
