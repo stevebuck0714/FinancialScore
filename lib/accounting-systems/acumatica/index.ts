@@ -19,6 +19,7 @@ export type AcumaticaSettings = {
 export type AcumaticaProgram = {
   module: string;
   endpointOrEntity: string;
+  enabled: boolean;
 };
 
 export const DEFAULT_ACUMATICA_SETTINGS: AcumaticaSettings = {
@@ -36,12 +37,22 @@ export const DEFAULT_ACUMATICA_SETTINGS: AcumaticaSettings = {
 };
 
 export const DEFAULT_ACUMATICA_PROGRAMS: AcumaticaProgram[] = [
-  { module: 'Chart of Accounts', endpointOrEntity: 'GLAccounts' },
-  { module: 'Customers', endpointOrEntity: 'Customers' },
-  { module: 'Vendors', endpointOrEntity: 'Vendors' },
-  { module: 'AR', endpointOrEntity: 'ARInvoices' },
-  { module: 'AP', endpointOrEntity: 'APBills' },
-  { module: 'Sales', endpointOrEntity: 'SalesOrders' },
+  { module: 'Chart of Accounts', endpointOrEntity: 'GLAccounts', enabled: true },
+  { module: 'General Ledger', endpointOrEntity: 'GLTransactions', enabled: true },
+  { module: 'Trial Balance', endpointOrEntity: 'TrialBalance', enabled: true },
+  { module: 'Customers', endpointOrEntity: 'Customers', enabled: true },
+  { module: 'Vendors', endpointOrEntity: 'Vendors', enabled: true },
+  { module: 'AR Invoices', endpointOrEntity: 'ARInvoices', enabled: true },
+  { module: 'AR Payments', endpointOrEntity: 'ARPayments', enabled: false },
+  { module: 'AR Aging', endpointOrEntity: 'ARAging', enabled: false },
+  { module: 'AP Bills', endpointOrEntity: 'APBills', enabled: true },
+  { module: 'AP Payments', endpointOrEntity: 'APPayments', enabled: false },
+  { module: 'AP Aging', endpointOrEntity: 'APAging', enabled: false },
+  { module: 'Sales Orders', endpointOrEntity: 'SalesOrders', enabled: true },
+  { module: 'Sales Invoices', endpointOrEntity: 'SalesInvoices', enabled: false },
+  { module: 'Purchase Orders', endpointOrEntity: 'PurchaseOrders', enabled: false },
+  { module: 'Inventory', endpointOrEntity: 'StockItems', enabled: false },
+  { module: 'Cash Management', endpointOrEntity: 'CashTransactions', enabled: false },
 ];
 
 const asString = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
@@ -68,7 +79,11 @@ const sanitizePrograms = (value: unknown): AcumaticaProgram[] => {
   const cleaned = value
     .map((row): AcumaticaProgram => {
       const src = row && typeof row === 'object' && !Array.isArray(row) ? (row as Record<string, unknown>) : {};
-      return { module: asString(src.module), endpointOrEntity: asString(src.endpointOrEntity) };
+      return {
+        module: asString(src.module),
+        endpointOrEntity: asString(src.endpointOrEntity),
+        enabled: src.enabled !== false,
+      };
     })
     .filter((row) => row.module || row.endpointOrEntity);
   return cleaned.length > 0 ? cleaned : DEFAULT_ACUMATICA_PROGRAMS;
@@ -80,6 +95,12 @@ const acumatica: AccountingSystemModule<AcumaticaSettings, AcumaticaProgram> = {
   tagline: 'Acumatica Cloud ERP — Contract-Based REST API',
   platform: 'ACUMATICA',
   badge: { initials: 'AC', bg: '#0369a1', fg: '#ffffff' },
+  layout: {
+    variant: 'side-by-side',
+    credentialsWidth: '60%',
+    programsWidth: '40%',
+    scheduleAbove: true,
+  },
   capabilities: {
     connect: true,
     disconnect: true,

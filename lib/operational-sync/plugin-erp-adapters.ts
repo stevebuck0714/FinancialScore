@@ -348,7 +348,7 @@ export async function syncAcumaticaConnection(
   const apiPath = settings.contractBasedApiPath || `/entity/${settings.endpointName || 'Default'}/${settings.endpointVersion || '20.200.001'}`;
 
   try {
-    for (const program of programs.filter((row) => row.endpointOrEntity)) {
+    for (const program of programs.filter((row) => row.enabled !== false && row.endpointOrEntity)) {
       const key = program.endpointOrEntity;
       const syncedAt = new Date().toISOString();
       try {

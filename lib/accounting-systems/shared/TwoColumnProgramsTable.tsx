@@ -10,6 +10,7 @@ import React from 'react';
 
 export type TwoColumnProgramRow = Record<string, unknown> & {
   module: string;
+  enabled?: boolean;
 };
 
 export type TwoColumnProgramsTableProps<TRow extends TwoColumnProgramRow> = {
@@ -21,6 +22,7 @@ export type TwoColumnProgramsTableProps<TRow extends TwoColumnProgramRow> = {
   secondLabel: string;
   secondPlaceholder?: string;
   helpText?: string;
+  showEnabledToggle?: boolean;
   disabled?: boolean;
 };
 
@@ -61,6 +63,7 @@ export default function TwoColumnProgramsTable<TRow extends TwoColumnProgramRow>
   secondLabel,
   secondPlaceholder,
   helpText,
+  showEnabledToggle = false,
   disabled,
 }: TwoColumnProgramsTableProps<TRow>) {
   const update = (index: number, patch: Partial<TRow>) => {
@@ -72,7 +75,7 @@ export default function TwoColumnProgramsTable<TRow extends TwoColumnProgramRow>
   };
 
   const add = () => {
-    const blank = { module: '', [secondKey]: '' } as unknown as TRow;
+    const blank = { module: '', [secondKey]: '', ...(showEnabledToggle ? { enabled: true } : {}) } as unknown as TRow;
     onChange([...programs, blank]);
   };
 
@@ -81,6 +84,9 @@ export default function TwoColumnProgramsTable<TRow extends TwoColumnProgramRow>
       onChange(defaults.map((row) => ({ ...row })));
     }
   };
+  const setAllEnabled = (enabled: boolean) => {
+    onChange(programs.map((row) => ({ ...row, enabled })));
+  };
 
   return (
     <div>
@@ -88,7 +94,45 @@ export default function TwoColumnProgramsTable<TRow extends TwoColumnProgramRow>
         <div style={{ fontSize: '12px', color: '#64748b' }}>
           {helpText || 'Add, edit, or remove the data domains this company will sync.'}
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {showEnabledToggle && (
+            <>
+              <button
+                type="button"
+                onClick={() => setAllEnabled(true)}
+                disabled={disabled || programs.length === 0}
+                style={{
+                  padding: '6px 10px',
+                  background: '#fff',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllEnabled(false)}
+                disabled={disabled || programs.length === 0}
+                style={{
+                  padding: '6px 10px',
+                  background: '#fff',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Deselect all
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={resetToDefaults}
@@ -127,24 +171,25 @@ export default function TwoColumnProgramsTable<TRow extends TwoColumnProgramRow>
       </div>
 
       <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '500px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: showEnabledToggle ? '570px' : '500px' }}>
           <thead>
             <tr>
               <th style={cellHeader}>Module</th>
               <th style={cellHeader}>{secondLabel}</th>
+              {showEnabledToggle && <th style={{ ...cellHeader, width: '64px', textAlign: 'center' }}>Selected</th>}
               <th style={{ ...cellHeader, width: '60px' }}></th>
             </tr>
           </thead>
           <tbody>
             {programs.length === 0 && (
               <tr>
-                <td colSpan={3} style={{ ...cellBody, textAlign: 'center', color: '#94a3b8', padding: '16px' }}>
+                <td colSpan={showEnabledToggle ? 4 : 3} style={{ ...cellBody, textAlign: 'center', color: '#94a3b8', padding: '16px' }}>
                   No programs configured. Click <strong>+ Add Program</strong> or <strong>Reset to defaults</strong>.
                 </td>
               </tr>
             )}
             {programs.map((row, idx) => (
-              <tr key={idx}>
+              <tr key={idx} style={{ opacity: showEnabledToggle && row.enabled === false ? 0.55 : 1 }}>
                 <td style={cellBody}>
                   <input
                     type="text"
@@ -165,6 +210,18 @@ export default function TwoColumnProgramsTable<TRow extends TwoColumnProgramRow>
                     disabled={disabled}
                   />
                 </td>
+                {showEnabledToggle && (
+                  <td style={{ ...cellBody, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={row.enabled !== false}
+                      onChange={(e) => update(idx, { enabled: e.target.checked } as Partial<TRow>)}
+                      disabled={disabled}
+                      title={row.enabled !== false ? 'Selected — included in syncs' : 'Deselected — skipped by syncs'}
+                      style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}
+                    />
+                  </td>
+                )}
                 <td style={{ ...cellBody, textAlign: 'center' }}>
                   <button
                     type="button"

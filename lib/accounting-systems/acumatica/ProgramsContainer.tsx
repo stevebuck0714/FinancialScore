@@ -14,7 +14,8 @@ export default function AcumaticaProgramsContainer({ programs, onChange, disable
       secondKey="endpointOrEntity"
       secondLabel="Endpoint / Entity"
       secondPlaceholder="e.g. ARInvoices"
-      helpText="Map each Corelytics data domain to an Acumatica contract-based REST endpoint or entity name."
+      helpText="Map each Corelytics data domain to an Acumatica contract-based REST endpoint or entity name. Selected rows are included in syncs; endpoint availability can vary by tenant customization."
+      showEnabledToggle
       disabled={disabled}
     />
   );
