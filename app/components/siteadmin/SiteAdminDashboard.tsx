@@ -6987,6 +6987,7 @@ export default function SiteAdminDashboard(props: any) {
           targetMonth: month,
           mode: 'single',
           dailyOnly: true,
+          realignAccounts: index === rebuildMonths.length - 1,
         }),
       });
       const raw = await response.text();

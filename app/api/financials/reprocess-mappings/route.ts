@@ -3267,6 +3267,29 @@ export async function POST(request: NextRequest) {
             error: qbdPublishResult.error || null,
           };
         }
+        // Account-level realignment and the real-estate mirror cover every
+        // date, so the client requests them once, on the last month of a range.
+        if (body?.realignAccounts === true) {
+          if (qbdDomainScope.canUpdateBalanceSheet && !isBakersCompany(String(companyId))) {
+            try {
+              qbdDiagnostics.dailyBalanceSheetAccountRealign = await realignQbdDailyBalanceSheetsToAccounts(
+                String(companyId),
+                QBD_DAILY_FINANCIAL_SOURCE,
+              );
+              qbdDiagnostics.monthlyBalanceSheetAccountRealign = await realignQbdMonthlyBalanceSheetsToAccounts(
+                String(companyId),
+                formatEstDate(),
+              );
+            } catch (error) {
+              qbdDiagnostics.dailyBalanceSheetAccountRealign = { error: error instanceof Error ? error.message : String(error) };
+            }
+          }
+          try {
+            qbdDiagnostics.realEstateFinancialLines = await syncQbdAccountLinesToRealEstate(String(companyId));
+          } catch (error) {
+            qbdDiagnostics.realEstateFinancialLines = { error: error instanceof Error ? error.message : String(error) };
+          }
+        }
         return NextResponse.json({
           success: qbdPublishResult?.success ?? true,
           ok: qbdPublishResult?.success ?? true,
