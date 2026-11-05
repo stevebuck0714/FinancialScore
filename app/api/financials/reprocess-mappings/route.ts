@@ -766,6 +766,17 @@ function qbdReportAccountName(record: Record<string, unknown>): string {
     qbdReportColValue(record, '1');
 }
 
+// QBD labels parent-account subtotal rows ("Total 15000 · Land") with
+// rowType "account" and rowKind "SubtotalRow". Only DataRows are leaf balances;
+// counting subtotals double-counts every parent account that has children.
+function qbdIsBalanceSheetAccountRow(record: Record<string, unknown>): boolean {
+  const rowType = qbdString(record.rowType).toLowerCase();
+  const rowKind = qbdString(record.rowKind);
+  if (rowType && rowType !== 'account') return false;
+  if (!rowType) return rowKind === 'DataRow';
+  return !rowKind || rowKind === 'DataRow';
+}
+
 // QBD Balance Sheet reports carry current-year earnings as a computed
 // "Net Income" DataRow with no rowType. It is not a chart-of-accounts entry,
 // so it never resolves through account mappings and must land in equity.
@@ -1568,10 +1579,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
   const accountBalancesAtReportDate = new Map<string, { accountId: string; accountName: string; balance: number }>();
   if (balanceSheetAnchor) {
     for (const reportRow of balanceSheetReportRows) {
-      const rowType = qbdString(reportRow.rowType).toLowerCase();
-      const rowKind = qbdString(reportRow.rowKind);
-      if (rowType && rowType !== 'account') continue;
-      if (!rowType && rowKind !== 'DataRow') continue;
+      if (!qbdIsBalanceSheetAccountRow(reportRow)) continue;
       const accountName = qbdReportAccountName(reportRow);
       const target = qbdBalanceSheetReportRowTarget(reportRow, getTarget);
       const amount = qbdReportAmount(reportRow);
@@ -1847,10 +1855,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       dailyRow[field] = 0;
     }
     for (const reportRow of report.rows) {
-      const rowType = qbdString(reportRow.rowType).toLowerCase();
-      const rowKind = qbdString(reportRow.rowKind);
-      if (rowType && rowType !== 'account') continue;
-      if (!rowType && rowKind !== 'DataRow') continue;
+      if (!qbdIsBalanceSheetAccountRow(reportRow)) continue;
       qbdApplyBalance(
         dailyRow,
         qbdBalanceSheetReportRowTarget(reportRow, getTarget),
@@ -2390,10 +2395,7 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
   const reportSnap = reportDate ? createQbdMappedDailySnapshot(reportDate) : null;
   if (reportSnap) {
     for (const reportRow of balanceSheetReportRows) {
-      const rowType = qbdString(reportRow.rowType).toLowerCase();
-      const rowKind = qbdString(reportRow.rowKind);
-      if (rowType && rowType !== 'account') continue;
-      if (!rowType && rowKind !== 'DataRow') continue;
+      if (!qbdIsBalanceSheetAccountRow(reportRow)) continue;
       qbdApplyBalance(
         reportSnap,
         qbdBalanceSheetReportRowTarget(reportRow, getTarget),
@@ -2544,10 +2546,7 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
     if (isBakersCompany(companyId) && !isEstBusinessDay(report.reportDate)) continue;
     const row = createQbdMappedDailySnapshot(report.reportDate);
     for (const reportRow of report.rows) {
-      const rowType = qbdString(reportRow.rowType).toLowerCase();
-      const rowKind = qbdString(reportRow.rowKind);
-      if (rowType && rowType !== 'account') continue;
-      if (!rowType && rowKind !== 'DataRow') continue;
+      if (!qbdIsBalanceSheetAccountRow(reportRow)) continue;
       qbdApplyBalance(
         row,
         qbdBalanceSheetReportRowTarget(reportRow, getTarget),
