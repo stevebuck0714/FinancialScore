@@ -2,7 +2,7 @@
 <QBWCXML>
   <AppName>Corelytics Data Connector</AppName>
   <AppID></AppID>
-  <AppURL>https://api.corelytics.com/qbdesktop/service.asmx</AppURL>
+  <AppURL>https://dashboard.corelytics.com/qbdesktop/service.asmx</AppURL>
   <AppDescription>Corelytics QuickBooks Desktop integration (read-only sync)</AppDescription>
   <AppSupport>https://dashboard.corelytics.com/support</AppSupport>
   <UserName>qbwc_cmq6pjenb_prod</UserName>
