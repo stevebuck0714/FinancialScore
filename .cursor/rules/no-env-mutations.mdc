@@ -1,0 +1,26 @@
+---
+description: Never change environment variables unless the user explicitly asks
+alwaysApply: true
+---
+
+# Environment variables are user-owned
+
+Agents must **never** create, edit, delete, rename, sync, or push environment variables unless the user explicitly asks for that exact change in the current message.
+
+## Forbidden without an explicit user request
+
+- Editing `.env`, `.env.local`, `.env.production`, `.env.*.local`, or any env file
+- Running `vercel env add`, `vercel env rm`, `vercel env pull` that overwrites local env files, or any CLI/API that mutates Vercel/GitHub/hosting env
+- Changing model names, API keys, database URLs, secrets, or feature flags in env
+- Copying Cursor/agent model slugs (for example `gpt-5-codex`) into app env vars such as `OPENAI_MODEL`
+- "Fixing" production by silently updating env values
+
+## Allowed
+
+- **Reading** env var **names** for diagnosis
+- Telling the user which key to change and the exact value to set
+- Editing env only when the user clearly requests it (e.g. "set OPENAI_MODEL to gpt-4o in Vercel")
+
+## If an AI outage looks env-related
+
+Stop. Report the suspected key and recommended value. Do not apply the change yourself unless asked.
