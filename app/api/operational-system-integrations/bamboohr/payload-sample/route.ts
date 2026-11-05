@@ -9,6 +9,7 @@ import {
   type BambooHrSettings,
   defaultBambooHrSettings,
   fetchBambooHrJson,
+  postBambooHrJson,
   sanitizeBambooHrSettings,
   summarizeBambooHrJson,
 } from '@/lib/bamboohr';
@@ -17,6 +18,13 @@ import { formatEstDate } from '@/lib/time/eastern';
 export const dynamic = 'force-dynamic';
 
 const SAMPLE_LIMIT = 5;
+const WORKFORCE_BENEFIT_FIELDS = [
+  'id', 'status', 'hireDate', 'terminationDate', '4314',
+  '5030', '5030.2', '5030.3', '5030.4', '5033', '5033.2', '5033.3', '5033.4',
+  '4416', '4416.2', '4416.3', '4416.4', '4460', '4460.2', '4460.3', '4460.4',
+  '4413', '4413.3', '4413.4', '4414', '4414.3', '4414.4',
+];
+const WORKFORCE_BENEFIT_STATUS_FIELDS = ['5030', '5033', '4416', '4460', '4413', '4414', '4539', '4540'];
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -91,6 +99,15 @@ function readEmployees(json: unknown): Record<string, unknown>[] {
     : [];
 }
 
+function summarizeCustomReport(json: unknown, fields: string[]) {
+  const rows = readEmployees(json);
+  return {
+    rowCount: rows.length,
+    fieldCoverage: coverage(rows, fields),
+    fieldValues: Object.fromEntries(fields.map((field) => [field, uniqueValues(rows, field, 20)])),
+  };
+}
+
 function sampleArray(json: unknown): unknown[] {
   return Array.isArray(json) ? json.slice(0, SAMPLE_LIMIT) : [];
 }
@@ -153,13 +170,13 @@ function fieldMatchesKeywords(row: Record<string, unknown>, keywords: string[]):
   return keywords.some((keyword) => haystack.includes(keyword));
 }
 
-function extractMetadataFieldMatches(fieldsJson: unknown, keywords: string[]): Record<string, unknown>[] {
+function extractMetadataFieldMatches(fieldsJson: unknown, keywords: string[], limit = 80): Record<string, unknown>[] {
   const rows = Array.isArray(fieldsJson)
     ? fieldsJson.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object' && !Array.isArray(row))
     : [];
   return rows
     .filter((row) => fieldMatchesKeywords(row, keywords))
-    .slice(0, 80)
+    .slice(0, limit)
     .map((row) => ({
       id: row.id ?? null,
       name: row.name ?? null,
@@ -361,6 +378,12 @@ export async function POST(request: NextRequest) {
     const employees = readEmployees(directory.json);
     const fields = await fetchBambooHrJson(settings, 'meta/fields').catch((error) => ({ error }));
     const tables = await fetchBambooHrJson(settings, 'meta/tables').catch((error) => ({ error }));
+    const workforceBenefits = await postBambooHrJson(
+      settings,
+      'reports/custom',
+      { title: 'Corelytics Workforce Benefits Probe', fields: WORKFORCE_BENEFIT_FIELDS },
+      { format: 'JSON' }
+    ).catch((error) => ({ error }));
     const timeOffTypes = await fetchBambooHrJson(settings, 'meta/time_off/types').catch((error) => ({ error }));
     const today = formatEstDate();
     const start = settings.initialSyncStartDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -374,6 +397,12 @@ export async function POST(request: NextRequest) {
       employeeProjectPayRates: await sampleEmployeeTable(settings, employees, 'employeeProjectPayRates', limit),
     };
     const employeeDetailFields = await sampleEmployeeDetailFields(settings, employees, ['customBillRateLevel'], limit);
+    const workforceBenefitDetailFields = await sampleEmployeeDetailFields(
+      settings,
+      employees,
+      WORKFORCE_BENEFIT_STATUS_FIELDS,
+      limit
+    );
     const commercialKeywords = [
       'bill',
       'billing',
@@ -393,6 +422,18 @@ export async function POST(request: NextRequest) {
       'salary',
       'hour',
       'hourly',
+    ];
+    const benefitKeywords = [
+      'medical',
+      'health',
+      'anthem',
+      'hsa',
+      '401(k)',
+      '401k',
+      'retirement',
+      'coverage',
+      'company pays',
+      'employee pays',
     ];
 
     return NextResponse.json({
@@ -430,8 +471,13 @@ export async function POST(request: NextRequest) {
               summary: summarizeBambooHrJson(fields.json),
               sample: sampleArray(fields.json),
               commercialFieldMatches: extractMetadataFieldMatches(fields.json, commercialKeywords),
+              benefitFieldMatches: extractMetadataFieldMatches(fields.json, benefitKeywords, 300),
             }
           : { error: fields.error instanceof Error ? fields.error.message : 'Failed to fetch fields metadata' },
+      workforceBenefits:
+        'json' in workforceBenefits
+          ? summarizeCustomReport(workforceBenefits.json, WORKFORCE_BENEFIT_FIELDS)
+          : { error: workforceBenefits.error instanceof Error ? workforceBenefits.error.message : 'Failed to fetch workforce benefit fields' },
       tables:
         'json' in tables
           ? {
@@ -483,6 +529,7 @@ export async function POST(request: NextRequest) {
             },
       employeeTables,
       employeeDetailFields,
+      workforceBenefitDetailFields,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to sample BambooHR payloads';
