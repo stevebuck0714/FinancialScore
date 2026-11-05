@@ -6,6 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensureRealEstateAccountMappingTable } from '@/lib/real-estate/account-mapping-table';
 import { ensureRealEstateWaterfallTables } from '@/lib/real-estate/waterfall-tables';
 import { normalizeName } from '@/lib/real-estate/cash-flow-report';
+import { ensureRealEstateTaxReconciliationTables } from '@/lib/real-estate/tax-reconciliation-tables';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,7 +87,8 @@ export async function GET(request: NextRequest) {
   try {
     await ensureTables();
     await ensureRealEstateWaterfallTables();
-    const [lines, investors, occupancy, cashActivities, operationalMetrics, mappings, settingsRows, aliases] = await Promise.all([
+    await ensureRealEstateTaxReconciliationTables();
+    const [lines, investors, occupancy, cashActivities, operationalMetrics, mappings, settingsRows, aliases, taxReturns, taxDepreciationRecords] = await Promise.all([
       prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateFinancialLine" WHERE "companyId"=$1 ORDER BY "periodEnd", "accountCode"`, companyId),
       prisma.$queryRawUnsafe<any[]>(`
         SELECT i.*, COALESCE(jsonb_agg(jsonb_build_object('entryType',e."entryType",'amount',e."amount",'effectiveDate',e."effectiveDate") ORDER BY e."effectiveDate") FILTER (WHERE e.id IS NOT NULL), '[]') AS entries
@@ -104,9 +106,25 @@ export async function GET(request: NextRequest) {
         companyId,
       ),
       prisma.$queryRawUnsafe<any[]>(`SELECT "alias", "investorId" FROM "RealEstateInvestorAlias" WHERE "companyId"=$1`, companyId),
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "taxYear", "filingStatus", "sourceDocument", "sourceReference", "coverageStatus", "notes"
+         FROM "RealEstateTaxReturn" WHERE "companyId"=$1 ORDER BY "taxYear"`,
+        companyId,
+      ),
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "taxYear", "assetReference", "taxTreatment", "taxBasis"::float AS "taxBasis",
+          to_char("placedInServiceDate", 'YYYY-MM-DD') AS "placedInServiceDate",
+          "recoveryPeriodYears"::float AS "recoveryPeriodYears", "convention", "method",
+          "deduction"::float AS "deduction", "sourceReference", "confidence", "matchStatus", "notes"
+         FROM "RealEstateTaxDepreciationRecord" WHERE "companyId"=$1 ORDER BY "taxYear", "assetReference"`,
+        companyId,
+      ),
     ]);
     const waterfallSettings = settingsRows[0] || { stabilizationDate: null, preferredReturnRate: 6 };
-    return NextResponse.json({ lines, investors, occupancy, cashActivities, operationalMetrics, mappings, waterfallSettings, aliases });
+    return NextResponse.json({
+      lines, investors, occupancy, cashActivities, operationalMetrics, mappings, waterfallSettings, aliases,
+      taxReturns, taxDepreciationRecords,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: 'Failed to load real-estate operations', details: String(error?.message || error) }, { status: 500 });
   }

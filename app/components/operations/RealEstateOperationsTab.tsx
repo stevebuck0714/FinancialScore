@@ -7,6 +7,7 @@ import PropertyIncomeStatementTable from '@/app/components/financial/PropertyInc
 import PropertyBalanceSheetTable from '@/app/components/financial/PropertyBalanceSheetTable';
 import StatementTrendPopup from '@/app/components/financial/StatementTrendPopup';
 import RealEstateWaterfallPanel from '@/app/components/operations/RealEstateWaterfallPanel';
+import QbdInvestorActivityPanel from '@/app/components/operations/QbdInvestorActivityPanel';
 import ReportPlaceholder from '@/app/components/operations/ReportPlaceholder';
 import { useTableSort } from '@/app/components/operations/useTableSort';
 import { computeWaterfall, type WaterfallEntry, type WaterfallInvestor, type WaterfallSettings } from '@/lib/real-estate/waterfall';
@@ -43,7 +44,7 @@ const monthEnd = (month: string) => {
 
 export default function RealEstateOperationsTab({ selectedCompanyId, mode, operationalHubSections }: Props) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
-  const [data, setData] = useState<{ lines: any[]; investors: any[]; occupancy: any[]; cashActivities: any[]; operationalMetrics: any[]; mappings?: any[]; waterfallSettings?: WaterfallSettings; aliases?: Array<{ alias: string; investorId: string }> }>({ lines: [], investors: [], occupancy: [], cashActivities: [], operationalMetrics: [], mappings: [] });
+  const [data, setData] = useState<{ lines: any[]; investors: any[]; occupancy: any[]; cashActivities: any[]; operationalMetrics: any[]; mappings?: any[]; waterfallSettings?: WaterfallSettings; aliases?: Array<{ alias: string; investorId: string }>; taxReturns?: any[]; taxDepreciationRecords?: any[] }>({ lines: [], investors: [], occupancy: [], cashActivities: [], operationalMetrics: [], mappings: [], taxReturns: [], taxDepreciationRecords: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [entityView, setEntityView] = useState<'statement' | 'balance'>('statement');
   const [propertyTypeFilter, setPropertyTypeFilter] = useState<PropertyTypeFilter>('all');
@@ -280,6 +281,35 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     return byColumn;
   }, [entitySelectedMonths, entityMonthToColumn]);
   const reportEnabled = (key: string) => operationalHubSections?.[key] !== false;
+  const taxReconciliationRows = useMemo(() => (data.taxReturns || []).map((taxReturn) => {
+    const year = Number(taxReturn.taxYear);
+    const yearPrefix = `${year}-`;
+    const allYearLines = data.lines.filter((line) => String(line.periodEnd).startsWith(yearPrefix));
+    const qbdLines = allYearLines.filter((line) => line.sourceEntity === 'QBD');
+    // Prefer QBD after it is connected so historical SLN imports are not double-counted.
+    const bookLines = qbdLines.length ? qbdLines : allYearLines;
+    const bookDepreciation = bookLines
+      .filter((line) => String(line.reportType).toUpperCase() === 'ACTIVITY' && /depreciation|amortization/i.test(String(line.accountName)))
+      .reduce((total, line) => total + Math.abs(Number(line.amount || 0)), 0);
+    const taxRecords = (data.taxDepreciationRecords || []).filter((record) => Number(record.taxYear) === year);
+    const taxDeduction = taxRecords.reduce((total, record) => total + Number(record.deduction || 0), 0);
+    const latestBalance = bookLines
+      .filter((line) => String(line.reportType).toUpperCase() === 'BALANCE')
+      .sort((left, right) => String(right.periodEnd).localeCompare(String(left.periodEnd)))
+      .find((line) => /fixed asset/i.test(String(line.accountType)) || /fixed asset/i.test(String(line.accountName)));
+    return {
+      year,
+      sourceDocument: String(taxReturn.sourceDocument || ''),
+      taxCoverage: String(taxReturn.coverageStatus || 'PARTIAL'),
+      taxNotes: String(taxReturn.notes || ''),
+      taxDeduction,
+      taxRecordCount: taxRecords.length,
+      bookDepreciation,
+      bookFixedAssets: latestBalance ? Number(latestBalance.amount || 0) : null,
+      bookSource: qbdLines.length ? 'QuickBooks Desktop' : bookLines.length ? 'Imported book financials' : 'Not loaded',
+      variance: bookDepreciation > 0 && taxDeduction > 0 ? bookDepreciation - taxDeduction : null,
+    };
+  }), [data.lines, data.taxDepreciationRecords, data.taxReturns]);
 
   const propertyMonths = useMemo(() => {
     const latest = months[months.length - 1] || '';
@@ -359,11 +389,50 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
       {entityView === 'balance' && (entityColumns.length
         ? <PropertyBalanceSheetTable lines={data.lines} scope={entityScope} columns={entityColumns} balanceMonthByColumn={entityBalanceMonthByColumn} />
         : <div style={{ ...card, color: '#64748b' }}>No balance sheet data is available for this entity and period.</div>)}
-      {reportEnabled('entityBookToTaxReconciliation') && <ReportPlaceholder
-        title="Book-to-Tax Reconciliation"
-        description="GAAP book income, depreciation, and member capital compared with the filed partnership returns, with each difference explained."
-        needs={['Annual GAAP book income for 2022 to date (QuickBooks general ledger)', 'Tax depreciation schedules from the 2022-2025 returns', 'Fixed asset in-service dates and lives in Construction & Fixed Assets']}
-      />}
+      {reportEnabled('entityBookToTaxReconciliation') && <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Book-to-Tax Reconciliation</h3>
+            <p style={{ color: '#475569', margin: '6px 0 0', fontSize: 13 }}>Preliminary comparison of book depreciation with reviewed Form 4562 records. Tax methods are not inferred from book depreciation.</p>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 999, padding: '3px 9px', textTransform: 'uppercase' }}>Preliminary</span>
+        </div>
+        <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
+            <thead><tr><th style={th}>Tax year</th><th style={th}>Tax coverage</th><th style={{ ...th, textAlign: 'right' }}>Verified tax deduction</th><th style={{ ...th, textAlign: 'right' }}>Book depreciation</th><th style={{ ...th, textAlign: 'right' }}>Difference</th><th style={{ ...th, textAlign: 'right' }}>Book fixed assets</th><th style={th}>Book source</th></tr></thead>
+            <tbody>{taxReconciliationRows.map((row) => <tr key={row.year}>
+              <td style={{ ...td, fontWeight: 700 }}>{row.year}</td>
+              <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: row.taxCoverage === 'PRE_SERVICE' ? '#475569' : '#166534', background: row.taxCoverage === 'PRE_SERVICE' ? '#f1f5f9' : '#ecfdf5', borderRadius: 999, padding: '3px 7px' }}>{row.taxCoverage.replace(/_/g, ' ')}</span></td>
+              <td style={{ ...td, textAlign: 'right' }}>{row.taxRecordCount ? fmt(row.taxDeduction) : '—'}</td>
+              <td style={{ ...td, textAlign: 'right' }}>{row.bookDepreciation ? fmt(row.bookDepreciation) : '—'}</td>
+              <td style={{ ...td, textAlign: 'right', color: row.variance === null ? '#64748b' : Math.abs(row.variance) < 1 ? '#166534' : '#92400e' }}>{row.variance === null ? 'Needs both sources' : fmt(row.variance)}</td>
+              <td style={{ ...td, textAlign: 'right' }}>{row.bookFixedAssets === null ? '—' : fmt(row.bookFixedAssets)}</td>
+              <td style={td}>{row.bookSource}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        {!taxReconciliationRows.length && <p style={{ color: '#64748b', marginBottom: 0 }}>Tax-return facts have not been imported for this company.</p>}
+        <div style={{ display: 'grid', gap: 6, marginTop: 14, fontSize: 12, color: '#64748b' }}>
+          {taxReconciliationRows.map((row) => <div key={`${row.year}-source`}><strong style={{ color: '#475569' }}>{row.year}:</strong> {row.sourceDocument} · {row.taxNotes}</div>)}
+          <div><strong style={{ color: '#475569' }}>Open items:</strong> 2022–2023 year-end book records, the CPA fixed-asset/cost-segregation schedule, and confirmation that the 2025 return is final.</div>
+        </div>
+        <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Verified tax depreciation and amortization records</h4>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
+            <thead><tr><th style={th}>Year</th><th style={th}>Tax asset / treatment</th><th style={{ ...th, textAlign: 'right' }}>Tax basis</th><th style={th}>Recovery</th><th style={th}>Convention</th><th style={th}>Method</th><th style={{ ...th, textAlign: 'right' }}>Deduction</th><th style={th}>Match status</th></tr></thead>
+            <tbody>{(data.taxDepreciationRecords || []).map((record) => <tr key={`${record.taxYear}-${record.assetReference}-${record.taxTreatment}`}>
+              <td style={td}>{record.taxYear}</td>
+              <td style={{ ...td, fontWeight: 700 }}>{record.assetReference}<div style={{ marginTop: 3, color: '#64748b', fontSize: 11 }}>{String(record.taxTreatment || '').toLowerCase()}</div></td>
+              <td style={{ ...td, textAlign: 'right' }}>{fmt(record.taxBasis)}</td>
+              <td style={td}>{record.recoveryPeriodYears ? `${record.recoveryPeriodYears} years` : '—'}</td>
+              <td style={td}>{record.convention || '—'}</td>
+              <td style={td}>{record.method || '—'}</td>
+              <td style={{ ...td, textAlign: 'right' }}>{fmt(record.deduction)}</td>
+              <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: '#92400e' }}>{String(record.matchStatus || 'UNMATCHED').replace(/_/g, ' ')}</span></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>}
       {reportEnabled('entityBooksIntegrityExceptions') && <ReportPlaceholder
         title="Books Integrity Exceptions"
         description="Out-of-balance balance sheets by entity and month, unmapped accounts, and BGAH / SLN intercompany differences that need correcting before the books are combined."
@@ -398,10 +467,28 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
               evenUp: waterfall.ready && balance && !balance.isLandContributor ? balance.evenUpUnpaid : null,
             };
           }), (row, key) => key === 'name' ? row.investor.legalName : key === 'group' ? row.investor.memberGroup : key === 'ownership' ? Number(row.investor.ownershipPercentage || 0) : (row as any)[key]).slice(0, expandedTables.investors ? undefined : 12).map(({ investor, contribution, distribution, allocation, preferred, evenUp }) => <tr key={investor.id}><td style={{ ...td, fontWeight: 700 }}>{investor.legalName}</td><td style={td}>{investor.memberGroup || '-'}</td><td style={{ ...td, textAlign: 'right' }}>{investor.ownershipPercentage == null ? '-' : `${Number(investor.ownershipPercentage).toFixed(2)}%`}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(contribution)}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(distribution)}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(allocation)}</td><td style={{ ...td, textAlign: 'right' }}>{preferred === null ? '-' : fmt(preferred)}</td><td style={{ ...td, textAlign: 'right' }}>{evenUp === null ? '-' : fmt(evenUp)}</td></tr>)}</tbody>
+          {data.investors.length > 0 && (() => {
+            const totals = data.investors.reduce((acc: { ownership: number; contribution: number; distribution: number; allocation: number; preferred: number; evenUp: number }, investor: any) => {
+              const entries = Array.isArray(investor.entries) ? investor.entries : [];
+              const sum = (type: string) => entries.filter((entry: any) => entry.entryType === type).reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0);
+              const balance = waterfallBalanceById.get(investor.id);
+              return {
+                ownership: acc.ownership + Number(investor.ownershipPercentage || 0),
+                contribution: acc.contribution + sum('CONTRIBUTION') + sum('DEEMED_CONTRIBUTION'),
+                distribution: acc.distribution + sum('DISTRIBUTION'),
+                allocation: acc.allocation + sum('ALLOCATION'),
+                preferred: acc.preferred + (waterfall.ready && balance?.isLandContributor ? balance.preferredReturnUnpaid : 0),
+                evenUp: acc.evenUp + (waterfall.ready && balance && !balance.isLandContributor ? balance.evenUpUnpaid : 0),
+              };
+            }, { ownership: 0, contribution: 0, distribution: 0, allocation: 0, preferred: 0, evenUp: 0 });
+            const totalCell = { ...td, textAlign: 'right' as const, fontWeight: 800 };
+            return <tfoot><tr style={{ background: '#f8fafc' }}><td style={{ ...td, fontWeight: 800 }}>Total</td><td style={td} /><td style={totalCell}>{`${totals.ownership.toFixed(2)}%`}</td><td style={totalCell}>{fmt(totals.contribution)}</td><td style={totalCell}>{fmt(totals.distribution)}</td><td style={totalCell}>{fmt(totals.allocation)}</td><td style={totalCell}>{waterfall.ready ? fmt(totals.preferred) : '-'}</td><td style={totalCell}>{waterfall.ready ? fmt(totals.evenUp) : '-'}</td></tr></tfoot>;
+          })()}
         </table>
         {tableToggle('investors', data.investors.length)}
         {!data.investors.length && <div style={{ padding: 18, color: '#64748b' }}>Import or add the member ledger to populate investor balances.</div>}
       </div>}
+      {reportEnabled('investorCapitalRollforward') && <QbdInvestorActivityPanel companyId={selectedCompanyId} investors={data.investors} fmt={fmt} />}
       <RealEstateWaterfallPanel
         key={`${selectedCompanyId}-${waterfallSettings.stabilizationDate || ''}-${waterfallSettings.preferredReturnRate}`}
         companyId={selectedCompanyId}

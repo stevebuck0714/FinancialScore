@@ -5,6 +5,7 @@ import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/a
 import { extractQuickBooksDesktopCustomerMaster } from '@/lib/quickbooks-desktop/customer-master-seed';
 import { loadQuickBooksDesktopBackfillPayloads } from '@/lib/quickbooks-desktop/backfill-payloads';
 import { getQuickBooksDesktopVariant, isQuickBooksDesktopFamily } from '@/lib/quickbooks-desktop/family';
+import { syncQbdMonthlyFinancialsToRealEstateLines } from '@/lib/real-estate/qbd-financial-adapter';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 type FinancialImportMode = 'through' | 'only';
@@ -261,6 +262,9 @@ export async function POST(request: NextRequest) {
       targetMonth: targetMonth || undefined,
       mode,
     });
+    const realEstateMirror = result.ok
+      ? await syncQbdMonthlyFinancialsToRealEstateLines(companyId, result.monthsTouched)
+      : { mirrored: 0 };
 
     return NextResponse.json(
       {
@@ -272,6 +276,7 @@ export async function POST(request: NextRequest) {
         mode,
         accountMappingSeed: seedSummary,
         accountMappingSeedWarning: seedWarning,
+        realEstateFinancialLinesMirrored: realEstateMirror.mirrored,
         ...result,
       },
       { status: result.status },

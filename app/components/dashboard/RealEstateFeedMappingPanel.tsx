@@ -151,6 +151,7 @@ export default function RealEstateFeedMappingPanel({ companyId, industrySectorCa
               mappings={mappings}
               linesOfBusiness={[]}
               industrySectorCategory={industrySectorCategory}
+              includeSectorStatementLines
               onMappingChange={(index, updates) => {
                 setMappings((current) => {
                   const next = [...current];

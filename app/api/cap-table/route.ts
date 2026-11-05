@@ -61,9 +61,18 @@ function reportAmount(record: Record<string, unknown>): number {
   return number(colData[colData.length - 1]?.value);
 }
 
+function accountPath(fullName: string): string[] {
+  return fullName.split(':').map((part) => part.trim()).filter(Boolean);
+}
+
+/**
+ * Member capital accounts are `<Equity group>:<Member>[:Contributions|Distributions[:<detail>]]`,
+ * so the holder is the member segment, not the leaf ("Member Contributions").
+ */
 function holderName(fullName: string): string {
-  const leaf = fullName.split(':').pop() || fullName;
-  return leaf
+  const parts = accountPath(fullName);
+  const memberSegment = parts.length >= 2 ? parts[1] : parts[0] || fullName;
+  return memberSegment
     .replace(/^Capital\s*-\s*/i, '')
     .replace(/^Capital Draws\s*-\s*/i, '')
     .trim() || fullName;
@@ -78,7 +87,46 @@ function holderKey(fullName: string): string {
 }
 
 function isDrawAccount(accountName: string): boolean {
-  return /^capital draws\s*-/i.test((accountName.split(':').pop() || accountName).trim());
+  const parts = accountPath(accountName);
+  if (/^capital draws\s*-/i.test(parts[parts.length - 1] || accountName.trim())) return true;
+  return parts.slice(2).some((part) => /distribut|\bdraws?\b/i.test(part));
+}
+
+type CapTableHolding = {
+  holder: string;
+  accountName: string;
+  accountCode: string | null;
+  security: string;
+  targetField: string;
+  balance: number;
+  issuedDate: string | null;
+  activity: EquityActivity[];
+};
+
+/** Combines a member's sub-accounts (e.g. Contributions and Member Contributions) into one holding per security. */
+function mergeHoldingsByHolder(holdings: CapTableHolding[]): CapTableHolding[] {
+  const merged = new Map<string, CapTableHolding & { accountCount: number }>();
+  for (const holding of holdings) {
+    const key = `${holderKey(holding.accountName)}|${holding.targetField}`;
+    const current = merged.get(key);
+    if (!current) {
+      merged.set(key, { ...holding, activity: [...holding.activity], accountCount: 1 });
+      continue;
+    }
+    const parts = accountPath(holding.accountName);
+    current.balance += holding.balance;
+    current.activity.push(...holding.activity);
+    current.accountCount += 1;
+    current.accountName = parts.length >= 2 ? parts.slice(0, 2).join(':') : current.accountName;
+    current.accountCode = current.accountCode || holding.accountCode;
+    if (holding.issuedDate && (!current.issuedDate || holding.issuedDate < current.issuedDate)) {
+      current.issuedDate = holding.issuedDate;
+    }
+  }
+  return Array.from(merged.values()).map(({ accountCount, ...holding }) => ({
+    ...holding,
+    activity: accountCount > 1 ? holding.activity.sort((a, b) => a.txnDate.localeCompare(b.txnDate)) : holding.activity,
+  }));
 }
 
 function isMappedCapTableHolder(mapped: { targetField: string; accountName: string }): boolean {
@@ -185,36 +233,39 @@ async function saveCapTableInputs(companyId: string, inputs: CapTableInputs) {
   `;
 }
 
-async function loadEquityActivityByAccount(companyId: string) {
-  const rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
-    SELECT "payload"
-    FROM "QuickBooksDesktopBackfillPage"
-    WHERE "companyId" = ${companyId}
-      AND "requestName" = 'GeneralDetailReportQuery'
-    ORDER BY "createdAt" ASC, "pageNumber" ASC
-  `;
+async function loadEquityActivityByAccount(companyId: string, equityAccountNames: string[]) {
   const byAccount = new Map<string, EquityActivity[]>();
-  for (const page of rows) {
-    const records = Array.isArray(page.payload) ? page.payload.map(asRecord) : [];
-    for (const record of records) {
-      if (text(record.rowKind) !== 'DataRow') continue;
-      const accountName = text(record.accountName || record.rowValue);
-      const txnDate = dateKey(reportColValue(record, '3'));
-      const amount = number(reportColValue(record, '8'));
-      if (!accountName || !txnDate || Math.abs(amount) < 0.005) continue;
-      const key = accountName.toLowerCase();
-      const activity = byAccount.get(key) || [];
-      activity.push({
-        txnDate,
-        txnType: reportColValue(record, '2'),
-        refNo: reportColValue(record, '4'),
-        name: reportColValue(record, '5'),
-        splitAccount: reportColValue(record, '7'),
-        amount,
-        balance: number(reportColValue(record, '9')),
-      });
-      byAccount.set(key, activity);
-    }
+  if (equityAccountNames.length === 0) return byAccount;
+  const rows = await prisma.$queryRaw<Array<{ record: unknown }>>`
+    SELECT row_record AS "record"
+    FROM "QuickBooksDesktopBackfillPage" page
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE WHEN jsonb_typeof(page."payload") = 'array' THEN page."payload" ELSE '[]'::jsonb END
+    ) AS row_record
+    WHERE page."companyId" = ${companyId}
+      AND page."requestName" = 'GeneralDetailReportQuery'
+      AND row_record->>'rowKind' = 'DataRow'
+      AND lower(btrim(COALESCE(NULLIF(row_record->>'accountName', ''), row_record->>'rowValue', ''))) = ANY(${equityAccountNames})
+    ORDER BY page."createdAt" ASC, page."pageNumber" ASC
+  `;
+  for (const row of rows) {
+    const record = asRecord(row.record);
+    const accountName = text(record.accountName || record.rowValue);
+    const txnDate = dateKey(reportColValue(record, '3'));
+    const amount = number(reportColValue(record, '8'));
+    if (!accountName || !txnDate || Math.abs(amount) < 0.005) continue;
+    const key = accountName.toLowerCase();
+    const activity = byAccount.get(key) || [];
+    activity.push({
+      txnDate,
+      txnType: reportColValue(record, '2'),
+      refNo: reportColValue(record, '4'),
+      name: reportColValue(record, '5'),
+      splitAccount: reportColValue(record, '7'),
+      amount,
+      balance: number(reportColValue(record, '9')),
+    });
+    byAccount.set(key, activity);
   }
   for (const [key, activity] of byAccount.entries()) {
     activity.sort((a, b) => a.txnDate.localeCompare(b.txnDate));
@@ -236,45 +287,70 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const [mappings, pages, balanceSheetPages, trialBalancePages, equityActivityByAccount, savedInputs] = await Promise.all([
-    prisma.accountMapping.findMany({
-      where: {
-        companyId,
-        OR: [
-          { targetField: { in: Array.from(EQUITY_TARGETS) } },
-          { accountClassification: { contains: 'Equity', mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        accountId: true,
-        accountName: true,
-        accountCode: true,
-        accountClassification: true,
-        targetField: true,
-      },
-    }),
-    prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date }>>`
-      SELECT "payload", "createdAt"
-      FROM "QuickBooksDesktopBackfillPage"
-      WHERE "companyId" = ${companyId}
-        AND "requestName" = 'AccountQuery'
-      ORDER BY "createdAt" DESC, "pageNumber" ASC
-    `,
-    prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date }>>`
-      SELECT "payload", "createdAt"
-      FROM "QuickBooksDesktopBackfillPage"
-      WHERE "companyId" = ${companyId}
-        AND "requestName" = 'BalanceSheetStandardReportQuery'
-      ORDER BY "createdAt" DESC, "pageNumber" ASC
-    `,
-    prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date }>>`
-      SELECT "payload", "createdAt"
-      FROM "QuickBooksDesktopBackfillPage"
-      WHERE "companyId" = ${companyId}
-        AND "requestName" = 'TrialBalanceReportQuery'
-      ORDER BY "createdAt" DESC, "pageNumber" ASC
-    `,
-    loadEquityActivityByAccount(companyId),
+  try {
+    return await buildCapTableResponse(companyId);
+  } catch (error) {
+    console.error('Cap table load failed', {
+      companyId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return NextResponse.json({ error: 'Unable to load cap table data. The failure has been logged.' }, { status: 500 });
+  }
+}
+
+async function loadLatestBackfillPages(companyId: string, requestName: string) {
+  return prisma.$queryRaw<Array<{ payload: unknown; createdAt: Date }>>`
+    SELECT "payload", "createdAt"
+    FROM "QuickBooksDesktopBackfillPage"
+    WHERE "companyId" = ${companyId}
+      AND "requestName" = ${requestName}
+      AND "batchId" = (
+        SELECT "batchId"
+        FROM "QuickBooksDesktopBackfillPage"
+        WHERE "companyId" = ${companyId}
+          AND "requestName" = ${requestName}
+        ORDER BY "createdAt" DESC
+        LIMIT 1
+      )
+    ORDER BY "createdAt" DESC, "pageNumber" ASC
+  `;
+}
+
+async function buildCapTableResponse(companyId: string) {
+  const mappings = await prisma.accountMapping.findMany({
+    where: {
+      companyId,
+      OR: [
+        { targetField: { in: Array.from(EQUITY_TARGETS) } },
+        { accountClassification: { contains: 'Equity', mode: 'insensitive' } },
+      ],
+    },
+    select: {
+      accountId: true,
+      accountName: true,
+      accountCode: true,
+      accountClassification: true,
+      targetField: true,
+    },
+  });
+  const equityAccountNames = Array.from(
+    new Set(
+      mappings
+        .filter((mapping) => EQUITY_TARGETS.has(text(mapping.targetField)))
+        .flatMap((mapping) => {
+          const accountName = text(mapping.accountName);
+          return [accountName, accountName.split(':').pop() || ''];
+        })
+        .map((name) => name.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+
+  const [pages, balanceSheetPages, trialBalancePages, equityActivityByAccount, savedInputs] = await Promise.all([
+    loadLatestBackfillPages(companyId, 'AccountQuery'),
+    loadLatestBackfillPages(companyId, 'BalanceSheetStandardReportQuery'),
+    loadLatestBackfillPages(companyId, 'TrialBalanceReportQuery'),
+    loadEquityActivityByAccount(companyId, equityAccountNames),
     loadCapTableInputs(companyId),
   ]);
 
@@ -291,15 +367,32 @@ export async function GET(request: NextRequest) {
     for (const key of [mapping.accountId, mapping.accountName, mapping.accountCode].map(text).filter(Boolean)) {
       targetByKey.set(key.toLowerCase(), value);
     }
-    if (value.accountName) targetByHolderKey.set(holderKey(value.accountName), value);
+    if (value.accountName) {
+      const key = holderKey(value.accountName);
+      const existing = targetByHolderKey.get(key);
+      const rank = (candidate: typeof value) =>
+        (CAP_TABLE_HOLDER_TARGETS.has(candidate.targetField) ? 0 : 2) + (isDrawAccount(candidate.accountName) ? 1 : 0);
+      if (
+        !existing ||
+        rank(value) < rank(existing) ||
+        (rank(value) === rank(existing) && value.accountName.length < existing.accountName.length)
+      ) {
+        targetByHolderKey.set(key, value);
+      }
+    }
   }
+  const mappedEquityNames = Array.from(targetByKey.values()).map((value) => value.accountName.toLowerCase());
+  const isEquityGroupHeader = (accountName: string) => {
+    const name = accountName.toLowerCase();
+    return accountPath(accountName).length === 1 && mappedEquityNames.some((candidate) => candidate.startsWith(`${name}:`));
+  };
 
   const accounts = pages.flatMap((page) =>
     Array.isArray(page.payload) ? page.payload.map(asRecord) : []
   );
   const fullNames = accounts.map((account) => text(account.FullName || account.Name)).filter(Boolean);
-  const holdings = accounts
-    .map((account) => {
+  const holdings: CapTableHolding[] = accounts
+    .map((account): CapTableHolding | null => {
       const fullName = text(account.FullName || account.Name);
       const mapped =
         targetByKey.get(text(account.ListID).toLowerCase()) ||
@@ -323,7 +416,7 @@ export async function GET(request: NextRequest) {
         activity: equityActivityByAccount.get((fullName || mapped.accountName).toLowerCase()) || [],
       };
     })
-    .filter((row): row is NonNullable<typeof row> => row !== null);
+    .filter((row): row is CapTableHolding => row !== null);
   let source = 'quickbooks-desktop-account-equity';
   let reportFallbackCreatedAt: Date | null = null;
   const seenAccounts = new Set<string>();
@@ -378,7 +471,7 @@ export async function GET(request: NextRequest) {
     }
   }
   for (const mapped of targetByHolderKey.values()) {
-    if (!isMappedCapTableHolder(mapped)) continue;
+    if (!isMappedCapTableHolder(mapped) || isEquityGroupHeader(mapped.accountName)) continue;
     const duplicateKeys = [
       mapped.accountName,
       holderName(mapped.accountName),
@@ -401,11 +494,12 @@ export async function GET(request: NextRequest) {
     source = pages.length > 0 ? 'quickbooks-desktop-account-and-report-equity' : 'quickbooks-desktop-report-equity';
   }
 
-  const ownershipDenominator = holdings.reduce(
+  const mergedHoldings = mergeHoldingsByHolder(holdings);
+  const ownershipDenominator = mergedHoldings.reduce(
     (sum, row) => sum + (CAP_TABLE_HOLDER_TARGETS.has(row.targetField) && row.balance > 0 ? row.balance : 0),
     0,
   );
-  const enrichedHoldings = holdings
+  const enrichedHoldings = mergedHoldings
     .map((row) => ({
       ...row,
       ownershipPct:

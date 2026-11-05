@@ -18711,7 +18711,7 @@ function FinancialScorePage() {
                               companies.find(c => c.id === selectedCompanyId),
                               industrySectorCategory,
                             );
-                            const targetFieldOptions = getTargetFieldOptions(currentSectorCategory);
+                            const targetFieldOptions = getTargetFieldOptions(currentSectorCategory, { includeExtraOptions: false });
                             const sectorTargetFields = [...targetFieldOptions.revenue, ...targetFieldOptions.cogs];
 
                             console.log('?? CSV accounts to map:', qbAccountsWithClass.length);
@@ -18822,7 +18822,7 @@ function FinancialScorePage() {
                               companies.find(c => c.id === selectedCompanyId),
                               industrySectorCategory,
                             );
-                            const targetFieldOptions = getTargetFieldOptions(currentSectorCategory);
+                            const targetFieldOptions = getTargetFieldOptions(currentSectorCategory, { includeExtraOptions: false });
                             const sectorTargetFields = [...targetFieldOptions.revenue, ...targetFieldOptions.cogs];
 
                             console.log('?? API accounts to map:', qbAccountsWithClass.length);
