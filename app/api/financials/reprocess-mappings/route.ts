@@ -705,6 +705,21 @@ function qbdAccountLookupKeys(value: unknown): string[] {
   };
   add(raw);
 
+  // QBD reports prefix every hierarchy segment with its account number
+  // ("BGAHLLC Equity Accounts:Amy Shu Inc:Contributions:30101 · Member
+  // Contributions"), while mappings store the bare FullName and the number
+  // separately. Try the row's own name and number before the looser keys
+  // below, which can otherwise resolve a child row to its parent's code.
+  const segments = raw.split(':').map((part) => part.trim()).filter(Boolean);
+  const parsedSegments = segments.map((segment) => {
+    const match = segment.match(/^([0-9A-Za-z][0-9A-Za-z.\-]*)\s+(?:&#183;|·)\s+(.+)$/);
+    return match ? { code: match[1], name: match[2].trim() } : { code: '', name: segment };
+  });
+  if (parsedSegments.some((segment) => segment.code)) {
+    add(parsedSegments.map((segment) => segment.name).join(':'));
+    add(parsedSegments[parsedSegments.length - 1].code);
+  }
+
   // Balance Sheet report labels often include account numbers while stored
   // mappings may carry only the account name, or vice versa.
   const leadingCode = raw.match(/^\s*([0-9][0-9.\-]*)\s+(.+)$/);
