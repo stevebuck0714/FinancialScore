@@ -11,6 +11,7 @@ import { DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS, ISOLVED_PEOPLE_CLOUD_SOURCE_
 import { HIGHLEVEL_SOURCE_CODE } from '@/lib/highlevel';
 import { DEFAULT_HIGHLEVEL_DATA_DOMAINS } from '@/lib/crm/highlevel-sales';
 import { DEFAULT_JOBBOSS_DATA_DOMAINS, JOBBOSS_SOURCE_CODE } from '@/lib/jobboss';
+import { DEFAULT_PROSHOP_DATA_DOMAINS, PROSHOP_SOURCE_CODE } from '@/lib/proshop';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,7 @@ const SOURCE_PROVIDERS: Record<string, string> = {
   HUBSPOT_STANDARD: 'HUBSPOT',
   [HIGHLEVEL_SOURCE_CODE]: 'HIGHLEVEL',
   [JOBBOSS_SOURCE_CODE]: 'JOBBOSS',
+  [PROSHOP_SOURCE_CODE]: 'PROSHOP',
   ICE_ENCOMPASS: 'SPREADSHEET_UPLOAD',
   LANTRAX_PROFIT_POWER: 'SPREADSHEET_UPLOAD',
   FOODREADY_AI: 'SPREADSHEET_UPLOAD',
@@ -105,6 +107,7 @@ const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
   [ISOLVED_PEOPLE_CLOUD_SOURCE_CODE]: DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS,
   [HIGHLEVEL_SOURCE_CODE]: DEFAULT_HIGHLEVEL_DATA_DOMAINS,
   [JOBBOSS_SOURCE_CODE]: [...DEFAULT_JOBBOSS_DATA_DOMAINS],
+  [PROSHOP_SOURCE_CODE]: [...DEFAULT_PROSHOP_DATA_DOMAINS],
 };
 
 function normalizeSourceCode(value: unknown) {
@@ -131,7 +134,7 @@ function sanitizeDataDomains(value: unknown, sourceCode: string): EditableDataDo
     })
     .filter((row) => row.dataDomain || row.sourceObject);
 
-  if (sourceCode === 'HUBSPOT_STANDARD' || sourceCode === HIGHLEVEL_SOURCE_CODE || sourceCode === JOBBOSS_SOURCE_CODE) {
+  if (sourceCode === 'HUBSPOT_STANDARD' || sourceCode === HIGHLEVEL_SOURCE_CODE || sourceCode === JOBBOSS_SOURCE_CODE || sourceCode === PROSHOP_SOURCE_CODE) {
     const configuredDomains = new Set(rows.map((row) => row.dataDomain));
     return [
       ...rows,

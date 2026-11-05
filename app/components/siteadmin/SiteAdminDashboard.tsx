@@ -46,6 +46,7 @@ import CompanyBrandingCard from '@/app/components/siteadmin/CompanyBrandingCard'
 import HubSpotIntegrationCard from '@/app/components/siteadmin/HubSpotIntegrationCard';
 import HighLevelIntegrationCard from '@/app/components/siteadmin/HighLevelIntegrationCard';
 import JobBossIntegrationCard from '@/app/components/siteadmin/JobBossIntegrationCard';
+import ProShopIntegrationCard from '@/app/components/siteadmin/ProShopIntegrationCard';
 import { DEFAULT_ALLOWED_SECTIONS } from '@/app/components/admin/CompanyDetailsTab';
 import { getSectorMasterTabLabel, getSectorMasterTabKeys } from '@/lib/operations/sector-master-tabs';
 import {
@@ -9915,6 +9916,7 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'HUBSPOT_STANDARD') && <HubSpotIntegrationCard companyId={company.id} />}
                                             {isOperationalSourceSelected(company.id, 'HIGHLEVEL_STANDARD') && <HighLevelIntegrationCard companyId={company.id} />}
                                             {isOperationalSourceSelected(company.id, 'JOBBOSS2_STANDARD') && <JobBossIntegrationCard companyId={company.id} />}
+                                            {isOperationalSourceSelected(company.id, 'PROSHOP_STANDARD') && <ProShopIntegrationCard companyId={company.id} />}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetOperationalIntegrationCard(company.id, company.name)}
                                             {company.accountingSystem === 'QUICKBOOKS' && isOperationalSourceSelected(company.id, 'PLATOS_CLOSET_STORE_VISIT') && renderPlatosClosetDataDomainsCard(company.id)}
                                             {isOperationalSourceSelected(company.id, 'CREWTRACKS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'CREWTRACKS')}
@@ -13721,6 +13723,7 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, 'HUBSPOT_STANDARD') && <HubSpotIntegrationCard companyId={businessCompany.id} />}
                                   {isOperationalSourceSelected(businessCompany.id, 'HIGHLEVEL_STANDARD') && <HighLevelIntegrationCard companyId={businessCompany.id} />}
                                   {isOperationalSourceSelected(businessCompany.id, 'JOBBOSS2_STANDARD') && <JobBossIntegrationCard companyId={businessCompany.id} />}
+                                  {isOperationalSourceSelected(businessCompany.id, 'PROSHOP_STANDARD') && <ProShopIntegrationCard companyId={businessCompany.id} />}
                                   {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'CREWTRACKS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'CREWTRACKS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'CREWTRACKS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'HILTI')}

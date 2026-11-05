@@ -1763,6 +1763,7 @@ enum OperationalSystemProvider {
   ISOLVED
   HIGHLEVEL
   JOBBOSS
+  PROSHOP
 }
 
 enum ConnectionStatus {
