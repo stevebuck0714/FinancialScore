@@ -53,6 +53,7 @@ import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 import { getCashAccountAllowlistSet, isAllowedCashAccount } from '@/lib/financial/cash-balance-sheet-anchor';
 import { isBakersCompany } from '@/lib/financial/qbd-bakers-bs-pins';
+import { loadQbdDailyBalanceSheetDetail, type DailyBalanceSheetDetail } from '@/lib/quickbooks-desktop/daily-balance-sheet-detail';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
 import {
   ensurePlatosClosetMonthlyFacts,
@@ -934,6 +935,7 @@ function aggregateDailyStatementRows(
   totalLiab: number;
   totalEquity: number;
   totalLAndE: number;
+  balanceDateKey: string | null;
 }> {
   const buckets = new Map<
     string,
@@ -1124,6 +1126,7 @@ function aggregateDailyStatementRows(
         totalLiab,
         totalEquity,
         totalLAndE,
+        balanceDateKey: bucket.lastSnapshotDate ? dateKeyUtc(bucket.lastSnapshotDate) : null,
       };
     });
 }
@@ -12033,11 +12036,26 @@ export async function GET(request: NextRequest) {
           financialFrequencyForQuery === 'daily' ? dailyDataForAggregator : data,
           statementRollup
         );
+        let balanceSheetAccountDetail: DailyBalanceSheetDetail | null = null;
+        if (
+          !isBakersDailyFinancials &&
+          [...data, ...dailyDataForAggregator].some((row: any) => row?.sourcePlatform === 'QUICKBOOKS_DESKTOP_REPROCESS')
+        ) {
+          const detailDateKeys = [
+            ...data.map((row: any) => dateKeyUtc(new Date(row.snapshotDate))),
+            ...statementRecords.map((row) => row.balanceDateKey || ''),
+          ];
+          balanceSheetAccountDetail = await loadQbdDailyBalanceSheetDetail(companyId, detailDateKeys).catch((error) => {
+            console.warn('Daily Financials balance sheet account detail failed:', { companyId, error: String(error?.message || error) });
+            return null;
+          });
+        }
 
         const dailyFinancialPayload = {
           records: data,
           mappedLines,
           statementRecords,
+          balanceSheetAccountDetail,
           summary: {
             latestRevenue,
             latestExpense,

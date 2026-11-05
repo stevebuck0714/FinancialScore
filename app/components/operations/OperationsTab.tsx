@@ -973,6 +973,7 @@ export default function OperationsTab({
     locale: string;
   }>({ baseCurrency: 'USD', reportingCurrency: null, locale: 'en-US' });
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
+  const [collapsedBalanceDetailFields, setCollapsedBalanceDetailFields] = useState<Set<string>>(() => new Set());
   const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('daily');
   const [selectedDailyTrendMetrics, setSelectedDailyTrendMetrics] = useState<Array<'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct'>>([
     'revenue',
@@ -16693,6 +16694,87 @@ export default function OperationsTab({
       rollupIncomeLineIndex[field][periodKey] =
         Number(rollupIncomeLineIndex[field][periodKey] || 0) + Number(line?.amount || 0);
     });
+    type BalanceAccountDetailRow = { targetField: string; accountName: string; valuesByDate: Record<string, number> };
+    const balanceAccountDetailRows: BalanceAccountDetailRow[] = Array.isArray(dailyFinancialData?.balanceSheetAccountDetail?.rows)
+      ? dailyFinancialData.balanceSheetAccountDetail.rows
+      : [];
+    const balanceAccountDetailByField = balanceAccountDetailRows.reduce<Record<string, BalanceAccountDetailRow[]>>((acc, row) => {
+      if (!row?.targetField) return acc;
+      (acc[row.targetField] ||= []).push(row);
+      return acc;
+    }, {});
+    // Inserts the QuickBooks accounts behind each balance-sheet line directly under it.
+    // Columns are keyed by statement key; balanceDateFor maps a column to the balance date it shows.
+    const withBalanceAccountDetail = <Row extends { label: string; styleType?: 'normal' | 'section' | 'subtotal' | 'total'; detailField?: string }>(
+      rowDefs: Row[],
+      columnKeys: string[],
+      balanceDateFor: (columnKey: string) => string | null,
+      lineTotalFor: (field: string, columnKey: string) => number | null,
+    ) => rowDefs.flatMap((rowDef) => {
+      const field = rowDef.detailField;
+      const accounts = field ? balanceAccountDetailByField[field] || [] : [];
+      if (!field || !accounts.length) return [rowDef];
+      const visibleAccounts = accounts.filter((account) =>
+        columnKeys.some((key) => Math.abs(Number(account.valuesByDate[balanceDateFor(key) || ''] || 0)) >= 0.005)
+      );
+      const differenceByKey = columnKeys.reduce<Record<string, number>>((acc, key) => {
+        const balanceDate = balanceDateFor(key);
+        const total = lineTotalFor(field, key);
+        if (!balanceDate || total == null) return acc;
+        const detailTotal = accounts.reduce((sum, account) => sum + Number(account.valuesByDate[balanceDate] || 0), 0);
+        acc[key] = Math.round((total - detailTotal) * 100) / 100;
+        return acc;
+      }, {});
+      const hasDifference = Object.values(differenceByKey).some((value) => Math.abs(value) >= 1);
+      if (visibleAccounts.length < 2 && !hasDifference) return [rowDef];
+      const expanded = !collapsedBalanceDetailFields.has(field);
+      const detailRows = expanded
+        ? [
+            ...visibleAccounts.map((account) => ({
+              label: account.accountName,
+              styleType: 'normal' as const,
+              isAccountDetail: true,
+              valuesByDate: columnKeys.reduce<Record<string, number>>((acc, key) => {
+                acc[key] = Number(account.valuesByDate[balanceDateFor(key) || ''] || 0);
+                return acc;
+              }, {}),
+            })),
+            ...(hasDifference
+              ? [{
+                  label: 'Difference vs. daily snapshot',
+                  styleType: 'normal' as const,
+                  isAccountDetail: true,
+                  valuesByDate: differenceByKey,
+                }]
+              : []),
+          ]
+        : [];
+      return [{ ...rowDef, toggleField: field, toggleExpanded: expanded }, ...detailRows];
+    });
+    const toggleBalanceDetailField = (field: string) =>
+      setCollapsedBalanceDetailFields((current) => {
+        const next = new Set(current);
+        if (next.has(field)) next.delete(field);
+        else next.add(field);
+        return next;
+      });
+    const renderBalanceRowLabel = (rowDef: { label: string; toggleField?: string; toggleExpanded?: boolean; isAccountDetail?: boolean }) => {
+      if (rowDef.isAccountDetail) {
+        return <span style={{ display: 'inline-block', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{rowDef.label.trim()}</span>;
+      }
+      if (!rowDef.toggleField) return rowDef.label;
+      return (
+        <button
+          type="button"
+          onClick={() => toggleBalanceDetailField(rowDef.toggleField!)}
+          style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}
+        >
+          {rowDef.label} {rowDef.toggleExpanded ? '▾' : '▸'}
+        </button>
+      );
+    };
+    const balanceDetailCellStyle = (rowDef: { isAccountDetail?: boolean }): React.CSSProperties =>
+      rowDef.isAccountDetail ? { fontWeight: 400, color: '#64748b' } : {};
     if (isRollupMode) {
       const sortedRollupRecords = statementRecordsRaw
         .map((row: any) => {
@@ -16758,6 +16840,7 @@ export default function OperationsTab({
         totalEquity: Number(row.totalEquity || 0),
         totalLAndE: Number(row.totalLAndE || 0),
         sourceDays: Number(row.sourceDays || 0),
+        balanceDateKey: row.balanceDateKey ? String(row.balanceDateKey) : null,
       }));
       const rollupByKey = rollupDays.reduce<Record<string, any>>((acc, row: any) => {
         acc[row.dateKey] = row;
@@ -16798,42 +16881,48 @@ export default function OperationsTab({
       ] as Array<{ label: string; styleType: 'section' | 'subtotal' | 'total'; valuesByDate: Record<string, number> }>;
       const balanceRowDefs = [
         { label: 'Current Assets', styleType: 'section', suppressValues: true },
-        { label: `  ${getFieldDisplayName('cash')}`, styleType: 'normal', valuesByDate: rollupSeries('cash') },
-        { label: `  ${getFieldDisplayName('accountsReceivable')}`, styleType: 'normal', valuesByDate: rollupSeries('ar') },
-        { label: `  ${getFieldDisplayName('retainageReceivables')}`, styleType: 'normal', valuesByDate: rollupSeries('retainageReceivables') },
-        { label: `  ${getFieldDisplayName('contractAssets')}`, styleType: 'normal', valuesByDate: rollupSeries('contractAssets') },
-        { label: `  ${getFieldDisplayName('inventory')}`, styleType: 'normal', valuesByDate: rollupSeries('inventory') },
-        { label: `  ${getFieldDisplayName('otherCurrentAssets')}`, styleType: 'normal', valuesByDate: rollupSeries('otherCA') },
+        { label: `  ${getFieldDisplayName('cash')}`, styleType: 'normal', detailField: 'cash', valuesByDate: rollupSeries('cash') },
+        { label: `  ${getFieldDisplayName('accountsReceivable')}`, styleType: 'normal', detailField: 'ar', valuesByDate: rollupSeries('ar') },
+        { label: `  ${getFieldDisplayName('retainageReceivables')}`, styleType: 'normal', detailField: 'retainageReceivables', valuesByDate: rollupSeries('retainageReceivables') },
+        { label: `  ${getFieldDisplayName('contractAssets')}`, styleType: 'normal', detailField: 'contractAssets', valuesByDate: rollupSeries('contractAssets') },
+        { label: `  ${getFieldDisplayName('inventory')}`, styleType: 'normal', detailField: 'inventory', valuesByDate: rollupSeries('inventory') },
+        { label: `  ${getFieldDisplayName('otherCurrentAssets')}`, styleType: 'normal', detailField: 'otherCA', valuesByDate: rollupSeries('otherCA') },
         { label: getFieldDisplayName('totalCurrentAssets'), styleType: 'subtotal', valuesByDate: rollupSeries('tca') },
         { label: 'Long-Term Assets', styleType: 'section', suppressValues: true },
-        { label: `  ${getFieldDisplayName('fixedAssets')}`, styleType: 'normal', valuesByDate: rollupSeries('fixedAssets') },
-        { label: `    ${getFieldDisplayName('constructionEquipment')}`, styleType: 'normal', valuesByDate: rollupSeries('constructionEquipment') },
-        { label: `    ${getFieldDisplayName('officeEquipment')}`, styleType: 'normal', valuesByDate: rollupSeries('officeEquipment') },
-        { label: `    ${getFieldDisplayName('shopEquipment')}`, styleType: 'normal', valuesByDate: rollupSeries('shopEquipment') },
-        { label: `  ${getFieldDisplayName('investments')}`, styleType: 'normal', valuesByDate: rollupSeries('investments') },
-        { label: `  ${getFieldDisplayName('rightOfUseLeases')}`, styleType: 'normal', valuesByDate: rollupSeries('rightOfUseLeases') },
-        { label: `  ${getFieldDisplayName('otherAssets')}`, styleType: 'normal', valuesByDate: rollupSeries('otherAssets') },
+        { label: `  ${getFieldDisplayName('fixedAssets')}`, styleType: 'normal', detailField: 'fixedAssets', valuesByDate: rollupSeries('fixedAssets') },
+        { label: `    ${getFieldDisplayName('constructionEquipment')}`, styleType: 'normal', detailField: 'constructionEquipment', valuesByDate: rollupSeries('constructionEquipment') },
+        { label: `    ${getFieldDisplayName('officeEquipment')}`, styleType: 'normal', detailField: 'officeEquipment', valuesByDate: rollupSeries('officeEquipment') },
+        { label: `    ${getFieldDisplayName('shopEquipment')}`, styleType: 'normal', detailField: 'shopEquipment', valuesByDate: rollupSeries('shopEquipment') },
+        { label: `  ${getFieldDisplayName('investments')}`, styleType: 'normal', detailField: 'investments', valuesByDate: rollupSeries('investments') },
+        { label: `  ${getFieldDisplayName('rightOfUseLeases')}`, styleType: 'normal', detailField: 'rightOfUseLeases', valuesByDate: rollupSeries('rightOfUseLeases') },
+        { label: `  ${getFieldDisplayName('otherAssets')}`, styleType: 'normal', detailField: 'otherAssets', valuesByDate: rollupSeries('otherAssets') },
         { label: getFieldDisplayName('totalAssets'), styleType: 'total', valuesByDate: rollupSeries('totalAssets') },
         { label: 'Current Liabilities', styleType: 'section', suppressValues: true },
-        { label: `  ${getFieldDisplayName('accountsPayable')}`, styleType: 'normal', valuesByDate: rollupSeries('ap') },
-        { label: `  ${getFieldDisplayName('loc')}`, styleType: 'normal', valuesByDate: rollupSeries('loc') },
-        { label: `  ${getFieldDisplayName('contractLiabilities')}`, styleType: 'normal', valuesByDate: rollupSeries('contractLiabilities') },
-        { label: `  ${getFieldDisplayName('otherCurrentLiabilities')}`, styleType: 'normal', valuesByDate: rollupSeries('otherCL') },
+        { label: `  ${getFieldDisplayName('accountsPayable')}`, styleType: 'normal', detailField: 'ap', valuesByDate: rollupSeries('ap') },
+        { label: `  ${getFieldDisplayName('loc')}`, styleType: 'normal', detailField: 'loc', valuesByDate: rollupSeries('loc') },
+        { label: `  ${getFieldDisplayName('contractLiabilities')}`, styleType: 'normal', detailField: 'contractLiabilities', valuesByDate: rollupSeries('contractLiabilities') },
+        { label: `  ${getFieldDisplayName('otherCurrentLiabilities')}`, styleType: 'normal', detailField: 'otherCL', valuesByDate: rollupSeries('otherCL') },
         { label: getFieldDisplayName('totalCurrentLiabilities'), styleType: 'subtotal', valuesByDate: rollupSeries('tcl') },
         { label: 'Long-Term Liabilities', styleType: 'section', suppressValues: true },
-        { label: `  ${getFieldDisplayName('longTermDebt')}`, styleType: 'normal', valuesByDate: rollupSeries('ltd') },
+        { label: `  ${getFieldDisplayName('longTermDebt')}`, styleType: 'normal', detailField: 'ltd', valuesByDate: rollupSeries('ltd') },
         { label: getFieldDisplayName('totalLiabilities'), styleType: 'subtotal', valuesByDate: rollupSeries('totalLiab') },
         { label: 'Equity', styleType: 'section', suppressValues: true },
-        { label: `  ${getFieldDisplayName('ownersCapital')}`, styleType: 'normal', valuesByDate: rollupSeries('ownersCapital') },
-        { label: `  ${getFieldDisplayName('ownersDraw')}`, styleType: 'normal', valuesByDate: rollupSeries('ownersDraw') },
-        { label: `  ${getFieldDisplayName('commonStock')}`, styleType: 'normal', valuesByDate: rollupSeries('commonStock') },
-        { label: `  ${getFieldDisplayName('preferredStock')}`, styleType: 'normal', valuesByDate: rollupSeries('preferredStock') },
-        { label: `  ${getFieldDisplayName('retainedEarnings')}`, styleType: 'normal', valuesByDate: rollupSeries('retainedEarnings') },
-        { label: `  ${getFieldDisplayName('additionalPaidInCapital')}`, styleType: 'normal', valuesByDate: rollupSeries('additionalPaidInCapital') },
-        { label: `  ${getFieldDisplayName('treasuryStock')}`, styleType: 'normal', valuesByDate: rollupSeries('treasuryStock') },
+        { label: `  ${getFieldDisplayName('ownersCapital')}`, styleType: 'normal', detailField: 'ownersCapital', valuesByDate: rollupSeries('ownersCapital') },
+        { label: `  ${getFieldDisplayName('ownersDraw')}`, styleType: 'normal', detailField: 'ownersDraw', valuesByDate: rollupSeries('ownersDraw') },
+        { label: `  ${getFieldDisplayName('commonStock')}`, styleType: 'normal', detailField: 'commonStock', valuesByDate: rollupSeries('commonStock') },
+        { label: `  ${getFieldDisplayName('preferredStock')}`, styleType: 'normal', detailField: 'preferredStock', valuesByDate: rollupSeries('preferredStock') },
+        { label: `  ${getFieldDisplayName('retainedEarnings')}`, styleType: 'normal', detailField: 'retainedEarnings', valuesByDate: rollupSeries('retainedEarnings') },
+        { label: `  ${getFieldDisplayName('additionalPaidInCapital')}`, styleType: 'normal', detailField: 'additionalPaidInCapital', valuesByDate: rollupSeries('additionalPaidInCapital') },
+        { label: `  ${getFieldDisplayName('treasuryStock')}`, styleType: 'normal', detailField: 'treasuryStock', valuesByDate: rollupSeries('treasuryStock') },
         { label: getFieldDisplayName('totalEquity'), styleType: 'subtotal', valuesByDate: rollupSeries('totalEquity') },
         { label: getFieldDisplayName('totalLiabilitiesAndEquity'), styleType: 'total', valuesByDate: rollupSeries('totalLAndE') },
-      ] as Array<{ label: string; styleType: 'normal' | 'section' | 'subtotal' | 'total'; valuesByDate?: Record<string, number>; suppressValues?: boolean }>;
+      ] as Array<{ label: string; styleType: 'normal' | 'section' | 'subtotal' | 'total'; detailField?: string; valuesByDate?: Record<string, number>; suppressValues?: boolean }>;
+      const balanceRowDefsWithDetail = withBalanceAccountDetail(
+        balanceRowDefs,
+        rollupKeys,
+        (key) => rollupByKey[key]?.balanceDateKey || null,
+        (field, key) => (rollupByKey[key] ? Number(rollupByKey[key][field] || 0) : null),
+      ) as Array<(typeof balanceRowDefs)[number] & { toggleField?: string; toggleExpanded?: boolean; isAccountDetail?: boolean }>;
       const statementRowStyle = (
         styleType: 'normal' | 'section' | 'subtotal' | 'total' | undefined
       ): { rowBg: string; textColor: string; weight: 400 | 500 | 600 | 700 } => {
@@ -16956,13 +17045,13 @@ export default function OperationsTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {balanceRowDefs.map((rowDef) => (
-                      <tr key={rowDef.label} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
-                        <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
-                          {rowDef.label}
+                    {balanceRowDefsWithDetail.map((rowDef, rowIndex) => (
+                      <tr key={`${rowDef.label}-${rowIndex}`} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap', ...balanceDetailCellStyle(rowDef) }}>
+                          {renderBalanceRowLabel(rowDef)}
                         </td>
                         {rollupDays.map((day: any) => (
-                          <td key={`${rowDef.label}-${day.dateKey}`} style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontSize: '12px', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
+                          <td key={`${rowDef.label}-${rowIndex}-${day.dateKey}`} style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontSize: '12px', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap', ...balanceDetailCellStyle(rowDef) }}>
                             {rowDef.suppressValues ? '' : formatCurrency(Number(rowDef.valuesByDate?.[day.dateKey] || 0))}
                           </td>
                         ))}
@@ -17574,6 +17663,20 @@ export default function OperationsTab({
       { key: 'totalEquity', label: getFieldDisplayName('totalEquity'), styleType: 'subtotal' },
       { key: 'totalLAndE', label: getFieldDisplayName('totalLiabilitiesAndEquity'), styleType: 'total' },
     ];
+    const statementDayByKey = new Map(statementDays.map((day) => [day.dateKey, day] as const));
+    const balanceTotalFields = new Set(['tca', 'totalAssets', 'tcl', 'totalLiab', 'totalEquity', 'totalLAndE']);
+    const balanceRowDefsWithDetail = withBalanceAccountDetail(
+      balanceRowDefs.map((rowDef) => ({
+        ...rowDef,
+        detailField: rowDef.key && !balanceTotalFields.has(String(rowDef.key)) ? String(rowDef.key) : undefined,
+      })),
+      statementDays.map((day) => day.dateKey),
+      (key) => (statementDayByKey.get(key)?.hasBalanceSource ? key : null),
+      (field, key) => {
+        const day = statementDayByKey.get(key);
+        return day?.hasBalanceSource ? Number((day as Record<string, unknown>)[field] || 0) : null;
+      },
+    ) as Array<StatementRowDef & { toggleField?: string; toggleExpanded?: boolean; isAccountDetail?: boolean }>;
 
     const statementRowStyle = (
       styleType: 'normal' | 'section' | 'subtotal' | 'total' | undefined
@@ -18001,14 +18104,14 @@ export default function OperationsTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {balanceRowDefs.map((rowDef, rowIndex) => (
+                  {balanceRowDefsWithDetail.map((rowDef, rowIndex) => (
                     <tr key={`${rowDef.label}-${rowIndex}`} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
-                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
-                        {rowDef.label}
+                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap', ...balanceDetailCellStyle(rowDef) }}>
+                        {renderBalanceRowLabel(rowDef)}
                       </td>
                       {statementDays.map((day) => (
                         <td
-                          key={`${rowDef.label}-${day.dateLabel}`}
+                          key={`${rowDef.label}-${rowIndex}-${day.dateLabel}`}
                           style={{
                             padding: '10px',
                             borderBottom: '1px solid #f1f5f9',
@@ -18017,11 +18120,12 @@ export default function OperationsTab({
                             fontWeight: statementRowStyle(rowDef.styleType).weight,
                             color: statementRowStyle(rowDef.styleType).textColor,
                             whiteSpace: 'nowrap',
+                            ...balanceDetailCellStyle(rowDef),
                           }}
                         >
                           {rowDef.suppressValues
                             ? ''
-                            : !day.hasBalanceSource && rowDef.key
+                            : !day.hasBalanceSource && (rowDef.key || rowDef.isAccountDetail)
                               ? '—'
                               : formatCurrency(Number(
                                   rowDef.valuesByDate
