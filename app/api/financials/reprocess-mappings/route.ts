@@ -1033,6 +1033,56 @@ function qbdAmountsMatch(left: number, right: number): boolean {
   return Math.abs(left - right) < 0.01;
 }
 
+const QBD_DEBIT_NORMAL_ACCOUNT_TYPES = new Set(['bank', 'accountsreceivable', 'othercurrentasset', 'fixedasset', 'otherasset']);
+const QBD_CREDIT_NORMAL_ACCOUNT_TYPES = new Set(['accountspayable', 'creditcard', 'othercurrentliability', 'longtermliability', 'equity']);
+const QBD_CREDIT_NORMAL_TARGET_FIELDS = new Set([
+  'ap',
+  'loc',
+  'contractLiabilities',
+  'otherCL',
+  'ltd',
+  'ownersCapital',
+  'ownersDraw',
+  'commonStock',
+  'preferredStock',
+  'retainedEarnings',
+  'additionalPaidInCapital',
+  'treasuryStock',
+]);
+
+type QbdAccountSide = 'debit' | 'credit' | '';
+
+function qbdBuildAccountSideLookup(accounts: Record<string, unknown>[]): (accountName: string) => QbdAccountSide {
+  const sideByKey = new Map<string, QbdAccountSide>();
+  for (const account of accounts) {
+    const type = qbdString(account.AccountType).toLowerCase();
+    const side: QbdAccountSide = QBD_DEBIT_NORMAL_ACCOUNT_TYPES.has(type)
+      ? 'debit'
+      : QBD_CREDIT_NORMAL_ACCOUNT_TYPES.has(type)
+        ? 'credit'
+        : '';
+    if (!side) continue;
+    for (const key of qbdAccountLookupKeys(account.FullName || account.Name)) sideByKey.set(key, side);
+  }
+  return (accountName: string) => {
+    for (const key of qbdAccountLookupKeys(accountName)) {
+      const side = sideByKey.get(key);
+      if (side) return side;
+    }
+    return '';
+  };
+}
+
+// QBD balance sheet amounts are positive on the account's normal side. An asset
+// mapped into a liability/equity field (or the reverse) must offset that field.
+function qbdSignedBalanceForTarget(balance: number, accountSide: QbdAccountSide, targetField: string): number {
+  if (!accountSide) return balance;
+  const targetIsCreditNormal = QBD_CREDIT_NORMAL_TARGET_FIELDS.has(targetField);
+  if (accountSide === 'debit' && targetIsCreditNormal) return -balance;
+  if (accountSide === 'credit' && !targetIsCreditNormal) return -balance;
+  return balance;
+}
+
 function qbdApplyBalance(row: QbdMappedMonthlyRow, targetField: string, balance: number) {
   if (!QBD_BALANCE_SHEET_TARGET_FIELDS.has(targetField) || balance === 0) return;
   row[targetField] = Number(row[targetField] || 0) + balance;
@@ -1558,6 +1608,7 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       accountIdByName.set(key, listId);
     }
   }
+  const getAccountSide = qbdBuildAccountSideLookup(accounts);
 
   const months = new Map<string, QbdMappedMonthlyRow>();
   const getMonth = (monthKey: string) => {
@@ -1598,7 +1649,11 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
       const accountName = qbdReportAccountName(reportRow);
       const target = qbdBalanceSheetReportRowTarget(reportRow, getTarget);
       const amount = qbdReportAmount(reportRow);
-      qbdApplyBalance(balanceSheetAnchor, target, amount);
+      qbdApplyBalance(
+        balanceSheetAnchor,
+        target,
+        qbdSignedBalanceForTarget(amount, getAccountSide(accountName), target),
+      );
       const mapping = getMapping({ name: accountName });
       if (mapping?.accountId && QBD_BALANCE_SHEET_TARGET_FIELDS.has(mapping.targetField)) {
         accountBalancesAtReportDate.set(mapping.accountId, {
@@ -1871,10 +1926,11 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     }
     for (const reportRow of report.rows) {
       if (!qbdIsBalanceSheetAccountRow(reportRow)) continue;
+      const target = qbdBalanceSheetReportRowTarget(reportRow, getTarget);
       qbdApplyBalance(
         dailyRow,
-        qbdBalanceSheetReportRowTarget(reportRow, getTarget),
-        qbdReportAmount(reportRow),
+        target,
+        qbdSignedBalanceForTarget(qbdReportAmount(reportRow), getAccountSide(qbdReportAccountName(reportRow)), target),
       );
     }
     recomputeQbdBalanceSheetTotals(dailyRow);
@@ -1905,9 +1961,14 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
         name: fullName,
         code: qbdString(account.AccountNumber),
       });
-      qbdApplyBalance(latest, target, qbdBalanceForAccount(account, accountHasChildren));
+      const balance = qbdSignedBalanceForTarget(
+        qbdBalanceForAccount(account, accountHasChildren),
+        getAccountSide(fullName),
+        target,
+      );
+      qbdApplyBalance(latest, target, balance);
       if (latestDay) {
-        qbdApplyBalance(getDailySnapshot(latestDay), target, qbdBalanceForAccount(account, accountHasChildren));
+        qbdApplyBalance(getDailySnapshot(latestDay), target, balance);
       }
     }
     recomputeQbdBalanceSheetTotals(latest);
@@ -2373,6 +2434,7 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
       accountIdByName.set(key, listId);
     }
   }
+  const getAccountSide = qbdBuildAccountSideLookup(accounts);
   const resolveAccountId = (accountName: string) => {
     for (const key of qbdAccountLookupKeys(accountName)) {
       const matchedId = accountIdByName.get(key);
@@ -2411,10 +2473,11 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
   if (reportSnap) {
     for (const reportRow of balanceSheetReportRows) {
       if (!qbdIsBalanceSheetAccountRow(reportRow)) continue;
+      const target = qbdBalanceSheetReportRowTarget(reportRow, getTarget);
       qbdApplyBalance(
         reportSnap,
-        qbdBalanceSheetReportRowTarget(reportRow, getTarget),
-        qbdReportAmount(reportRow),
+        target,
+        qbdSignedBalanceForTarget(qbdReportAmount(reportRow), getAccountSide(qbdReportAccountName(reportRow)), target),
       );
     }
     recomputeQbdBalanceSheetTotals(reportSnap);
@@ -2562,10 +2625,11 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
     const row = createQbdMappedDailySnapshot(report.reportDate);
     for (const reportRow of report.rows) {
       if (!qbdIsBalanceSheetAccountRow(reportRow)) continue;
+      const target = qbdBalanceSheetReportRowTarget(reportRow, getTarget);
       qbdApplyBalance(
         row,
-        qbdBalanceSheetReportRowTarget(reportRow, getTarget),
-        qbdReportAmount(reportRow),
+        target,
+        qbdSignedBalanceForTarget(qbdReportAmount(reportRow), getAccountSide(qbdReportAccountName(reportRow)), target),
       );
     }
     recomputeQbdBalanceSheetTotals(row);
