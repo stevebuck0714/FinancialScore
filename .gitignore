@@ -29,4 +29,22 @@ staging_full.dump
 # Local scratch, diagnostics, and client-specific docs kept out of the repo
 tmp/
 docs/*.xlsx
+docs/*.xlsm
+docs/*.QBM
+docs/*.qbm
 docs/bamboohr-onboarding-cogent-scientific.md
+docs/Operating Agreement*
+docs/Operating_Agreement*
+docs/Final Draw*
+docs/Corelytics - SDE Summary.pdf
+docs/Picture2.png
+docs/SGP_2026_load_production.sql
+
+# SOC 2 working documents and their docx generators
+docs/SOC2_*.md
+scripts/convert-*-to-docx.ts
+scripts/build-*-docx.ts
+docs/[0-9] *RATIO* DEFINITIONS*.docx
+docs/Ask_Corelytics_Overview.docx
+docs/Corelytics_Financial_Advisor_Training_Guide.docx
+docs/Custom_Tool_ProShop_API_Credential_Request.docx
