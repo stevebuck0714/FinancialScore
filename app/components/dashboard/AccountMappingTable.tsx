@@ -28,6 +28,7 @@ interface AccountMappingTableProps {
   userDefinedAllocations?: { lobName: string; percentage: number }[];
   industrySectorCategory?: string | null;
   showOnlyActionable?: boolean;
+  includeSectorStatementLines?: boolean;
   onMappingChange: (index: number, updates: Partial<AccountMapping>) => void;
 }
 
@@ -37,6 +38,7 @@ export default function AccountMappingTable({
   userDefinedAllocations = [],
   industrySectorCategory,
   showOnlyActionable = false,
+  includeSectorStatementLines = false,
   onMappingChange
 }: AccountMappingTableProps) {
   const canonicalizeTargetField = (value?: string): string => {
@@ -504,7 +506,10 @@ export default function AccountMappingTable({
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const targetFieldOptions = getTargetFieldOptions(industrySectorCategory || undefined);
+  const targetFieldOptions = getTargetFieldOptions(industrySectorCategory || undefined, {
+    includeExtraOptions: includeSectorStatementLines,
+  });
+  const labelTargetFieldOptions = getTargetFieldOptions(industrySectorCategory || undefined);
 
   const getTargetFieldOptionsForSection = (sectionKey: string) => {
     const options = targetFieldOptions[sectionKey as keyof typeof targetFieldOptions] || [];
@@ -522,7 +527,7 @@ export default function AccountMappingTable({
     if (canonicalValue === 'nonOperatingIncome') return 'Non-Operating Income';
     if (canonicalValue === 'nonOperatingExpense') return 'Non-Operating Expense';
     if (canonicalValue === 'ignored') return ignoredOption.label;
-    const allOptions = Object.values(targetFieldOptions).flat();
+    const allOptions = Object.values(labelTargetFieldOptions).flat();
     const option = allOptions.find(opt => opt.value === canonicalValue);
     return option ? option.label : canonicalValue;
   };

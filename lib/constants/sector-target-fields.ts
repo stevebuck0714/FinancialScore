@@ -382,10 +382,18 @@ export function getSectorSchema(industrySectorCategory?: string | null): SectorS
   return SECTOR_SCHEMA_BY_CODE[industrySectorCategory] || null;
 }
 
-export function getRevenueTargetFieldOptions(industrySectorCategory?: string | null): TargetFieldOption[] {
+export interface TargetFieldOptionsConfig {
+  /** Sector statement-line targets (e.g. real-estate SLN/BGAH property lines). Only entity feeds map to these. */
+  includeExtraOptions?: boolean;
+}
+
+export function getRevenueTargetFieldOptions(
+  industrySectorCategory?: string | null,
+  { includeExtraOptions = true }: TargetFieldOptionsConfig = {},
+): TargetFieldOption[] {
   const schema = getSectorSchema(industrySectorCategory);
   if (!schema) return LEGACY_REVENUE_OPTIONS;
-  return [...buildOptions('rev', schema.revenue), ...(schema.extraRevenueOptions || [])];
+  return [...buildOptions('rev', schema.revenue), ...(includeExtraOptions ? schema.extraRevenueOptions || [] : [])];
 }
 
 export function getCogsTargetFieldOptions(industrySectorCategory?: string | null): TargetFieldOption[] {
@@ -394,12 +402,15 @@ export function getCogsTargetFieldOptions(industrySectorCategory?: string | null
   return buildOptions('cogs', schema.cogs);
 }
 
-export function getTargetFieldOptions(industrySectorCategory?: string | null) {
+export function getTargetFieldOptions(
+  industrySectorCategory?: string | null,
+  { includeExtraOptions = true }: TargetFieldOptionsConfig = {},
+) {
   const schema = getSectorSchema(industrySectorCategory);
   return {
-    revenue: getRevenueTargetFieldOptions(industrySectorCategory),
+    revenue: getRevenueTargetFieldOptions(industrySectorCategory, { includeExtraOptions }),
     cogs: getCogsTargetFieldOptions(industrySectorCategory),
-    expense: [...STATIC_TARGET_FIELD_OPTIONS.expense, ...(schema?.extraExpenseOptions || [])],
+    expense: [...STATIC_TARGET_FIELD_OPTIONS.expense, ...(includeExtraOptions ? schema?.extraExpenseOptions || [] : [])],
     nonOperating: STATIC_TARGET_FIELD_OPTIONS.nonOperating,
     asset: [...STATIC_TARGET_FIELD_OPTIONS.asset, ...(schema?.asset || [])],
     liability: [...STATIC_TARGET_FIELD_OPTIONS.liability, ...(schema?.liability || [])],

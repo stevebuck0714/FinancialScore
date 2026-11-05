@@ -189,6 +189,23 @@ function mergeTargetMonthRow(
   return mergePnlFields(incoming, existing);
 }
 
+/**
+ * Real-estate holding/development books can have no operating revenue when rent
+ * is booked in separate entity feeds (e.g. SLN), so zero-revenue months there are
+ * warnings, not blockers. 'QBD' lines mirror the primary books and do not count.
+ */
+async function revenueIsBookedInEntityFeeds(companyId: string): Promise<boolean> {
+  const rows = await prisma
+    .$queryRawUnsafe<Array<{ found: number }>>(
+      `SELECT 1 AS found FROM "RealEstateFinancialLine"
+       WHERE "companyId"=$1 AND "sourceEntity" <> 'QBD' AND lower("accountType")='income'
+       LIMIT 1`,
+      companyId,
+    )
+    .catch(() => []);
+  return rows.length > 0;
+}
+
 export async function ingestFinancialPayload(params: {
   companyId: string;
   platform: AccountingPlatform;
@@ -314,7 +331,10 @@ export async function ingestFinancialPayload(params: {
   const latestMonth = validationRows[validationRows.length - 1]?.monthDate || boundedRows[boundedRows.length - 1].monthDate;
   const latestMonthKey = `${latestMonth.getUTCFullYear()}-${String(latestMonth.getUTCMonth() + 1).padStart(2, '0')}`;
   const latestMonthWarnings = anomalies.filter((x) => x.month === latestMonthKey);
-  const blockingFailures = anomalies.filter((x) => x.month !== latestMonthKey);
+  const historicalAnomalies = anomalies.filter((x) => x.month !== latestMonthKey);
+  const revenueInEntityFeeds = historicalAnomalies.length > 0 && (await revenueIsBookedInEntityFeeds(params.companyId));
+  const blockingFailures = revenueInEntityFeeds ? [] : historicalAnomalies;
+  const zeroRevenueWarnings = revenueInEntityFeeds ? historicalAnomalies : [];
   if (blockingFailures.length > 0) {
     return {
       ok: false,
@@ -344,7 +364,7 @@ export async function ingestFinancialPayload(params: {
               monthsTouched: touchedMonths,
             }
           : null,
-        validation: { latestMonthWarnings },
+        validation: { latestMonthWarnings, zeroRevenueWarnings },
       } as Prisma.InputJsonValue,
       columnMapping: {
         source: params.source,
@@ -371,6 +391,7 @@ export async function ingestFinancialPayload(params: {
         mode: targetMonthDate ? mode : null,
         monthsTouched: touchedMonths,
         latestMonthWarnings,
+        zeroRevenueWarnings,
         metadata: normalized.metadata,
       } as Prisma.InputJsonValue,
       duration: Date.now() - startedAt,
@@ -396,5 +417,6 @@ export async function ingestFinancialPayload(params: {
     recordsImported: rowsForRecord.length,
     monthsTouched: touchedMonths,
     latestMonthWarnings,
+    zeroRevenueWarnings,
   };
 }

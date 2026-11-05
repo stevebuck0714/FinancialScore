@@ -1058,6 +1058,7 @@ function getSoapMethod(xml: string): string {
     'authenticate',
     'sendRequestXML',
     'receiveResponseXML',
+    'connectionError',
     'getLastError',
     'closeConnection',
   ];
@@ -1464,39 +1465,30 @@ async function completeDetailBackfillJob(
   }
 }
 
-async function markBackfillJobRunning(
-  companyId: string,
-  job: QbdBackfillJob,
-  ticket: string,
-  kind: 'header' | 'detail' = 'header',
-): Promise<void> {
-  await updateMetadata(companyId, (metadata) => {
-    const jobs = getBackfillJobsForKind(metadata, kind);
-    const current = jobs[job.id] || job;
-    const now = new Date().toISOString();
-    return withBackfillJobsForKind(metadata, kind, {
-        ...jobs,
-        [job.id]: {
-          ...current,
-          status: 'running',
-          ticket,
-          startedAt: current.startedAt || now,
-          updatedAt: now,
-          lastError: null,
-        },
-      });
-  });
-}
-
 async function markBackfillJobsRunning(
   companyId: string,
   jobs: QbdBackfillJob[],
   ticket: string,
   kind: 'header' | 'detail' = 'header',
 ): Promise<void> {
-  for (const job of jobs) {
-    await markBackfillJobRunning(companyId, job, ticket, kind);
-  }
+  if (jobs.length === 0) return;
+  await updateMetadata(companyId, (metadata) => {
+    const existingJobs = getBackfillJobsForKind(metadata, kind);
+    const now = new Date().toISOString();
+    const nextJobs = { ...existingJobs };
+    for (const job of jobs) {
+      const current = existingJobs[job.id] || job;
+      nextJobs[job.id] = {
+        ...current,
+        status: 'running',
+        ticket,
+        startedAt: current.startedAt || now,
+        updatedAt: now,
+        lastError: null,
+      };
+    }
+    return withBackfillJobsForKind(metadata, kind, nextJobs);
+  });
 }
 
 async function updateBackfillJobProgress(
@@ -1638,7 +1630,13 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
 }
 
 async function authenticateWebConnector(username: string, password: string): Promise<{ companyId: string; metadata: QbDesktopMetadata } | null> {
-  if (!username || !password) return null;
+  if (!username || !password) {
+    console.warn('QuickBooks Desktop Web Connector authentication rejected', {
+      username: username || null,
+      reason: 'missing_username_or_password',
+    });
+    return null;
+  }
 
   const connections = await prisma.accountingConnection.findMany({
     where: {
@@ -1651,9 +1649,13 @@ async function authenticateWebConnector(username: string, password: string): Pro
     },
   });
 
+  let matchingUsernameFound = false;
+  let setupIncomplete = false;
+  let passwordMismatch = false;
+  let passwordDecryptFailed = false;
+
   for (const connection of connections) {
     const metadata = getMetadata(connection.connectionMetadata);
-    if (!hasRequiredQuickBooksDesktopSetup(metadata)) continue;
     const credentials = metadata.quickbooksDesktopCredentials;
     const storedUsername =
       typeof credentials?.webConnectorUsername === 'string'
@@ -1665,20 +1667,80 @@ async function authenticateWebConnector(username: string, password: string): Pro
         : '';
 
     if (storedUsername !== username || !encryptedPassword) continue;
+    matchingUsernameFound = true;
+    if (!hasRequiredQuickBooksDesktopSetup(metadata)) {
+      setupIncomplete = true;
+      continue;
+    }
 
     try {
       const storedPassword = decryptOAuthToken(encryptedPassword);
       if (storedPassword === password) return { companyId: connection.companyId, metadata };
+      passwordMismatch = true;
     } catch (error) {
+      passwordDecryptFailed = true;
       console.error('Failed to decrypt QuickBooks Desktop Web Connector password', {
         companyId: connection.companyId,
         error,
       });
-      return null;
     }
   }
 
+  console.warn('QuickBooks Desktop Web Connector authentication rejected', {
+    username,
+    reason: passwordMismatch
+      ? 'password_mismatch'
+      : passwordDecryptFailed
+        ? 'password_decrypt_failed'
+        : setupIncomplete
+          ? 'matching_username_has_incomplete_setup'
+          : matchingUsernameFound
+            ? 'matching_username_has_no_usable_password'
+            : 'no_matching_active_username',
+    receivedPasswordLength: password.length,
+    candidates: await describeWebConnectorCredentialCandidates(username, password),
+  });
   return null;
+}
+
+async function describeWebConnectorCredentialCandidates(username: string, password: string) {
+  const connections = await prisma.accountingConnection.findMany({
+    where: { platform: 'QUICKBOOKS' },
+    select: {
+      companyId: true,
+      status: true,
+      updatedAt: true,
+      connectionMetadata: true,
+    },
+  });
+
+  return connections.flatMap((connection) => {
+    const metadata = getMetadata(connection.connectionMetadata);
+    const credentials = (metadata.quickbooksDesktopCredentials || {}) as Record<string, unknown>;
+    const storedUsername = typeof credentials.webConnectorUsername === 'string' ? credentials.webConnectorUsername.trim() : '';
+    if (storedUsername !== username) return [];
+    const encryptedPassword = typeof credentials.webConnectorPasswordEncrypted === 'string' ? credentials.webConnectorPasswordEncrypted : '';
+    let storedPasswordLength: number | null = null;
+    let passwordMatches: boolean | 'decrypt_failed' | null = null;
+    if (encryptedPassword) {
+      try {
+        const storedPassword = decryptOAuthToken(encryptedPassword);
+        storedPasswordLength = storedPassword.length;
+        passwordMatches = storedPassword === password;
+      } catch {
+        passwordMatches = 'decrypt_failed';
+      }
+    }
+    return [{
+      companyId: connection.companyId,
+      status: connection.status,
+      connectionUpdatedAt: connection.updatedAt.toISOString(),
+      passwordUpdatedAt: typeof credentials.webConnectorPasswordUpdatedAt === 'string' ? credentials.webConnectorPasswordUpdatedAt : null,
+      setupComplete: hasRequiredQuickBooksDesktopSetup(metadata),
+      storedPasswordLength,
+      passwordMatches,
+    }];
+  });
 }
 
 function authenticateResponse(ticket: string, companyFilePath = ''): NextResponse {
@@ -1721,6 +1783,7 @@ export async function POST(request: NextRequest) {
         return soapString('clientVersion', '');
 
       case 'authenticate': {
+        const authenticateStartedAt = Date.now();
         const username = getXmlText(xml, 'strUserName');
         const password = getXmlText(xml, 'strPassword');
         const auth = await authenticateWebConnector(username, password);
@@ -1783,6 +1846,11 @@ export async function POST(request: NextRequest) {
           await markBackfillJobsRunning(auth.companyId, selectedJobs, ticket, backfillJobKind);
         }
         await saveSession(auth.companyId, session);
+        console.info('QuickBooks Desktop Web Connector authenticate completed', {
+          companyId: auth.companyId,
+          jobCount: selectedJobs.length,
+          durationMs: Date.now() - authenticateStartedAt,
+        });
         return authenticateResponse(ticket, getCompanyFilePath(auth.metadata));
       }
 
@@ -1801,6 +1869,12 @@ export async function POST(request: NextRequest) {
         const requestDateRange = getCurrentRequestDateRange(found.session, requestName);
 
         await saveSession(found.session.companyId, found.session);
+        console.info('QuickBooks Desktop Web Connector sendRequestXML', {
+          companyId: found.session.companyId,
+          requestName,
+          currentIndex: found.session.currentIndex,
+          requestCount: found.session.requests.length,
+        });
         return soapString('sendRequestXML', buildQbxmlRequest(requestName, requestDateRange, {
           iteratorID,
           includeLineItems,
@@ -1813,6 +1887,12 @@ export async function POST(request: NextRequest) {
         const responseXml = getXmlText(xml, 'response') || getXmlText(xml, 'responseXML');
         const hresult = getXmlText(xml, 'hresult');
         const message = getXmlText(xml, 'message');
+        console.info('QuickBooks Desktop Web Connector receiveResponseXML', {
+          ticketCompanyId: parseTicket(ticket)?.companyId || null,
+          responseLength: responseXml.length,
+          hresult: hresult || null,
+          message: message || null,
+        });
         const found = await getSession(ticket);
         if (!found) return soapInt('receiveResponseXML', 100);
 
@@ -1893,9 +1973,38 @@ export async function POST(request: NextRequest) {
         return soapInt('receiveResponseXML', progress);
       }
 
+      case 'connectionError': {
+        const ticket = getXmlText(xml, 'ticket') || getXmlText(xml, 'strTicket');
+        const hresult = getXmlText(xml, 'hresult');
+        const message = getXmlText(xml, 'message');
+        const lastError = [hresult, message].filter(Boolean).join(' - ') || 'Web Connector could not connect to QuickBooks.';
+        console.warn('QuickBooks Desktop Web Connector connectionError', {
+          ticketCompanyId: parseTicket(ticket)?.companyId || null,
+          hresult: hresult || null,
+          message: message || null,
+        });
+        const found = await getSession(ticket);
+        if (found) {
+          found.session.lastError = lastError;
+          await saveSession(found.session.companyId, found.session);
+          await updateMetadata(found.session.companyId, (metadata) => ({
+            ...metadata,
+            quickbooksDesktopWebConnectorLastRun: {
+              ...(metadata.quickbooksDesktopWebConnectorLastRun || {}),
+              lastError: `QuickBooks connection error: ${lastError}`,
+            },
+          }));
+        }
+        return soapString('connectionError', 'done');
+      }
+
       case 'getLastError': {
         const ticket = getXmlText(xml, 'ticket') || getXmlText(xml, 'strTicket');
         const found = await getSession(ticket);
+        console.info('QuickBooks Desktop Web Connector getLastError', {
+          ticketCompanyId: parseTicket(ticket)?.companyId || null,
+          lastError: found?.session.lastError || null,
+        });
         return soapString('getLastError', found?.session.lastError || 'QuickBooks Desktop sync failed.');
       }
 
@@ -1903,6 +2012,9 @@ export async function POST(request: NextRequest) {
         return soapString('closeConnection', 'OK');
 
       default:
+        console.warn('QuickBooks Desktop Web Connector unsupported SOAP method', {
+          rootElement: /<(?:[\w.-]+:)?Body\b[^>]*>\s*<(?:[\w.-]+:)?([\w.-]+)/i.exec(xml)?.[1] || null,
+        });
         return soapFault('Unsupported QuickBooks Web Connector SOAP method.');
     }
   } catch (error) {
