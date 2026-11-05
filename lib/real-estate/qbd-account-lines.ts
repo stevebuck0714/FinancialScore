@@ -60,6 +60,11 @@ function nextMonth(month: string) {
   return monthNumber === 12 ? `${year + 1}-01` : `${year}-${String(monthNumber + 1).padStart(2, '0')}`;
 }
 
+function previousMonth(month: string) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return monthNumber === 1 ? `${year - 1}-12` : `${year}-${String(monthNumber - 1).padStart(2, '0')}`;
+}
+
 export function buildQbdAccountMap(rows: Array<{ listId?: string | null; fullName: string | null; accountType: string | null; accountNumber: string | null }>) {
   const codeCounts = new Map<string, number>();
   rows.forEach((row) => { if (row.accountNumber) codeCounts.set(row.accountNumber, (codeCounts.get(row.accountNumber) || 0) + 1); });
@@ -129,6 +134,9 @@ export function buildQbdAccountLines(
     glByAccountMonth.set(account.key, byMonth);
     if (row.txnDate > balanceSheet.asOf) glAfterAnchor.set(account.key, (glAfterAnchor.get(account.key) || 0) + row.amount);
   }
+  // Start one month before the first General Ledger activity so opening balances
+  // (for example, member capital contributed before the ledger begins) are kept.
+  firstMonth = previousMonth(firstMonth);
   const months: string[] = [];
   for (let month = firstMonth; month <= anchorMonth; month = nextMonth(month)) months.push(month);
 

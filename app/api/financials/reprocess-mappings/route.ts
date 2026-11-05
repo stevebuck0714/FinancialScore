@@ -26,6 +26,7 @@ import {
   qbdBuildAccountSideLookup,
   qbdSignedBalanceForTarget,
 } from '@/lib/quickbooks-desktop/account-lookup';
+import { realignQbdDailyBalanceSheetsToAccounts, realignQbdMonthlyBalanceSheetsToAccounts } from '@/lib/quickbooks-desktop/daily-balance-sheet-detail';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -3319,6 +3320,20 @@ export async function POST(request: NextRequest) {
         : null;
       if (qbdBalanceSheetAnchor) {
         qbdDiagnostics.balanceSheetAnchor = qbdBalanceSheetAnchor;
+      }
+      if (result.ok && qbdDomainScope.canUpdateBalanceSheet && !isBakersCompany(String(companyId))) {
+        try {
+          qbdDiagnostics.dailyBalanceSheetAccountRealign = await realignQbdDailyBalanceSheetsToAccounts(
+            String(companyId),
+            QBD_DAILY_FINANCIAL_SOURCE,
+          );
+          qbdDiagnostics.monthlyBalanceSheetAccountRealign = await realignQbdMonthlyBalanceSheetsToAccounts(
+            String(companyId),
+            formatEstDate(),
+          );
+        } catch (error) {
+          qbdDiagnostics.dailyBalanceSheetAccountRealign = { error: error instanceof Error ? error.message : String(error) };
+        }
       }
       const qbdPublishResult = result.ok
         ? await publishMonthsFromMonthlyFinancialDirect({ companyId: String(companyId), force: true })

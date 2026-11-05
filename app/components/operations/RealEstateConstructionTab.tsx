@@ -7,6 +7,7 @@ import ReportPlaceholder from '@/app/components/operations/ReportPlaceholder';
 import { useTableSort } from '@/app/components/operations/useTableSort';
 import { accumulatedDepreciation, annualRunRate, depreciationForYear, depreciationYears, isDepreciable } from '@/lib/real-estate/depreciation';
 import { formatEstDate } from '@/lib/time/eastern';
+import { FIXED_ASSET_CLASS_LABEL, accountTypeIs, activityByYear, balanceAt, classifyFixedAssetAccount, isAmortizationExpense, isConstructionLoan, isDepreciationExpense, isInterestExpense, toReportLines, yearEndPeriods, type FixedAssetClass, type ReportLine } from '@/lib/real-estate/quickbooks-report-lines';
 
 type Props = {
   selectedCompanyId: string;
@@ -94,6 +95,7 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
   const [savingId, setSavingId] = useState<string | null>(null);
   const [assetMessage, setAssetMessage] = useState('');
   const [assumedInService, setAssumedInService] = useState('');
+  const [quickBooksLines, setQuickBooksLines] = useState<ReportLine[]>([]);
   const asOfDate = formatEstDate();
   const activeView = views.some(([key]) => key === view) ? view : views[0]?.[0];
 
@@ -111,6 +113,14 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [selectedCompanyId, reloadKey]);
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/operations/real-estate?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((payload) => active && setQuickBooksLines(toReportLines(payload?.quickBooksLines || [])))
+      .catch(() => active && setQuickBooksLines([]));
+    return () => { active = false; };
+  }, [selectedCompanyId]);
 
   const toggle = (key: string, count: number) => count > 12
     ? <button type="button" onClick={() => setExpanded((current) => ({ ...current, [key]: !current[key] }))} style={toggleButton}>{expanded[key] ? 'Collapse table' : `Show all ${count} rows`}</button>
@@ -209,6 +219,49 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
   const excludedCost = data.budgetLines.filter((line) => ['loan', 'expense'].includes(line.costClass)).reduce((total, line) => total + line.revisedBudget, 0);
   const registerVariance = registerCost + excludedCost - usesTotal;
   const missingInService = data.fixedAssets.filter((asset) => asset.assetClass !== 'land' && !asset.inServiceDate).length;
+
+  const quickBooksYearEnds = useMemo(() => yearEndPeriods(quickBooksLines), [quickBooksLines]);
+  const quickBooksLatest = [...quickBooksYearEnds.values()].at(-1) || null;
+  const quickBooksDepreciation = useMemo(() => activityByYear(quickBooksLines, isDepreciationExpense), [quickBooksLines]);
+  const loanComparisonRows = useMemo(() => {
+    const interest = activityByYear(quickBooksLines, isInterestExpense);
+    const amortization = activityByYear(quickBooksLines, isAmortizationExpense);
+    const drawYears = new Map(loanYears.map((row) => [row.year, row]));
+    const allYears = [...new Set([...drawYears.keys(), ...quickBooksYearEnds.keys()])].filter(Boolean).sort((a, b) => a - b);
+    let drawBalance = 0;
+    return allYears.map((year) => {
+      const draws = drawYears.get(year);
+      if (draws) drawBalance = draws.balance;
+      const yearEnd = quickBooksYearEnds.get(year);
+      const quickBooksBalance = yearEnd ? balanceAt(quickBooksLines, yearEnd, isConstructionLoan) : null;
+      return {
+        year,
+        draws: draws?.draws || 0,
+        advances: draws?.advances || 0,
+        balance: drawBalance,
+        quickBooksBalance,
+        quickBooksAsOf: yearEnd || null,
+        interest: interest.has(year) ? interest.get(year)! : null,
+        amortization: amortization.has(year) ? amortization.get(year)! : null,
+      };
+    });
+  }, [loanYears, quickBooksLines, quickBooksYearEnds]);
+  const fixedAssetComparison = useMemo(() => {
+    if (!quickBooksLatest) return null;
+    const registerClass = (assetClass: string): FixedAssetClass => (assetClass === 'ffe' ? 'equipment' : assetClass as FixedAssetClass);
+    const classes: FixedAssetClass[] = ['land', 'land_improvements', 'building', 'equipment', 'construction_in_progress', 'accumulated_depreciation'];
+    const registerAccumulated = assets.reduce((total, asset) => total + accumulatedDepreciation(asset, quickBooksLatest), 0);
+    const quickBooksFixed = quickBooksLines.filter((line) => line.reportType === 'BALANCE' && line.periodEnd === quickBooksLatest && accountTypeIs(line, 'fixedasset') && Math.abs(line.amount) >= 0.5);
+    const rows = classes.map((assetClass) => ({
+      assetClass,
+      register: assetClass === 'accumulated_depreciation'
+        ? -registerAccumulated
+        : data.fixedAssets.filter((asset) => registerClass(asset.assetClass) === assetClass).reduce((total, asset) => total + asset.cost, 0),
+      quickBooks: quickBooksFixed.filter((line) => classifyFixedAssetAccount(line.accountName) === assetClass).reduce((total, line) => total + line.amount, 0),
+    })).filter((row) => Math.abs(row.register) >= 0.5 || Math.abs(row.quickBooks) >= 0.5);
+    const unclassified = quickBooksFixed.filter((line) => !classifyFixedAssetAccount(line.accountName));
+    return { asOf: quickBooksLatest, rows, unclassified };
+  }, [quickBooksLatest, quickBooksLines, assets, data.fixedAssets]);
 
   const saveAsset = async (id: string) => {
     const draft = drafts[id];
@@ -512,6 +565,34 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
         </table>
       </div>
 
+      {fixedAssetComparison && <div style={card}>
+        <h3 style={{ marginTop: 0 }}>Register compared with QuickBooks</h3>
+        <p style={{ color: '#64748b', margin: '0 0 12px', fontSize: 13 }}>Register cost by class against the QuickBooks Desktop fixed-asset accounts at {formatDate(fixedAssetComparison.asOf)}. Accumulated depreciation is the register&apos;s straight-line amount on the same date.</p>
+        <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 860 }}>
+          <thead><tr><th style={th}>Class</th><th style={{ ...th, textAlign: 'right' }}>Register</th><th style={{ ...th, textAlign: 'right' }}>QuickBooks</th><th style={{ ...th, textAlign: 'right' }}>Difference</th></tr></thead>
+          <tbody>
+            {fixedAssetComparison.rows.map((row) => <tr key={row.assetClass}>
+              <td style={{ ...td, fontWeight: 700 }}>{FIXED_ASSET_CLASS_LABEL[row.assetClass]}</td>
+              <td style={num}>{fmt(row.register)}</td>
+              <td style={num}>{fmt(row.quickBooks)}</td>
+              <td style={{ ...num, color: Math.abs(row.register - row.quickBooks) >= 1 ? '#b91c1c' : '#166534' }}>{fmt(row.register - row.quickBooks)}</td>
+            </tr>)}
+            {fixedAssetComparison.unclassified.map((line) => <tr key={line.accountCode}>
+              <td style={td}>{line.accountName} <span style={{ color: '#64748b', fontSize: 11 }}>(QuickBooks fixed-asset account outside these classes)</span></td>
+              <td style={num} />
+              <td style={num}>{fmt(line.amount)}</td>
+              <td style={num} />
+            </tr>)}
+            {(() => {
+              const register = fixedAssetComparison.rows.reduce((total, row) => total + row.register, 0);
+              const quickBooks = fixedAssetComparison.rows.reduce((total, row) => total + row.quickBooks, 0);
+              return <tr style={totalRow}><td style={td}>Net fixed assets</td><td style={num}>{fmt(register)}</td><td style={num}>{fmt(quickBooks)}</td><td style={{ ...num, color: Math.abs(register - quickBooks) >= 1 ? '#b91c1c' : '#166534' }}>{fmt(register - quickBooks)}</td></tr>;
+            })()}
+          </tbody>
+        </table>
+        <p style={{ color: '#64748b', margin: '8px 0 0', fontSize: 12 }}>Accounts are classed by name. The Due to/from SLN balance that QuickBooks types as a fixed asset is excluded.</p>
+      </div>}
+
     </>}
 
     {activeView === 'depreciation' && <>
@@ -537,6 +618,14 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
             <tr style={totalRow}><td style={td}>Total depreciation</td><td style={td} /><td style={td} /><td style={num}>{fmt(scheduleAssets.reduce((total, row) => total + row.asset.cost, 0))}</td>{years.map((year) => <td key={year} style={num}>{fmt(scheduleAssets.reduce((total, row) => total + depreciationForYear(row.depreciable, year), 0))}</td>)}</tr>
             <tr><td style={{ ...td, fontWeight: 700 }}>Accumulated at year-end</td><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{fmt(scheduleAssets.reduce((total, row) => total + accumulatedDepreciation(row.depreciable, `${year}-12-31`), 0))}</td>)}</tr>
             <tr><td style={{ ...td, fontWeight: 700 }}>Net book value at year-end (incl. land)</td><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{fmt(registerCost - scheduleAssets.reduce((total, row) => total + accumulatedDepreciation(row.depreciable, `${year}-12-31`), 0))}</td>)}</tr>
+            {quickBooksDepreciation.size > 0 && <>
+              <tr><td style={{ ...td, fontWeight: 700 }}>QuickBooks depreciation booked</td><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{quickBooksDepreciation.has(year) ? fmt(quickBooksDepreciation.get(year)!) : '—'}</td>)}</tr>
+              <tr><td style={{ ...td, fontWeight: 700 }}>Schedule less QuickBooks</td><td style={td} /><td style={td} /><td style={td} />{years.map((year) => {
+                if (!quickBooksDepreciation.has(year)) return <td key={year} style={num}>—</td>;
+                const difference = scheduleAssets.reduce((total, row) => total + depreciationForYear(row.depreciable, year), 0) - quickBooksDepreciation.get(year)!;
+                return <td key={year} style={{ ...num, color: Math.abs(difference) >= 1 ? '#b91c1c' : '#166534' }}>{fmt(difference)}</td>;
+              })}</tr>
+            </>}
           </tbody>
         </table></div> : <div style={{ padding: '0 18px 18px', color: '#64748b' }}>Add depreciable assets with useful lives in the Fixed Asset Register to build the schedule.</div>}
       </div>
@@ -547,13 +636,23 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
         {[['Lender Commitment', fmt(loanCommitment)], ['Advanced to Date', fmt(loanAdvanced)], ['Not Advanced', fmt(loanCommitment - loanAdvanced)], ['Loan Advances', String(loanRows.length)]].map(([title, value]) => <div key={title} style={card}><div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{title}</div><div style={{ marginTop: 4, fontSize: 22, fontWeight: 800 }}>{value}</div></div>)}
       </div>
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 18px 0' }}><h3 style={{ margin: 0 }}>Principal by year</h3><p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>Principal advanced through the signed draws. Year-end balances assume no principal repayments; confirm against the lender statements.</p></div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{sortableHeader('loanYears', 'year', 'Year')}{sortableHeader('loanYears', 'draws', 'Advances', 'right')}{sortableHeader('loanYears', 'advances', 'Principal Advanced', 'right')}{sortableHeader('loanYears', 'balance', 'Balance at Year-End', 'right')}</tr></thead>
-          <tbody>{sortRows('loanYears', loanYears, (row, key) => row[key as 'year' | 'draws' | 'advances' | 'balance']).map((row) => <tr key={row.year}>
-            <td style={{ ...td, fontWeight: 700 }}>{row.year}</td><td style={num}>{row.draws}</td><td style={num}>{fmt(row.advances)}</td><td style={num}>{fmt(row.balance)}</td>
-          </tr>)}</tbody>
-        </table>
+        <div style={{ padding: '14px 18px 0' }}><h3 style={{ margin: 0 }}>Principal by year</h3><p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>Principal advanced through the signed draws against the QuickBooks Desktop loan balance, with interest and loan-fee amortization booked in QuickBooks. Draw balances assume no principal repayments.</p></div>
+        <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
+          <thead><tr>{sortableHeader('loanYears', 'year', 'Year')}{sortableHeader('loanYears', 'draws', 'Advances', 'right')}{sortableHeader('loanYears', 'advances', 'Principal Advanced', 'right')}{sortableHeader('loanYears', 'balance', 'Balance at Year-End (Draws)', 'right')}{sortableHeader('loanYears', 'quickBooksBalance', 'Balance at Year-End (QuickBooks)', 'right')}{sortableHeader('loanYears', 'difference', 'Difference', 'right')}{sortableHeader('loanYears', 'interest', 'Interest Expense (QuickBooks)', 'right')}{sortableHeader('loanYears', 'amortization', 'Loan Fee Amortization (QuickBooks)', 'right')}</tr></thead>
+          <tbody>{sortRows('loanYears', loanComparisonRows, (row, key) => key === 'difference' ? (row.quickBooksBalance == null ? 0 : row.balance - row.quickBooksBalance) : (row as Record<string, unknown>)[key] ?? 0).map((row) => {
+            const difference = row.quickBooksBalance == null ? null : row.balance - row.quickBooksBalance;
+            return <tr key={row.year}>
+              <td style={{ ...td, fontWeight: 700 }}>{row.year}{row.quickBooksAsOf && !row.quickBooksAsOf.endsWith('-12-31') && <div style={{ marginTop: 3, color: '#64748b', fontSize: 11, fontWeight: 400 }}>QuickBooks as of {formatDate(row.quickBooksAsOf)}</div>}</td>
+              <td style={num}>{row.draws || ''}</td>
+              <td style={num}>{row.advances ? fmt(row.advances) : ''}</td>
+              <td style={num}>{fmt(row.balance)}</td>
+              <td style={num}>{row.quickBooksBalance == null ? '—' : fmt(row.quickBooksBalance)}</td>
+              <td style={{ ...num, color: difference == null ? '#64748b' : Math.abs(difference) >= 1 ? '#b91c1c' : '#166534' }}>{difference == null ? '—' : fmt(difference)}</td>
+              <td style={num}>{row.interest == null ? '—' : fmt(row.interest)}</td>
+              <td style={num}>{row.amortization == null ? '—' : fmt(row.amortization)}</td>
+            </tr>;
+          })}</tbody>
+        </table></div>
       </div>
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '14px 18px 0' }}><h3 style={{ margin: 0 }}>Loan advances by draw</h3><p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>Tranche amounts at each restructuring are in Sources &amp; Uses.</p></div>
@@ -578,7 +677,9 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
       <ReportPlaceholder
         title="Interest and Amortization"
         description="Interest by month (capitalized during construction, expensed after placed in service), principal payments after conversion to the permanent loan, and the debt-issuance cost amortization."
-        needs={['Loan terms for each tranche: rate, amortization, and maturity (note or loan agreement)', 'Virginia Housing loan statements or the conversion closing statement', 'Interest paid outside the draws after Draw 29']}
+        needs={quickBooksLines.length
+          ? ['Loan terms for each tranche: rate, amortization, and maturity (note or loan agreement)', 'Virginia Housing loan statements or the conversion closing statement to split QuickBooks interest between capitalized and expensed']
+          : ['Loan terms for each tranche: rate, amortization, and maturity (note or loan agreement)', 'Virginia Housing loan statements or the conversion closing statement', 'Interest paid outside the draws after Draw 29']}
       />
     </>}
   </div>;

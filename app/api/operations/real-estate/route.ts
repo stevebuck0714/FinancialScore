@@ -121,8 +121,27 @@ export async function GET(request: NextRequest) {
       ),
     ]);
     const waterfallSettings = settingsRows[0] || { stabilizationDate: null, preferredReturnRate: 6 };
+    // QuickBooks Desktop lines are BGAH's books. They replace the BGAH workbook
+    // only once the QBD feed is mapped; until then they stay separate so the
+    // two BGAH sources are never added together.
+    const quickBooksLines = lines.filter((line) => line.sourceEntity === 'QBD');
+    const quickBooksMappings = mappings.filter((mapping) => mapping.financialFeed === 'QBD');
+    const bgahFromQuickBooks = quickBooksLines.length > 0 && quickBooksMappings.length > 0;
+    const reportLines = bgahFromQuickBooks
+      ? [
+          ...lines.filter((line) => line.sourceEntity !== 'QBD' && line.sourceEntity !== 'BGAH'),
+          ...quickBooksLines.map((line) => ({ ...line, sourceEntity: 'BGAH', fromQuickBooks: true })),
+        ]
+      : lines.filter((line) => line.sourceEntity !== 'QBD');
+    const reportMappings = bgahFromQuickBooks
+      ? [
+          ...mappings.filter((mapping) => mapping.financialFeed !== 'QBD' && mapping.financialFeed !== 'BGAH'),
+          ...quickBooksMappings.map((mapping) => ({ ...mapping, financialFeed: 'BGAH' })),
+        ]
+      : mappings.filter((mapping) => mapping.financialFeed !== 'QBD');
     return NextResponse.json({
-      lines, investors, occupancy, cashActivities, operationalMetrics, mappings, waterfallSettings, aliases,
+      lines: reportLines, quickBooksLines, quickBooksMappings, bgahSource: bgahFromQuickBooks ? 'QUICKBOOKS' : 'WORKBOOK',
+      investors, occupancy, cashActivities, operationalMetrics, mappings: reportMappings, waterfallSettings, aliases,
       taxReturns, taxDepreciationRecords,
     });
   } catch (error: any) {
