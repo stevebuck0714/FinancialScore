@@ -17663,7 +17663,6 @@ export default function OperationsTab({
       { key: 'totalEquity', label: getFieldDisplayName('totalEquity'), styleType: 'subtotal' },
       { key: 'totalLAndE', label: getFieldDisplayName('totalLiabilitiesAndEquity'), styleType: 'total' },
     ];
-    const statementDayByKey = new Map(statementDays.map((day) => [day.dateKey, day] as const));
     const balanceTotalFields = new Set(['tca', 'totalAssets', 'tcl', 'totalLiab', 'totalEquity', 'totalLAndE']);
     const balanceRowDefsWithDetail = withBalanceAccountDetail(
       balanceRowDefs.map((rowDef) => ({
@@ -17671,9 +17670,9 @@ export default function OperationsTab({
         detailField: rowDef.key && !balanceTotalFields.has(String(rowDef.key)) ? String(rowDef.key) : undefined,
       })),
       statementDays.map((day) => day.dateKey),
-      (key) => (statementDayByKey.get(key)?.hasBalanceSource ? key : null),
+      (key) => (statementDayByKey[key]?.hasBalanceSource ? key : null),
       (field, key) => {
-        const day = statementDayByKey.get(key);
+        const day = statementDayByKey[key];
         return day?.hasBalanceSource ? Number((day as Record<string, unknown>)[field] || 0) : null;
       },
     ) as Array<StatementRowDef & { toggleField?: string; toggleExpanded?: boolean; isAccountDetail?: boolean }>;
