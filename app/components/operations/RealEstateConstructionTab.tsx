@@ -418,7 +418,9 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
             <td style={num}>{invoice.debtAmount ? fmtCents(invoice.debtAmount) : ''}</td>
             <td style={num}>{invoice.equityAmount ? fmtCents(invoice.equityAmount) : ''}</td>
             <td style={{ ...num, fontWeight: 700 }}>{fmtCents(invoice.debtAmount + invoice.equityAmount)}</td>
-          </tr>)}</tbody>
+          </tr>)}
+          {filteredInvoices.length > 0 && <tr style={totalRow}><td style={td}>Total</td><td style={td} /><td style={td} /><td style={td} /><td style={td} /><td style={num}>{fmtCents(filteredInvoices.reduce((total, invoice) => total + invoice.debtAmount, 0))}</td><td style={num}>{fmtCents(filteredInvoices.reduce((total, invoice) => total + invoice.equityAmount, 0))}</td><td style={num}>{fmtCents(filteredInvoiceTotal)}</td></tr>}
+          </tbody>
         </table></div>
         {toggle('invoices', filteredInvoices.length)}
         {!filteredInvoices.length && <div style={{ padding: 18, color: '#64748b' }}>No invoices match these filters.</div>}
