@@ -218,6 +218,20 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
   const registerCost = data.fixedAssets.reduce((total, asset) => total + asset.cost, 0);
   const excludedCost = data.budgetLines.filter((line) => ['loan', 'expense'].includes(line.costClass)).reduce((total, line) => total + line.revisedBudget, 0);
   const registerVariance = registerCost + excludedCost - usesTotal;
+  const registerFromQuickBooks = data.fixedAssets.length > 0 && data.fixedAssets.every((asset) => (asset.basis || '').startsWith('QuickBooks Desktop account'));
+  const varianceItems = registerFromQuickBooks ? [
+    {
+      label: 'Land: lender value above the QuickBooks basis',
+      amount: data.fixedAssets.filter((asset) => asset.assetClass === 'land').reduce((total, asset) => total + asset.cost, 0) - (usesByClass.find((row) => row.costClass === 'land')?.amount || 0),
+    },
+    {
+      label: 'Construction loan interest expensed in QuickBooks instead of capitalized',
+      amount: -quickBooksLines.filter((line) => line.reportType === 'ACTIVITY' && isInterestExpense(line) && /construction/i.test(line.accountName) && (!lastDrawDate || line.periodEnd <= `${lastDrawDate.slice(0, 7)}-31`)).reduce((total, line) => total + line.amount, 0),
+    },
+    { label: 'Retainage held from the contractor, if its release was never booked in QuickBooks', amount: -totals.retainageHeld },
+    { label: 'Liquidated damages retained by the owner', amount: -(totals.ldWithheld - totals.ldReleased) },
+  ].filter((item) => Math.abs(item.amount) >= 0.5) : [];
+  const unexplainedVariance = registerVariance - varianceItems.reduce((total, item) => total + item.amount, 0);
   const missingInService = data.fixedAssets.filter((asset) => asset.assetClass !== 'land' && !asset.inServiceDate).length;
 
   const quickBooksYearEnds = useMemo(() => yearEndPeriods(quickBooksLines), [quickBooksLines]);
@@ -602,8 +616,14 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
             {usesByClass.filter((row) => ['loan', 'expense'].includes(row.costClass)).map((row) => <tr key={row.costClass}><td style={td}>{COST_CLASS_LABEL[row.costClass]} — not in the register</td><td style={num}>{fmt(row.amount)}</td></tr>)}
             <tr><td style={td}>Total project cost (lender budget)</td><td style={num}>{fmt(usesTotal)}</td></tr>
             <tr style={{ ...totalRow, color: Math.abs(registerVariance) >= 1 ? '#b91c1c' : '#166534' }}><td style={td}>Difference</td><td style={num}>{fmt(registerVariance)}</td></tr>
+            {varianceItems.length > 0 && Math.abs(registerVariance) >= 1 && <>
+              <tr><td style={{ ...td, fontWeight: 700, color: '#64748b', fontSize: 12, textTransform: 'uppercase' }} colSpan={2}>Explained by</td></tr>
+              {varianceItems.map((item) => <tr key={item.label}><td style={{ ...td, paddingLeft: 24 }}>{item.label}</td><td style={num}>{fmt(item.amount)}</td></tr>)}
+              <tr style={{ ...totalRow, color: Math.abs(unexplainedVariance) >= 1 ? '#b91c1c' : '#166534' }}><td style={td}>Not yet explained</td><td style={num}>{fmt(unexplainedVariance)}</td></tr>
+            </>}
           </tbody>
         </table>
+        {varianceItems.length > 0 && Math.abs(registerVariance) >= 1 && <p style={{ color: '#64748b', marginBottom: 0, fontSize: 13 }}>Retainage and liquidated damages come from the signed draws; confirm both against the contractor settlement and the QuickBooks Building account. Construction interest is the QuickBooks construction interest expense through the final draw.</p>}
       </div>
 
       {fixedAssetComparison && <div style={card}>
