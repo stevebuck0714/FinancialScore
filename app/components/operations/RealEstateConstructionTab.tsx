@@ -317,6 +317,26 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
       setSavingId(null);
     }
   };
+  const rebuildFromQuickBooks = async () => {
+    if (!window.confirm('Replace the fixed asset register with the QuickBooks Desktop fixed-asset accounts? In-service dates and lives already entered are kept for the same class.')) return;
+    setSavingId('quickbooks');
+    setAssetMessage('');
+    try {
+      const response = await fetch('/api/operations/real-estate/construction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId, kind: 'fixed-assets-from-quickbooks' }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to rebuild the register.');
+      setAssetMessage(`Register rebuilt from QuickBooks at ${formatDate(payload.asOf)}.`);
+      setReloadKey((current) => current + 1);
+    } catch (err: any) {
+      setAssetMessage(err.message);
+    } finally {
+      setSavingId(null);
+    }
+  };
   const setDraft = (id: string, patch: Partial<AssetDraft>) => setDrafts((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
 
   if (loading) return <div style={{ padding: 24, color: '#64748b' }}>Loading construction and fixed assets…</div>;
@@ -514,7 +534,8 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
         <div style={{ padding: '14px 18px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0 }}>Fixed asset register</h3>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            {assetMessage && <span style={{ fontSize: 12, color: assetMessage === 'Asset saved.' ? '#166534' : '#b91c1c' }}>{assetMessage}</span>}
+            {assetMessage && <span style={{ fontSize: 12, color: assetMessage === 'Asset saved.' || assetMessage.startsWith('Register rebuilt') ? '#166534' : '#b91c1c' }}>{assetMessage}</span>}
+            {quickBooksLatest && <button type="button" style={secondaryButton} disabled={savingId === 'quickbooks'} onClick={rebuildFromQuickBooks}>{savingId === 'quickbooks' ? 'Rebuilding…' : 'Rebuild from QuickBooks'}</button>}
             <button type="button" style={secondaryButton} disabled={Boolean(drafts.new)} onClick={() => setDrafts((current) => ({ ...current, new: { name: '', assetClass: 'building', cost: '0', inServiceDate: '', usefulLifeYears: '40' } }))}>Add Asset</button>
           </div>
         </div>

@@ -4,10 +4,61 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensureRealEstateConstructionTables } from '@/lib/real-estate/construction-tables';
+import { classifyFixedAssetAccount } from '@/lib/real-estate/quickbooks-report-lines';
 
 export const dynamic = 'force-dynamic';
 
 const ASSET_CLASSES = ['land', 'building', 'land_improvements', 'equipment', 'ffe'];
+
+const DEFAULT_LIFE: Record<string, number | null> = { land: null, land_improvements: 15, building: 40, equipment: 7, ffe: 7 };
+
+/** Replaces the register with one asset per QuickBooks Desktop fixed-asset cost account at the latest balance month. */
+async function rebuildFromQuickBooks(companyId: string) {
+  const accounts = await prisma.$queryRawUnsafe<Array<{ accountCode: string; accountName: string; amount: number; periodEnd: string }>>(
+    `SELECT "accountCode", "accountName", "amount"::float AS "amount", to_char("periodEnd", 'YYYY-MM-DD') AS "periodEnd"
+     FROM "RealEstateFinancialLine" l
+     WHERE "companyId"=$1 AND "sourceEntity"='QBD' AND "reportType"='BALANCE'
+       AND lower(regexp_replace("accountType", '[^a-zA-Z]', '', 'g'))='fixedasset'
+       AND "periodEnd"=(SELECT MAX("periodEnd") FROM "RealEstateFinancialLine" WHERE "companyId"=$1 AND "sourceEntity"='QBD' AND "reportType"='BALANCE')
+     ORDER BY "accountCode"`,
+    companyId,
+  );
+  const assets = accounts.flatMap((account) => {
+    const fixedClass = classifyFixedAssetAccount(account.accountName);
+    if (!fixedClass || fixedClass === 'accumulated_depreciation' || fixedClass === 'construction_in_progress' || Math.abs(account.amount) < 0.005) return [];
+    const assetClass = fixedClass === 'equipment' && /furniture|fixture|ff&e/i.test(account.accountName) ? 'ffe' : fixedClass;
+    return [{ ...account, assetClass, name: account.accountName.split(':').at(-1)!.trim() }];
+  });
+  if (!assets.length) {
+    return NextResponse.json({ error: 'No QuickBooks Desktop fixed-asset balances were found. Run the QuickBooks Desktop sync first.' }, { status: 400 });
+  }
+  const existing = await prisma.$queryRawUnsafe<Array<{ assetClass: string; inServiceDate: string | null; usefulLifeYears: number | null }>>(
+    `SELECT "assetClass", to_char("inServiceDate", 'YYYY-MM-DD') AS "inServiceDate", "usefulLifeYears"::float AS "usefulLifeYears"
+     FROM "RealEstateFixedAsset" WHERE "companyId"=$1 ORDER BY "sortOrder"`,
+    companyId,
+  );
+  const carried = (assetClass: string) => {
+    const classes = assetClass === 'ffe' ? ['ffe', 'equipment'] : assetClass === 'equipment' ? ['equipment', 'ffe'] : [assetClass];
+    const matches = existing.filter((asset) => classes.includes(asset.assetClass));
+    return {
+      inServiceDate: matches.find((asset) => asset.inServiceDate)?.inServiceDate || null,
+      usefulLifeYears: assetClass === 'land' ? null : matches.find((asset) => asset.usefulLifeYears)?.usefulLifeYears ?? DEFAULT_LIFE[assetClass],
+    };
+  };
+  await prisma.$transaction([
+    prisma.$executeRawUnsafe('DELETE FROM "RealEstateFixedAsset" WHERE "companyId"=$1', companyId),
+    ...assets.map((asset, index) => {
+      const { inServiceDate, usefulLifeYears } = carried(asset.assetClass);
+      return prisma.$executeRawUnsafe(
+        `INSERT INTO "RealEstateFixedAsset" ("id","companyId","name","assetClass","cost","inServiceDate","usefulLifeYears","basis","sortOrder","updatedAt")
+         VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,CURRENT_TIMESTAMP)`,
+        randomUUID(), companyId, asset.name, asset.assetClass, Math.round(asset.amount * 100) / 100, inServiceDate, usefulLifeYears,
+        `QuickBooks Desktop account ${asset.accountCode} "${asset.accountName}" at ${asset.periodEnd}.`, index + 1,
+      );
+    }),
+  ]);
+  return NextResponse.json({ ok: true, assets: assets.length, asOf: assets[0].periodEnd });
+}
 
 async function authorize(companyId: string, action: string) {
   await requireAuth();
@@ -65,7 +116,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const companyId = String(body?.companyId || '').trim();
   const kind = String(body?.kind || '').trim();
-  if (!companyId || !['fixed-asset', 'fixed-asset-delete'].includes(kind)) {
+  if (!companyId || !['fixed-asset', 'fixed-asset-delete', 'fixed-assets-from-quickbooks'].includes(kind)) {
     return NextResponse.json({ error: 'Company ID and a supported record type are required.' }, { status: 400 });
   }
   if (!(await authorize(companyId, 'OPERATIONS_REAL_ESTATE_WRITE'))) {
@@ -79,6 +130,7 @@ export async function POST(request: NextRequest) {
       await prisma.$executeRawUnsafe('DELETE FROM "RealEstateFixedAsset" WHERE "id"=$1 AND "companyId"=$2', id, companyId);
       return NextResponse.json({ ok: true });
     }
+    if (kind === 'fixed-assets-from-quickbooks') return rebuildFromQuickBooks(companyId);
     const name = String(body.name || '').trim();
     const assetClass = String(body.assetClass || '').trim();
     const cost = Number(body.cost);
