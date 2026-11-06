@@ -6,6 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensureRealEstateAccountMappingTable } from '@/lib/real-estate/account-mapping-table';
 import { ensureRealEstateWaterfallTables } from '@/lib/real-estate/waterfall-tables';
 import { normalizeName } from '@/lib/real-estate/cash-flow-report';
+import { suggestPropertyTargets } from '@/lib/real-estate/property-income-statement';
 import { ensureRealEstateTaxReconciliationTables } from '@/lib/real-estate/tax-reconciliation-tables';
 
 export const dynamic = 'force-dynamic';
@@ -121,12 +122,20 @@ export async function GET(request: NextRequest) {
       ),
     ]);
     const waterfallSettings = settingsRows[0] || { stabilizationDate: null, preferredReturnRate: 6 };
-    // QuickBooks Desktop lines are BGAH's books. They replace the BGAH workbook
-    // only once the QBD feed is mapped; until then they stay separate so the
-    // two BGAH sources are never added together.
+    // QuickBooks Desktop lines are BGAH's books and replace the BGAH workbook
+    // whenever they are loaded, so the two BGAH sources are never added together.
+    // QBD accounts without a saved mapping use the Data Mapping suggestion.
     const quickBooksLines = lines.filter((line) => line.sourceEntity === 'QBD');
-    const quickBooksMappings = mappings.filter((mapping) => mapping.financialFeed === 'QBD');
-    const bgahFromQuickBooks = quickBooksLines.length > 0 && quickBooksMappings.length > 0;
+    const savedQuickBooksMappings = mappings.filter((mapping) => mapping.financialFeed === 'QBD');
+    const savedQuickBooksCodes = new Set(savedQuickBooksMappings.map((mapping) => String(mapping.accountCode)));
+    const quickBooksAccounts = [...new Map(quickBooksLines
+      .filter((line) => String(line.reportType).toUpperCase() === 'ACTIVITY')
+      .map((line) => [String(line.accountCode), { accountCode: String(line.accountCode), accountName: String(line.accountName || ''), accountType: String(line.accountType || '') }])).values()];
+    const suggestedQuickBooksMappings = [...suggestPropertyTargets(quickBooksAccounts).entries()]
+      .filter(([accountCode]) => !savedQuickBooksCodes.has(accountCode))
+      .map(([accountCode, suggestion]) => ({ financialFeed: 'QBD', accountCode, targetField: suggestion.targetField, bookTreatment: null, suggested: true }));
+    const quickBooksMappings = [...savedQuickBooksMappings, ...suggestedQuickBooksMappings];
+    const bgahFromQuickBooks = quickBooksLines.length > 0;
     const reportLines = bgahFromQuickBooks
       ? [
           ...lines.filter((line) => line.sourceEntity !== 'QBD' && line.sourceEntity !== 'BGAH'),
@@ -140,7 +149,7 @@ export async function GET(request: NextRequest) {
         ]
       : mappings.filter((mapping) => mapping.financialFeed !== 'QBD');
     return NextResponse.json({
-      lines: reportLines, quickBooksLines, quickBooksMappings, bgahSource: bgahFromQuickBooks ? 'QUICKBOOKS' : 'WORKBOOK',
+      lines: reportLines, quickBooksLines, quickBooksMappings: savedQuickBooksMappings, bgahSource: bgahFromQuickBooks ? 'QUICKBOOKS' : 'WORKBOOK',
       investors, occupancy, cashActivities, operationalMetrics, mappings: reportMappings, waterfallSettings, aliases,
       taxReturns, taxDepreciationRecords,
     });
