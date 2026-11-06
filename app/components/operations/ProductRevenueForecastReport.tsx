@@ -442,7 +442,7 @@ export default function ProductRevenueForecastReport({
               nextLines.length
             )
           );
-          setNotice(`Added Item ID ${pendingRow.itemSku} for ${customer.label}. Enter monthly projections, then Save page.`);
+          setNotice(`Added APR P/N ${pendingRow.itemSku} for ${customer.label}. Enter monthly projections, then Save page.`);
         }
       }
       setLines(nextLines);
@@ -522,7 +522,7 @@ export default function ProductRevenueForecastReport({
     void lookupItemCustomers(focusItemId);
   }, [focusItemId, focusRequestId, lookupItemCustomers, selectedCompanyId]);
 
-  // Typing an Item ID with no customer or group selected finds the item's customer.
+  // Typing an APR P/N with no customer or group selected finds the item's customer.
   const typedItemId = itemIdFilter.trim();
   useEffect(() => {
     if (customerKey || customerGroup || typedItemId.length < 3) return;
@@ -948,12 +948,12 @@ export default function ProductRevenueForecastReport({
           </select>
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
-          Item ID
+          APR P/N
           <input
             type="search"
             value={itemIdFilter}
             onChange={(event) => onItemIdFilterChange?.(event.target.value)}
-            placeholder="All items"
+            placeholder="Search APR P/N"
             style={{ ...inputStyle, width: 180 }}
           />
         </label>
@@ -1078,17 +1078,17 @@ export default function ProductRevenueForecastReport({
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}
       {loadingItemCustomers && lookingUpItemId && (
         <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>
-          Finding the customer for Item ID {lookingUpItemId}…
+          Finding the customer for APR P/N {lookingUpItemId}…
         </div>
       )}
       {!loadingItemCustomers && itemCustomersForFilter && itemCustomersForFilter.customers.length === 0 && (
         <div style={{ color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
-          {`Item ID ${itemCustomersForFilter.itemId} is not linked to a customer yet (no orders, invoices, saved forecast, or Infor customer item). Select the customer, then use Add Item ID ${itemCustomersForFilter.itemId}.`}
+          {`APR P/N ${itemCustomersForFilter.itemId} is not linked to a customer yet (no orders, invoices, saved forecast, or Infor customer item). Select the customer, then use Add APR P/N ${itemCustomersForFilter.itemId}.`}
         </div>
       )}
       {!loadingItemCustomers && itemCustomersForFilter && itemCustomersForFilter.customers.length > 1 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
-          <span>{`Item ID ${itemCustomersForFilter.itemId} is linked to ${itemCustomersForFilter.customers.length} customers. Choose one:`}</span>
+          <span>{`APR P/N ${itemCustomersForFilter.itemId} is linked to ${itemCustomersForFilter.customers.length} customers. Choose one:`}</span>
           {itemCustomersForFilter.customers.map((candidate) => {
             const known = customers.find(
               (customer) => customer.customerId.trim().toLowerCase() === candidate.customerId.trim().toLowerCase()
@@ -1438,7 +1438,7 @@ export default function ProductRevenueForecastReport({
                   <tr>
                     <td colSpan={visibleIdentityColumns.length + 13} style={{ padding: 16, color: '#64748b' }}>
                       {itemIdFilter
-                        ? `No forecast rows match Item ID ${itemIdFilter}.`
+                        ? `No forecast rows match APR P/N ${itemIdFilter}.`
                         : `No forecast rows for this ${groupScope ? 'group' : 'customer'} yet. Import the workbook to load customers and parts, then save.`}
                       {itemIdFilter.trim() && selectedCustomer && !groupScope ? (
                         <button
@@ -1456,7 +1456,7 @@ export default function ProductRevenueForecastReport({
                             cursor: 'pointer',
                           }}
                         >
-                          {`Add Item ID ${itemIdFilter.trim()}`}
+                          {`Add APR P/N ${itemIdFilter.trim()}`}
                         </button>
                       ) : null}
                     </td>

@@ -74,6 +74,10 @@ export async function ensureProductRevenueForecastTables(): Promise<void> {
           ON "ProductRevenueForecastLine"("companyId", "year", "customerName")
       `);
       await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "ProductRevenueForecastLine_company_apr_part_lookup_idx"
+          ON "ProductRevenueForecastLine"("companyId", UPPER(TRIM("itemSku")))
+      `);
+      await prisma.$executeRawUnsafe(`
         ALTER TABLE "ProductRevenueForecastLine"
         ADD COLUMN IF NOT EXISTS "adjustedQty" JSONB NOT NULL DEFAULT '{}'::jsonb
       `);

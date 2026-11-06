@@ -245,7 +245,7 @@ export async function GET(request: NextRequest) {
     if (request.nextUrl.searchParams.get('itemCustomers') === '1') {
       const itemSku = String(request.nextUrl.searchParams.get('itemSku') || '').trim();
       if (!itemSku) {
-        return NextResponse.json({ error: 'Item ID is required' }, { status: 400 });
+        return NextResponse.json({ error: 'APR P/N is required' }, { status: 400 });
       }
       await ensureProductRevenueForecastTables();
       return NextResponse.json({ itemSku, customers: await loadItemCustomers(companyId, itemSku) });

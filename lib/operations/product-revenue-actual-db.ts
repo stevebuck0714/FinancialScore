@@ -182,6 +182,10 @@ export async function ensureProductRevenueTables(): Promise<void> {
         CREATE INDEX IF NOT EXISTS "ProductInvoiceLineFact_company_customer_item_idx"
           ON "ProductInvoiceLineFact"("companyId", "customerId", "itemSku")
       `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "ProductInvoiceLineFact_company_apr_part_lookup_idx"
+          ON "ProductInvoiceLineFact"("companyId", UPPER(TRIM("itemSku")))
+      `);
       await ensureProductRevenueForecastTables();
     })().catch((error) => {
       ensureTablesOnce = null;
