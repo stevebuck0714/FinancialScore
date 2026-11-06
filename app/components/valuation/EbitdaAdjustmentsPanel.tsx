@@ -16,6 +16,7 @@ import {
   type SdeBucket as CatalogSdeBucket,
 } from '@/lib/sde/adjustment-line-items';
 import { formatMoney } from '@/lib/format/currency';
+import { formatMonthShort } from '@/lib/date-utils';
 import { DEFAULT_BASE_CURRENCY } from '@/lib/constants/currencies';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 
@@ -145,7 +146,7 @@ type ContextValue = {
   effectiveLineItem: (mappingId: string, serverLineItem: string | null) => string | null;
   setAssignPickerOpen: (b: SdeBucket | null) => void;
   refreshUnassignedMappings: () => Promise<void>;
-  handleSave: () => Promise<void>;
+  handleSave: () => Promise<boolean>;
 };
 
 const Ctx = createContext<ContextValue | null>(null);
@@ -161,6 +162,12 @@ export { useEbitdaCtx };
 // -----------------------------------------------------------------------------
 // Provider
 // -----------------------------------------------------------------------------
+
+async function fetchEbitdaAdjustments(companyId: string): Promise<EbitdaAdjustmentsApiResponse> {
+  const res = await fetch(`/api/sde/ebitda-adjustments?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as EbitdaAdjustmentsApiResponse;
+}
 
 export const EbitdaAdjustmentsProvider: React.FC<{
   companyId: string | null | undefined;
@@ -179,7 +186,7 @@ export const EbitdaAdjustmentsProvider: React.FC<{
     activeMoneyLocale = money.locale;
   }, [money.currency, money.locale]);
   const [api, setApi] = useState<EbitdaAdjustmentsApiResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => Boolean(companyId));
   const [error, setError] = useState<string | null>(null);
   const [ownerPctEdits, setOwnerPctEdits] = useState<Record<string, number>>({});
   const [bucketEdits, setBucketEdits] = useState<Record<string, SdeBucket | null>>({});
@@ -190,24 +197,25 @@ export const EbitdaAdjustmentsProvider: React.FC<{
   const [unassignedMappings, setUnassignedMappings] = useState<ContextValue['unassignedMappings']>(null);
   const [assignPickerOpen, setAssignPickerOpen] = useState<SdeBucket | null>(null);
 
+  const applyApi = useCallback((json: EbitdaAdjustmentsApiResponse) => {
+    setApi(json);
+    setOwnerPctEdits({});
+    setBucketEdits({});
+    setLineItemEdits({});
+  }, []);
+
   const refreshApi = useCallback(async () => {
     if (!companyId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/sde/ebitda-adjustments?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as EbitdaAdjustmentsApiResponse;
-      setApi(json);
-      setOwnerPctEdits({});
-      setBucketEdits({});
-      setLineItemEdits({});
+      applyApi(await fetchEbitdaAdjustments(companyId));
     } catch (e: any) {
       setError(String(e?.message || e));
     } finally {
       setLoading(false);
     }
-  }, [companyId]);
+  }, [companyId, applyApi]);
 
   const refreshUnassignedMappings = useCallback(async () => {
     if (!companyId) return;
@@ -238,8 +246,24 @@ export const EbitdaAdjustmentsProvider: React.FC<{
   }, [companyId, api, bucketEdits]);
 
   useEffect(() => {
-    if (companyId) refreshApi();
-  }, [companyId, refreshApi]);
+    if (!companyId) return;
+    let cancelled = false;
+    fetchEbitdaAdjustments(companyId)
+      .then((json) => {
+        if (cancelled) return;
+        setError(null);
+        applyApi(json);
+      })
+      .catch((e: any) => {
+        if (!cancelled) setError(String(e?.message || e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, applyApi]);
 
   const handleChangePct = useCallback((mappingId: string, pct: number) => {
     setOwnerPctEdits((prev) => ({ ...prev, [mappingId]: pct }));
@@ -310,8 +334,8 @@ export const EbitdaAdjustmentsProvider: React.FC<{
     return n;
   }, [api, ownerPctEdits, bucketEdits, lineItemEdits]);
 
-  const handleSave = useCallback(async () => {
-    if (!companyId) return;
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!companyId) return false;
     setSaving(true);
     setSaveMessage(null);
     try {
@@ -364,8 +388,10 @@ export const EbitdaAdjustmentsProvider: React.FC<{
       if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
       setSaveMessage(`Saved (${body.updated || 0} updated, ${body.skipped || 0} skipped)`);
       await refreshApi();
+      return true;
     } catch (e: any) {
       setSaveMessage(`Save failed: ${String(e?.message || e)}`);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -754,6 +780,56 @@ export const EbitdaBucketCard: React.FC<{ bucket: SdeBucket }> = ({ bucket }) =>
 
 const BUCKET_ORDER: SdeBucket[] = ['OWNER_COMP', 'PERSONAL', 'NON_RECURRING', 'ONE_TIME_REVENUE'];
 
+/**
+ * Single QoE save: persists pending account assignment / % / $ edits first,
+ * then runs the valuation-settings save (manual line amounts + totals).
+ */
+export const EbitdaSaveAllButton: React.FC<{
+  status: 'idle' | 'saving' | 'saved' | 'error';
+  onSaveSettings: () => void;
+}> = ({ status, onSaveSettings }) => {
+  const ctx = useEbitdaCtx();
+  const busy = status === 'saving' || ctx.saving;
+  const failed = status === 'error' || Boolean(ctx.saveMessage?.startsWith('Save failed'));
+  const handleClick = async () => {
+    if (ctx.dirtyCount > 0) {
+      const ok = await ctx.handleSave();
+      if (!ok) return;
+    }
+    onSaveSettings();
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {ctx.saveMessage?.startsWith('Save failed') && (
+        <span style={{ fontSize: '11px', color: '#ef4444' }}>{ctx.saveMessage}</span>
+      )}
+      {ctx.error && <span style={{ fontSize: '11px', color: '#ef4444' }}>API: {ctx.error}</span>}
+      {!busy && ctx.dirtyCount > 0 && (
+        <span style={{ fontSize: '11px', color: '#b45309' }}>{ctx.dirtyCount} unsaved account change{ctx.dirtyCount === 1 ? '' : 's'}</span>
+      )}
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={busy}
+        style={{
+          padding: '8px 14px',
+          background: status === 'saved' ? '#ecfdf3' : failed ? '#fef2f2' : busy ? '#f8fafc' : '#1f70c1',
+          color: status === 'saved' ? '#166534' : failed ? '#991b1b' : busy ? '#64748b' : 'white',
+          border: status === 'saved' ? '1px solid #86efac' : failed ? '1px solid #fecaca' : busy ? '1px solid #cbd5e1' : '1px solid #1f70c1',
+          borderRadius: '6px',
+          fontSize: '13px',
+          fontWeight: 600,
+          cursor: busy ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        {busy ? 'Saving...' : status === 'saved' ? 'Saved' : failed ? 'Retry Save' : 'Save Changes'}
+      </button>
+    </div>
+  );
+};
+
 export const EbitdaHelperBar: React.FC = () => {
   const ctx = useEbitdaCtx();
 
@@ -786,30 +862,6 @@ export const EbitdaHelperBar: React.FC = () => {
             </strong>
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {ctx.saveMessage && (
-            <span style={{ fontSize: '11px', color: ctx.saveMessage.startsWith('Save failed') ? '#ef4444' : '#10b981' }}>
-              {ctx.saveMessage}
-            </span>
-          )}
-          {ctx.error && <span style={{ fontSize: '10px', color: '#ef4444' }}>API: {ctx.error}</span>}
-          <button
-            onClick={ctx.handleSave}
-            disabled={ctx.saving || ctx.dirtyCount === 0}
-            style={{
-              padding: '6px 14px',
-              fontSize: '11px',
-              fontWeight: 700,
-              color: 'white',
-              background: ctx.dirtyCount === 0 ? '#94a3b8' : '#10b981',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: ctx.saving || ctx.dirtyCount === 0 ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {ctx.saving ? 'Saving…' : ctx.dirtyCount > 0 ? `Save (${ctx.dirtyCount})` : 'Save'}
-          </button>
-        </div>
       </div>
 
       <div
@@ -827,7 +879,7 @@ export const EbitdaHelperBar: React.FC = () => {
         }}
       >
         <div style={{ fontSize: '11px', color: '#64748b' }}>
-          Assign mapped accounts to a bucket. Bucket changes are queued — click <strong>Save</strong> above to persist.
+          Assign mapped accounts to a bucket. Bucket changes are queued — click <strong>Save Changes</strong> at the top of SDE Analysis to persist.
         </div>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {BUCKET_ORDER.map((b) => (
@@ -944,7 +996,8 @@ export const EbitdaAccountList: React.FC = () => {
   });
   const [pickerForRow, setPickerForRow] = useState<string | null>(null);
 
-  const accounts = ctx.api?.allAccounts ?? [];
+  const allAccounts = ctx.api?.allAccounts;
+  const accounts = useMemo(() => allAccounts ?? [], [allAccounts]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base = accounts.filter((a) => isAccountRailCategory((a.category || 'Other') as AccountCategory));
@@ -991,13 +1044,13 @@ export const EbitdaAccountList: React.FC = () => {
         border: '1px solid #e2e8f0',
         borderRadius: '8px',
         padding: '10px',
-        gridColumnStart: 4,
+        gridColumnStart: 3,
         gridRowStart: 1,
-        gridRowEnd: 'span 2',
+        gridRowEnd: 'span 3',
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-        maxHeight: '780px',
+        maxHeight: '980px',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
@@ -1005,7 +1058,7 @@ export const EbitdaAccountList: React.FC = () => {
         <div style={{ fontSize: '10px', color: '#64748b' }}>{accounts.length} mapped</div>
       </div>
       <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '8px' }}>
-        Click a row to assign it to an EBITDA adjustment bucket. Edits queue until you Save.
+        Click a row to assign it to an EBITDA adjustment bucket. Edits queue until you click Save Changes.
       </div>
       <input
         type="text"
@@ -1291,7 +1344,13 @@ export const EbitdaLineItemTotal: React.FC<{
 export const EbitdaLineItemAccounts: React.FC<{
   bucket: SdeBucket;
   lineItem: string;
-}> = ({ bucket, lineItem }) => {
+  /** Saved/typed manual dollars on this line, shown as its own row beside the account rows. */
+  manualAmount?: number;
+  onClearManual?: () => void;
+  /** YYYY-MM the manual entry posts to on the monthly QoE income statement. */
+  manualMonth?: string;
+  onChangeManualMonth?: (month: string) => void;
+}> = ({ bucket, lineItem, manualAmount, onClearManual, manualMonth, onChangeManualMonth }) => {
   const ctx = useEbitdaCtx();
   const detail = (ctx.api?.buckets || []).find((b) => b.bucket === bucket);
   const allAccounts = detail?.accounts || [];
@@ -1351,7 +1410,33 @@ export const EbitdaLineItemAccounts: React.FC<{
     });
   }
 
-  if (accounts.length === 0) return null;
+  const hasManual = Math.abs(Number(manualAmount) || 0) >= 0.5;
+  const ltmMonths = ctx.api?.ltmWindow?.months ?? [];
+  if (accounts.length === 0 && !hasManual) return null;
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '2px 4px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '2px',
+    fontSize: '12px',
+    textAlign: 'right',
+    fontFamily: 'monospace',
+    boxSizing: 'border-box',
+  };
+  const removeButtonStyle: React.CSSProperties = {
+    width: '16px',
+    height: '16px',
+    padding: 0,
+    lineHeight: '12px',
+    background: 'transparent',
+    border: '1px solid #cbd5e1',
+    borderRadius: '2px',
+    cursor: 'pointer',
+    fontSize: '10px',
+    color: '#94a3b8',
+  };
+  const rowGrid = '1fr 76px 52px 84px 18px';
 
   return (
     <div
@@ -1363,6 +1448,55 @@ export const EbitdaLineItemAccounts: React.FC<{
         gap: '2px',
       }}
     >
+      {accounts.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: rowGrid, gap: '6px', fontSize: '10px', color: '#94a3b8', textAlign: 'right' }}>
+          <span />
+          <span>LTM</span>
+          <span>%</span>
+          <span>$</span>
+          <span />
+        </div>
+      )}
+      {hasManual && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: rowGrid,
+            gap: '6px',
+            fontSize: '12px',
+            color: '#475569',
+            alignItems: 'center',
+          }}
+        >
+          <span style={{ gridColumn: '1 / span 3', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+            <span style={{ fontStyle: 'italic' }}>Manual entry</span>
+            {ltmMonths.length > 0 && onChangeManualMonth && (
+              <select
+                value={manualMonth && ltmMonths.includes(manualMonth) ? manualMonth : ltmMonths[ltmMonths.length - 1]}
+                onChange={(e) => onChangeManualMonth(e.target.value)}
+                title="Month this entry posts to on the monthly income statement"
+                style={{ fontSize: '12px', padding: '1px 4px', border: '1px solid #cbd5e1', borderRadius: '2px', color: '#334155' }}
+              >
+                {ltmMonths.map((m) => (
+                  <option key={m} value={m}>
+                    {formatMonthShort(m)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </span>
+          <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#0f172a' }}>
+            {fmtMoney(Number(manualAmount) || 0)}
+          </span>
+          {onClearManual ? (
+            <button onClick={onClearManual} title="Clear manual entry" style={removeButtonStyle}>
+              ×
+            </button>
+          ) : (
+            <span />
+          )}
+        </div>
+      )}
       {accounts.map((a) => {
         const pct = ctx.ownerPctEdits[a.mappingId] ?? a.ownerPercent;
         const ownerAmt = (a.ltm * pct) / 100;
@@ -1371,9 +1505,9 @@ export const EbitdaLineItemAccounts: React.FC<{
             key={a.mappingId}
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 60px 36px 60px 14px',
-              gap: '4px',
-              fontSize: '10px',
+              gridTemplateColumns: rowGrid,
+              gap: '6px',
+              fontSize: '12px',
               color: '#475569',
               alignItems: 'center',
             }}
@@ -1396,46 +1530,32 @@ export const EbitdaLineItemAccounts: React.FC<{
               type="number"
               min={0}
               max={100}
-              step={1}
-              value={pct}
+              step="any"
+              title="Percent of LTM to adjust"
+              value={Number(pct.toFixed(2))}
               onChange={(e) =>
                 ctx.handleChangePct(a.mappingId, Math.max(0, Math.min(100, Number(e.target.value) || 0)))
               }
-              style={{
-                width: '34px',
-                padding: '1px 3px',
-                border: '1px solid #cbd5e1',
-                borderRadius: '2px',
-                fontSize: '10px',
-                textAlign: 'right',
-                fontFamily: 'monospace',
-              }}
+              style={inputStyle}
             />
-            <span
-              style={{
-                textAlign: 'right',
-                fontFamily: 'monospace',
-                fontWeight: 600,
-                color: ownerAmt > 0 ? '#059669' : '#94a3b8',
+            <input
+              type="number"
+              min={0}
+              max={Math.round(a.ltm)}
+              step="any"
+              title="Dollar amount to adjust (up to the LTM balance)"
+              value={Math.round(ownerAmt)}
+              onChange={(e) => {
+                const amount = Math.max(0, Number(e.target.value) || 0);
+                const nextPct = a.ltm > 0 ? Math.min(100, (amount / a.ltm) * 100) : 0;
+                ctx.handleChangePct(a.mappingId, nextPct);
               }}
-            >
-              {fmtMoney(ownerAmt)}
-            </span>
+              style={{ ...inputStyle, fontWeight: 600, color: ownerAmt > 0 ? '#059669' : '#475569' }}
+            />
             <button
               onClick={() => ctx.handleUnassign(a.mappingId)}
               title="Remove from this line"
-              style={{
-                width: '12px',
-                height: '12px',
-                padding: 0,
-                lineHeight: '10px',
-                background: 'transparent',
-                border: '1px solid #cbd5e1',
-                borderRadius: '2px',
-                cursor: 'pointer',
-                fontSize: '8px',
-                color: '#94a3b8',
-              }}
+              style={removeButtonStyle}
             >
               ×
             </button>

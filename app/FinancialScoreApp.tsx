@@ -170,8 +170,16 @@ const EbitdaHelperBar = dynamic(
   () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaHelperBar),
   { ssr: false },
 );
+const EbitdaSaveAllButton = dynamic(
+  () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaSaveAllButton),
+  { ssr: false },
+);
 const EbitdaAccountList = dynamic(
   () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaAccountList),
+  { ssr: false },
+);
+const SdeAdjustedIncomeStatement = dynamic(
+  () => import('./components/valuation/SdeAdjustedIncomeStatement'),
   { ssr: false },
 );
 const ValuationWorkingCapitalSection4Preview = dynamic(() => import('./components/valuation/ValuationWorkingCapitalSection4Preview'), { ssr: false });
@@ -3701,7 +3709,8 @@ function FinancialScorePage() {
   const [competitorSearchScopes, setCompetitorSearchScopes] = useState<CompetitorSearchScope[]>(DEFAULT_COMPETITOR_SEARCH_SCOPES);
   const [researchSourcesText, setResearchSourcesText] = useState('');
   const [businessContextLastUpdatedAt, setBusinessContextLastUpdatedAt] = useState<string | null>(null);
-  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
+  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
+  const [sdeIncomeStatementRefreshKey, setSdeIncomeStatementRefreshKey] = useState(0);
   const [ebitdaAnalysisTab, setEbitdaAnalysisTab] = useState<'revenue-quality' | 'customer-mix' | 'cash-flow-quality' | 'balance-sheet-quality'>('revenue-quality');
   const [dcfAnalysisTab, setDcfAnalysisTab] = useState<'working-capital' | 'cash-flow-quality' | 'revenue-durability' | 'balance-sheet-quality'>('working-capital');
   const [revenueQualityCardInfoOpen, setRevenueQualityCardInfoOpen] = useState<Record<'topBucket' | 'cashGap' | 'dsoTrend' | 'arSpread', boolean>>({
@@ -3765,6 +3774,8 @@ function FinancialScorePage() {
     oneTimeContract?: number;
     oneTimeRevenueOther?: number;
     marketReplacementSalary?: number;
+    /** Line-item key → YYYY-MM the manual entry posts to on the monthly QoE income statement. */
+    manualEntryMonths?: Record<string, string>;
     analysisQualifiers?: RevenueAnalysisQualifiers;
     analysisQualifierMode?: 'auto' | 'manual';
     analysisQualifierAudit?: any;
@@ -22067,6 +22078,7 @@ function FinancialScorePage() {
                     console.log('?? Save response:', result);
                     if (response.ok) {
                       setSdeAnalysisTotalsState(sdeAnalysisTotals);
+                      setSdeIncomeStatementRefreshKey((key) => key + 1);
                       setValuationSaveStatus('saved');
                       setTimeout(() => setValuationSaveStatus('idle'), 3000);
                     } else {
@@ -22082,6 +22094,7 @@ function FinancialScorePage() {
                 }}
                 disabled={valuationSaveStatus === 'saving'}
                 style={{
+                  display: valuationMethodTab === 'sde' && sdeModuleTab === 'ebitda-adjustments' ? 'none' : undefined,
                   padding: '8px 14px',
                   background:
                     valuationSaveStatus === 'saved'
@@ -23444,6 +23457,7 @@ function FinancialScorePage() {
                     {[
                       { id: 'recommendations' as const, label: 'Executive Summary' },
                       { id: 'ebitda-adjustments' as const, label: 'Quality of Earnings' },
+                      { id: 'income-statement' as const, label: 'Income Statement' },
                       { id: 'revenue-quality' as const, label: 'Revenue Quality' },
                       { id: 'customer-quality' as const, label: 'Customer Quality' },
                       { id: 'working-capital' as const, label: 'Working Capital' },
@@ -23482,10 +23496,14 @@ function FinancialScorePage() {
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                       SDE Analysis
                     </h2>
+                    <EbitdaSaveAllButton
+                      status={valuationSaveStatus}
+                      onSaveSettings={() => document.getElementById('valuation-save-settings-btn')?.click()}
+                    />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '0.95fr 0.95fr 0.95fr 1.15fr', gap: '12px', alignItems: 'start' }}>
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr minmax(360px, 1.4fr)', gap: '12px', alignItems: 'start' }}>
+                    <div style={{ gridColumn: 1, gridRow: 3, border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>EBITDA, Trailing 12 Months</div>
                       {[
                         ['Net Income', formatDollars(ttmNetIncomeAfterTax)],
@@ -23506,7 +23524,7 @@ function FinancialScorePage() {
                       })}
                     </div>
 
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                    <div style={{ gridColumn: 1, gridRow: 1, border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>1. Owner Compensation Adjustment</div>
                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Replace owner pay with market salary.</div>
                       {([
@@ -23518,7 +23536,14 @@ function FinancialScorePage() {
                       ] as Array<[string, any, string, string | null]>).map(([label, value, rowType, lineKey]) => {
                         const isAdjustmentRow = label.toLowerCase().includes('adjustment');
                         const accountsRow = lineKey ? (
-                          <EbitdaLineItemAccounts bucket="OWNER_COMP" lineItem={lineKey} />
+                          <EbitdaLineItemAccounts
+                            bucket="OWNER_COMP"
+                            lineItem={lineKey}
+                            manualAmount={(Number(value) || 0) - (ebitdaLineItemTotals.OWNER_COMP?.[lineKey] ?? 0)}
+                            onClearManual={() => setSdeManualInputs((prev) => ({ ...prev, [lineKey]: 0 }))}
+                            manualMonth={sdeManualInputs.manualEntryMonths?.[lineKey]}
+                            onChangeManualMonth={(month) => setSdeManualInputs((prev) => ({ ...prev, manualEntryMonths: { ...(prev.manualEntryMonths || {}), [lineKey]: month } }))}
+                          />
                         ) : null;
                         if (rowType === 'ownerSalaryInput') {
                           return (
@@ -23643,7 +23668,7 @@ function FinancialScorePage() {
                         );
                       })}
                     </div>
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                    <div style={{ gridColumn: 2, gridRow: 1, border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>2. Personal / Discretionary Expenses</div>
                       {([
                         ['personal travel', effectivePersonalTravel, 'personalTravel'],
@@ -23676,7 +23701,14 @@ function FinancialScorePage() {
                               }}
                             />
                           </div>
-                          <EbitdaLineItemAccounts bucket="PERSONAL" lineItem={String(key)} />
+                          <EbitdaLineItemAccounts
+                            bucket="PERSONAL"
+                            lineItem={String(key)}
+                            manualAmount={(Number(value) || 0) - (ebitdaLineItemTotals.PERSONAL?.[String(key)] ?? 0)}
+                            onClearManual={() => setSdeManualInputs((prev) => ({ ...prev, [String(key)]: 0 }))}
+                            manualMonth={sdeManualInputs.manualEntryMonths?.[String(key)]}
+                            onChangeManualMonth={(month) => setSdeManualInputs((prev) => ({ ...prev, manualEntryMonths: { ...(prev.manualEntryMonths || {}), [String(key)]: month } }))}
+                          />
                         </React.Fragment>
                       ))}
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
@@ -23685,7 +23717,7 @@ function FinancialScorePage() {
                       </div>
                     </div>
 
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                    <div style={{ gridColumn: 2, gridRow: 3, border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>QoE Adjustments</div>
                       {[
                         ['1. Owner Compensation Adjustment', formatDollars(qoeOwnerSalaryAdjustment)],
@@ -23710,7 +23742,7 @@ function FinancialScorePage() {
                       </div>
                     </div>
 
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                    <div style={{ gridColumn: 1, gridRow: 2, border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>3. Non-Recurring Expenses</div>
                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>One-time items.</div>
                       {([
@@ -23744,7 +23776,14 @@ function FinancialScorePage() {
                               }}
                             />
                           </div>
-                          <EbitdaLineItemAccounts bucket="NON_RECURRING" lineItem={String(key)} />
+                          <EbitdaLineItemAccounts
+                            bucket="NON_RECURRING"
+                            lineItem={String(key)}
+                            manualAmount={(Number(value) || 0) - (ebitdaLineItemTotals.NON_RECURRING?.[String(key)] ?? 0)}
+                            onClearManual={() => setSdeManualInputs((prev) => ({ ...prev, [String(key)]: 0 }))}
+                            manualMonth={sdeManualInputs.manualEntryMonths?.[String(key)]}
+                            onChangeManualMonth={(month) => setSdeManualInputs((prev) => ({ ...prev, manualEntryMonths: { ...(prev.manualEntryMonths || {}), [String(key)]: month } }))}
+                          />
                         </React.Fragment>
                       ))}
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
@@ -23752,7 +23791,7 @@ function FinancialScorePage() {
                         <span style={{ fontWeight: 700 }}>{formatDollars(nonRecurringExpenseAdj)}</span>
                       </div>
                     </div>
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                    <div style={{ gridColumn: 2, gridRow: 2, border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>4. One-Time Revenue</div>
                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Remove revenue that will not repeat.</div>
                       {([
@@ -23784,7 +23823,14 @@ function FinancialScorePage() {
                               }}
                             />
                           </div>
-                          <EbitdaLineItemAccounts bucket="ONE_TIME_REVENUE" lineItem={String(key)} />
+                          <EbitdaLineItemAccounts
+                            bucket="ONE_TIME_REVENUE"
+                            lineItem={String(key)}
+                            manualAmount={(Number(value) || 0) - (ebitdaLineItemTotals.ONE_TIME_REVENUE?.[String(key)] ?? 0)}
+                            onClearManual={() => setSdeManualInputs((prev) => ({ ...prev, [String(key)]: 0 }))}
+                            manualMonth={sdeManualInputs.manualEntryMonths?.[String(key)]}
+                            onChangeManualMonth={(month) => setSdeManualInputs((prev) => ({ ...prev, manualEntryMonths: { ...(prev.manualEntryMonths || {}), [String(key)]: month } }))}
+                          />
                         </React.Fragment>
                       ))}
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
@@ -23995,6 +24041,13 @@ function FinancialScorePage() {
                 </div>
                 </EbitdaAdjustmentsProvider>
                 </>
+                )}
+                {sdeModuleTab === 'income-statement' && (
+                  <SdeAdjustedIncomeStatement
+                    companyId={selectedCompanyId || null}
+                    monthly={monthly}
+                    refreshKey={sdeIncomeStatementRefreshKey}
+                  />
                 )}
                 {sdeModuleTab === 'revenue-quality' && (
                 <>
