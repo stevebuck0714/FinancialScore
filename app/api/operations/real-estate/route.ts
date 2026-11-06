@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     await ensureTables();
     await ensureRealEstateWaterfallTables();
     await ensureRealEstateTaxReconciliationTables();
-    const [lines, investors, occupancy, cashActivities, operationalMetrics, mappings, settingsRows, aliases, taxReturns, taxDepreciationRecords] = await Promise.all([
+    const [allLines, investors, occupancy, cashActivities, operationalMetrics, mappings, settingsRows, aliases, taxReturns, taxDepreciationRecords] = await Promise.all([
       prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateFinancialLine" WHERE "companyId"=$1 ORDER BY "periodEnd", "accountCode"`, companyId),
       prisma.$queryRawUnsafe<any[]>(`
         SELECT i.*, COALESCE(jsonb_agg(jsonb_build_object('entryType',e."entryType",'amount',e."amount",'effectiveDate',e."effectiveDate") ORDER BY e."effectiveDate") FILTER (WHERE e.id IS NOT NULL), '[]') AS entries
@@ -125,6 +125,14 @@ export async function GET(request: NextRequest) {
     // QuickBooks Desktop lines are BGAH's books and replace the BGAH workbook
     // whenever they are loaded, so the two BGAH sources are never added together.
     // QBD accounts without a saved mapping use the Data Mapping suggestion.
+    // Some SLN months were loaded from both the monthly SLN workbooks (sln_ codes)
+    // and a one-off import file (numeric codes). The workbooks are the series
+    // every month has, so they win wherever both exist for a month and report type.
+    const slnPeriodKey = (line: any) => `${String(line.reportType).toUpperCase()}|${new Date(line.periodEnd).toISOString().slice(0, 7)}`;
+    const slnWorkbookPeriods = new Set(allLines
+      .filter((line) => line.sourceEntity === 'SLN' && String(line.accountCode).startsWith('sln_'))
+      .map(slnPeriodKey));
+    const lines = allLines.filter((line) => line.sourceEntity !== 'SLN' || String(line.accountCode).startsWith('sln_') || !slnWorkbookPeriods.has(slnPeriodKey(line)));
     const quickBooksLines = lines.filter((line) => line.sourceEntity === 'QBD');
     const savedQuickBooksMappings = mappings.filter((mapping) => mapping.financialFeed === 'QBD');
     const savedQuickBooksCodes = new Set(savedQuickBooksMappings.map((mapping) => String(mapping.accountCode)));

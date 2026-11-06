@@ -11,6 +11,7 @@ import QbdInvestorActivityPanel from '@/app/components/operations/QbdInvestorAct
 import { useTableSort } from '@/app/components/operations/useTableSort';
 import { computeWaterfall, type WaterfallEntry, type WaterfallInvestor, type WaterfallSettings } from '@/lib/real-estate/waterfall';
 import { formatEstDate } from '@/lib/time/eastern';
+import { aggregateMappedAmounts, buildPropertyIncomeStatement } from '@/lib/real-estate/property-income-statement';
 import { accountTypeIs, activityByYear, balanceAt, isAmortizationExpense, isDepreciationExpense, toReportLines, yearEndPeriods } from '@/lib/real-estate/quickbooks-report-lines';
 import BooksIntegrityPanel from '@/app/components/operations/BooksIntegrityPanel';
 import MemberCapitalReports from '@/app/components/operations/MemberCapitalReports';
@@ -187,11 +188,42 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     () => chartRows.filter((row) => withinRange('incomeExpenseTrend', monthEnd(row.month))),
     [chartRows, withinRange],
   );
-  const latestMonth = months[months.length - 1];
-  const periodLines = data.lines.filter((line) => String(line.periodEnd).startsWith(latestMonth || ''));
-  const totalIncome = periodLines.filter((line) => String(line.accountType).toLowerCase() === 'income').reduce((sum, line) => sum + Number(line.amount || 0), 0);
-  const totalExpenses = periodLines.filter((line) => String(line.accountType).toLowerCase() === 'expense').reduce((sum, line) => sum + Math.abs(Number(line.amount || 0)), 0);
-  const latestOccupancy = data.occupancy[data.occupancy.length - 1];
+  // Property operations are SL Nusbaum's books; figures come from its mapped income statement.
+  const slnOverview = useMemo(() => {
+    const slnMonths = Array.from(new Set(data.lines
+      .filter((line) => line.sourceEntity === 'SLN' && String(line.reportType).toUpperCase() === 'ACTIVITY')
+      .map((line) => String(line.periodEnd).slice(0, 7)))).sort();
+    if (!slnMonths.length) return null;
+    const mapped = aggregateMappedAmounts(data.lines, data.mappings || [], 'SLN', (month) => (slnMonths.includes(month) ? month : null));
+    const statement = buildPropertyIncomeStatement(slnMonths, mapped.amounts);
+    const rowValues = (label: string) => statement.find((row) => row.label === label)?.values || {};
+    const income = rowValues('TOTAL INCOME');
+    const expenses = rowValues('TOTAL OPERATING EXPENSES');
+    const noi = rowValues('NET OPERATING INCOME');
+    const netCash = rowValues('NET CASH AVAILABLE');
+    const month = slnMonths[slnMonths.length - 1];
+    const shift = (base: string, by: number) => {
+      const [year, monthNumber] = base.split('-').map(Number);
+      const date = new Date(Date.UTC(year, monthNumber - 1 + by, 1));
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
+    const priorMonth = shift(month, -1);
+    const priorYear = shift(month, -12);
+    const sumRange = (values: Record<string, number | null>, end: string) => {
+      const window = Array.from({ length: 12 }, (_, index) => shift(end, -index));
+      return window.every((key) => slnMonths.includes(key)) ? window.reduce((total, key) => total + Number(values[key] || 0), 0) : null;
+    };
+    const occupancyFor = (key: string) => data.occupancy.find((row) => String(row.periodEnd).startsWith(key)) || null;
+    return {
+      month, priorMonth, priorYear, income, expenses, noi, netCash,
+      trailingStart: shift(month, -11),
+      trailingNoi: sumRange(noi, month),
+      priorTrailingNoi: sumRange(noi, priorYear),
+      occupancy: occupancyFor(month),
+      priorMonthOccupancy: occupancyFor(priorMonth),
+      priorYearOccupancy: occupancyFor(priorYear),
+    };
+  }, [data.lines, data.mappings, data.occupancy]);
   const occupancyRows = useMemo(() => data.occupancy.filter((row) => withinRange('occupancy', row.periodEnd)), [data.occupancy, withinRange]);
   const cashMonths = useMemo(() => Array.from(new Set(data.cashActivities.filter((activity) => withinRange('cashActivity', activity.periodEnd)).map((activity) => String(activity.periodEnd).slice(0, 7)))).sort(), [data.cashActivities, withinRange]);
   const cashTrendRows = useMemo(() => cashMonths.map((month) => {
@@ -537,9 +569,58 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
 
   return <div style={{ padding: 24, display: 'grid', gap: 16 }}>
     <div><h2 style={{ margin: 0, color: '#0f172a' }}>Property Financials</h2><p style={{ color: '#64748b', marginBottom: 0 }}>Approved BGAH and SLN property performance by reporting period.</p></div>
-    {reportEnabled('propertyFinancialOverview') && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
-      {[['Income', fmt(totalIncome)], ['Expenses', fmt(totalExpenses)], ['NOI', fmt(totalIncome - totalExpenses)], ['Physical Occupancy', latestOccupancy ? `${Number(latestOccupancy.physicalOccupancyPct).toFixed(1)}%` : '-']].map(([label, value]) => <div key={label} style={card}><div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{label}</div><div style={{ marginTop: 4, fontSize: 22, fontWeight: 800 }}>{value}</div></div>)}
-    </div>}
+    {reportEnabled('propertyFinancialOverview') && (slnOverview ? (() => {
+      const { month, priorMonth, priorYear } = slnOverview;
+      const pct = (current: number | null | undefined, prior: number | null | undefined) => {
+        if (current == null || prior == null || !Number(prior)) return null;
+        return ((Number(current) - Number(prior)) / Math.abs(Number(prior))) * 100;
+      };
+      const points = (current: any, prior: any) => (current && prior ? Number(current.physicalOccupancyPct) - Number(prior.physicalOccupancyPct) : null);
+      const change = (value: number | null, unit: '%' | ' pts', label: string, goodWhenUp = true) => {
+        if (value === null || !Number.isFinite(value)) return <div style={{ color: '#94a3b8' }}>{label}: not available</div>;
+        const up = value >= 0;
+        return <div style={{ color: Math.abs(value) < 0.05 ? '#64748b' : up === goodWhenUp ? '#166534' : '#b91c1c' }}>{label}: {up ? '+' : ''}{value.toFixed(1)}{unit}</div>;
+      };
+      const monthCard = (label: string, values: Record<string, number | null>, goodWhenUp = true, extra?: React.ReactNode) => <div key={label} style={card}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{label}</div>
+        <div style={{ marginTop: 4, fontSize: 22, fontWeight: 800 }}>{fmt(values[month])}</div>
+        <div style={{ marginTop: 6, display: 'grid', gap: 2, fontSize: 12 }}>
+          {change(pct(values[month], values[priorMonth]), '%', `vs ${formatMonthLabel(priorMonth)}`, goodWhenUp)}
+          {change(pct(values[month], values[priorYear]), '%', `vs ${formatMonthLabel(priorYear)}`, goodWhenUp)}
+          {extra}
+        </div>
+      </div>;
+      const occupancy = slnOverview.occupancy;
+      const noiMargin = slnOverview.income[month] ? (Number(slnOverview.noi[month] || 0) / Number(slnOverview.income[month])) * 100 : null;
+      return <div style={card}>
+        <h3 style={{ margin: 0 }}>Property operations · {formatMonthLabel(month)}</h3>
+        <p style={{ color: '#64748b', margin: '6px 0 14px', fontSize: 13 }}>SL Nusbaum (SLN) manages the property, so these figures come from SLN&apos;s monthly operating statement as mapped in Data Mapping. {formatMonthLabel(month)} is the latest month SLN has reported. Each change compares with the prior month and the same month a year earlier.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
+          {monthCard('Total income', slnOverview.income)}
+          {monthCard('Operating expenses', slnOverview.expenses, false)}
+          {monthCard('Net operating income', slnOverview.noi, true, noiMargin === null ? null : <div style={{ color: '#475569' }}>NOI margin: {noiMargin.toFixed(1)}%</div>)}
+          {monthCard('Net cash after debt service & capital', slnOverview.netCash)}
+          <div style={card}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Physical occupancy</div>
+            <div style={{ marginTop: 4, fontSize: 22, fontWeight: 800 }}>{occupancy ? `${Number(occupancy.physicalOccupancyPct).toFixed(1)}%` : '—'}</div>
+            <div style={{ marginTop: 6, display: 'grid', gap: 2, fontSize: 12 }}>
+              {occupancy && <div style={{ color: '#475569' }}>{Number(occupancy.occupiedUnits)} of {Number(occupancy.totalUnits)} units occupied · {Number(occupancy.totalUnits) - Number(occupancy.occupiedUnits)} vacant</div>}
+              {change(points(occupancy, slnOverview.priorMonthOccupancy), ' pts', `vs ${formatMonthLabel(priorMonth)}`)}
+              {change(points(occupancy, slnOverview.priorYearOccupancy), ' pts', `vs ${formatMonthLabel(priorYear)}`)}
+              {occupancy?.economicOccupancyPct != null && <div style={{ color: '#475569' }}>Economic occupancy: {Number(occupancy.economicOccupancyPct).toFixed(1)}%</div>}
+            </div>
+          </div>
+          <div style={card}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Trailing 12-month NOI</div>
+            <div style={{ marginTop: 4, fontSize: 22, fontWeight: 800 }}>{slnOverview.trailingNoi === null ? '—' : fmt(slnOverview.trailingNoi)}</div>
+            <div style={{ marginTop: 6, display: 'grid', gap: 2, fontSize: 12 }}>
+              <div style={{ color: '#475569' }}>{formatMonthLabel(slnOverview.trailingStart)} – {formatMonthLabel(month)}</div>
+              {change(pct(slnOverview.trailingNoi, slnOverview.priorTrailingNoi), '%', `vs 12 months ending ${formatMonthLabel(priorYear)}`)}
+            </div>
+          </div>
+        </div>
+      </div>;
+    })() : <div style={{ ...card, color: '#64748b' }}>No SLN operating statements have been loaded.</div>)}
     {reportEnabled('propertyIncomeExpenseTrend') && <div style={card}><h3 style={{ marginTop: 0 }}>Income and expenses by month</h3>{reportRangeControls('incomeExpenseTrend')}{incomeExpenseRows.length ? <div style={{ height: 280 }}><ResponsiveContainer><BarChart data={incomeExpenseRows}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" /><YAxis tickFormatter={(value) => `$${Math.round(value / 1000)}k`} /><Tooltip formatter={(value: number) => fmt(value)} /><Legend /><Bar dataKey="Income" fill="#1e3a8a" /><Bar dataKey="Expenses" fill="#0f766e" /></BarChart></ResponsiveContainer></div> : <p style={{ marginBottom: 0, color: '#64748b' }}>No income or expense activity matches this date range.</p>}</div>}
     {(reportEnabled('propertyIncomeDetail') || reportEnabled('propertyExpenseAnalysis')) && <>
       <div style={{ ...card, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>

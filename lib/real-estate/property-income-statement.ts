@@ -308,6 +308,25 @@ export type MappedAmounts = {
  * Rolls source activity lines into statement line keys using the feed
  * mappings. `scope` is a single feed (e.g. "SLN") or "COMBINED" for all feeds.
  */
+const compactLabel = (label: string) => label.toLowerCase().replace(/[^a-z0-9]/g, '');
+const SECTION_TOTAL_LABELS = SECTIONS.flatMap((section) => (section.total ? [compactLabel(section.total)] : []));
+const STATEMENT_SUBTOTAL_LABELS = new Set([
+  ...SECTIONS.flatMap((section) => (section.heading ? [compactLabel(section.heading)] : [])),
+  ...SECTION_TOTAL_LABELS,
+  ...PROPERTY_INCOME_STATEMENT.flatMap((row) => (row.kind === 'formula' || row.kind === 'heading' ? [compactLabel(row.label)] : [])),
+]);
+
+/**
+ * Source workbooks include their own heading and subtotal rows (for example
+ * "ADJUSTED GROSS POTENTIAL RENT"). The statement calculates those itself, so
+ * they are never counted even when a mapping exists.
+ */
+export function isStatementSubtotalAccount(accountName: string) {
+  const name = compactLabel(accountName);
+  if (!name) return false;
+  return STATEMENT_SUBTOTAL_LABELS.has(name) || SECTION_TOTAL_LABELS.some((total) => name.startsWith(total));
+}
+
 export function aggregateMappedAmounts(
   lines: Array<{ reportType: string; sourceEntity: string; accountCode: string; accountName: string; periodEnd: string | Date; amount: unknown }>,
   mappings: Array<{ financialFeed: string; accountCode: string; targetField: string; bookTreatment?: string | null }>,
@@ -321,6 +340,7 @@ export function aggregateMappedAmounts(
   lines.forEach((line) => {
     if (String(line.reportType).toUpperCase() !== 'ACTIVITY') return;
     if (scope !== 'COMBINED' && line.sourceEntity !== scope) return;
+    if (isStatementSubtotalAccount(line.accountName)) return;
     const periodEnd = line.periodEnd instanceof Date ? line.periodEnd.toISOString() : String(line.periodEnd);
     const column = monthToColumn(periodEnd.slice(0, 7));
     if (!column) return;
