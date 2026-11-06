@@ -93,6 +93,7 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, AssetDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [editingCostId, setEditingCostId] = useState<string | null>(null);
   const [assetMessage, setAssetMessage] = useState('');
   const [assumedInService, setAssumedInService] = useState('');
   const [quickBooksLines, setQuickBooksLines] = useState<ReportLine[]>([]);
@@ -537,7 +538,17 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
               return <tr key={id} style={{ verticalAlign: 'top' }}>
                 <td style={{ ...td, minWidth: 240 }}><input value={draft.name} onChange={(event) => setDraft(id, { name: event.target.value })} style={cellInput} />{saved?.basis && <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{saved.basis}</div>}</td>
                 <td style={td}><select value={draft.assetClass} onChange={(event) => setDraft(id, { assetClass: event.target.value })} style={cellInput}>{Object.entries(ASSET_CLASS_LABEL).map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></td>
-                <td style={{ ...td, minWidth: 140 }}><input type="number" step="0.01" value={draft.cost} onChange={(event) => setDraft(id, { cost: event.target.value })} style={{ ...cellInput, textAlign: 'right' }} /></td>
+                <td style={{ ...td, minWidth: 140 }}><input
+                  type="text"
+                  inputMode="decimal"
+                  value={editingCostId === id || draft.cost.trim() === '' || !Number.isFinite(Number(draft.cost))
+                    ? draft.cost
+                    : Number(draft.cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  onFocus={() => setEditingCostId(id)}
+                  onBlur={() => setEditingCostId(null)}
+                  onChange={(event) => setDraft(id, { cost: event.target.value.replace(/[$,\s]/g, '') })}
+                  style={{ ...cellInput, textAlign: 'right' }}
+                /></td>
                 <td style={td}><input type="date" value={draft.inServiceDate} onChange={(event) => setDraft(id, { inServiceDate: event.target.value })} style={cellInput} /></td>
                 <td style={{ ...td, width: 100 }}>{draft.assetClass === 'land' ? <span style={{ color: '#64748b' }}>Not depreciated</span> : <input type="number" step="0.5" min="0.5" value={draft.usefulLifeYears} onChange={(event) => setDraft(id, { usefulLifeYears: event.target.value })} style={{ ...cellInput, textAlign: 'right' }} />}</td>
                 <td style={num}>{saved && depreciable.usefulLifeYears ? fmt(annualRunRate(depreciable)) : ''}</td>
@@ -549,7 +560,7 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
                 </td>
               </tr>;
             })}
-            <tr style={totalRow}><td style={td}>Total</td><td style={td} /><td style={num}>{fmt(registerCost)}</td><td style={td} /><td style={td} /><td style={td} /><td style={td} /><td style={td} /><td style={td} /></tr>
+            <tr style={totalRow}><td style={td}>Total</td><td style={td} /><td style={num}>{fmt(registerCost)}</td><td style={td} /><td style={td} /><td style={num}>{fmt(assets.filter((asset) => asset.usefulLifeYears).reduce((total, asset) => total + annualRunRate(asset), 0))}</td><td style={num}>{fmt(assets.reduce((total, asset) => total + accumulatedDepreciation(asset, asOfDate), 0))}</td><td style={num}>{fmt(registerCost - assets.reduce((total, asset) => total + accumulatedDepreciation(asset, asOfDate), 0))}</td><td style={td} /></tr>
           </tbody>
         </table></div>
         {!editableIds.length && <div style={{ padding: 18, color: '#64748b' }}>No assets in the register.</div>}
