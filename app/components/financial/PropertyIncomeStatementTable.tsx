@@ -36,6 +36,7 @@ export default function PropertyIncomeStatementTable({ lines, mappings, scope, v
   }, [lines, mappings, scope, variant, columns, monthToColumn]);
 
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
+  const trendColumns = [...columns].sort();
   const indexedRows = statement.map((row, statementIndex) => ({ row, statementIndex }));
   const visibleRows = hideEmptyLines
     ? indexedRows.filter(({ row }) => row.kind !== 'line' || columns.some((column) => row.values[column] !== null && row.values[column] !== undefined && row.values[column] !== 0))
@@ -105,8 +106,8 @@ export default function PropertyIncomeStatementTable({ lines, mappings, scope, v
       {selectedRow && (
         <StatementTrendPopup
           label={selectedRow.label}
-          subtitle={`${scope === 'COMBINED' ? 'Combined BGAH + SLN' : scope} · ${columns[0]}${columns.length > 1 ? ` – ${columns[columns.length - 1]}` : ''}`}
-          columns={columns}
+          subtitle={`${scope === 'COMBINED' ? 'Combined BGAH + SLN' : scope} · ${trendColumns[0]}${trendColumns.length > 1 ? ` – ${trendColumns[trendColumns.length - 1]}` : ''}`}
+          columns={trendColumns}
           values={selectedRow.values}
           onClose={() => setSelectedRowIndex(null)}
         />

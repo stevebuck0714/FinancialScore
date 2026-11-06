@@ -133,6 +133,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
   }, [lines, scope, columns, balanceMonthByColumn]);
 
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
+  const trendColumns = [...columns].sort();
   const indexedRows = rows.map((row, rowIndex) => ({ row, rowIndex }));
   const visibleRows = hideEmptyLines
     ? indexedRows.filter(({ row }) => row.kind !== 'line' || columns.some((column) => Math.abs(row.values[column] || 0) >= 0.5))
@@ -199,8 +200,8 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
       {selectedRow && (
         <StatementTrendPopup
           label={selectedRow.label}
-          subtitle={`${scope === 'COMBINED' ? 'Combined BGAH + SLN' : scope} · Balance as of period end · ${columns[0]}${columns.length > 1 ? ` – ${columns[columns.length - 1]}` : ''}`}
-          columns={columns}
+          subtitle={`${scope === 'COMBINED' ? 'Combined BGAH + SLN' : scope} · Balance as of period end · ${trendColumns[0]}${trendColumns.length > 1 ? ` – ${trendColumns[trendColumns.length - 1]}` : ''}`}
+          columns={trendColumns}
           values={selectedRow.values}
           onClose={() => setSelectedRowIndex(null)}
         />

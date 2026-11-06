@@ -266,7 +266,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     if (entityStatementPeriod === 'last-year') return entityMonths.filter((month) => month.startsWith(String(Number(latest.slice(0, 4)) - 1)));
     return entityMonths.slice(-36);
   }, [entityMonths, entityStatementPeriod]);
-  const entityColumns = useMemo(() => Array.from(new Set(entitySelectedMonths.map((month) => entityStatementDisplay === 'monthly' ? month : entityStatementDisplay === 'annual' ? month.slice(0, 4) : `${month.slice(0, 4)} Q${Math.ceil(Number(month.slice(5, 7)) / 3)}`))), [entitySelectedMonths, entityStatementDisplay]);
+  const entityColumns = useMemo(() => Array.from(new Set(entitySelectedMonths.map((month) => entityStatementDisplay === 'monthly' ? month : entityStatementDisplay === 'annual' ? month.slice(0, 4) : `${month.slice(0, 4)} Q${Math.ceil(Number(month.slice(5, 7)) / 3)}`))).reverse(), [entitySelectedMonths, entityStatementDisplay]);
   const entityMonthToColumn = useCallback((month: string) => {
     if (!entitySelectedMonths.includes(month)) return null;
     if (entityStatementDisplay === 'monthly') return month;
