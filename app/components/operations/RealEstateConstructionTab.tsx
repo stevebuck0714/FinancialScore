@@ -189,7 +189,6 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
     assumed: !asset.inServiceDate,
     depreciable: { id: asset.id, cost: asset.cost, inServiceDate: asset.inServiceDate || effectiveAssumedDate || null, usefulLifeYears: asset.usefulLifeYears },
   })), [data.fixedAssets, effectiveAssumedDate]);
-  const years = useMemo(() => depreciationYears(scheduleAssets.map((row) => row.depreciable), asOfDate), [scheduleAssets, asOfDate]);
   const landCost = data.fixedAssets.filter((asset) => asset.assetClass === 'land').reduce((total, asset) => total + asset.cost, 0);
   const assumedCount = scheduleAssets.filter((row) => row.assumed).length;
 
@@ -224,6 +223,14 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
   const quickBooksYearEnds = useMemo(() => yearEndPeriods(quickBooksLines), [quickBooksLines]);
   const quickBooksLatest = [...quickBooksYearEnds.values()].at(-1) || null;
   const quickBooksDepreciation = useMemo(() => activityByYear(quickBooksLines, isDepreciationExpense), [quickBooksLines]);
+  const years = useMemo(() => {
+    const scheduleYears = depreciationYears(scheduleAssets.map((row) => row.depreciable), asOfDate);
+    const bookedYears = [...quickBooksDepreciation.keys()].filter((year) => Math.abs(quickBooksDepreciation.get(year)!) >= 0.5);
+    if (!scheduleYears.length && !bookedYears.length) return [];
+    const first = Math.min(...scheduleYears, ...bookedYears);
+    const last = Math.max(...scheduleYears, ...bookedYears);
+    return Array.from({ length: last - first + 1 }, (_, index) => first + index);
+  }, [scheduleAssets, asOfDate, quickBooksDepreciation]);
   const loanComparisonRows = useMemo(() => {
     const interest = activityByYear(quickBooksLines, isInterestExpense);
     const amortization = activityByYear(quickBooksLines, isAmortizationExpense);
