@@ -503,6 +503,22 @@ export async function loadVendorForecastVendors(companyId: string, year: number)
   );
 }
 
+export async function loadVendorForecastVendorsForItem(companyId: string, year: number, itemSku: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ vendorId: string; vendorName: string; exact: boolean }>>(
+    `SELECT "vendorId", "vendorName",
+            BOOL_OR(LOWER(TRIM("itemSku")) = LOWER($3)) AS "exact"
+       FROM "VendorMonthlyForecastLine"
+      WHERE "companyId" = $1 AND "year" = $2 AND STRPOS(LOWER("itemSku"), LOWER($3)) > 0
+      GROUP BY "vendorId", "vendorName"
+      ORDER BY "vendorName" ASC`,
+    companyId,
+    year,
+    itemSku.trim()
+  );
+  const exact = rows.filter((row) => row.exact);
+  return (exact.length ? exact : rows).map(({ vendorId, vendorName }) => ({ vendorId, vendorName }));
+}
+
 export async function loadVendorForecastLines(params: {
   companyId: string;
   year: number;

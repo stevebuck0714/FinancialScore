@@ -258,7 +258,28 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>YTD Gap Analysis</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>YTD Gap Analysis</h3>
+            {onOpenInfo ? (
+              <button
+                type="button"
+                onClick={onOpenInfo}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '0 2px',
+                  color: '#2563eb',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: 2,
+                }}
+              >
+                What is this?
+              </button>
+            ) : null}
+          </div>
           <div style={{ marginTop: 4, fontSize: 12, color: '#64748b', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
             {analysisView === 'ytd'
               ? 'Year-to-date revenue dollars per line item, comparing the adjusted forecast against booked actuals through the last complete month.'
@@ -297,23 +318,6 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
           >
             {loading || comparisonLoading ? 'Loading…' : 'Refresh'}
           </button>
-          {onOpenInfo ? (
-            <button
-              type="button"
-              onClick={onOpenInfo}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: '#4f46e5',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                textDecoration: 'underline',
-              }}
-            >
-              How this works
-            </button>
-          ) : null}
         </div>
       </div>
 

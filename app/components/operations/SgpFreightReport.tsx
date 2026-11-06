@@ -33,6 +33,24 @@ const inputStyle: React.CSSProperties = {
   background: '#ffffff',
 };
 
+const filterLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  fontSize: 12,
+  color: '#334155',
+  fontWeight: 600,
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  padding: '8px 14px',
+  background: '#ffffff',
+  fontWeight: 700,
+  fontSize: 12,
+};
+
 const UNASSIGNED_VENDOR_KEY = '__unassigned__';
 
 type FreightSortKey =
@@ -197,6 +215,18 @@ function rowVendorLabel(row: CompanyItemFreightRow): string {
   return String(row.vendorName || '').trim() || 'Unassigned';
 }
 
+function vendorKeysForApr(items: CompanyItemFreightRow[], query: string): string[] {
+  const exact = new Set<string>();
+  const partial = new Set<string>();
+  for (const row of items) {
+    const sku = String(row.itemSku || '').trim().toLowerCase();
+    if (!sku.includes(query)) continue;
+    partial.add(rowVendorKey(row));
+    if (sku === query) exact.add(rowVendorKey(row));
+  }
+  return Array.from(exact.size ? exact : partial);
+}
+
 function sortValue(row: CompanyItemFreightRow, key: FreightSortKey): string | number {
   if (key === 'itemSku' || key === 'item') return String(row.itemSku || '').trim().toLowerCase();
   if (TEXT_SORT_KEYS.has(key)) return String(row[key as keyof CompanyItemFreightRow] || '').trim().toLowerCase();
@@ -213,6 +243,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
   const [notice, setNotice] = useState<string | null>(null);
   const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState('');
+  const [aprSearch, setAprSearch] = useState('');
   const [sortKey, setSortKey] = useState<FreightSortKey>('itemSku');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [edits, setEdits] = useState<Record<string, CompanyItemFreightPatch>>({});
@@ -288,9 +319,45 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
 
   const selectedVendor = vendorOptions.find((vendor) => vendor.key === selectedVendorKey) || null;
 
+  const aprQuery = aprSearch.trim().toLowerCase();
+
+  const aprVendorKeys = useMemo(
+    () => (aprQuery ? vendorKeysForApr(items, aprQuery) : []),
+    [items, aprQuery]
+  );
+  const currentVendorHasApr = Boolean(aprQuery) && aprVendorKeys.includes(selectedVendorKey);
+  const vendorChoices = aprVendorKeys.length > 1
+    ? vendorOptions.filter((vendor) => aprVendorKeys.includes(vendor.key) || vendor.key === selectedVendorKey)
+    : vendorOptions;
+
+  const handleAprSearchChange = (nextSearch: string) => {
+    setAprSearch(nextSearch);
+    const query = nextSearch.trim().toLowerCase();
+    if (!query) return;
+    const keys = vendorKeysForApr(items, query);
+    if (keys.length === 1 && keys[0] !== selectedVendorKey) {
+      setVendorIdSearch('');
+      setVendorFilter(keys[0]);
+    }
+  };
+
+  const hasSearch = Boolean(vendorIdSearch.trim() || aprSearch.trim());
+
+  const handleReset = () => {
+    setVendorIdSearch('');
+    setAprSearch('');
+    setVendorFilter(vendorOptions[0]?.key || '');
+  };
+
   const visibleItems = useMemo(
-    () => items.filter((row) => selectedVendorKey && rowVendorKey(row) === selectedVendorKey),
-    [items, selectedVendorKey]
+    () =>
+      items.filter(
+        (row) =>
+          selectedVendorKey &&
+          rowVendorKey(row) === selectedVendorKey &&
+          (!aprQuery || String(row.itemSku || '').toLowerCase().includes(aprQuery))
+      ),
+    [items, selectedVendorKey, aprQuery]
   );
 
   const sortedItems = useMemo(() => {
@@ -458,40 +525,77 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
 
   return (
     <div>
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}>
-          Item values come from Infor, and vendor COO comes from the vendor address in Infor. Where Infor has no value, the cell is editable for manual entry. Vendor COO and planner code can always be overridden (highlighted); clear the cell to go back to Infor. Change the rate and shipment assumptions above the table to recalculate % of container and estimated freight.
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {onOpenInfo ? (
-            <button type="button" onClick={onOpenInfo} style={{ ...inputStyle, width: 'auto', cursor: 'pointer', fontWeight: 700 }}>
-              How this works
-            </button>
-          ) : null}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Freight</h3>
+        {onOpenInfo ? (
           <button
             type="button"
-            onClick={() => void load()}
-            disabled={loading || saving}
-            style={{ ...inputStyle, width: 'auto', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 700 }}
-          >
-            {loading ? 'Loading…' : 'Reload'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={!dirty || loading || saving}
+            onClick={onOpenInfo}
             style={{
-              ...inputStyle,
-              width: 'auto',
-              cursor: !dirty || loading || saving ? 'not-allowed' : 'pointer',
-              fontWeight: 700,
-              background: dirty ? '#0f766e' : '#e2e8f0',
-              color: dirty ? '#ffffff' : '#64748b',
-              borderColor: dirty ? '#0f766e' : '#cbd5e1',
+              background: 'transparent',
+              border: 'none',
+              padding: '0 2px',
+              color: '#2563eb',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              textUnderlineOffset: 2,
             }}
           >
-            {saving ? 'Saving…' : 'Save'}
+            What is this?
           </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading || saving}
+          style={{
+            marginLeft: 'auto',
+            ...secondaryButtonStyle,
+            color: loading || saving ? '#94a3b8' : '#334155',
+            cursor: loading || saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {loading ? 'Loading…' : 'Reload'}
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={!hasSearch}
+          style={{
+            ...secondaryButtonStyle,
+            color: !hasSearch ? '#94a3b8' : '#334155',
+            cursor: !hasSearch ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={!dirty || loading || saving}
+          style={{
+            border: '1px solid #4338ca',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: !dirty || loading || saving ? '#c7d2fe' : '#4f46e5',
+            color: '#ffffff',
+            fontWeight: 700,
+            cursor: !dirty || loading || saving ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {saving ? 'Saving…' : dirty ? 'Save page' : 'Saved'}
+        </button>
+      </div>
+      <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
+        Item values come from Infor, and vendor COO comes from the vendor address in Infor. Where Infor has no value, the cell is editable for manual entry. Vendor COO and planner code can always be overridden (highlighted); clear the cell to go back to Infor. Change the rate and shipment assumptions above the table to recalculate % of container and estimated freight.
+      </p>
+
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', alignItems: 'end', marginBottom: 12, overflowX: 'auto' }}>
+        <label style={filterLabelStyle}>
+          Vendor ID
           <input
             type="search"
             value={vendorIdSearch}
@@ -503,37 +607,54 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
               );
               if (matchingVendor) setVendorFilter(matchingVendor.key);
             }}
-            placeholder="Search Vendor ID"
-            aria-label="Search Vendor ID"
+            placeholder="Search vendor ID"
             style={{ ...inputStyle, width: 180 }}
           />
+        </label>
+        <label style={filterLabelStyle}>
+          Vendor Name
           <select
             value={selectedVendorKey}
             onChange={(event) => setVendorFilter(event.target.value)}
-            style={{ ...inputStyle, width: 280 }}
+            style={{ ...inputStyle, minWidth: 280 }}
           >
-            {vendorOptions.map((vendor) => (
+            {vendorChoices.map((vendor) => (
               <option key={vendor.key} value={vendor.key}>
                 {vendor.label} ({vendor.count})
               </option>
             ))}
           </select>
-          {selectedVendor?.vendorId ? (
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
-              {selectedVendor.vendorId}
-            </span>
-          ) : null}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#334155', whiteSpace: 'nowrap' }}>
-            <input
-              type="checkbox"
-              checked={includeInactive}
-              disabled={loading || saving || dirty}
-              onChange={(event) => setIncludeInactive(event.target.checked)}
-            />
-            Show inactive items
-          </label>
-        </div>
+        </label>
+        {selectedVendor?.vendorId ? (
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', paddingBottom: 8 }}>
+            {selectedVendor.vendorId}
+          </span>
+        ) : null}
+        <label style={filterLabelStyle}>
+          APR P/N
+          <input
+            type="search"
+            value={aprSearch}
+            onChange={(event) => handleAprSearchChange(event.target.value)}
+            placeholder="Search APR P/N"
+            style={{ ...inputStyle, width: 160 }}
+          />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#334155', whiteSpace: 'nowrap', paddingBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={includeInactive}
+            disabled={loading || saving || dirty}
+            onChange={(event) => setIncludeInactive(event.target.checked)}
+          />
+          Show inactive items
+        </label>
       </div>
+      {aprVendorKeys.length > 1 && !currentVendorHasApr ? (
+        <div style={{ color: '#92400e', fontSize: 13, marginBottom: 8 }}>
+          APR P/N &quot;{aprSearch.trim()}&quot; matches {aprVendorKeys.length} vendors. Pick one in Vendor Name.
+        </div>
+      ) : null}
       {error ? <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div> : null}
       {notice ? <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div> : null}
       <div
@@ -698,7 +819,13 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
             {sortedItems.length === 0 && (
               <tr>
                 <td colSpan={SORT_COLUMNS.length} style={{ padding: 24, textAlign: 'center', color: '#64748b', fontSize: 13 }}>
-                  {loading ? 'Loading…' : 'No Infor items with a primary vendor were found.'}
+                  {loading
+                    ? 'Loading…'
+                    : aprQuery && aprVendorKeys.length === 0
+                      ? `No vendor has APR P/N "${aprSearch.trim()}".`
+                      : aprQuery
+                        ? `No items for this vendor match APR P/N "${aprSearch.trim()}".`
+                        : 'No Infor items with a primary vendor were found.'}
                 </td>
               </tr>
             )}

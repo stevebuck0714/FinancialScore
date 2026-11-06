@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReportSummaryCards from './ReportSummaryCards';
+import { useAprVendorLookup } from './useAprVendorLookup';
 import {
   FORECAST_MONTH_LABELS,
   FORECAST_QUARTERS,
@@ -158,6 +160,8 @@ export default function VendorForecastRollupReport({
   const [dataThru, setDataThru] = useState('');
   const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorKey, setVendorKey] = useState('');
+  const [aprSearch, setAprSearch] = useState('');
+  const [aprVendorKey, setAprVendorKey] = useState('');
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [lines, setLines] = useState<ForecastLine[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
@@ -257,8 +261,39 @@ export default function VendorForecastRollupReport({
     }
   }, [vendorIdSearch, vendorKey, vendors]);
 
+  const filteredLines = useMemo(() => {
+    const query = aprSearch.trim().toLowerCase();
+    if (!query) return lines;
+    return lines.filter((line) => String(line.itemSku || '').toLowerCase().includes(query));
+  }, [aprSearch, lines]);
+
+  const aprLookup = useAprVendorLookup({
+    companyId: selectedCompanyId,
+    year,
+    aprSearch,
+    needsLookup: !selectedVendor || (vendorKey === aprVendorKey && !loadingLines && filteredLines.length === 0),
+    onSingleVendor: (key) => {
+      if (key === vendorKey) return;
+      setVendorIdSearch('');
+      setVendorKey(key);
+      setAprVendorKey(key);
+    },
+  });
+  const hasSearch = Boolean(vendorIdSearch.trim() || vendorKey || aprSearch.trim());
+
+  const handleReset = () => {
+    setVendorIdSearch('');
+    setVendorKey('');
+    setAprSearch('');
+    setAprVendorKey('');
+  };
+
+  const vendorChoices = aprLookup?.status === 'multiple'
+    ? vendors.filter((vendor) => aprLookup.vendorKeys.includes(vendor.key) || vendor.key === vendorKey)
+    : vendors;
+
   const totals = useMemo(() => {
-    return lines.reduce(
+    return filteredLines.reduce(
       (acc, line) => {
         acc.sgpEstimated += Number(line.annualBaseQty) || 0;
         acc.annualForecast += monthQtyTotal(line.forecastQty);
@@ -281,10 +316,10 @@ export default function VendorForecastRollupReport({
         quarterYtd: { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<ForecastQuarter, number>,
       }
     );
-  }, [dataThru, lines]);
+  }, [dataThru, filteredLines]);
 
   const sortedLines = useMemo(() => {
-    const next = [...lines];
+    const next = [...filteredLines];
     const direction = sortDir === 'asc' ? 1 : -1;
     next.sort((a, b) => {
       const primary = compareIdentity(a[sortKey] || '', b[sortKey] || '');
@@ -296,7 +331,7 @@ export default function VendorForecastRollupReport({
       );
     });
     return next;
-  }, [lines, sortDir, sortKey]);
+  }, [filteredLines, sortDir, sortKey]);
 
   const handleIdentitySort = (key: IdentitySortKey) => {
     if (sortKey === key) {
@@ -397,12 +432,30 @@ export default function VendorForecastRollupReport({
             What is this?
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={!hasSearch}
+          style={{
+            marginLeft: 'auto',
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: '#ffffff',
+            color: !hasSearch ? '#94a3b8' : '#334155',
+            fontWeight: 700,
+            cursor: !hasSearch ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          Reset
+        </button>
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
-        Quarterly and annual totals built from the vendor monthly SGP forecast. Select a vendor to review the rollup.
+        Quarterly and annual totals built from the vendor monthly SGP forecast. Select a vendor or search an APR P/N to review the rollup.
       </p>
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', alignItems: 'end', marginBottom: 12, overflowX: 'auto' }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Vendor ID
           <input
@@ -424,12 +477,22 @@ export default function VendorForecastRollupReport({
             <option value="">
               {loadingVendors && vendors.length === 0 ? 'Loading vendors…' : 'Select a vendor'}
             </option>
-            {vendors.map((vendor) => (
+            {vendorChoices.map((vendor) => (
               <option key={vendor.key} value={vendor.key}>
                 {vendor.label}{vendor.lineCount ? ` (${vendor.lineCount})` : ''}
               </option>
             ))}
           </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          APR P/N
+          <input
+            type="search"
+            value={aprSearch}
+            onChange={(event) => setAprSearch(event.target.value)}
+            placeholder="Search APR P/N"
+            style={{ ...inputStyle, width: 160 }}
+          />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Year
@@ -456,25 +519,50 @@ export default function VendorForecastRollupReport({
       )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
 
+      {aprLookup?.status === 'multiple' && (
+        <div style={{ color: '#92400e', fontSize: 13, marginBottom: 8 }}>
+          APR P/N &quot;{aprSearch.trim()}&quot; matches {aprLookup.vendorKeys.length} vendors. Pick one in Vendor Name.
+        </div>
+      )}
+
       {!selectedVendor ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
-          Select a vendor first. Quarter and annual columns are calculated from Monthly Forecast.
+          {aprLookup?.status === 'loading'
+            ? `Finding the vendor for APR P/N "${aprSearch.trim()}"…`
+            : aprLookup?.status === 'none'
+              ? `No vendor has APR P/N "${aprSearch.trim()}" in ${year}.`
+              : 'Select a vendor or search an APR P/N. Quarter and annual columns are calculated from Monthly Forecast.'}
         </div>
       ) : loadingLines ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>Loading forecast rows…</div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#334155', marginBottom: 10 }}>
-            <span><strong>Rows:</strong> {lines.length.toLocaleString()}</span>
-            <span><strong>SGP estimated:</strong> {fmtQty(totals.sgpEstimated)}</span>
-            <span><strong>Estimated {year}:</strong> {fmtQty(totals.annualForecast)}</span>
-            <span><strong>Estimated - adjusted:</strong> {fmtQty(totals.annualAdjusted)}</span>
-            <span><strong>YTD {year}:</strong> {fmtQty(totals.ytdActual)}</span>
-            <span><strong>% YTD vs estimated:</strong> {fmtPct(pctVsPlan(totals.ytdActual, totals.annualForecast))}</span>
-            {closed.length ? (
-              <span><strong>Closed through:</strong> {FORECAST_MONTH_LABELS[closed[closed.length - 1]]}</span>
-            ) : null}
-          </div>
+          <ReportSummaryCards
+            groups={[
+              {
+                key: 'year',
+                title: String(year),
+                tone: 'annual',
+                cards: [
+                  { label: 'SGP estimated', value: fmtQty(totals.sgpEstimated) },
+                  { label: 'Estimated', value: fmtQty(totals.annualForecast) },
+                  { label: 'Estimated - adjusted', value: fmtQty(totals.annualAdjusted) },
+                  { label: 'YTD', value: fmtQty(totals.ytdActual) },
+                  { label: '% YTD vs Estimated', value: fmtPct(pctVsPlan(totals.ytdActual, totals.annualForecast)) },
+                ],
+              },
+              {
+                key: 'context',
+                title: 'Scope',
+                cards: [
+                  { label: 'Rows', value: filteredLines.length.toLocaleString() },
+                  ...(closed.length
+                    ? [{ label: 'Closed through', value: FORECAST_MONTH_LABELS[closed[closed.length - 1]] }]
+                    : []),
+                ],
+              },
+            ]}
+          />
           <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff' }}>
             <div
               style={{
@@ -503,6 +591,14 @@ export default function VendorForecastRollupReport({
               >
                 {selectedVendor.label}
               </div>
+              {selectedVendor.vendorId && selectedVendor.vendorId !== selectedVendor.label ? (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#334155', marginLeft: 8 }}>Vendor ID</div>
+                  <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {selectedVendor.vendorId}
+                  </div>
+                </>
+              ) : null}
             </div>
             <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 1680, fontSize: 12, tableLayout: 'fixed' }}>
               <colgroup>
@@ -624,6 +720,13 @@ export default function VendorForecastRollupReport({
                   <tr>
                     <td colSpan={24} style={{ padding: 16, color: '#64748b' }}>
                       No forecast rows for this vendor yet. Import the workbook on Monthly Forecast, then return here.
+                    </td>
+                  </tr>
+                )}
+                {lines.length > 0 && filteredLines.length === 0 && (
+                  <tr>
+                    <td colSpan={24} style={{ padding: 16, color: '#64748b' }}>
+                      No rows for this vendor match APR P/N &quot;{aprSearch.trim()}&quot;.
                     </td>
                   </tr>
                 )}

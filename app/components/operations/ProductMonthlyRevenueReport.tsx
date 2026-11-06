@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReportSummaryCards from './ReportSummaryCards';
 import {
   FORECAST_MONTH_FULL_LABELS,
   FORECAST_MONTHS,
@@ -196,15 +197,6 @@ function emptyTotals(): RevenueTotals {
   };
 }
 
-function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <span style={{ whiteSpace: 'nowrap' }}>
-      <strong>{label}:</strong>{' '}
-      <span style={{ fontWeight: strong ? 700 : 500 }}>{value}</span>
-    </span>
-  );
-}
-
 export default function ProductMonthlyRevenueReport({
   selectedCompanyId,
   onOpenInfo,
@@ -390,6 +382,18 @@ export default function ProductMonthlyRevenueReport({
     }
   }, [customerIdSearch, customerKey, customers, dirty]);
 
+  const hasSearch = Boolean(customerIdSearch.trim() || customerKey || customerGroup);
+
+  const handleReset = () => {
+    if (dirty && !window.confirm('You have unsaved changes. Reset search without saving?')) return;
+    setCustomerIdSearch('');
+    setCustomerIdSearchError(null);
+    setCustomerKey('');
+    setCustomerGroup('');
+    setDirty(false);
+    setNotice(null);
+  };
+
   const handleYearChange = (nextYear: number) => {
     if (dirty && !window.confirm('You have unsaved changes. Switch year without saving?')) return;
     setYear(nextYear);
@@ -561,6 +565,41 @@ export default function ProductMonthlyRevenueReport({
         >
           Monthly trend
         </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={!hasSearch || saving}
+          style={{
+            marginLeft: 'auto',
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: '#ffffff',
+            color: !hasSearch || saving ? '#94a3b8' : '#334155',
+            fontWeight: 700,
+            cursor: !hasSearch || saving ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={groupScope || saving || !dirty}
+          style={{
+            border: '1px solid #4338ca',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: groupScope || saving || !dirty ? '#c7d2fe' : '#4f46e5',
+            color: '#ffffff',
+            fontWeight: 700,
+            cursor: groupScope || saving || !dirty ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {saving ? 'Saving…' : dirty ? 'Save page' : 'Saved'}
+        </button>
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
         Monthly forecasted $ vs actual booked $ by APR P/N. Forecasted is Monthly Forecast units × Jan-1 contract price. Leave Customer blank for company totals.
@@ -673,23 +712,6 @@ export default function ProductMonthlyRevenueReport({
             </button>
           </span>
         </label>
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={groupScope || saving || !dirty}
-          style={{
-            border: '1px solid #4338ca',
-            borderRadius: 8,
-            padding: '8px 14px',
-            background: groupScope || saving || !dirty ? '#c7d2fe' : '#4f46e5',
-            color: '#ffffff',
-            fontWeight: 700,
-            cursor: groupScope || saving || !dirty ? 'not-allowed' : 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {saving ? 'Saving…' : dirty ? 'Save page' : 'Saved'}
-        </button>
       </div>
 
       {loading && <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>Loading monthly revenue…</div>}
@@ -706,58 +728,64 @@ export default function ProductMonthlyRevenueReport({
         </div>
       )}
 
-      <div
-        style={{
-          border: '1px solid #e2e8f0',
-          borderRadius: 10,
-          background: '#ffffff',
-          padding: '12px 14px',
-          marginBottom: 12,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: '#334155', marginBottom: 8 }}>
-          <Metric label="Scope" value={scopeLabel} strong />
-          <Metric label="SKUs" value={skuCount.toLocaleString()} />
-          <Metric label="Updated" value={updated || '—'} />
-          <Metric label="Data thru" value={dataThru || '—'} />
-          {closed.length ? <Metric label="Closed through" value={FORECAST_MONTH_FULL_LABELS[closed[closed.length - 1]]} /> : null}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#0f172a', marginBottom: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: '#92400e', letterSpacing: 0.4 }}>ANNUAL</div>
-          <Metric label={`Forecasted $ ${year}`} value={fmtMoney(totals.annualEstimated)} />
-          <Metric label={`Forecast - Adj $ ${year}`} value={fmtMoney(totals.annualAdjusted)} />
-          <Metric label={`YTD $ ${year}`} value={fmtMoney(totals.annualYtd)} />
-          <Metric label="% YTD vs Forecasted" value={fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualEstimated))} />
-          <Metric label="% YTD vs Forecast - Adj" value={fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualAdjusted))} />
-          <Metric label="% Days Shipped" value={fmtPct(pctDaysShippedYear(shippingDays, year, dataThru || null))} />
-        </div>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 13, color: '#334155' }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>{previousMonthName}</div>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <Metric label="Forecasted" value={fmtMoney(priorTotals.estimated)} />
-              <Metric label="Forecast - Adj" value={fmtMoney(priorTotals.adjusted)} />
-              <Metric label="Actual" value={fmtMoney(priorTotals.ytd)} />
-              <Metric label="% Actual vs Forecasted" value={fmtPct(pctRevenueShipped(priorTotals.ytd, priorTotals.estimated))} />
-              <Metric label="% Actual vs Forecast - Adj" value={fmtPct(pctRevenueShipped(priorTotals.ytd, priorTotals.adjusted))} />
-              <Metric label="Difference" value={fmtMoney(revenueDifference(priorTotals.ytd, priorTotals.estimated))} />
-              <Metric label="% Days Shipped" value={fmtPct(pctDaysShippedMonth(shippingDays, year, previousMonth, dataThru || null))} />
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#3730a3', marginBottom: 4 }}>{monthName}</div>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: '#312e81' }}>
-              <Metric label="Forecasted" value={fmtMoney(monthTotals.estimated)} />
-              <Metric label="Forecast - Adj" value={fmtMoney(monthTotals.adjusted)} />
-              <Metric label="Actual" value={fmtMoney(monthTotals.ytd)} />
-              <Metric label="% Actual vs Forecasted" value={fmtPct(pctRevenueShipped(monthTotals.ytd, monthTotals.estimated))} />
-              <Metric label="% Actual vs Forecast - Adj" value={fmtPct(pctRevenueShipped(monthTotals.ytd, monthTotals.adjusted))} />
-              <Metric label="Difference" value={fmtMoney(revenueDifference(monthTotals.ytd, monthTotals.estimated))} />
-              <Metric label="% Days Shipped" value={fmtPct(pctDaysShippedMonth(shippingDays, year, selectedMonth, dataThru || null))} />
-            </div>
-          </div>
-        </div>
-      </div>
+      <ReportSummaryCards
+        groups={[
+          {
+            key: 'scope',
+            title: 'Scope',
+            cards: [
+              { label: 'Scope', value: scopeLabel, title: scopeLabel },
+              { label: 'SKUs', value: skuCount.toLocaleString() },
+              { label: 'Updated', value: updated || '—' },
+              { label: 'Data thru', value: dataThru || '—' },
+              ...(closed.length
+                ? [{ label: 'Closed through', value: FORECAST_MONTH_FULL_LABELS[closed[closed.length - 1]] }]
+                : []),
+            ],
+          },
+          {
+            key: 'annual',
+            title: `Annual ${year}`,
+            tone: 'annual',
+            cards: [
+              { label: 'Forecasted $', value: fmtMoney(totals.annualEstimated) },
+              { label: 'Forecast - Adj $', value: fmtMoney(totals.annualAdjusted) },
+              { label: 'YTD $', value: fmtMoney(totals.annualYtd) },
+              { label: '% YTD vs Forecasted', value: fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualEstimated)) },
+              { label: '% YTD vs Forecast - Adj', value: fmtPct(pctRevenueShipped(totals.annualYtd, totals.annualAdjusted)) },
+              { label: '% Days Shipped', value: fmtPct(pctDaysShippedYear(shippingDays, year, dataThru || null)) },
+            ],
+          },
+          {
+            key: 'prior',
+            title: previousMonthName,
+            tone: 'prior',
+            cards: [
+              { label: 'Forecasted', value: fmtMoney(priorTotals.estimated) },
+              { label: 'Forecast - Adj', value: fmtMoney(priorTotals.adjusted) },
+              { label: 'Actual', value: fmtMoney(priorTotals.ytd) },
+              { label: '% Actual vs Forecasted', value: fmtPct(pctRevenueShipped(priorTotals.ytd, priorTotals.estimated)) },
+              { label: '% Actual vs Forecast - Adj', value: fmtPct(pctRevenueShipped(priorTotals.ytd, priorTotals.adjusted)) },
+              { label: 'Difference', value: fmtMoney(revenueDifference(priorTotals.ytd, priorTotals.estimated)) },
+              { label: '% Days Shipped', value: fmtPct(pctDaysShippedMonth(shippingDays, year, previousMonth, dataThru || null)) },
+            ],
+          },
+          {
+            key: 'month',
+            title: monthName,
+            tone: 'month',
+            cards: [
+              { label: 'Forecasted', value: fmtMoney(monthTotals.estimated) },
+              { label: 'Forecast - Adj', value: fmtMoney(monthTotals.adjusted) },
+              { label: 'Actual', value: fmtMoney(monthTotals.ytd) },
+              { label: '% Actual vs Forecasted', value: fmtPct(pctRevenueShipped(monthTotals.ytd, monthTotals.estimated)) },
+              { label: '% Actual vs Forecast - Adj', value: fmtPct(pctRevenueShipped(monthTotals.ytd, monthTotals.adjusted)) },
+              { label: 'Difference', value: fmtMoney(revenueDifference(monthTotals.ytd, monthTotals.estimated)) },
+              { label: '% Days Shipped', value: fmtPct(pctDaysShippedMonth(shippingDays, year, selectedMonth, dataThru || null)) },
+            ],
+          },
+        ]}
+      />
 
       {!selectedCustomer && !groupScope ? (
         <div style={{ padding: '8px 0 24px', color: '#64748b', fontSize: 13 }}>

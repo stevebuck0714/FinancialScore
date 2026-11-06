@@ -293,36 +293,37 @@ export default function ProductReportsChart({ selectedCompanyId, onOpenInfo }: P
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>
             SGP Goals vs Forecast and Actuals
           </h3>
-          <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>
-            Monthly revenue in dollars. SGP Baseline, Growth, and Stretch come from the Goal Update monthly goals.
-            Forecasted, Forecast - ADJ, and Actuals come from Monthly Revenue for each year in the range, so the
-            original forecast can be tracked against the adjusted forecast and booked actuals. Actuals + Forecast - ADJ
-            uses booked actuals through the last complete month, then Forecast - ADJ for subsequent months.
-          </div>
+          {onOpenInfo ? (
+            <button
+              type="button"
+              onClick={onOpenInfo}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: '0 2px',
+                color: '#2563eb',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textUnderlineOffset: 2,
+              }}
+            >
+              What is this?
+            </button>
+          ) : null}
         </div>
-        {onOpenInfo ? (
-          <button
-            type="button"
-            onClick={onOpenInfo}
-            style={{
-              border: '1px solid #cbd5e1',
-              background: '#ffffff',
-              borderRadius: 8,
-              padding: '6px 10px',
-              fontSize: 12,
-              fontWeight: 700,
-              color: '#334155',
-              cursor: 'pointer',
-            }}
-          >
-            How this works
-          </button>
-        ) : null}
+        <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>
+          Monthly revenue in dollars. SGP Baseline, Growth, and Stretch come from the Goal Update monthly goals.
+          Forecasted, Forecast - ADJ, and Actuals come from Monthly Revenue for each year in the range, so the
+          original forecast can be tracked against the adjusted forecast and booked actuals. Actuals + Forecast - ADJ
+          uses booked actuals through the last complete month, then Forecast - ADJ for subsequent months.
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

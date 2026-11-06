@@ -13,6 +13,7 @@ type Props = {
   onOpenFreight?: () => void;
   onOpenForecast?: () => void;
   onOpenForecastItem?: (itemId: string) => void;
+  onOpenForecastCustomer?: (customerId: string, customerName: string) => void;
 };
 
 function countLabel(count: number, singular: string, plural: string): string | null {
@@ -33,6 +34,7 @@ export default function InforNewIdentitiesAlert({
   onOpenFreight,
   onOpenForecast,
   onOpenForecastItem,
+  onOpenForecastCustomer,
 }: Props) {
   const [payload, setPayload] = useState<InforNewIdentitiesResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -134,7 +136,7 @@ export default function InforNewIdentitiesAlert({
       <div style={{ fontSize: 13, lineHeight: 1.5 }}>
         {summary.join(', ')} came in from the latest Infor sync.
         {surface === 'products'
-          ? ' Add new customers and items on Monthly Forecast. If an item is missing HTS, origin, duty, or freight, fill those on Duties & Tariffs and Freight.'
+          ? ' Add new customers and items on Volume Forecast. If an item is missing HTS, origin, duty, or freight, fill those on Duties & Tariffs and Freight.'
           : ' Fill HTS and origin on Duties & Tariffs, freight on Freight, and vendor quantities on Monthly Forecast.'}
         {missingCount > 0 ? ` ${missingCount} still have blank fields to complete.` : ''}
       </div>
@@ -166,7 +168,27 @@ export default function InforNewIdentitiesAlert({
           ))}
         </div>
       ) : null}
-      {payload.customers.length ? (
+      {payload.customers.length && surface === 'products' && onOpenForecastCustomer ? (
+        <div style={{ display: 'grid', gap: 6, marginTop: 6, fontSize: 12 }}>
+          {payload.customers.map((customer) => (
+            <div
+              key={`customer:${customer.key}`}
+              style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}
+            >
+              <span>
+                <strong>Customer ID:</strong> {customer.key} · {customer.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => onOpenForecastCustomer(customer.key, customer.label)}
+                style={buttonStyle}
+              >
+                Open in Volume Forecast
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : payload.customers.length ? (
         <div style={{ marginTop: 4, fontSize: 12 }}>Customers: {previewLabels(payload.customers)}</div>
       ) : null}
       {payload.vendors.length ? (

@@ -18,6 +18,8 @@ import {
   type VendorMonthlyForecastLineInput,
 } from '@/lib/operations/vendor-monthly-forecast';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
+import ReportSummaryCards from './ReportSummaryCards';
+import { useAprVendorLookup } from './useAprVendorLookup';
 
 type VendorOption = {
   vendorId: string;
@@ -34,7 +36,7 @@ type ForecastLine = VendorMonthlyForecastLineInput & {
 };
 
 function lineEditSignature(line: ForecastLine): string {
-  return JSON.stringify([line.productionType || '', line.forecastOverrideQty || {}]);
+  return line.productionType || '';
 }
 
 type VendorMonthlyForecastReportProps = {
@@ -122,14 +124,6 @@ function stickyIdentityStyle(index: number, header: boolean): React.CSSPropertie
   };
 }
 
-const qtyInputStyle: React.CSSProperties = {
-  ...inputStyle,
-  width: 68,
-  minWidth: 68,
-  textAlign: 'right',
-  padding: '5px 4px',
-};
-
 function currentYear(): number {
   return estYear();
 }
@@ -137,11 +131,6 @@ function currentYear(): number {
 function currentMonth(): ForecastMonth {
   return (estMonthIndex() + 1) as ForecastMonth;
 }
-
-const overrideInputStyle: React.CSSProperties = {
-  background: '#fef3c7',
-  borderColor: '#f59e0b',
-};
 
 function yearOptions(): number[] {
   const year = currentYear();
@@ -176,6 +165,8 @@ export default function VendorMonthlyForecastReport({
   const [dataThru, setDataThru] = useState('');
   const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorKey, setVendorKey] = useState('');
+  const [aprSearch, setAprSearch] = useState('');
+  const [aprVendorKey, setAprVendorKey] = useState('');
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [lines, setLines] = useState<ForecastLine[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
@@ -289,26 +280,6 @@ export default function VendorMonthlyForecastReport({
     markDirty();
   };
 
-  const updateMonthOverride = (id: string, month: ForecastMonth, raw: string) => {
-    const key = String(month);
-    const parsed = Number(raw);
-    setLines((prev) =>
-      prev.map((line) => {
-        if (line.id !== id) return line;
-        const overrides = { ...(line.forecastOverrideQty || {}) };
-        if (raw.trim() === '' || !Number.isFinite(parsed)) delete overrides[key];
-        else overrides[key] = parsed;
-        const inforQty = monthQty(line.inforForecastQty || line.forecastQty, month);
-        return {
-          ...line,
-          forecastOverrideQty: overrides,
-          forecastQty: { ...line.forecastQty, [key]: key in overrides ? overrides[key] : inforQty },
-        };
-      })
-    );
-    markDirty();
-  };
-
   const handleVendorChange = (nextKey: string) => {
     if (dirty && !window.confirm('You have unsaved changes. Switch vendor without saving?')) return;
     setVendorKey(nextKey);
@@ -334,6 +305,17 @@ export default function VendorMonthlyForecastReport({
     }
   }, [dirty, vendorIdSearch, vendorKey, vendors]);
 
+  const hasSearch = Boolean(vendorIdSearch.trim() || vendorKey || aprSearch.trim());
+
+  const handleReset = () => {
+    if (dirty && !window.confirm('You have unsaved changes. Reset search without saving?')) return;
+    setVendorIdSearch('');
+    setVendorKey('');
+    setAprSearch('');
+    setAprVendorKey('');
+    setNotice(null);
+  };
+
   const handleYearChange = (nextYear: number) => {
     if (dirty && !window.confirm('You have unsaved changes. Switch year without saving?')) return;
     setYear(nextYear);
@@ -358,7 +340,6 @@ export default function VendorMonthlyForecastReport({
           lines: changed.map((line) => ({
             id: line.id,
             productionType: line.productionType || '',
-            forecastOverrideQty: line.forecastOverrideQty || {},
           })),
         }),
       });
@@ -375,8 +356,31 @@ export default function VendorMonthlyForecastReport({
     }
   };
 
+  const filteredLines = useMemo(() => {
+    const query = aprSearch.trim().toLowerCase();
+    if (!query) return lines;
+    return lines.filter((line) => String(line.itemSku || '').toLowerCase().includes(query));
+  }, [aprSearch, lines]);
+
+  const aprLookup = useAprVendorLookup({
+    companyId: selectedCompanyId,
+    year,
+    aprSearch,
+    needsLookup: !selectedVendor || (vendorKey === aprVendorKey && !loadingLines && filteredLines.length === 0),
+    onSingleVendor: (key) => {
+      if (key === vendorKey) return;
+      if (dirty && !window.confirm('You have unsaved changes. Switch vendor without saving?')) return;
+      setVendorIdSearch('');
+      setVendorKey(key);
+      setAprVendorKey(key);
+    },
+  });
+  const vendorChoices = aprLookup?.status === 'multiple'
+    ? vendors.filter((vendor) => aprLookup.vendorKeys.includes(vendor.key) || vendor.key === vendorKey)
+    : vendors;
+
   const totals = useMemo(() => {
-    return lines.reduce(
+    return filteredLines.reduce(
       (acc, line) => {
         acc.remaining += remainingForecastQty(line.forecastQty, dataThru || null);
         acc.monthEstimated += qtyValue(line.forecastQty, selectedMonth);
@@ -386,10 +390,10 @@ export default function VendorMonthlyForecastReport({
       },
       { remaining: 0, monthEstimated: 0, monthActual: 0, annualEstimated: 0 }
     );
-  }, [dataThru, lines, selectedMonth]);
+  }, [dataThru, filteredLines, selectedMonth]);
 
   const sortedLines = useMemo(() => {
-    const next = [...lines];
+    const next = [...filteredLines];
     const direction = sortDir === 'asc' ? 1 : -1;
     const valueFor = (line: ForecastLine): string | number => {
       switch (sortKey) {
@@ -426,7 +430,7 @@ export default function VendorMonthlyForecastReport({
       );
     });
     return next;
-  }, [lines, sortDir, sortKey]);
+  }, [filteredLines, sortDir, sortKey]);
 
   const handleSort = (key: VendorForecastSortKey) => {
     if (sortKey === key) {
@@ -459,16 +463,6 @@ export default function VendorMonthlyForecastReport({
     borderTop: '1px solid #c7d2fe',
     background: MONTH_COL_CELL_BG,
     color: '#312e81',
-  };
-  const monthInputCellStyle: React.CSSProperties = {
-    padding: 4,
-    borderTop: '1px solid #c7d2fe',
-    background: MONTH_COL_CELL_BG,
-  };
-  const monthQtyInputStyle: React.CSSProperties = {
-    ...qtyInputStyle,
-    background: '#f5f7ff',
-    borderColor: '#c7d2fe',
   };
   const priorHeaderStyle: React.CSSProperties = {
     textAlign: 'right',
@@ -519,15 +513,50 @@ export default function VendorMonthlyForecastReport({
             What is this?
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={!hasSearch || saving}
+          style={{
+            marginLeft: 'auto',
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: '#ffffff',
+            color: !hasSearch || saving ? '#94a3b8' : '#334155',
+            fontWeight: 700,
+            cursor: !hasSearch || saving ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={!selectedVendor || saving || !dirty}
+          style={{
+            border: '1px solid #4338ca',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: !selectedVendor || saving || !dirty ? '#c7d2fe' : '#4f46e5',
+            color: '#ffffff',
+            fontWeight: 700,
+            cursor: !selectedVendor || saving || !dirty ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {saving ? 'Saving…' : dirty ? 'Save page' : 'Saved'}
+        </button>
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
         Monthly estimated units vs actual shipped units by APR P/N and vendor. Rows, vendor, and estimated units come from the Infor order book
         (open order lines at ordered quantity, filled lines at shipped quantity, by due month); past months keep the estimate they closed with.
-        Type an estimate to override Infor; clear it to go back. Actuals come from Infor shipments.
+        Actuals come from Infor shipments.
         {inforSourceDate ? ` Infor orders as of ${inforSourceDate}.` : ''}
       </p>
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', alignItems: 'end', marginBottom: 12, overflowX: 'auto' }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Vendor ID
           <input
@@ -549,12 +578,22 @@ export default function VendorMonthlyForecastReport({
             <option value="">
               {loadingVendors && vendors.length === 0 ? 'Loading vendors…' : 'Select a vendor'}
             </option>
-            {vendors.map((vendor) => (
+            {vendorChoices.map((vendor) => (
               <option key={vendor.key} value={vendor.key}>
                 {vendor.label}{vendor.lineCount ? ` (${vendor.lineCount})` : ''}
               </option>
             ))}
           </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          APR P/N
+          <input
+            type="search"
+            value={aprSearch}
+            onChange={(event) => setAprSearch(event.target.value)}
+            placeholder="Search APR P/N"
+            style={{ ...inputStyle, width: 160 }}
+          />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Year
@@ -628,23 +667,6 @@ export default function VendorMonthlyForecastReport({
             </button>
           </span>
         </label>
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={!selectedVendor || saving || !dirty}
-          style={{
-            border: '1px solid #4338ca',
-            borderRadius: 8,
-            padding: '8px 14px',
-            background: !selectedVendor || saving || !dirty ? '#c7d2fe' : '#4f46e5',
-            color: '#ffffff',
-            fontWeight: 700,
-            cursor: !selectedVendor || saving || !dirty ? 'not-allowed' : 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {saving ? 'Saving…' : dirty ? 'Save page' : 'Saved'}
-        </button>
       </div>
 
       {loadingVendors && vendors.length === 0 && (
@@ -653,25 +675,57 @@ export default function VendorMonthlyForecastReport({
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}
 
+      {aprLookup?.status === 'multiple' && (
+        <div style={{ color: '#92400e', fontSize: 13, marginBottom: 8 }}>
+          APR P/N &quot;{aprSearch.trim()}&quot; matches {aprLookup.vendorKeys.length} vendors. Pick one in Vendor Name.
+        </div>
+      )}
+
       {!selectedVendor ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
-          Select a vendor to see its Infor forecast rows.
+          {aprLookup?.status === 'loading'
+            ? `Finding the vendor for APR P/N "${aprSearch.trim()}"…`
+            : aprLookup?.status === 'none'
+              ? `No vendor has APR P/N "${aprSearch.trim()}" in ${year}.`
+              : 'Select a vendor or search an APR P/N to see its Infor forecast rows.'}
         </div>
       ) : loadingLines ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>Loading forecast rows…</div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#334155', marginBottom: 10 }}>
-            <span><strong>Rows:</strong> {lines.length.toLocaleString()}</span>
-            <span><strong>Annual estimated:</strong> {fmtQty(totals.annualEstimated)}</span>
-            <span><strong>Estimated {monthName}:</strong> {fmtQty(totals.monthEstimated)}</span>
-            <span><strong>{monthName} actual:</strong> {fmtQty(totals.monthActual)}</span>
-            <span><strong>% {monthName} actual vs estimated:</strong> {fmtPct(pctVsPlan(totals.monthActual, totals.monthEstimated))}</span>
-            <span><strong>Remaining-year estimated:</strong> {fmtQty(totals.remaining)}</span>
-            {closed.length ? (
-              <span><strong>Closed through:</strong> {FORECAST_MONTH_LABELS[closed[closed.length - 1]]}</span>
-            ) : null}
-          </div>
+          <ReportSummaryCards
+            groups={[
+              {
+                key: 'year',
+                title: String(year),
+                tone: 'annual',
+                cards: [
+                  { label: 'Annual estimated', value: fmtQty(totals.annualEstimated) },
+                  { label: 'Remaining-year estimated', value: fmtQty(totals.remaining) },
+                ],
+              },
+              {
+                key: 'month',
+                title: monthName,
+                tone: 'month',
+                cards: [
+                  { label: 'Estimated', value: fmtQty(totals.monthEstimated) },
+                  { label: 'Actual', value: fmtQty(totals.monthActual) },
+                  { label: '% Actual vs Estimated', value: fmtPct(pctVsPlan(totals.monthActual, totals.monthEstimated)) },
+                ],
+              },
+              {
+                key: 'context',
+                title: 'Scope',
+                cards: [
+                  { label: 'Rows', value: filteredLines.length.toLocaleString() },
+                  ...(closed.length
+                    ? [{ label: 'Closed through', value: FORECAST_MONTH_LABELS[closed[closed.length - 1]] }]
+                    : []),
+                ],
+              },
+            ]}
+          />
           <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff' }}>
             <div
               style={{
@@ -700,6 +754,14 @@ export default function VendorMonthlyForecastReport({
               >
                 {selectedVendor.label}
               </div>
+              {selectedVendor.vendorId && selectedVendor.vendorId !== selectedVendor.label ? (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#334155', marginLeft: 8 }}>Vendor ID</div>
+                  <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {selectedVendor.vendorId}
+                  </div>
+                </>
+              ) : null}
             </div>
             <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: IDENTITY_COLUMNS_WIDTH_PX + 720, fontSize: 12, tableLayout: 'fixed' }}>
               <colgroup>
@@ -797,35 +859,13 @@ export default function VendorMonthlyForecastReport({
                         qtyValue(line.forecastQty, previousMonth)
                       ))}
                     </td>
-                    <td style={{ ...monthInputCellStyle, borderLeft: '2px solid #c7d2fe' }}>
-                      {(() => {
-                        const key = String(selectedMonth);
-                        const overrides = line.forecastOverrideQty || {};
-                        const overridden = key in overrides;
-                        const inforQty = qtyValue(line.inforForecastQty || line.forecastQty, selectedMonth);
-                        const editable = isVendorForecastMonthEditable(year, selectedMonth);
-                        const sourceLabel = editable ? 'Infor order book' : 'Locked prior-month estimate';
-                        return (
-                          <input
-                            type="number"
-                            value={overridden ? overrides[key] : ''}
-                            placeholder={fmtQty(inforQty)}
-                            onChange={(event) => updateMonthOverride(line.id, selectedMonth, event.target.value)}
-                            disabled={!editable}
-                            style={
-                              overridden
-                                ? { ...monthQtyInputStyle, ...overrideInputStyle, ...(editable ? {} : { cursor: 'not-allowed', opacity: 0.7 }) }
-                                : { ...monthQtyInputStyle, ...(editable ? {} : { cursor: 'not-allowed', opacity: 0.7 }) }
-                            }
-                            title={!editable
-                              ? `${sourceLabel}: ${fmtQty(inforQty)}. Prior months are locked at month end.`
-                              : overridden
-                              ? `Override. ${sourceLabel}: ${fmtQty(inforQty)}. Clear to use it.`
-                              : `${sourceLabel}: ${fmtQty(inforQty)}. Type to override.`}
-                            aria-label={`Estimated ${monthName}`}
-                          />
-                        );
-                      })()}
+                    <td
+                      style={{ ...monthCellStyle, borderLeft: '2px solid #c7d2fe' }}
+                      title={isVendorForecastMonthEditable(year, selectedMonth)
+                        ? 'Infor order book'
+                        : 'Estimate locked at month end'}
+                    >
+                      {fmtQty(qtyValue(line.forecastQty, selectedMonth))}
                     </td>
                     <td style={monthCellStyle}>{fmtQty(qtyValue(line.actualQty, selectedMonth))}</td>
                     <td style={monthCellStyle}>
@@ -840,6 +880,13 @@ export default function VendorMonthlyForecastReport({
                   <tr>
                     <td colSpan={11} style={{ padding: 16, color: '#64748b' }}>
                       No forecast rows for this vendor. Rows appear for items with open Infor orders or shipments in the last 12 months.
+                    </td>
+                  </tr>
+                )}
+                {lines.length > 0 && filteredLines.length === 0 && (
+                  <tr>
+                    <td colSpan={11} style={{ padding: 16, color: '#64748b' }}>
+                      No rows for this vendor match APR P/N &quot;{aprSearch.trim()}&quot;.
                     </td>
                   </tr>
                 )}

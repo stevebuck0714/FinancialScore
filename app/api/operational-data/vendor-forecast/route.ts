@@ -12,6 +12,7 @@ import {
   loadVendorForecastLines,
   loadVendorForecastSettings,
   loadVendorForecastVendors,
+  loadVendorForecastVendorsForItem,
   patchVendorForecastLines,
   resolveVendorDataThru,
   serializeVendorForecastLine,
@@ -44,6 +45,16 @@ export async function GET(request: NextRequest) {
     const year = asForecastYear(request.nextUrl.searchParams.get('year'));
     const vendorId = String(request.nextUrl.searchParams.get('vendorId') || '').trim();
     const vendorName = String(request.nextUrl.searchParams.get('vendorName') || '').trim();
+    const itemSku = String(request.nextUrl.searchParams.get('itemSku') || '').trim();
+
+    if (itemSku && !vendorId && !vendorName) {
+      const itemVendors = await loadVendorForecastVendorsForItem(companyId, year, itemSku);
+      return NextResponse.json({
+        year,
+        itemSku,
+        itemVendors: itemVendors.map((row) => ({ ...row, key: `${row.vendorId}||${row.vendorName}` })),
+      });
+    }
 
     // The Infor rebuild is performed after source sync and by the scheduled
     // warmup. Returning the last completed forecast here keeps the vendor
@@ -128,9 +139,6 @@ export async function PUT(request: NextRequest) {
       .map((raw) => ({
         id: asText(raw.id),
         ...(raw.productionType !== undefined ? { productionType: asText(raw.productionType) || null } : {}),
-        ...(raw.forecastOverrideQty !== undefined
-          ? { forecastOverrideQty: raw.forecastOverrideQty as Record<string, number> }
-          : {}),
       }))
       .filter((patch) => patch.id);
 

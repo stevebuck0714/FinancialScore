@@ -40,6 +40,24 @@ const inputStyle: React.CSSProperties = {
   background: '#ffffff',
 };
 
+const filterLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  fontSize: 12,
+  color: '#334155',
+  fontWeight: 600,
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  padding: '8px 14px',
+  background: '#ffffff',
+  fontWeight: 700,
+  fontSize: 12,
+};
+
 function moneyText(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(Number(value))) return '';
   return Number(value).toFixed(4);
@@ -186,6 +204,18 @@ function rowVendorLabel(row: CompanyItemDutyRow): string {
   return String(row.vendorName || '').trim() || 'Unassigned';
 }
 
+function vendorKeysForApr(items: CompanyItemDutyRow[], query: string): string[] {
+  const exact = new Set<string>();
+  const partial = new Set<string>();
+  for (const row of items) {
+    const sku = String(row.itemSku || '').trim().toLowerCase();
+    if (!sku.includes(query)) continue;
+    partial.add(rowVendorKey(row));
+    if (sku === query) exact.add(rowVendorKey(row));
+  }
+  return Array.from(exact.size ? exact : partial);
+}
+
 export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: DutiesTariffsReportProps) {
   const [items, setItems] = useState<CompanyItemDutyRow[]>([]);
   const [offshoreVendors, setOffshoreVendors] = useState<OffshoreVendorOption[]>([]);
@@ -202,6 +232,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState(ALL_VENDORS_KEY);
+  const [aprSearch, setAprSearch] = useState('');
   const [asOfDate, setAsOfDate] = useState(formatEstDate);
   const [refreshing, setRefreshing] = useState(false);
   const [monthlyCogs, setMonthlyCogs] = useState<MonthlyCogsRow[]>([]);
@@ -369,12 +400,42 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
     ? null
     : vendorOptions.find((vendor) => vendor.key === effectiveVendorFilter) || null;
 
+  const aprQuery = aprSearch.trim().toLowerCase();
+
+  const aprVendorKeys = useMemo(
+    () => (aprQuery ? vendorKeysForApr(scopedItems, aprQuery) : []),
+    [scopedItems, aprQuery]
+  );
+  const vendorChoices = aprVendorKeys.length > 1
+    ? vendorOptions.filter((vendor) => aprVendorKeys.includes(vendor.key) || vendor.key === effectiveVendorFilter)
+    : vendorOptions;
+
+  const handleAprSearchChange = (nextSearch: string) => {
+    setAprSearch(nextSearch);
+    const query = nextSearch.trim().toLowerCase();
+    if (!query || effectiveVendorFilter === ALL_VENDORS_KEY) return;
+    const keys = vendorKeysForApr(scopedItems, query);
+    if (keys.includes(effectiveVendorFilter)) return;
+    setVendorIdSearch('');
+    setVendorFilter(keys.length === 1 ? keys[0] : ALL_VENDORS_KEY);
+  };
+
+  const hasSearch = Boolean(vendorIdSearch.trim() || aprSearch.trim() || effectiveVendorFilter !== ALL_VENDORS_KEY);
+
+  const handleReset = () => {
+    setVendorIdSearch('');
+    setAprSearch('');
+    setVendorFilter(ALL_VENDORS_KEY);
+  };
+
   const visibleItems = useMemo(
     () =>
-      effectiveVendorFilter === ALL_VENDORS_KEY
-        ? scopedItems
-        : scopedItems.filter((row) => rowVendorKey(row) === effectiveVendorFilter),
-    [scopedItems, effectiveVendorFilter]
+      scopedItems.filter(
+        (row) =>
+          (effectiveVendorFilter === ALL_VENDORS_KEY || rowVendorKey(row) === effectiveVendorFilter) &&
+          (!aprQuery || String(row.itemSku || '').toLowerCase().includes(aprQuery))
+      ),
+    [scopedItems, effectiveVendorFilter, aprQuery]
   );
 
   const loadMonthlySummary = useCallback(async () => {
@@ -533,22 +594,107 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 12, color: '#64748b' }}>
-            Inactive items: {counts.inactive}{includeInactive ? ' (shown)' : ' (hidden)'}. Missing HTS: {filter === 'all' ? counts.missing : missingHtsCount}.
-            Showing {sortedItems.length} of {counts.total} item{counts.total === 1 ? '' : 's'}.
-            {lastRateAsOfDate
-              ? ` Rates as of ${formatEstDateLabel(lastRateAsOfDate)}${lastRateReleaseName ? ` (${lastRateReleaseName})` : ''}.`
-              : ' Switch to All items after saving HTS-10, then Refresh rates to fill Duty % and tariff % from USITC.'}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {onOpenInfo ? (
-            <button type="button" onClick={onOpenInfo} style={{ ...inputStyle, width: 'auto', cursor: 'pointer', fontWeight: 700 }}>
-              How this works
-            </button>
-          ) : null}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Duties &amp; Tariffs</h3>
+        {onOpenInfo ? (
+          <button
+            type="button"
+            onClick={onOpenInfo}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '0 2px',
+              color: '#2563eb',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              textUnderlineOffset: 2,
+            }}
+          >
+            What is this?
+          </button>
+        ) : null}
+        <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', fontWeight: 700 }}>
+          As of
+          <input
+            type="date"
+            value={asOfDate}
+            onChange={(event) => setAsOfDate(event.target.value)}
+            style={{ ...inputStyle, width: 150, fontWeight: 500 }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => void refreshRates()}
+          disabled={loading || saving || refreshing}
+          title="Fetch USITC rates for the selected customs entry date. Prior dates keep their stored quotes."
+          style={{
+            border: '1px solid #1d4ed8',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: loading || saving || refreshing ? '#bfdbfe' : '#1d4ed8',
+            color: '#ffffff',
+            fontWeight: 700,
+            cursor: loading || saving || refreshing ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh rates'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void load(filter)}
+          disabled={loading || saving}
+          style={{
+            ...secondaryButtonStyle,
+            color: loading || saving ? '#94a3b8' : '#334155',
+            cursor: loading || saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {loading ? 'Loading…' : 'Reload'}
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={!hasSearch}
+          style={{
+            ...secondaryButtonStyle,
+            color: !hasSearch ? '#94a3b8' : '#334155',
+            cursor: !hasSearch ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={!dirty || loading || saving}
+          style={{
+            border: '1px solid #4338ca',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: !dirty || loading || saving ? '#c7d2fe' : '#4f46e5',
+            color: '#ffffff',
+            fontWeight: 700,
+            cursor: !dirty || loading || saving ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {saving ? 'Saving…' : dirty ? 'Save page' : 'Saved'}
+        </button>
+      </div>
+      <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
+        Inactive items: {counts.inactive}{includeInactive ? ' (shown)' : ' (hidden)'}. Missing HTS: {filter === 'all' ? counts.missing : missingHtsCount}.
+        Showing {sortedItems.length} of {counts.total} item{counts.total === 1 ? '' : 's'}.
+        {lastRateAsOfDate
+          ? ` Rates as of ${formatEstDateLabel(lastRateAsOfDate)}${lastRateReleaseName ? ` (${lastRateReleaseName})` : ''}.`
+          : ' Switch to All items after saving HTS-10, then Refresh rates to fill Duty % and tariff % from USITC.'}
+      </p>
+
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', alignItems: 'end', marginBottom: 12, overflowX: 'auto' }}>
+        <label style={filterLabelStyle}>
+          Vendor ID
           <input
             type="search"
             value={vendorIdSearch}
@@ -560,98 +706,74 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
               );
               if (matchingVendor) setVendorFilter(matchingVendor.key);
             }}
-            placeholder="Search Vendor ID"
-            aria-label="Search Vendor ID"
+            placeholder="Search vendor ID"
             style={{ ...inputStyle, width: 180 }}
           />
+        </label>
+        <label style={filterLabelStyle}>
+          Vendor Name
           <select
             value={effectiveVendorFilter}
             onChange={(event) => setVendorFilter(event.target.value)}
-            style={{ ...inputStyle, width: 280 }}
+            style={{ ...inputStyle, minWidth: 280 }}
           >
             <option value={ALL_VENDORS_KEY}>All vendors ({vendorOptions.length})</option>
-            {vendorOptions.map((vendor) => (
+            {vendorChoices.map((vendor) => (
               <option key={vendor.key} value={vendor.key}>
                 {vendor.label} ({vendor.count})
               </option>
             ))}
           </select>
+        </label>
+        <label style={filterLabelStyle}>
+          APR P/N
+          <input
+            type="search"
+            value={aprSearch}
+            onChange={(event) => handleAprSearchChange(event.target.value)}
+            placeholder="Search APR P/N"
+            style={{ ...inputStyle, width: 160 }}
+          />
+        </label>
+        <label style={filterLabelStyle}>
+          Items
           <select
             value={filter}
             onChange={(event) => setFilter(event.target.value as 'all' | 'needs_hts')}
-            style={{ ...inputStyle, width: 180 }}
+            style={{ ...inputStyle, width: 160 }}
           >
             <option value="needs_hts">Needs HTS input</option>
             <option value="all">All items</option>
           </select>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', fontWeight: 700 }}>
-            <input
-              type="checkbox"
-              checked={includeInactive}
-              onChange={(event) => setIncludeInactive(event.target.checked)}
-            />
-            Show inactive items
-          </label>
-          <button
-            type="button"
-            onClick={() => void load(filter)}
-            disabled={loading || saving}
-            style={{ ...inputStyle, width: 'auto', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: 700 }}
-          >
-            {loading ? 'Loading…' : 'Reload'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={!dirty || loading || saving}
-            style={{
-              ...inputStyle,
-              width: 'auto',
-              cursor: !dirty || loading || saving ? 'not-allowed' : 'pointer',
-              fontWeight: 700,
-              background: dirty ? '#0f766e' : '#e2e8f0',
-              color: dirty ? '#ffffff' : '#64748b',
-              borderColor: dirty ? '#0f766e' : '#cbd5e1',
-            }}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', fontWeight: 700 }}>
-            As of
-            <input
-              type="date"
-              value={asOfDate}
-              onChange={(event) => setAsOfDate(event.target.value)}
-              style={{ ...inputStyle, width: 150, fontWeight: 500 }}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => void refreshRates()}
-            disabled={loading || saving || refreshing}
-            title="Fetch USITC rates for the selected customs entry date. Prior dates keep their stored quotes."
-            style={{
-              ...inputStyle,
-              width: 'auto',
-              cursor: loading || saving || refreshing ? 'not-allowed' : 'pointer',
-              fontWeight: 700,
-              background: refreshing ? '#e2e8f0' : '#1d4ed8',
-              color: refreshing ? '#64748b' : '#ffffff',
-              borderColor: refreshing ? '#cbd5e1' : '#1d4ed8',
-            }}
-          >
-            {refreshing ? 'Refreshing…' : 'Refresh rates'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setSummaryOpen(true)}
-            disabled={loading || saving || refreshing}
-            style={{ ...inputStyle, width: 'auto', cursor: loading || saving || refreshing ? 'not-allowed' : 'pointer', fontWeight: 700 }}
-          >
-            Monthly Tariff Summary
-          </button>
-        </div>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#334155', whiteSpace: 'nowrap', paddingBottom: 6 }}>
+          <input
+            type="checkbox"
+            checked={includeInactive}
+            onChange={(event) => setIncludeInactive(event.target.checked)}
+          />
+          Show inactive items
+        </label>
+        <button
+          type="button"
+          onClick={() => setSummaryOpen(true)}
+          disabled={loading || saving || refreshing}
+          style={{
+            ...secondaryButtonStyle,
+            padding: '5px 10px',
+            whiteSpace: 'nowrap',
+            color: loading || saving || refreshing ? '#94a3b8' : '#334155',
+            cursor: loading || saving || refreshing ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Monthly Tariff Summary
+        </button>
       </div>
+      {aprVendorKeys.length > 1 && selectedVendor && !aprVendorKeys.includes(effectiveVendorFilter) ? (
+        <div style={{ color: '#92400e', fontSize: 13, marginBottom: 8 }}>
+          APR P/N &quot;{aprSearch.trim()}&quot; matches {aprVendorKeys.length} vendors. Pick one in Vendor Name or choose All vendors.
+        </div>
+      ) : null}
 
       {error ? (
         <div style={{ marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: '#fef2f2', color: '#991b1b', fontSize: 13 }}>
@@ -717,7 +839,11 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
             {sortedItems.length === 0 && !loading ? (
               <tr>
                 <td colSpan={SORT_COLUMNS.length} style={{ padding: 24, color: '#64748b' }}>
-                  {filter === 'needs_hts'
+                  {aprQuery
+                    ? filter === 'needs_hts'
+                      ? `No items matching APR P/N "${aprSearch.trim()}" need HTS input. Switch to All items.`
+                      : `No items match APR P/N "${aprSearch.trim()}".`
+                    : filter === 'needs_hts'
                     ? effectiveVendorFilter === ALL_VENDORS_KEY
                       ? 'No items need HTS input. Switch to All items, or wait for new Infor items to load.'
                       : 'No items for this vendor need HTS input. Switch to All items or All vendors.'

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import ReportSummaryCards from './ReportSummaryCards';
 import {
   VENDOR_PRICING_APPROVAL_STATUSES,
   VENDOR_PRICING_EDIT_FIELDS,
@@ -324,6 +325,24 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
             What is this?
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={saving || !dirty}
+          style={{
+            marginLeft: 'auto',
+            border: '1px solid #4338ca',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: saving || !dirty ? '#c7d2fe' : '#4f46e5',
+            color: '#ffffff',
+            fontWeight: 700,
+            cursor: saving || !dirty ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {saving ? 'Saving…' : dirty ? `Save ${changedRows.length.toLocaleString()} rows` : 'Saved'}
+        </button>
       </div>
       <p style={{ margin: '0 0 12px', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
         Proposed vendor price changes by item and primary vendor. Current cost is the Infor contract in effect today; {fcstLabel} comes from the
@@ -375,32 +394,28 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
           placeholder="Search item, vendor, material..."
           style={{ ...inputStyle, width: 240, padding: '7px 8px' }}
         />
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={saving || !dirty}
-          style={{
-            border: '1px solid #4338ca',
-            borderRadius: 8,
-            padding: '8px 14px',
-            background: saving || !dirty ? '#c7d2fe' : '#4f46e5',
-            color: '#ffffff',
-            fontWeight: 700,
-            cursor: saving || !dirty ? 'not-allowed' : 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {saving ? 'Saving…' : dirty ? `Save ${changedRows.length.toLocaleString()} rows` : 'Saved'}
-        </button>
       </div>
 
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: '#334155', marginBottom: 10 }}>
-        <span><strong>Rows:</strong> {rows.length.toLocaleString()}</span>
-        <span><strong>Filtered:</strong> {filteredRows.length.toLocaleString()}</span>
-        {VENDOR_PRICING_APPROVAL_STATUSES.map((status) => (
-          <span key={status}><strong>{status}:</strong> {(statusCounts.get(status) || 0).toLocaleString()}</span>
-        ))}
-      </div>
+      <ReportSummaryCards
+        groups={[
+          {
+            key: 'rows',
+            title: 'Rows',
+            cards: [
+              { label: 'Rows', value: rows.length.toLocaleString() },
+              { label: 'Filtered', value: filteredRows.length.toLocaleString() },
+            ],
+          },
+          {
+            key: 'status',
+            title: 'Approval status',
+            cards: VENDOR_PRICING_APPROVAL_STATUSES.map((status) => ({
+              label: status,
+              value: (statusCounts.get(status) || 0).toLocaleString(),
+            })),
+          },
+        ]}
+      />
 
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {notice && <div style={{ color: '#166534', fontSize: 13, marginBottom: 8 }}>{notice}</div>}

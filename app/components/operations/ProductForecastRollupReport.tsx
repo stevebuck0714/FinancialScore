@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReportSummaryCards from './ReportSummaryCards';
 import {
   FORECAST_QUARTERS,
   annualAdjustedQty,
@@ -21,6 +22,12 @@ type CustomerOption = {
   key: string;
   label: string;
   lineCount?: number;
+};
+
+type ItemCustomer = {
+  customerId: string;
+  customerName: string;
+  customerPartNumber: string;
 };
 
 type ForecastLine = ProductRevenueForecastLineInput & { id: string };
@@ -164,7 +171,11 @@ export default function ProductForecastRollupReport({
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingLines, setLoadingLines] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aprSearch, setAprSearch] = useState('');
+  const [itemCustomers, setItemCustomers] = useState<{ itemId: string; customers: ItemCustomer[] } | null>(null);
+  const [loadingItemCustomers, setLoadingItemCustomers] = useState(false);
   const customersRequestSeq = useRef(0);
+  const itemCustomersRequestSeq = useRef(0);
 
   const selectedCustomer = useMemo(
     () => customers.find((customer) => customer.key === customerKey) || null,
@@ -311,8 +322,70 @@ export default function ProductForecastRollupReport({
     }
   }, [customerIdSearch, customerKey, customers]);
 
+  const selectItemCustomer = useCallback((candidate: ItemCustomer) => {
+    const customerId = candidate.customerId.trim();
+    const name = candidate.customerName || customerId;
+    let option = customers.find((customer) => customer.customerId.trim().toLowerCase() === customerId.toLowerCase());
+    if (!option) {
+      option = { customerId, customerName: name, key: `${customerId}||${name}`, label: name };
+      const added = option;
+      setCustomers((prev) => mergeCustomers([added], prev));
+    }
+    setCustomerGroup('');
+    setCustomerIdSearch(option.customerId);
+    setCustomerIdSearchError(null);
+    setCustomerKey(option.key);
+  }, [customers, mergeCustomers]);
+
+  const typedItemId = aprSearch.trim();
+  useEffect(() => {
+    if (!selectedCompanyId || customerKey || customerGroup || typedItemId.length < 3) return;
+    if (itemCustomers?.itemId.toUpperCase() === typedItemId.toUpperCase()) return;
+    const timer = window.setTimeout(async () => {
+      const seq = ++itemCustomersRequestSeq.current;
+      setLoadingItemCustomers(true);
+      try {
+        const params = new URLSearchParams({ companyId: selectedCompanyId, itemCustomers: '1', itemSku: typedItemId });
+        const response = await fetch(`/api/operational-data/product-forecast?${params.toString()}`, { cache: 'no-store' });
+        const payload = await response.json().catch(() => ({}));
+        if (seq !== itemCustomersRequestSeq.current) return;
+        if (!response.ok) throw new Error(payload?.error || 'Failed to find customers for this item');
+        const found: ItemCustomer[] = Array.isArray(payload?.customers) ? payload.customers : [];
+        setItemCustomers({ itemId: typedItemId, customers: found });
+        if (found.length === 1) selectItemCustomer(found[0]);
+      } catch (err: any) {
+        if (seq === itemCustomersRequestSeq.current) setError(err?.message || 'Failed to find customers for this item');
+      } finally {
+        if (seq === itemCustomersRequestSeq.current) setLoadingItemCustomers(false);
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [customerGroup, customerKey, itemCustomers?.itemId, selectItemCustomer, selectedCompanyId, typedItemId]);
+
+  const itemCustomersForFilter =
+    itemCustomers && itemCustomers.itemId.toUpperCase() === typedItemId.toUpperCase() ? itemCustomers : null;
+
+  const filteredLines = useMemo(() => {
+    const filter = typedItemId.toUpperCase();
+    if (!filter) return lines;
+    return lines.filter((line) => line.itemSku.trim().toUpperCase() === filter);
+  }, [lines, typedItemId]);
+
+  const hasSearch = Boolean(customerIdSearch.trim() || customerKey || customerGroup || typedItemId);
+
+  const handleReset = () => {
+    itemCustomersRequestSeq.current += 1;
+    setCustomerIdSearch('');
+    setCustomerIdSearchError(null);
+    setCustomerKey('');
+    setCustomerGroup('');
+    setAprSearch('');
+    setItemCustomers(null);
+    setLoadingItemCustomers(false);
+  };
+
   const totals = useMemo(() => {
-    return lines.reduce(
+    return filteredLines.reduce(
       (acc, line) => {
         acc.sgpEstimated += Number(line.annualBaseQty) || 0;
         acc.annualForecast += monthQtyTotal(line.forecastQty);
@@ -337,7 +410,7 @@ export default function ProductForecastRollupReport({
         quarterYtd: { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<ForecastQuarter, number>,
       }
     );
-  }, [dataThru, lines]);
+  }, [dataThru, filteredLines]);
 
   const quarterGroupHeaderStyle = (quarter: ForecastQuarter): React.CSSProperties => {
     const shade = QUARTER_SHADES[quarter];
@@ -426,9 +499,27 @@ export default function ProductForecastRollupReport({
             What is this?
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={!hasSearch}
+          style={{
+            marginLeft: 'auto',
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: '#ffffff',
+            color: !hasSearch ? '#94a3b8' : '#334155',
+            fontWeight: 700,
+            cursor: !hasSearch ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          Reset
+        </button>
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
-        Quarterly and annual totals built from the monthly forecast. Select a customer to review the rollup.
+        Quarterly and annual totals built from the monthly forecast. Select a customer or search an APR P/N to review the rollup.
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
@@ -460,6 +551,16 @@ export default function ProductForecastRollupReport({
               </option>
             ))}
           </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
+          APR P/N
+          <input
+            type="search"
+            value={aprSearch}
+            onChange={(event) => setAprSearch(event.target.value)}
+            placeholder="Search APR P/N"
+            style={{ ...inputStyle, width: 180 }}
+          />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Group Name
@@ -497,24 +598,71 @@ export default function ProductForecastRollupReport({
         </div>
       )}
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginBottom: 8 }}>{error}</div>}
+      {loadingItemCustomers && (
+        <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>
+          Finding the customer for APR P/N {typedItemId}…
+        </div>
+      )}
+      {!loadingItemCustomers && !selectedCustomer && !groupScope && itemCustomersForFilter?.customers.length === 0 && (
+        <div style={{ color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
+          {`APR P/N ${itemCustomersForFilter.itemId} is not linked to a customer yet.`}
+        </div>
+      )}
+      {!loadingItemCustomers && !selectedCustomer && !groupScope && itemCustomersForFilter && itemCustomersForFilter.customers.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', color: '#1e3a8a', fontSize: 13, marginBottom: 8 }}>
+          <span>{`APR P/N ${itemCustomersForFilter.itemId} is linked to ${itemCustomersForFilter.customers.length} customers. Choose one:`}</span>
+          {itemCustomersForFilter.customers.map((candidate) => (
+            <button
+              key={candidate.customerId}
+              type="button"
+              onClick={() => selectItemCustomer(candidate)}
+              style={{
+                border: '1px solid #c7d2fe',
+                borderRadius: 999,
+                padding: '4px 10px',
+                background: '#eef2ff',
+                color: '#3730a3',
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              {candidate.customerName || candidate.customerId}
+            </button>
+          ))}
+        </div>
+      )}
 
       {!selectedCustomer && !groupScope ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>
-          Select a customer first. Quarter and annual columns are calculated from Monthly Forecast.
+          Select a customer or search an APR P/N. Quarter and annual columns are calculated from Monthly Forecast.
         </div>
       ) : loadingLines ? (
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>Loading forecast rows…</div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#334155', marginBottom: 10 }}>
-            <span><strong>Rows:</strong> {lines.length.toLocaleString()}</span>
-            <span><strong>SGP estimated:</strong> {fmtQty(totals.sgpEstimated)}</span>
-            <span><strong>Forecasted {year}:</strong> {fmtQty(totals.annualForecast)}</span>
-            <span><strong>Forecast - adjusted:</strong> {fmtQty(totals.annualAdjusted)}</span>
-            <span><strong>YTD {year}:</strong> {fmtQty(totals.ytdActual)}</span>
-            <span><strong>% YTD vs forecasted:</strong> {fmtPct(pctVsPlan(totals.ytdActual, totals.annualForecast))}</span>
-            <span><strong>Remaining-year forecast:</strong> {fmtQty(totals.remaining)}</span>
-          </div>
+          <ReportSummaryCards
+            groups={[
+              {
+                key: 'year',
+                title: String(year),
+                tone: 'annual',
+                cards: [
+                  { label: 'SGP estimated', value: fmtQty(totals.sgpEstimated) },
+                  { label: 'Forecasted', value: fmtQty(totals.annualForecast) },
+                  { label: 'Forecast - adjusted', value: fmtQty(totals.annualAdjusted) },
+                  { label: 'YTD', value: fmtQty(totals.ytdActual) },
+                  { label: '% YTD vs Forecasted', value: fmtPct(pctVsPlan(totals.ytdActual, totals.annualForecast)) },
+                  { label: 'Remaining-year forecast', value: fmtQty(totals.remaining) },
+                ],
+              },
+              {
+                key: 'context',
+                title: 'Scope',
+                cards: [{ label: 'Rows', value: filteredLines.length.toLocaleString() }],
+              },
+            ]}
+          />
           <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff' }}>
             <div
               style={{
@@ -624,7 +772,7 @@ export default function ProductForecastRollupReport({
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line) => {
+                {filteredLines.map((line) => {
                   const annualForecast = monthQtyTotal(line.forecastQty);
                   const annualAdjusted = annualAdjustedQty(line.forecastQty, line.actualQty, dataThru || null, line.adjustedQty);
                   const ytdActual = ytdActualQty(line.actualQty, dataThru || null);
@@ -674,6 +822,13 @@ export default function ProductForecastRollupReport({
                   <tr>
                     <td colSpan={visibleIdentityColumns.length + 26} style={{ padding: 16, color: '#64748b' }}>
                       No forecast rows for this {groupScope ? 'group' : 'customer'} yet. Import the workbook on Monthly Forecast, then return here.
+                    </td>
+                  </tr>
+                )}
+                {lines.length > 0 && filteredLines.length === 0 && (
+                  <tr>
+                    <td colSpan={visibleIdentityColumns.length + 26} style={{ padding: 16, color: '#64748b' }}>
+                      No forecast rows match APR P/N {typedItemId}.
                     </td>
                   </tr>
                 )}

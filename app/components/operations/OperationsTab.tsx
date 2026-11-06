@@ -1086,6 +1086,9 @@ export default function OperationsTab({
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
   const [productForecastItemIdFilter, setProductForecastItemIdFilter] = useState('');
   const [productForecastItemFocus, setProductForecastItemFocus] = useState<{ itemId: string; requestId: number } | null>(null);
+  const [productForecastCustomerFocus, setProductForecastCustomerFocus] = useState<
+    { customerId: string; customerName: string; requestId: number } | null
+  >(null);
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('vendorsItemOrderHistory');
   const [productMarginCustomerFilter, setProductMarginCustomerFilter] = useState('');
@@ -11681,6 +11684,11 @@ export default function OperationsTab({
             setProductForecastItemFocus({ itemId, requestId: Date.now() });
             setProductReportView('revenueForecast');
           }}
+          onOpenForecastCustomer={(customerId, customerName) => {
+            setProductForecastItemIdFilter('');
+            setProductForecastCustomerFocus({ customerId, customerName, requestId: Date.now() });
+            setProductReportView('revenueForecast');
+          }}
         />
       ) : null}
       </>
@@ -13579,7 +13587,7 @@ export default function OperationsTab({
         sections: [
           {
             body:
-              'Monthly estimated units vs actual shipped units, by APR P/N and vendor. Everything comes from Infor; pick a vendor.',
+              'Monthly estimated units vs actual shipped units by APR P/N and vendor. Rows, vendor, and estimated units come from the Infor order book (open order lines at ordered quantity, filled lines at shipped quantity, by due month); past months keep the estimate they closed with. Actuals come from Infor shipments. The page shows the date of the latest Infor order load as "Infor orders as of".',
           },
           {
             heading: 'Where the numbers come from',
@@ -13593,7 +13601,7 @@ export default function OperationsTab({
           {
             heading: 'What you can edit',
             body: [
-              'Type an estimate to override Infor for that month (highlighted amber; the tooltip shows the Infor value). Clear it to go back to Infor.',
+              'Estimated units are view-only; they come from Infor.',
               'Planned/MTO is editable. Team, CSR, group and status are kept from the earlier workbook rows; Infor has no fields for them. Quarter and annual totals belong on Forecast Rollup.',
             ],
           },
@@ -13610,7 +13618,7 @@ export default function OperationsTab({
             heading: 'How it is calculated',
             body: [
               'This page is view-only. Each quarter shows Estimated, Estimated - ADJ, YTD, and % YTD vs Estimated.',
-              'Estimated - ADJ uses YTD actual for closed months (through Data thru) and the typed estimated quantity for open months.',
+              'Estimated - ADJ uses YTD actual for closed months (through Data thru) and the Infor estimated quantity for open months.',
               'Annual SGP ESTIMATED is column J. ESTIMATED is the sum of the 12 monthly estimated quantities.',
             ],
           },
@@ -13943,9 +13951,6 @@ export default function OperationsTab({
             />
           ) : activeCustomReport?.view === 'dutiesTariffs' ? (
             <>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-                Duties & Tariffs
-              </h2>
               {renderReorderableCompanyReport('vendorsDutiesTariffs', 'vendors', <DutiesTariffsReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsDutiesTariffs')}
@@ -13962,9 +13967,6 @@ export default function OperationsTab({
             </>
           ) : activeCustomReport?.view === 'sgpFreight' ? (
             <>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-                Freight
-              </h2>
               {renderReorderableCompanyReport('vendorsSgpFreight', 'vendors', <SgpFreightReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsSgpFreight')}
@@ -14031,6 +14033,7 @@ export default function OperationsTab({
             itemIdFilter={productForecastItemIdFilter}
             onItemIdFilterChange={setProductForecastItemIdFilter}
             itemFocusRequest={productForecastItemFocus}
+            customerFocusRequest={productForecastCustomerFocus}
           />)}
           {renderProductChartInfoModal()}
         </div>

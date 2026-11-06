@@ -22,6 +22,7 @@ import ProductMonthlyTrendChartModal, {
   buildProductMonthlyTrendRows,
 } from './ProductMonthlyTrendChartModal';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
+import ReportSummaryCards from './ReportSummaryCards';
 import SgpBudgetLockBar from './SgpBudgetLockBar';
 
 type CustomerOption = {
@@ -62,6 +63,8 @@ type ProductRevenueForecastReportProps = {
   onItemIdFilterChange?: (itemId: string) => void;
   /** Opening an item from the new-items alert resets the customer and resolves it from the item. */
   itemFocusRequest?: { itemId: string; requestId: number } | null;
+  /** Opening a customer from the new-items alert selects that customer, even before it has forecast rows. */
+  customerFocusRequest?: { customerId: string; customerName: string; requestId: number } | null;
 };
 
 type ItemCustomer = {
@@ -238,6 +241,7 @@ export default function ProductRevenueForecastReport({
   itemIdFilter = '',
   onItemIdFilterChange,
   itemFocusRequest = null,
+  customerFocusRequest = null,
 }: ProductRevenueForecastReportProps) {
   const [year, setYear] = useState(currentYear());
   const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
@@ -522,6 +526,27 @@ export default function ProductRevenueForecastReport({
     void lookupItemCustomers(focusItemId);
   }, [focusItemId, focusRequestId, lookupItemCustomers, selectedCompanyId]);
 
+  const customerFocusRequestId = customerFocusRequest?.requestId;
+  const customerFocusId = customerFocusRequest?.customerId || '';
+  const customerFocusName = customerFocusRequest?.customerName || '';
+  useEffect(() => {
+    if (!customerFocusRequestId || !customerFocusId || !selectedCompanyId) return;
+    pendingNewRowRef.current = null;
+    setCustomerKey('');
+    setCustomerGroup('');
+    setCustomerIdSearch('');
+    setCustomerIdSearchError(null);
+    setLines([]);
+    setDirty(false);
+    setNotice(null);
+    setPendingItemCustomer({
+      customerId: customerFocusId,
+      customerName: customerFocusName,
+      customerPartNumber: '',
+      itemId: '',
+    });
+  }, [customerFocusId, customerFocusName, customerFocusRequestId, selectedCompanyId]);
+
   // Typing an APR P/N with no customer or group selected finds the item's customer.
   const typedItemId = itemIdFilter.trim();
   useEffect(() => {
@@ -545,11 +570,13 @@ export default function ProductRevenueForecastReport({
       label: name,
     };
     if (!existing) setCustomers((prev) => mergeCustomers([option], prev));
-    pendingNewRowRef.current = {
-      customerKey: option.key,
-      itemSku: pendingItemCustomer.itemId,
-      customerPartNumber: pendingItemCustomer.customerPartNumber,
-    };
+    pendingNewRowRef.current = pendingItemCustomer.itemId
+      ? {
+          customerKey: option.key,
+          itemSku: pendingItemCustomer.itemId,
+          customerPartNumber: pendingItemCustomer.customerPartNumber,
+        }
+      : null;
     setCustomerGroup('');
     setCustomerIdSearch(option.customerId);
     setCustomerIdSearchError(null);
@@ -685,6 +712,21 @@ export default function ProductRevenueForecastReport({
   const handleCustomerChange = (nextKey: string) => {
     if (dirty && !window.confirm('You have unsaved changes. Switch customer without saving?')) return;
     setCustomerKey(nextKey);
+  };
+
+  const hasSearch = Boolean(customerIdSearch.trim() || customerKey || customerGroup || itemIdFilter.trim());
+
+  const handleReset = () => {
+    if (dirty && !window.confirm('You have unsaved changes. Reset search without saving?')) return;
+    pendingNewRowRef.current = null;
+    setPendingItemCustomer(null);
+    setCustomerIdSearch('');
+    setCustomerIdSearchError(null);
+    setCustomerKey('');
+    setCustomerGroup('');
+    onItemIdFilterChange?.('');
+    setDirty(false);
+    setNotice(null);
   };
 
   const handleGroupChange = (nextGroup: string) => {
@@ -912,6 +954,41 @@ export default function ProductRevenueForecastReport({
         >
           Monthly trend
         </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={!hasSearch || saving}
+          style={{
+            marginLeft: 'auto',
+            border: '1px solid #cbd5e1',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: '#ffffff',
+            color: !hasSearch || saving ? '#94a3b8' : '#334155',
+            fontWeight: 700,
+            cursor: !hasSearch || saving ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={!selectedCustomer || groupScope || saving || !dirty}
+          style={{
+            border: '1px solid #4338ca',
+            borderRadius: 8,
+            padding: '8px 14px',
+            background: !selectedCustomer || groupScope || saving || !dirty ? '#c7d2fe' : '#4f46e5',
+            color: '#ffffff',
+            fontWeight: 700,
+            cursor: !selectedCustomer || groupScope || saving || !dirty ? 'not-allowed' : 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {saving ? 'Saving…' : dirty ? 'Save page' : 'Saved'}
+        </button>
       </div>
       <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 13, lineHeight: 1.5, whiteSpace: 'nowrap' }}>
         Monthly unit forecast vs actual by APR P/N and customer. Select a customer, fill Group / TEAM / CSR on each row, enter Planned or MTO and monthly quantities, then save this page.
@@ -925,7 +1002,7 @@ export default function ProductRevenueForecastReport({
             value={customerIdSearch}
             onChange={(event) => handleCustomerIdSearchChange(event.target.value)}
             placeholder="Search customer ID"
-            style={{ ...inputStyle, width: 180 }}
+            style={{ ...inputStyle, width: 144 }}
           />
           {customerIdSearchError && <span style={{ color: '#b91c1c', fontSize: 11, fontWeight: 600 }}>{customerIdSearchError}</span>}
         </label>
@@ -954,7 +1031,7 @@ export default function ProductRevenueForecastReport({
             value={itemIdFilter}
             onChange={(event) => onItemIdFilterChange?.(event.target.value)}
             placeholder="Search APR P/N"
-            style={{ ...inputStyle, width: 180 }}
+            style={{ ...inputStyle, width: 144 }}
           />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
@@ -963,7 +1040,7 @@ export default function ProductRevenueForecastReport({
             value={customerGroup}
             onChange={(event) => handleGroupChange(event.target.value)}
             disabled={loadingCustomers && customers.length === 0}
-            style={{ ...inputStyle, minWidth: 220 }}
+            style={{ ...inputStyle, width: 176, minWidth: 176 }}
           >
             <option value="">Select a group</option>
             {customerGroups.map((group) => (
@@ -976,7 +1053,7 @@ export default function ProductRevenueForecastReport({
           <select
             value={year}
             onChange={(event) => handleYearChange(Number(event.target.value))}
-            style={{ ...inputStyle, width: 108 }}
+            style={{ ...inputStyle, width: 76 }}
           >
             {yearOptions().map((option) => (
               <option key={option} value={option}>{option}</option>
@@ -993,7 +1070,7 @@ export default function ProductRevenueForecastReport({
               markDirty();
             }}
             disabled={groupScope}
-            style={{ ...inputStyle, width: 150 }}
+            style={{ ...inputStyle, width: 120 }}
           />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
@@ -1044,23 +1121,6 @@ export default function ProductRevenueForecastReport({
             </button>
           </span>
         </label>
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={!selectedCustomer || groupScope || saving || !dirty}
-          style={{
-            border: '1px solid #4338ca',
-            borderRadius: 8,
-            padding: '8px 14px',
-            background: !selectedCustomer || groupScope || saving || !dirty ? '#c7d2fe' : '#4f46e5',
-            color: '#ffffff',
-            fontWeight: 700,
-            cursor: !selectedCustomer || groupScope || saving || !dirty ? 'not-allowed' : 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {saving ? 'Saving…' : dirty ? 'Save page' : 'Saved'}
-        </button>
       </div>
 
       {selectedCompanyId ? (
@@ -1126,46 +1186,39 @@ export default function ProductRevenueForecastReport({
         <div style={{ padding: '24px 0', color: '#64748b', fontSize: 13 }}>Loading forecast rows…</div>
       ) : (
         <>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-              fontSize: 13,
-              color: '#334155',
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'baseline' }}>
-              <span style={{ fontWeight: 800, color: '#0f172a' }}>{monthName} YTD DATA</span>
-              <span><strong>Forecasted YTD:</strong> {fmtQty(totals.ytdForecast)}</span>
-              <span><strong>Forecast - Adjusted YTD:</strong> {fmtQty(totals.ytdAdjusted)}</span>
-              <span><strong>Actual YTD:</strong> {fmtQty(totals.ytdActual)}</span>
-              <span>
-                <strong>Actual YTD vs. Forecasted YTD:</strong>{' '}
-                {fmtPct(pctVsPlan(totals.ytdActual, totals.ytdForecast))}
-              </span>
-              <span>
-                <strong>Actual YTD vs Forecast - Adjusted YTD:</strong>{' '}
-                {fmtPct(pctVsPlan(totals.ytdActual, totals.ytdAdjusted))}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'baseline' }}>
-              <span style={{ fontWeight: 800, color: '#0f172a' }}>{monthName}</span>
-              <span><strong>Forecasted {monthName}:</strong> {fmtQty(totals.monthForecast)}</span>
-              <span><strong>{monthName} Forecast - ADJUSTED:</strong> {fmtQty(totals.monthAdjusted)}</span>
-              <span><strong>{monthName} Actual:</strong> {fmtQty(totals.monthActual)}</span>
-              <span>
-                <strong>% {monthName} Actual vs. Forecasted:</strong>{' '}
-                {fmtPct(pctVsPlan(totals.monthActual, totals.monthForecast))}
-              </span>
-              <span>
-                <strong>% {monthName} Actual vs Adj. Forecast:</strong>{' '}
-                {fmtPct(pctVsPlan(totals.monthActual, totals.monthAdjusted))}
-              </span>
-              <span><strong>Remaining-year forecast:</strong> {fmtQty(totals.remaining)}</span>
-            </div>
-          </div>
+          <ReportSummaryCards
+            groups={[
+              {
+                key: 'ytd',
+                title: `YTD through ${monthName}`,
+                tone: 'annual',
+                cards: [
+                  { label: 'Forecasted', value: fmtQty(totals.ytdForecast) },
+                  { label: 'Forecast - Adjusted', value: fmtQty(totals.ytdAdjusted) },
+                  { label: 'Actual', value: fmtQty(totals.ytdActual) },
+                  { label: '% Actual vs Forecasted', value: fmtPct(pctVsPlan(totals.ytdActual, totals.ytdForecast)) },
+                  { label: '% Actual vs Forecast - Adj', value: fmtPct(pctVsPlan(totals.ytdActual, totals.ytdAdjusted)) },
+                ],
+              },
+              {
+                key: 'month',
+                title: monthName,
+                tone: 'month',
+                cards: [
+                  { label: 'Forecasted', value: fmtQty(totals.monthForecast) },
+                  { label: 'Forecast - Adjusted', value: fmtQty(totals.monthAdjusted) },
+                  { label: 'Actual', value: fmtQty(totals.monthActual) },
+                  { label: '% Actual vs Forecasted', value: fmtPct(pctVsPlan(totals.monthActual, totals.monthForecast)) },
+                  { label: '% Actual vs Forecast - Adj', value: fmtPct(pctVsPlan(totals.monthActual, totals.monthAdjusted)) },
+                ],
+              },
+              {
+                key: 'remaining',
+                title: 'Rest of year',
+                cards: [{ label: 'Remaining-year forecast', value: fmtQty(totals.remaining) }],
+              },
+            ]}
+          />
           <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, background: '#ffffff' }}>
             <div
               style={{
