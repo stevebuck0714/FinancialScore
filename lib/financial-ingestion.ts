@@ -8,6 +8,7 @@ import {
   toMonthlyFinancialCreateInput,
   type CanonicalMonthlyFinancial,
 } from '@/lib/financial-canonical';
+import { CONSOLIDATED_FINANCIALS_SOURCE, isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 
 export type CanonicalFinancialPayload = {
   monthlyData: CanonicalMonthlyFinancial[];
@@ -216,7 +217,21 @@ export async function ingestFinancialPayload(params: {
   targetMonth?: string;
   mode?: FinancialImportMode;
   maxMonths?: number;
+  /** Set false when the payload is not an accounting-system sync. */
+  touchConnection?: boolean;
 }) {
+  if (isConsolidatedReportingCompany(params.companyId) && params.source !== CONSOLIDATED_FINANCIALS_SOURCE) {
+    return {
+      ok: true,
+      status: 200,
+      skipped: 'consolidated_reporting_company',
+      financialRecordId: null,
+      recordsImported: 0,
+      monthsTouched: [] as string[],
+      latestMonthWarnings: [],
+      zeroRevenueWarnings: [],
+    };
+  }
   const startedAt = Date.now();
   const normalized = normalizePayload(params.payload);
   const canonicalRows = normalized.monthlyData;
@@ -398,17 +413,19 @@ export async function ingestFinancialPayload(params: {
     },
   });
 
-  await prisma.accountingConnection.updateMany({
-    where: {
-      companyId: params.companyId,
-      platform: params.platform,
-    },
-    data: {
-      status: 'ACTIVE',
-      lastSyncAt: new Date(),
-      errorMessage: null,
-    },
-  });
+  if (params.touchConnection !== false) {
+    await prisma.accountingConnection.updateMany({
+      where: {
+        companyId: params.companyId,
+        platform: params.platform,
+      },
+      data: {
+        status: 'ACTIVE',
+        lastSyncAt: new Date(),
+        errorMessage: null,
+      },
+    });
+  }
 
   return {
     ok: true,

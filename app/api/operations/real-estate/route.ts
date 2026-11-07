@@ -6,7 +6,9 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensureRealEstateAccountMappingTable } from '@/lib/real-estate/account-mapping-table';
 import { ensureRealEstateWaterfallTables } from '@/lib/real-estate/waterfall-tables';
 import { normalizeName } from '@/lib/real-estate/cash-flow-report';
-import { suggestPropertyTargets } from '@/lib/real-estate/property-income-statement';
+import { buildEntityReportLines } from '@/lib/real-estate/entity-report-lines';
+import { publishConsolidatedFinancials } from '@/lib/real-estate/consolidated-financials';
+import { CONSOLIDATED_FINANCIALS_SOURCE, isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 import { ensureRealEstateTaxReconciliationTables } from '@/lib/real-estate/tax-reconciliation-tables';
 
 export const dynamic = 'force-dynamic';
@@ -122,41 +124,28 @@ export async function GET(request: NextRequest) {
       ),
     ]);
     const waterfallSettings = settingsRows[0] || { stabilizationDate: null, preferredReturnRate: 6 };
-    // QuickBooks Desktop lines are BGAH's books and replace the BGAH workbook
-    // whenever they are loaded, so the two BGAH sources are never added together.
-    // QBD accounts without a saved mapping use the Data Mapping suggestion.
-    // Some SLN months were loaded from both the monthly SLN workbooks (sln_ codes)
-    // and a one-off import file (numeric codes). The workbooks are the series
-    // every month has, so they win wherever both exist for a month and report type.
-    const slnPeriodKey = (line: any) => `${String(line.reportType).toUpperCase()}|${new Date(line.periodEnd).toISOString().slice(0, 7)}`;
-    const slnWorkbookPeriods = new Set(allLines
-      .filter((line) => line.sourceEntity === 'SLN' && String(line.accountCode).startsWith('sln_'))
-      .map(slnPeriodKey));
-    const lines = allLines.filter((line) => line.sourceEntity !== 'SLN' || String(line.accountCode).startsWith('sln_') || !slnWorkbookPeriods.has(slnPeriodKey(line)));
-    const quickBooksLines = lines.filter((line) => line.sourceEntity === 'QBD');
-    const savedQuickBooksMappings = mappings.filter((mapping) => mapping.financialFeed === 'QBD');
-    const savedQuickBooksCodes = new Set(savedQuickBooksMappings.map((mapping) => String(mapping.accountCode)));
-    const quickBooksAccounts = [...new Map(quickBooksLines
-      .filter((line) => String(line.reportType).toUpperCase() === 'ACTIVITY')
-      .map((line) => [String(line.accountCode), { accountCode: String(line.accountCode), accountName: String(line.accountName || ''), accountType: String(line.accountType || '') }])).values()];
-    const suggestedQuickBooksMappings = [...suggestPropertyTargets(quickBooksAccounts).entries()]
-      .filter(([accountCode]) => !savedQuickBooksCodes.has(accountCode))
-      .map(([accountCode, suggestion]) => ({ financialFeed: 'QBD', accountCode, targetField: suggestion.targetField, bookTreatment: null, suggested: true }));
-    const quickBooksMappings = [...savedQuickBooksMappings, ...suggestedQuickBooksMappings];
-    const bgahFromQuickBooks = quickBooksLines.length > 0;
-    const reportLines = bgahFromQuickBooks
-      ? [
-          ...lines.filter((line) => line.sourceEntity !== 'QBD' && line.sourceEntity !== 'BGAH'),
-          ...quickBooksLines.map((line) => ({ ...line, sourceEntity: 'BGAH', fromQuickBooks: true })),
-        ]
-      : lines.filter((line) => line.sourceEntity !== 'QBD');
-    const reportMappings = bgahFromQuickBooks
-      ? [
-          ...mappings.filter((mapping) => mapping.financialFeed !== 'QBD' && mapping.financialFeed !== 'BGAH'),
-          ...quickBooksMappings.map((mapping) => ({ ...mapping, financialFeed: 'BGAH' })),
-        ]
-      : mappings.filter((mapping) => mapping.financialFeed !== 'QBD');
+    const { lines: reportLines, mappings: reportMappings, quickBooksLines, savedQuickBooksMappings, bgahFromQuickBooks } = buildEntityReportLines(allLines, mappings);
+    let consolidatedReporting = null;
+    if (isConsolidatedReportingCompany(companyId)) {
+      const [latest] = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT "createdAt", "rawData"->'payload'->'metadata' AS metadata FROM "FinancialRecord"
+         WHERE "companyId"=$1 AND "rawData"->>'source'=$2 ORDER BY "createdAt" DESC LIMIT 1`,
+        companyId, CONSOLIDATED_FINANCIALS_SOURCE,
+      );
+      const months: any[] = Array.isArray(latest?.metadata?.months) ? latest.metadata.months : [];
+      const latestCombined = [...months].reverse().find((month) => Array.isArray(month.entities) && month.entities.length === 2) || null;
+      consolidatedReporting = {
+        publishedAt: latest?.createdAt || null,
+        firstMonth: months[0]?.month || null,
+        lastMonth: months.at(-1)?.month || null,
+        partialMonths: Array.isArray(latest?.metadata?.partialMonths) ? latest.metadata.partialMonths : [],
+        latestCombinedMonth: latestCombined?.month || null,
+        latestUnreconciled: latestCombined?.unreconciled ?? null,
+        unmappedSlnAccounts: Number(latest?.metadata?.unmappedSlnAccounts || 0),
+      };
+    }
     return NextResponse.json({
+      consolidatedReporting,
       lines: reportLines, quickBooksLines, quickBooksMappings: savedQuickBooksMappings, bgahSource: bgahFromQuickBooks ? 'QUICKBOOKS' : 'WORKBOOK',
       investors, occupancy, cashActivities, operationalMetrics, mappings: reportMappings, waterfallSettings, aliases,
       taxReturns, taxDepreciationRecords,
@@ -170,13 +159,20 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const companyId = String(body?.companyId || '').trim();
   const kind = String(body?.kind || '').trim();
-  if (!companyId || !['occupancy', 'investor', 'ledger-entry', 'waterfall-settings', 'distribution-batch'].includes(kind)) {
+  if (!companyId || !['occupancy', 'investor', 'ledger-entry', 'waterfall-settings', 'distribution-batch', 'publish-consolidated'].includes(kind)) {
     return NextResponse.json({ error: 'Company ID and a supported record type are required.' }, { status: 400 });
   }
   if (!(await authorize(companyId, 'OPERATIONS_REAL_ESTATE_WRITE'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   try {
+    if (kind === 'publish-consolidated') {
+      if (!isConsolidatedReportingCompany(companyId)) {
+        return NextResponse.json({ error: 'Consolidated financial reporting is not enabled for this company.' }, { status: 400 });
+      }
+      const result = await publishConsolidatedFinancials(companyId, 'manual');
+      return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+    }
     await ensureTables();
     if (kind === 'waterfall-settings') {
       await ensureRealEstateWaterfallTables();

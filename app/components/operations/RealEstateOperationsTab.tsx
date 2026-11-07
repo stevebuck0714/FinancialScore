@@ -10,7 +10,7 @@ import RealEstateWaterfallPanel from '@/app/components/operations/RealEstateWate
 import QbdInvestorActivityPanel from '@/app/components/operations/QbdInvestorActivityPanel';
 import { useTableSort } from '@/app/components/operations/useTableSort';
 import { computeWaterfall, type WaterfallEntry, type WaterfallInvestor, type WaterfallSettings } from '@/lib/real-estate/waterfall';
-import { formatEstDate } from '@/lib/time/eastern';
+import { formatEstDate, formatEstDateTime } from '@/lib/time/eastern';
 import { aggregateMappedAmounts, buildPropertyIncomeStatement } from '@/lib/real-estate/property-income-statement';
 import { accountTypeIs, activityByYear, balanceAt, isAmortizationExpense, isDepreciationExpense, toReportLines, yearEndPeriods } from '@/lib/real-estate/quickbooks-report-lines';
 import BooksIntegrityPanel from '@/app/components/operations/BooksIntegrityPanel';
@@ -47,8 +47,10 @@ const monthEnd = (month: string) => {
 
 export default function RealEstateOperationsTab({ selectedCompanyId, mode, operationalHubSections }: Props) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
-  const [data, setData] = useState<{ lines: any[]; quickBooksLines?: any[]; quickBooksMappings?: any[]; bgahSource?: 'QUICKBOOKS' | 'WORKBOOK'; investors: any[]; occupancy: any[]; cashActivities: any[]; operationalMetrics: any[]; mappings?: any[]; waterfallSettings?: WaterfallSettings; aliases?: Array<{ alias: string; investorId: string }>; taxReturns?: any[]; taxDepreciationRecords?: any[] }>({ lines: [], investors: [], occupancy: [], cashActivities: [], operationalMetrics: [], mappings: [], taxReturns: [], taxDepreciationRecords: [] });
+  const [data, setData] = useState<{ lines: any[]; quickBooksLines?: any[]; quickBooksMappings?: any[]; bgahSource?: 'QUICKBOOKS' | 'WORKBOOK'; investors: any[]; occupancy: any[]; cashActivities: any[]; operationalMetrics: any[]; mappings?: any[]; waterfallSettings?: WaterfallSettings; aliases?: Array<{ alias: string; investorId: string }>; taxReturns?: any[]; taxDepreciationRecords?: any[]; consolidatedReporting?: { publishedAt: string | null; firstMonth: string | null; lastMonth: string | null; partialMonths: string[]; latestCombinedMonth: string | null; latestUnreconciled: number | null; unmappedSlnAccounts: number } | null }>({ lines: [], investors: [], occupancy: [], cashActivities: [], operationalMetrics: [], mappings: [], taxReturns: [], taxDepreciationRecords: [] });
   const [reloadKey, setReloadKey] = useState(0);
+  const [publishingConsolidated, setPublishingConsolidated] = useState(false);
+  const [consolidatedPublishError, setConsolidatedPublishError] = useState('');
   const [entityView, setEntityView] = useState<'statement' | 'balance'>('statement');
   const [propertyTypeFilter, setPropertyTypeFilter] = useState<PropertyTypeFilter>('all');
   const [propertyPeriod, setPropertyPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('last-12-months');
@@ -413,12 +415,50 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
   }, [data.lines, propertyMonths, propertyEntity, propertyTypeFilter, operationalHubSections, propertyColumnFor, propertyColumns, propertyBalanceMonthByColumn, canonicalAccountNames]);
   const selectedPropertyRow = selectedPropertyRowKey ? propertyAccountRows.find((row) => `${row.source}|${row.accountType}|${row.accountCode}|${row.accountName}` === selectedPropertyRowKey) || null : null;
 
+  const publishConsolidated = async () => {
+    setPublishingConsolidated(true);
+    setConsolidatedPublishError('');
+    try {
+      const response = await fetch('/api/operations/real-estate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId, kind: 'publish-consolidated' }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to publish consolidated financials.');
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      setConsolidatedPublishError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPublishingConsolidated(false);
+    }
+  };
+
   if (loading) return <div style={{ padding: 24, color: '#64748b' }}>Loading real-estate operations…</div>;
   if (error) return <div style={{ margin: 24, ...card, color: '#b91c1c' }}>{error}</div>;
 
   if (mode === 'entity-financials') {
     return <div style={{ padding: 24, display: 'grid', gap: 16 }}>
       <div><h2 style={{ margin: 0, color: '#0f172a' }}>Entity Financials</h2><p style={{ color: '#64748b', marginBottom: 0 }}>Property income statement and balance sheet for each source ledger. The income statement is built from its Data Mapping.{entityScope === 'COMBINED' ? ' Combined includes only periods reported by every feed.' : ''}</p></div>
+      {data.consolidatedReporting !== undefined && data.consolidatedReporting !== null && (() => {
+        const status = data.consolidatedReporting;
+        return <div style={{ ...card, display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <div style={{ display: 'grid', gap: 4 }}>
+            <h3 style={{ margin: 0 }}>Financial Reporting source</h3>
+            <p style={{ color: '#475569', margin: 0, fontSize: 13 }}>Financial Reporting pages and reports use the consolidated SLN + BGAH financials. SLN supplies property operations and working capital; BGAH (QuickBooks Desktop) supplies owner-level assets, the loan, depreciation and non-property items. The Due to/from SLN balance is eliminated. Republished automatically after a QuickBooks Desktop sync or a mapping change.</p>
+            <div style={{ color: '#64748b', fontSize: 12 }}>
+              {status.publishedAt
+                ? <>Last published {formatEstDateTime(status.publishedAt)} EST · {status.firstMonth ? formatMonthLabel(status.firstMonth) : '—'} to {status.lastMonth ? formatMonthLabel(status.lastMonth) : '—'}</>
+                : 'Not published yet.'}
+              {status.partialMonths.length > 0 && <> · Partial months (one entity missing): {status.partialMonths.map(formatMonthLabel).join(', ')}</>}
+              {status.latestCombinedMonth && status.latestUnreconciled !== null && <> · Intercompany difference not yet explained at {formatMonthLabel(status.latestCombinedMonth)}: {fmt(status.latestUnreconciled)}</>}
+              {status.unmappedSlnAccounts > 0 && <> · {status.unmappedSlnAccounts} SLN accounts unmapped</>}
+            </div>
+            {consolidatedPublishError && <div style={{ color: '#b91c1c', fontSize: 12 }}>{consolidatedPublishError}</div>}
+          </div>
+          <button type="button" onClick={publishConsolidated} disabled={publishingConsolidated} style={{ padding: '7px 11px', border: '1px solid #1d4ed8', borderRadius: 6, background: '#2563eb', color: '#fff', fontWeight: 700, cursor: publishingConsolidated ? 'wait' : 'pointer', opacity: publishingConsolidated ? 0.7 : 1 }}>{publishingConsolidated ? 'Publishing…' : 'Publish to Financial Reporting'}</button>
+        </div>;
+      })()}
       <div style={{ ...card, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
         <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' }}>Entity<select value={entityScope} onChange={(event) => setEntityScope(event.target.value as 'SLN' | 'BGAH' | 'COMBINED')} style={{ minWidth: 150, padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: 6 }}><option value="SLN">SLN</option><option value="BGAH">BGAH</option><option value="COMBINED">Combined BGAH + SLN</option></select></label>
         <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' }}>View<select value={entityView} onChange={(event) => setEntityView(event.target.value as 'statement' | 'balance')} style={{ minWidth: 150, padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: 6 }}><option value="statement">Income Statement</option><option value="balance">Balance Sheet</option></select></label>

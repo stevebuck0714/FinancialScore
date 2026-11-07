@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { buildQbdAccountMap, buildQbdDailyAccountBalances, pickLatestQbdBalanceSheet } from '@/lib/real-estate/qbd-account-lines';
 import { loadQbdAccountRows, loadQbdBalanceSheetRows, loadQbdGeneralLedgerRows } from '@/lib/quickbooks-desktop/account-books';
 import { qbdAccountSideForType, qbdBuildMappingTargetLookup, qbdSignedBalanceForTarget } from '@/lib/quickbooks-desktop/account-lookup';
+import { isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 
 export type DailyBalanceSheetDetailRow = {
   targetField: string;
@@ -146,6 +147,7 @@ async function writeBalanceSheetRows(table: 'DailyFinancialSnapshot' | 'MonthlyF
 
 /** Same realignment for the latest financial record's monthly rows, using each month-end balance. */
 export async function realignQbdMonthlyBalanceSheetsToAccounts(companyId: string, todayKey: string) {
+  if (isConsolidatedReportingCompany(companyId)) return { updated: 0, skipped: 'consolidated_reporting_company' };
   const record = await prisma.financialRecord.findFirst({ where: { companyId }, orderBy: { createdAt: 'desc' }, select: { id: true } });
   if (!record) return { updated: 0, skipped: 'no_financial_record' };
   const months = await prisma.monthlyFinancial.findMany({ where: { financialRecordId: record.id }, select: { id: true, monthDate: true } });

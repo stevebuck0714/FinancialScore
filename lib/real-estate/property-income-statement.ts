@@ -292,6 +292,8 @@ const GROUP_BY_LINE_KEY = new Map(
   SECTIONS.flatMap((section) => section.lines.map((label) => [lineKey(section, label), section.group] as const)),
 );
 const PRINCIPAL_REDUCTION_KEY = lineKey(sectionByGroup('debtService'), 'Principal Reduction #1');
+export const PROPERTY_PRINCIPAL_REDUCTION_KEY = PRINCIPAL_REDUCTION_KEY;
+export const propertyLineGroup = (targetField: string) => GROUP_BY_LINE_KEY.get(targetField) || null;
 
 /** Nonrecurring repair lines are the only lines whose book treatment is chosen per account. */
 export const isNonrecurringRepairLine = (targetField: string) => GROUP_BY_LINE_KEY.get(targetField) === 'nonrecurring';

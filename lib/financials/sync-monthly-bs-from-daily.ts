@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 import { BS_LAST_DAY_FIELDS } from '@/lib/financial/month-publish';
 
 /**
@@ -49,6 +50,10 @@ export async function syncMonthlyFinancialBsFromDailySnapshot(
     monthsSkippedNoDfs: 0,
     errors: 0,
   };
+  if (isConsolidatedReportingCompany(companyId)) {
+    outcome.reason = 'consolidated_reporting_company';
+    return outcome;
+  }
 
   const financialRecord = await prisma.financialRecord.findFirst({
     where: { companyId },

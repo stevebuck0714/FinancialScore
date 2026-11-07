@@ -21,6 +21,7 @@ import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmu
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
 import { formatEstDate, isEstBusinessDay } from '@/lib/time/eastern';
 import { syncQbdAccountLinesToRealEstate } from '@/lib/real-estate/qbd-financial-adapter';
+import { isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 import {
   qbdAccountLookupKeys,
   qbdBuildAccountSideLookup,
@@ -2227,7 +2228,7 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
     orderBy: { createdAt: 'desc' },
     select: { id: true },
   });
-  if (latestFinancialRecord) {
+  if (latestFinancialRecord && !isConsolidatedReportingCompany(companyId)) {
     const existingMonth = await prisma.monthlyFinancial.findFirst({
       where: {
         companyId,

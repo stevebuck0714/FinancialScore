@@ -57,5 +57,7 @@ export async function syncQbdAccountLinesToRealEstate(companyId: string) {
       );
     }
   }, { timeout: 120000 });
-  return { mirrored: lines.length, asOf, firstMonth, lastMonth, unresolvedGlRows: unresolvedGlRows.length };
+  const { republishConsolidatedFinancials } = await import('@/lib/real-estate/consolidated-financials');
+  const consolidated = await republishConsolidatedFinancials(companyId, 'quickbooks-desktop-sync');
+  return { mirrored: lines.length, asOf, firstMonth, lastMonth, unresolvedGlRows: unresolvedGlRows.length, consolidated };
 }

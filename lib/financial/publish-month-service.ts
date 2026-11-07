@@ -6,6 +6,7 @@ import {
   safeNumber,
 } from "@/lib/financial/month-publish";
 import { currentMonthKeyUtc, monthKey } from "@/lib/date-utils";
+import { isConsolidatedReportingCompany } from "@/lib/real-estate/consolidated-reporting-companies";
 import {
   buildAccountIdToTargetForMonthlySync,
   computeMonthlyPnlBreakdownsFromGL,
@@ -118,6 +119,20 @@ export async function publishMonthFromDailySnapshots(
       snapshotDays: 0,
       monthEndSnapshotDate: null,
       error: "Invalid month format. Use YYYY-MM.",
+    };
+  }
+
+  if (isConsolidatedReportingCompany(companyId)) {
+    return {
+      success: true,
+      companyId,
+      month,
+      mode: "INCREMENTAL",
+      monthsPublished: 0,
+      publishedMonths: [],
+      skippedMonths: [month],
+      snapshotDays: 0,
+      monthEndSnapshotDate: null,
     };
   }
 

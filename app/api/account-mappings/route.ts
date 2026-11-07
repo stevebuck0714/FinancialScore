@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getAllowedTargetFieldSet, getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
 import { publishMonthsFromMonthlyFinancialDirect } from "@/lib/financial/publish-month-service";
+import { republishConsolidatedFinancials } from "@/lib/real-estate/consolidated-financials";
 import { enqueueFinancialMappingRebuildRun } from "@/lib/infor-m3/sync-queue";
 import { isQuickBooksDesktopFamily } from "@/lib/quickbooks-desktop/family";
 import { resolveCompanyIndustrySectorCategory } from "@/lib/industry-sector-resolver";
@@ -1176,9 +1177,11 @@ export async function POST(request: NextRequest) {
         propagation = { ok: false, error: String(err?.message || err) };
       }
     }
+    const consolidated = await republishConsolidatedFinancials(companyId, 'account-mapping-save');
 
     return NextResponse.json({
       success: true,
+      consolidated,
       count: created + updated,
       created,
       updated,

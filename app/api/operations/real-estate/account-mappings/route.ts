@@ -6,6 +6,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getAllowedTargetFieldSet } from '@/lib/constants/sector-target-fields';
 import { isNonrecurringRepairLine, suggestPropertyTargets } from '@/lib/real-estate/property-income-statement';
 import { ensureRealEstateAccountMappingTable } from '@/lib/real-estate/account-mapping-table';
+import { republishConsolidatedFinancials } from '@/lib/real-estate/consolidated-financials';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,7 +113,8 @@ export async function POST(request: NextRequest) {
       );
       saved += 1;
     }
-    return NextResponse.json({ ok: true, saved });
+    const consolidated = await republishConsolidatedFinancials(companyId, 'entity-mapping-save');
+    return NextResponse.json({ ok: true, saved, consolidated });
   } catch (error: any) {
     return NextResponse.json({ error: 'Failed to save feed account mappings', details: String(error?.message || error) }, { status: 500 });
   }
