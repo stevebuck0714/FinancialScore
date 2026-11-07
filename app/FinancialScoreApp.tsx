@@ -4210,7 +4210,7 @@ function FinancialScorePage() {
   const [inforLastCaoPulledBy, setInforLastCaoPulledBy] = useState<string | null>(null);
   // State - Financial Statements
   const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent' | 'cash-flow-statement'>('income-statement');
-  const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
+  const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('last-12-months');
   const [financialStatementsTab, setFinancialStatementsTab] = useState<'aggregated' | 'line-of-business' | 'mda'>('aggregated');
   const [selectedLineOfBusiness, setSelectedLineOfBusiness] = useState<string>('all');
   const [statementDisplay, setStatementDisplay] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
