@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ hasData: false, vendors: [], items: [], selectedVendorId: '', syncRunId: null });
     }
     const requestedVendorId = String(request.nextUrl.searchParams.get('vendorId') || '').trim();
-    const selectedVendorId = history.itemsByVendor[requestedVendorId] ? requestedVendorId : history.vendors[0].vendorId;
+    const selectedVendorId = history.itemsByVendor[requestedVendorId] ? requestedVendorId : '';
     return NextResponse.json({
       hasData: true,
       syncRunId: history.syncRunId,

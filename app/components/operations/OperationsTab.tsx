@@ -24,7 +24,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
-import SuggestInput, { customerIdSuggestionsFor, labeledSuggestionsFor, valueSuggestionsFor } from './SuggestInput';
+import SuggestInput, { customerIdSuggestionsFor, fetchSuggestions, labeledSuggestionsFor, valueSuggestionsFor } from './SuggestInput';
 import OperationalReportPanel from './OperationalReportPanel';
 import OperationalReportPageLayout from './OperationalReportPageLayout';
 import SortableReportCollection from './SortableReportCollection';
@@ -1120,6 +1120,8 @@ export default function OperationsTab({
   const [wholesaleRawCustomerGroupFilter, setWholesaleRawCustomerGroupFilter] = useState('');
   const [wholesaleRawCustomerIdSearch, setWholesaleRawCustomerIdSearch] = useState('');
   const [wholesaleRawItemSearch, setWholesaleRawItemSearch] = useState('');
+  const [wholesaleRawDebouncedItemSearch, setWholesaleRawDebouncedItemSearch] = useState('');
+  const wholesaleRawLinesRequestRef = useRef(0);
   const [wholesaleRawOrderSearch, setWholesaleRawOrderSearch] = useState('');
   const [wholesaleRawCustomers, setWholesaleRawCustomers] = useState<WholesaleRawCustomerOption[]>([]);
   const [wholesaleRawCustomersLoading, setWholesaleRawCustomersLoading] = useState(false);
@@ -2588,6 +2590,14 @@ export default function OperationsTab({
     wholesaleRawCustomers.find((customer) => customer.key === wholesaleRawCustomerFilter) || null;
   const selectedWholesaleRawCustomerGroup = wholesaleRawCustomerGroupFilter || null;
   const hasWholesaleRawCustomerScope = Boolean(selectedWholesaleRawCustomer || selectedWholesaleRawCustomerGroup);
+  const wholesaleRawItemOnlyScope =
+    !hasWholesaleRawCustomerScope && wholesaleRawDebouncedItemSearch.length >= 3 ? wholesaleRawDebouncedItemSearch : '';
+  const hasWholesaleRawOpenScope = hasWholesaleRawCustomerScope || Boolean(wholesaleRawItemOnlyScope);
+  const loadWholesaleRawAprSuggestions = useCallback(
+    (query: string, signal: AbortSignal) =>
+      fetchSuggestions('/api/operational-data/product-forecast', { companyId: selectedCompanyId, itemSuggest: query }, signal),
+    [selectedCompanyId]
+  );
 
   const resetWholesaleRawLines = () => {
     setWholesaleRawCustomerLines([]);
@@ -2638,7 +2648,8 @@ export default function OperationsTab({
     window?: 'recent' | 'older';
     before?: string;
   }) => {
-    if (!hasWholesaleRawCustomerScope) {
+    const useItemScope = options.view === 'open' && !hasWholesaleRawCustomerScope && Boolean(wholesaleRawItemOnlyScope);
+    if (!hasWholesaleRawCustomerScope && !useItemScope) {
       throw new Error('Select a customer before loading raw order lines.');
     }
     const params = new URLSearchParams({
@@ -2650,6 +2661,8 @@ export default function OperationsTab({
     } else if (selectedWholesaleRawCustomer) {
       params.set('customerId', selectedWholesaleRawCustomer.customerId);
       params.set('customerName', selectedWholesaleRawCustomer.customerName);
+    } else if (useItemScope) {
+      params.set('itemSku', wholesaleRawItemOnlyScope);
     }
     if (options.view === 'filled') {
       params.set('window', options.window || 'recent');
@@ -2685,8 +2698,10 @@ export default function OperationsTab({
   };
 
   const loadWholesaleRawRecentWindow = async () => {
-    if (!hasWholesaleRawCustomerScope) {
+    const requestId = ++wholesaleRawLinesRequestRef.current;
+    if (!hasWholesaleRawOpenScope) {
       resetWholesaleRawLines();
+      setWholesaleRawLinesLoading(false);
       return;
     }
     setWholesaleRawLinesLoading(true);
@@ -2698,6 +2713,7 @@ export default function OperationsTab({
     setWholesaleRawSortDir('desc');
     try {
       const payload = await fetchWholesaleRawLines({ view: 'open' });
+      if (requestId !== wholesaleRawLinesRequestRef.current) return;
       const openRecords = Array.isArray(payload?.openRecords)
         ? payload.openRecords
         : Array.isArray(payload?.records)
@@ -2712,10 +2728,11 @@ export default function OperationsTab({
       setWholesaleRawHasMoreOlder(false);
       setWholesaleRawTruncated(false);
     } catch (error: any) {
+      if (requestId !== wholesaleRawLinesRequestRef.current) return;
       resetWholesaleRawLines();
       setWholesaleRawLinesError(error?.message || 'Failed to load customer order lines');
     } finally {
-      setWholesaleRawLinesLoading(false);
+      if (requestId === wholesaleRawLinesRequestRef.current) setWholesaleRawLinesLoading(false);
     }
   };
 
@@ -3145,13 +3162,14 @@ export default function OperationsTab({
   }, [isWholesaleRawViewActive, selectedCompanyId]);
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => setWholesaleRawDebouncedItemSearch(wholesaleRawItemSearch.trim()), 400);
+    return () => window.clearTimeout(timeoutId);
+  }, [wholesaleRawItemSearch]);
+
+  useEffect(() => {
     if (!isWholesaleRawViewActive) return;
-    if (!hasWholesaleRawCustomerScope) {
-      resetWholesaleRawLines();
-      return;
-    }
     void loadWholesaleRawRecentWindow();
-  }, [isWholesaleRawViewActive, selectedCompanyId, selectedWholesaleRawCustomer?.key, selectedWholesaleRawCustomerGroup]);
+  }, [isWholesaleRawViewActive, selectedCompanyId, selectedWholesaleRawCustomer?.key, selectedWholesaleRawCustomerGroup, wholesaleRawItemOnlyScope]);
 
   const prefetchTabData = (tab: string) => {
     const type = mapModuleToDataType(tab) || null;
@@ -11949,6 +11967,39 @@ export default function OperationsTab({
               >
                 {wholesaleProductsRefreshing ? 'Refreshing...' : 'Refresh Margin Data'}
               </button>
+              {(() => {
+                const hasProductMarginSearch = Boolean(
+                  productMarginCustomerIdSearch.trim() ||
+                    productMarginCustomerFilter ||
+                    productMarginCustomerGroupFilter ||
+                    productMarginItemSearch.trim()
+                );
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProductMarginCustomerIdSearch('');
+                      setProductMarginCustomerFilter('');
+                      setProductMarginCustomerGroupFilter('');
+                      setProductMarginItemSearch('');
+                    }}
+                    disabled={!hasProductMarginSearch}
+                    title="Clear Customer ID, Customer Name, Group Name, and APR P/N"
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      padding: '8px 14px',
+                      background: '#fff',
+                      color: hasProductMarginSearch ? '#334155' : '#94a3b8',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: hasProductMarginSearch ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Reset
+                  </button>
+                );
+              })()}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', overflowX: 'auto', paddingBottom: '4px', marginBottom: '14px' }}>
@@ -12239,8 +12290,8 @@ export default function OperationsTab({
           wholesaleRawItemSearch.trim() ||
           wholesaleRawOrderSearch.trim()
       );
-      const emptyMessage = !hasWholesaleRawCustomerScope
-        ? 'Select a customer or group to load open order lines.'
+      const emptyMessage = !hasWholesaleRawOpenScope
+        ? 'Select a customer or group, or enter an APR P/N, to load open order lines.'
         : wholesaleRawLinesLoading
         ? 'Loading open order lines...'
         : wholesaleRawLinesError
@@ -12334,10 +12385,11 @@ export default function OperationsTab({
             <SuggestInput
               value={wholesaleRawItemSearch}
               onChange={setWholesaleRawItemSearch}
-              suggestions={valueSuggestionsFor([
+              suggestions={hasWholesaleRawCustomerScope ? valueSuggestionsFor([
                 ...wholesaleRawBaseRows.map((row) => row.item),
                 ...wholesaleRawFilledBaseRows.map((row) => row.item),
-              ].filter((item) => item !== 'N/A'))}
+              ].filter((item) => item !== 'N/A')) : undefined}
+              loadSuggestions={hasWholesaleRawCustomerScope ? undefined : loadWholesaleRawAprSuggestions}
               placeholder="APR P/N"
               ariaLabel="APR P/N"
               style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '200px', background: 'white' }}

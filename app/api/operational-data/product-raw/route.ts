@@ -443,16 +443,47 @@ async function stampOpenBookFromCsi(companyId: string, openBook: OpenBookWindow)
   }
 }
 
+function itemSkuVariants(itemSku: string): string[] {
+  const trimmed = itemSku.trim();
+  return [...new Set([trimmed, trimmed.toUpperCase()].filter(Boolean))];
+}
+
+function itemMatchSql(skus: string[] | undefined): Prisma.Sql {
+  if (!skus?.length) return Prisma.empty;
+  return Prisma.sql`AND (s."sku" IN (${Prisma.join(skus)}) OR s."itemId" IN (${Prisma.join(skus)}))`;
+}
+
+/** Customers with any daily order-line snapshot for the APR P/N. */
+async function loadItemCustomers(companyId: string, skus: string[]): Promise<Array<{ customerId: string; customerName: string }>> {
+  const rows = await prisma.$queryRaw<Array<{ customerId: string | null; customerName: string | null }>>(Prisma.sql`
+    SELECT DISTINCT NULLIF(TRIM(COALESCE(s."customerId", '')), '') AS "customerId", s."customerName"
+    FROM "CustomerOrderLineSnapshot" s
+    WHERE s."companyId" = ${companyId}
+      AND s."frequency" = 'daily'
+      ${itemMatchSql(skus)}
+  `);
+  const byKey = new Map<string, { customerId: string; customerName: string }>();
+  for (const row of rows) {
+    const customerId = String(row.customerId || '').trim();
+    const customerName = String(row.customerName || '').trim();
+    const key = customerId || `name:${customerName}`;
+    if ((customerId || customerName) && !byKey.has(key)) byKey.set(key, { customerId, customerName });
+  }
+  return [...byKey.values()].slice(0, MAX_CUSTOMERS);
+}
+
 async function loadOpenLines(params: {
   companyId: string;
   customerId: string;
   customerName: string;
+  skus?: string[];
 }): Promise<{ rows: any[]; openAsOf: Date | null }> {
   const customerFilter = params.customerId
     ? Prisma.sql`s."customerId" = ${params.customerId}`
     : params.customerName
       ? Prisma.sql`s."customerName" = ${params.customerName}`
       : Prisma.sql`FALSE`;
+  const itemFilter = itemMatchSql(params.skus);
 
   const maxRows = await prisma.$queryRaw<Array<{ maxDate: Date | null }>>(Prisma.sql`
     SELECT MAX(s."snapshotDate") AS "maxDate"
@@ -494,6 +525,7 @@ async function loadOpenLines(params: {
         AND s."snapshotDate" >= ${start}
         AND s."snapshotDate" < ${end}
         AND ${customerFilter}
+        ${itemFilter}
         AND GREATEST(COALESCE(s."qtyOrdered", 0) - COALESCE(s."qtyShipped", 0), 0) > 0.0001
         AND UPPER(COALESCE(s."lineStat", '')) NOT IN ('C', 'F')
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
@@ -526,6 +558,7 @@ async function loadOpenLines(params: {
         AND s."snapshotDate" >= ${start}
         AND s."snapshotDate" < ${end}
         AND ${customerFilter}
+        ${itemFilter}
         AND COALESCE(s."qtyOrdered", 0) > 0
       ORDER BY s."orderId", s."lineId", s."snapshotDate" DESC
     `);
@@ -737,6 +770,37 @@ export async function GET(request: NextRequest) {
     const customerId = String(request.nextUrl.searchParams.get('customerId') || '').trim();
     const customerName = String(request.nextUrl.searchParams.get('customerName') || '').trim();
     const customerGroup = String(request.nextUrl.searchParams.get('customerGroup') || '').trim();
+    const itemSku = String(request.nextUrl.searchParams.get('itemSku') || '').trim();
+    if (!customerId && !customerName && !customerGroup && itemSku && view === 'open') {
+      const skus = itemSkuVariants(itemSku);
+      const itemCustomers = await loadItemCustomers(companyId, skus);
+      const customerResults = await Promise.all(itemCustomers.map(async (customer) => {
+        const [open, lineIdentity] = await Promise.all([
+          loadOpenLines({ companyId, customerId: customer.customerId, customerName: customer.customerName, skus }),
+          loadCustomerLineIdentity({ companyId, customerId: customer.customerId, customerName: customer.customerName }),
+        ]);
+        return {
+          openAsOf: open.openAsOf,
+          records: open.rows
+            .map((row) => mapOrderLineRecord(row, 'open'))
+            .map((row) => applyLineIdentity(row, lineIdentity)),
+        };
+      }));
+      const openAsOf = customerResults
+        .map((result) => result.openAsOf)
+        .filter((value): value is Date => Boolean(value))
+        .sort((left, right) => right.getTime() - left.getTime())[0] || null;
+      return NextResponse.json({
+        openRecords: customerResults.flatMap((result) => result.records),
+        filledRecords: [],
+        openAsOf: openAsOf ? isoDay(openAsOf) : null,
+        window: null,
+        nextOlderWindow: null,
+        historyFloor: HISTORY_FLOOR,
+        truncated: false,
+        hasMoreOlder: false,
+      });
+    }
     if (!customerId && !customerName && !customerGroup) {
       return NextResponse.json({ error: 'Select a customer before loading raw order lines.' }, { status: 400 });
     }

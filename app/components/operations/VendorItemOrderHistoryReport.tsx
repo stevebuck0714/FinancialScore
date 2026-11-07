@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { formatMoney } from '@/lib/format/currency';
 import { formatEstDateTime } from '@/lib/time/eastern';
 import OperationalReportPanel from './OperationalReportPanel';
+import SuggestInput, { labeledSuggestionsFor } from './SuggestInput';
 
 type Order = { poNumber: string; line: string; orderDate: string | null; quantity: number | null; receivedQty: number | null; unitPrice: number | null; dueDate: string | null; customer: string; status: string };
 type Item = { itemSku: string; description: string; orderCount: number; totalQty: number; latestOrderDate: string | null; orders: Order[] };
@@ -43,16 +44,41 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
   const right = { ...cell, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' };
   const hasData = Boolean(payload?.hasData);
   const inputStyle: CSSProperties = { display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, fontSize: 13, background: hasData ? 'white' : '#f1f5f9' };
+  const hasSearch = Boolean(vendorSearch.trim() || vendorId || itemSearch.trim() || startDate || endDate);
+  const handleReset = () => {
+    setVendorSearch('');
+    setItemSearch('');
+    setStartDate('');
+    setEndDate('');
+    setExpanded(new Set());
+    setVendorId('');
+    setPayload((current) => (current ? { ...current, selectedVendorId: '', items: [] } : current));
+  };
   const normalizedVendorSearch = vendorSearch.trim().toLowerCase();
   const visibleVendors = payload?.vendors.filter((vendor) =>
     !normalizedVendorSearch ||
     vendor.vendorId === vendorId ||
-    `${vendor.vendorName} ${vendor.vendorId}`.toLowerCase().includes(normalizedVendorSearch)
+    vendor.vendorId.toLowerCase().includes(normalizedVendorSearch)
   ) || [];
+  const vendorIdSuggestions = labeledSuggestionsFor(
+    (payload?.vendors || []).map((vendor) => ({ value: vendor.vendorId, label: vendor.vendorName }))
+  );
+  const aprSuggestions = labeledSuggestionsFor(
+    (payload?.items || []).map((item) => ({ value: item.itemSku, label: item.description }))
+  );
+  const handleVendorIdSearchChange = (nextVendorId: string) => {
+    setVendorSearch(nextVendorId);
+    const match = payload?.vendors.find(
+      (vendor) => vendor.vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
+    );
+    if (match && match.vendorId !== vendorId) {
+      setExpanded(new Set());
+      load(match.vendorId);
+    }
+  };
   const normalizedItemSearch = itemSearch.trim().toLowerCase();
   const visibleItems = (payload?.items || []).flatMap((item) => {
-    const matchesSearch = !normalizedItemSearch ||
-      `${item.itemSku} ${item.description} ${item.orders.map((order) => order.poNumber).join(' ')}`.toLowerCase().includes(normalizedItemSearch);
+    const matchesSearch = !normalizedItemSearch || item.itemSku.toLowerCase().includes(normalizedItemSearch);
     if (!matchesSearch) return [];
     const orders = item.orders.filter((order) =>
       (!startDate || Boolean(order.orderDate && order.orderDate >= startDate)) &&
@@ -91,26 +117,73 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
   return (
     <OperationalReportPanel reportKey="vendorsItemOrderHistory" canReorder={canReorder} isSaving={isSaving} onMove={onMove} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24, ...panelStyle }}>
       <div style={{ marginBottom: 16 }}>
-        <h2 style={{ margin: '0 0 5px', color: '#1e293b', fontSize: 24 }}>Order History</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+          <h2 style={{ margin: 0, color: '#1e293b', fontSize: 24 }}>Order History</h2>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={!hasSearch}
+            style={{
+              marginLeft: 'auto',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              padding: '8px 14px',
+              background: '#ffffff',
+              color: hasSearch ? '#334155' : '#94a3b8',
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: hasSearch ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Reset
+          </button>
+        </div>
         {payload?.syncedAt ? (
           <div style={{ color: '#64748b', fontSize: 12 }}>Last refreshed {formatEstDateTime(payload.syncedAt)}.</div>
         ) : null}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(220px, 1.4fr) minmax(180px, 1.2fr) minmax(140px, 0.8fr) minmax(140px, 0.8fr)', gap: 12, marginBottom: 16, alignItems: 'end' }}>
         <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
-          Search vendor
-          <input value={vendorSearch} disabled={!hasData} onChange={(event) => setVendorSearch(event.target.value)} placeholder="Vendor name or ID" style={inputStyle} />
+          Vendor ID
+          <SuggestInput
+            value={vendorSearch}
+            disabled={!hasData}
+            suggestions={vendorIdSuggestions}
+            onChange={handleVendorIdSearchChange}
+            placeholder="Search vendor ID"
+            style={inputStyle}
+          />
         </label>
         <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
           Vendor
-          <select value={vendorId} disabled={!hasData} onChange={(event) => { setExpanded(new Set()); load(event.target.value); }} style={inputStyle}>
-            {!hasData && <option value="">No vendors available</option>}
-            {visibleVendors.map((vendor) => <option key={vendor.vendorId} value={vendor.vendorId}>{vendor.vendorName} ({vendor.vendorId}) · {vendor.orderCount.toLocaleString()} POs</option>)}
+          <select
+            value={vendorId}
+            disabled={!hasData}
+            onChange={(event) => {
+              setExpanded(new Set());
+              if (event.target.value) {
+                load(event.target.value);
+              } else {
+                setVendorId('');
+                setPayload((current) => (current ? { ...current, selectedVendorId: '', items: [] } : current));
+              }
+            }}
+            style={inputStyle}
+          >
+            <option value="">{hasData ? 'Select a vendor' : 'No vendors available'}</option>
+            {visibleVendors.map((vendor) => <option key={vendor.vendorId} value={vendor.vendorId}>{vendor.vendorName} · {vendor.orderCount.toLocaleString()} purchase orders</option>)}
           </select>
         </label>
         <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
-          Search items or PO number
-          <input value={itemSearch} disabled={!hasData} onChange={(event) => setItemSearch(event.target.value)} placeholder="Item ID, description, or PO number" style={inputStyle} />
+          APR P/N
+          <SuggestInput
+            value={itemSearch}
+            disabled={!hasData}
+            suggestions={aprSuggestions}
+            onChange={setItemSearch}
+            placeholder="Search APR P/N"
+            style={inputStyle}
+          />
         </label>
         <label style={{ display: 'block', fontSize: 12, color: '#334155', fontWeight: 700 }}>
           Order date from
@@ -125,7 +198,7 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
         <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse' }}>
           <thead><tr>
             {sortableHeader('itemSku', 'Item')}
-            {sortableHeader('orderCount', 'POs', 'right')}
+            {sortableHeader('orderCount', 'Purchase Order Lines', 'right')}
             {sortableHeader('totalQty', 'Ordered qty', 'right')}
             {sortableHeader('latestOrderDate', 'Latest order')}
             <th style={headerStyle} />
@@ -140,9 +213,11 @@ export default function VendorItemOrderHistoryReport({ companyId, currency, loca
                 ? 'Loading order history…'
                 : !hasData
                   ? 'No imported purchase-order data is available yet.'
+                  : !vendorId
+                    ? 'Select a vendor to view order history.'
                   : payload.items.length === 0
                     ? 'No PO line items were matched to this vendor.'
-                    : 'No items or purchase orders match the search.'}
+                    : 'No items match the APR P/N or dates.'}
           </div>
         )}
       </div>
