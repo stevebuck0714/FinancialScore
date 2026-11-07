@@ -21,6 +21,7 @@ const num: React.CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowra
 const totalNum: React.CSSProperties = { ...num, fontWeight: 800 };
 const selectStyle: React.CSSProperties = { minWidth: 150, padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: 6 };
 const labelStyle: React.CSSProperties = { display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' };
+const quickBooksBasisBadge = <span style={{ fontSize: 11, fontWeight: 700, color: '#1e3a8a', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 999, padding: '3px 9px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>QuickBooks basis</span>;
 const preliminaryBadge = <span style={{ fontSize: 11, fontWeight: 700, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 999, padding: '3px 9px', textTransform: 'uppercase' }}>Preliminary</span>;
 
 /** Annual capital account rollforward and member statements from the QuickBooks member equity accounts. */
@@ -57,9 +58,9 @@ export default function MemberCapitalReports({ quickBooksLines, investors, alias
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h3 style={{ margin: 0 }}>Annual Capital Account Rollforward</h3>
-          <p style={{ color: '#475569', margin: '6px 0 0', fontSize: 13 }}>Each member&apos;s QuickBooks equity accounts by year: opening balance, contributions, distributions, and closing balance. Book income is shared pro rata by ownership until the Operating Agreement §9.1 allocation is confirmed.</p>
+          <p style={{ color: '#475569', margin: '6px 0 0', fontSize: 13 }}>Each member&apos;s QuickBooks equity accounts by year: opening balance, contributions, distributions, and closing balance. QuickBooks does not record deemed capital, so Land Contributor and Sponsor Group balances are lower than in the Member Capital Rollforward. Book income is shared pro rata by ownership until the Operating Agreement §9.1 allocation is confirmed.</p>
         </div>
-        {preliminaryBadge}
+        <div style={{ display: 'flex', gap: 6 }}>{quickBooksBasisBadge}{preliminaryBadge}</div>
       </div>
       <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
         <label style={labelStyle}>Year<select value={year ?? ''} onChange={(event) => setYearChoice(Number(event.target.value))} style={selectStyle}>{capital.years.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
@@ -98,9 +99,9 @@ export default function MemberCapitalReports({ quickBooksLines, investors, alias
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h3 style={{ margin: 0 }}>Member Statements</h3>
-          <p style={{ color: '#475569', margin: '6px 0 0', fontSize: 13 }}>One member&apos;s ownership, capital account, distributions to date, and unpaid preferred return or even-up.</p>
+          <p style={{ color: '#475569', margin: '6px 0 0', fontSize: 13 }}>One member&apos;s ownership, capital account, distributions to date, and unpaid preferred return or even-up. The capital account comes from QuickBooks and excludes deemed capital; see the Member Capital Rollforward for capital under the Operating Agreement.</p>
         </div>
-        {preliminaryBadge}
+        <div style={{ display: 'flex', gap: 6 }}>{quickBooksBasisBadge}{preliminaryBadge}</div>
       </div>
       <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
         <label style={labelStyle}>Member<select value={member.member} onChange={(event) => setMemberChoice(event.target.value)} style={{ ...selectStyle, minWidth: 260 }}>{capital.members.map((item) => <option key={item.member} value={item.member}>{item.member}</option>)}</select></label>

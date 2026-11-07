@@ -8,6 +8,7 @@ import { ensureRealEstateWaterfallTables } from '@/lib/real-estate/waterfall-tab
 import { normalizeName } from '@/lib/real-estate/cash-flow-report';
 import { buildEntityReportLines } from '@/lib/real-estate/entity-report-lines';
 import { publishConsolidatedFinancials } from '@/lib/real-estate/consolidated-financials';
+import { applyInvestorLedgerCorrections } from '@/lib/real-estate/investor-ledger-corrections';
 import { CONSOLIDATED_FINANCIALS_SOURCE, isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 import { ensureRealEstateTaxReconciliationTables } from '@/lib/real-estate/tax-reconciliation-tables';
 
@@ -91,6 +92,7 @@ export async function GET(request: NextRequest) {
     await ensureTables();
     await ensureRealEstateWaterfallTables();
     await ensureRealEstateTaxReconciliationTables();
+    await applyInvestorLedgerCorrections(companyId);
     const [allLines, investors, occupancy, cashActivities, operationalMetrics, mappings, settingsRows, aliases, taxReturns, taxDepreciationRecords] = await Promise.all([
       prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateFinancialLine" WHERE "companyId"=$1 ORDER BY "periodEnd", "accountCode"`, companyId),
       prisma.$queryRawUnsafe<any[]>(`
@@ -223,7 +225,7 @@ export async function POST(request: NextRequest) {
           `INSERT INTO "RealEstateInvestorLedgerEntry" ("id","companyId","investorId","entryType","effectiveDate","amount","reference","notes","updatedAt")
            VALUES ($1,$2,$3,'DISTRIBUTION',$4::date,$5,$6,$7,NOW())`,
           randomUUID(), companyId, line.investorId, effectiveDate, Math.round(line.amount * 100) / 100, reference,
-          line.payee && line.payee !== known.get(line.investorId) ? `Cash flow report payee: ${line.payee}` : null,
+          line.payee && line.payee !== known.get(line.investorId) ? `${String(reference || '').includes('QuickBooks') ? 'QuickBooks member' : 'Cash flow report payee'}: ${line.payee}` : null,
         )),
         ...lines
           .filter((line) => line.payee && normalizeName(line.payee) !== normalizeName(known.get(line.investorId) || ''))

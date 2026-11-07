@@ -46,16 +46,23 @@ async function main() {
   for (const row of rows.slice(1)) {
     const name = String(row[0] || '').trim();
     if (!name) continue;
-    if (/GROUP$/i.test(name)) { group = name; continue; }
+    if (/GROUP$/i.test(name)) { group = name.replace(/^SPONSER GROUP$/i, 'SPONSOR GROUP'); continue; }
     if (/^total$/i.test(name)) continue;
     if (/^purchase from iav,\s*6\.26\.24$/i.test(name)) {
-      if (lastMemberName) transfers.push({ from: 'Igor A Vaserfirer', to: lastMemberName, amount: money(row[1]), date: '2024-06-26' });
+      // The purchased interest is listed in the Deemed Contribution column.
+      if (lastMemberName) transfers.push({ from: 'Igor A Vaserfirer', to: lastMemberName, amount: money(row[1]) || money(row[2]), date: '2024-06-26' });
       continue;
     }
     members.push({ name, group, contribution: money(row[1]), deemedContribution: money(row[2]), distributions: money(row[6]) });
     lastMemberName = name;
   }
   const investorContributionTotal = members.filter((member) => /INVESTOR/i.test(member.group)).reduce((sum, member) => sum + member.contribution, 0);
+  // The summary shows the seller's deemed capital after the transfer; record it before
+  // the transfer so the transfer-out entry nets it back to the summary figure.
+  for (const transfer of transfers) {
+    const seller = members.find((member) => member.name === transfer.from);
+    if (seller) seller.deemedContribution += transfer.amount;
+  }
   for (const member of members) {
     const isLandContributor = /LAND/i.test(member.group);
     const ownership = isLandContributor

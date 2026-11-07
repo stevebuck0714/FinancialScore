@@ -48,7 +48,7 @@ export default function QbdInvestorActivityPanel({ companyId, investors, fmt }: 
   const ledgerById = useMemo(() => new Map(investors.map((investor) => {
     const entries = Array.isArray(investor.entries) ? investor.entries : [];
     const sum = (types: string[]) => entries.filter((entry) => types.includes(entry.entryType)).reduce((total, entry) => total + Number(entry.amount || 0), 0);
-    return [investor.id, { legalName: investor.legalName, contributions: sum(['CONTRIBUTION', 'DEEMED_CONTRIBUTION']), distributions: sum(['DISTRIBUTION']) }];
+    return [investor.id, { legalName: investor.legalName, contributions: sum(['CONTRIBUTION', 'DEEMED_CONTRIBUTION', 'OWNERSHIP_TRANSFER_IN', 'OWNERSHIP_TRANSFER_OUT']), distributions: sum(['DISTRIBUTION']) }];
   })), [investors]);
 
   const { sortRows, sortableHeader } = useTableSort(th);

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { computeWaterfall, type WaterfallEntry, type WaterfallInvestor, type WaterfallResult, type WaterfallSettings } from '@/lib/real-estate/waterfall';
 import { matchMember, parseCashFlowReport, type NameMatch } from '@/lib/real-estate/cash-flow-report';
 import { useTableSort } from '@/app/components/operations/useTableSort';
+import type { QbdInvestorActivityResult } from '@/lib/real-estate/qbd-investor-activity';
 
 type Props = {
   companyId: string;
@@ -47,7 +48,13 @@ export default function RealEstateWaterfallPanel({ companyId, investors, entries
   const [selectedEventDate, setSelectedEventDate] = useState<string | null>(null);
 
   const [reportText, setReportText] = useState('');
+  const [quickBooksMonth, setQuickBooksMonth] = useState(() => {
+    const [year, month] = asOfDate.split('-').map(Number);
+    return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+  });
+  const [loadingQuickBooks, setLoadingQuickBooks] = useState(false);
   const [review, setReview] = useState<null | {
+    source: 'report' | 'quickbooks';
     parsed: ReturnType<typeof parseCashFlowReport>;
     effectiveDate: string;
     lines: Array<{ payee: string; amount: number; investorId: string; confidence: NameMatch['confidence'] }>;
@@ -88,6 +95,7 @@ export default function RealEstateWaterfallPanel({ companyId, investors, entries
     setDistributionMessage(null);
     setConfirmReplace(false);
     setReview({
+      source: 'report',
       parsed,
       effectiveDate: parsed.effectiveDate || '',
       lines: parsed.distributions.map((line) => {
@@ -95,6 +103,52 @@ export default function RealEstateWaterfallPanel({ companyId, investors, entries
         return { payee: line.label, amount: line.amount, investorId: match.investorId || '', confidence: match.confidence };
       }),
     });
+  };
+
+  const loadFromQuickBooks = async () => {
+    if (!/^\d{4}-\d{2}$/.test(quickBooksMonth)) return;
+    setLoadingQuickBooks(true);
+    setDistributionMessage(null);
+    setConfirmReplace(false);
+    try {
+      const response = await fetch(`/api/operations/real-estate/qbd-investor-activity?companyId=${encodeURIComponent(companyId)}`, { cache: 'no-store' });
+      const payload: QbdInvestorActivityResult & { error?: string } = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to load QuickBooks member activity.');
+      const byMember = new Map<string, { amount: number; investorId: string; confidence: NameMatch['confidence'] }>();
+      payload.activity
+        .filter((entry) => entry.activityType === 'DISTRIBUTION' && entry.txnDate.startsWith(quickBooksMonth))
+        .forEach((entry) => {
+          const current = byMember.get(entry.memberName) || { amount: 0, investorId: entry.investorId || '', confidence: entry.matchConfidence };
+          current.amount += entry.amount;
+          byMember.set(entry.memberName, current);
+        });
+      const [year, month] = quickBooksMonth.split('-').map(Number);
+      const periodLabel = `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][month - 1]} ${year}`;
+      const distributions = [...byMember.entries()]
+        .map(([label, line]) => ({ label, amount: Math.round(line.amount * 100) / 100 }))
+        .filter((line) => line.amount > 0)
+        .sort((a, b) => a.label.localeCompare(b.label));
+      const totalDistributions = Math.round(distributions.reduce((sum, line) => sum + line.amount, 0) * 100) / 100;
+      setReview({
+        source: 'quickbooks',
+        parsed: {
+          periodLabel,
+          effectiveDate: `${quickBooksMonth}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`,
+          received: [], totalReceived: null, expenses: [], totalExpenses: null,
+          distributions, totalDistributions, remainingAfterDistributions: null,
+          issues: distributions.length ? [] : [`No member distributions are posted in QuickBooks Desktop for ${periodLabel}.`],
+        },
+        effectiveDate: `${quickBooksMonth}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`,
+        lines: distributions.map((line) => {
+          const found = byMember.get(line.label)!;
+          return { payee: line.label, amount: line.amount, investorId: found.investorId, confidence: found.investorId ? found.confidence : 'none' };
+        }),
+      });
+    } catch (error: any) {
+      setDistributionMessage({ tone: 'error', text: error.message });
+    } finally {
+      setLoadingQuickBooks(false);
+    }
   };
 
   const reviewTotal = review ? Math.round(review.lines.reduce((sum, line) => sum + line.amount, 0) * 100) / 100 : 0;
@@ -125,7 +179,9 @@ export default function RealEstateWaterfallPanel({ companyId, investors, entries
           companyId,
           kind: 'distribution-batch',
           effectiveDate: review.effectiveDate,
-          reference: `${review.parsed.periodLabel || review.effectiveDate} Cash Flow report`,
+          reference: review.source === 'quickbooks'
+            ? `${review.parsed.periodLabel} QuickBooks Desktop member distributions`
+            : `${review.parsed.periodLabel || review.effectiveDate} Cash Flow report`,
           replaceExisting,
           lines: review.lines.map((line) => ({ investorId: line.investorId, amount: line.amount, payee: line.payee })),
         }),
@@ -217,10 +273,15 @@ export default function RealEstateWaterfallPanel({ companyId, investors, entries
     <div style={{ ...card, display: 'grid', gap: 12 }}>
       <div>
         <h3 style={{ margin: 0 }}>Record distribution</h3>
-        <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>Paste the monthly BGAH Cash Flow report from Excel, review the member matches and waterfall split, then save. Nothing is recorded until you click Save Distribution.</p>
+        <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>Paste the monthly BGAH Cash Flow report from Excel, or load a month&apos;s member distributions from QuickBooks Desktop. Review the member matches and waterfall split, then save. Nothing is recorded until you click Save Distribution.</p>
       </div>
       <textarea value={reportText} onChange={(event) => setReportText(event.target.value)} rows={6} placeholder="September 2026 Cash Flow	BGAH&#10;…&#10;Distributions&#10;Amy-Shu Inc	$ 1,450.00&#10;…&#10;TOTAL DISTRIBUTIONS	$ 72,500.00" style={{ width: '100%', padding: 10, border: '1px solid #cbd5e1', borderRadius: 8, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, boxSizing: 'border-box' }} />
-      <div><button type="button" onClick={reviewReport} disabled={!reportText.trim()} style={{ ...secondaryButton, opacity: reportText.trim() ? 1 : 0.5 }}>Review Report</button></div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
+        <button type="button" onClick={reviewReport} disabled={!reportText.trim()} style={{ ...secondaryButton, opacity: reportText.trim() ? 1 : 0.5 }}>Review Report</button>
+        <span style={{ fontSize: 12, color: '#64748b', paddingBottom: 9 }}>or</span>
+        <label style={label}>QuickBooks Month<input type="month" value={quickBooksMonth} onChange={(event) => setQuickBooksMonth(event.target.value)} style={input} /></label>
+        <button type="button" onClick={loadFromQuickBooks} disabled={loadingQuickBooks || !quickBooksMonth} style={{ ...secondaryButton, opacity: loadingQuickBooks || !quickBooksMonth ? 0.5 : 1 }}>{loadingQuickBooks ? 'Loading...' : 'Load from QuickBooks'}</button>
+      </div>
       {distributionMessage && <div style={{ fontSize: 13, color: distributionMessage.tone === 'ok' ? '#166534' : '#b91c1c' }}>{distributionMessage.text}</div>}
       {review && <div style={{ display: 'grid', gap: 12 }}>
         {review.parsed.issues.length > 0 && <div style={{ padding: '10px 14px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12 }}>{review.parsed.issues.map((issue) => <div key={issue}>{issue}</div>)}</div>}

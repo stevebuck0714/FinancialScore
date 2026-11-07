@@ -26,6 +26,9 @@ const card: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8
 const th: React.CSSProperties = { padding: '9px 10px', textAlign: 'left', fontSize: 11, color: '#475569', textTransform: 'uppercase', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' };
 const td: React.CSSProperties = { padding: '9px 10px', borderBottom: '1px solid #f1f5f9', fontSize: 13 };
 
+const basisBadge: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#1e3a8a', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 999, padding: '3px 9px', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+const CAPITAL_ENTRY_TYPES = ['CONTRIBUTION', 'DEEMED_CONTRIBUTION', 'OWNERSHIP_TRANSFER_IN', 'OWNERSHIP_TRANSFER_OUT'];
+
 type PropertyTypeFilter = 'all' | 'income' | 'expenses' | 'assets' | 'liabilities';
 type ReportRange = { startDate: string; endDate: string };
 const normalizeAccountType = (type: unknown) => String(type || '').toLowerCase().replace(/[^a-z]/g, '');
@@ -534,9 +537,12 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
         <p style={{ color: '#64748b', marginBottom: 0 }}>Capital, distributions, allocations, and waterfall accrual balances by member.</p>
       </div>
       {reportEnabled('investorCapitalRollforward') && <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
-        <div style={{ padding: '14px 18px 0' }}>
-          <h3 style={{ margin: 0 }}>Member Capital Rollforward</h3>
-          <p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>Each member&apos;s contributions and deemed capital, distributions, allocated profit and loss, and unpaid preferred return or even-up to date.</p>
+        <div style={{ padding: '14px 18px 0', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Member Capital Rollforward</h3>
+            <p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>Each member&apos;s contributions and deemed capital (including capital transferred between members), distributions, allocated profit and loss, and unpaid preferred return or even-up to date. Capital follows the Operating Agreement, so it includes deemed capital that QuickBooks does not record.</p>
+          </div>
+          <span style={basisBadge}>Operating Agreement basis</span>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
           <thead><tr>{sortableHeader('investors', 'name', 'Investor / Member')}{sortableHeader('investors', 'group', 'Group')}{sortableHeader('investors', 'ownership', 'Ownership', 'right')}{sortableHeader('investors', 'contribution', 'Contributions / Deemed Capital', 'right')}{sortableHeader('investors', 'distribution', 'Distributions', 'right')}{sortableHeader('investors', 'allocation', 'Allocations', 'right')}{sortableHeader('investors', 'preferred', 'Unpaid Pref. Return', 'right')}{sortableHeader('investors', 'evenUp', 'Unpaid Even-Up', 'right')}</tr></thead>
@@ -546,7 +552,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
             const balance = waterfallBalanceById.get(investor.id);
             return {
               investor,
-              contribution: sum('CONTRIBUTION') + sum('DEEMED_CONTRIBUTION'),
+              contribution: CAPITAL_ENTRY_TYPES.reduce((total, type) => total + sum(type), 0),
               distribution: sum('DISTRIBUTION'),
               allocation: sum('ALLOCATION'),
               preferred: waterfall.ready && balance?.isLandContributor ? balance.preferredReturnUnpaid : null,
@@ -560,7 +566,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
               const balance = waterfallBalanceById.get(investor.id);
               return {
                 ownership: acc.ownership + Number(investor.ownershipPercentage || 0),
-                contribution: acc.contribution + sum('CONTRIBUTION') + sum('DEEMED_CONTRIBUTION'),
+                contribution: acc.contribution + CAPITAL_ENTRY_TYPES.reduce((total, type) => total + sum(type), 0),
                 distribution: acc.distribution + sum('DISTRIBUTION'),
                 allocation: acc.allocation + sum('ALLOCATION'),
                 preferred: acc.preferred + (waterfall.ready && balance?.isLandContributor ? balance.preferredReturnUnpaid : 0),
