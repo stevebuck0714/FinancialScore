@@ -46,6 +46,7 @@ export type QbdInvestorActivityResult = {
   activity: QbdInvestorActivity[];
   equityGroups: string[];
   latestSyncAt: string | null;
+  openingBalanceDate: string | null;
 };
 
 type GlRow = {
@@ -149,6 +150,36 @@ async function loadMemberGlRows(companyId: string, groups: string[]): Promise<{ 
   return { rows, latestSyncAt };
 }
 
+/**
+ * Member equity balances at the month-end before the first synced GL transaction.
+ * Money already in a member account when the GL history starts has no
+ * transaction, so it is carried in as an opening balance.
+ */
+async function loadOpeningBalances(companyId: string, groups: string[], firstTxnDate: string | null) {
+  if (!groups.length || !firstTxnDate) return { asOf: null as string | null, rows: [] as Array<{ accountName: string; amount: number }> };
+  const prefixes = groups.map((group) => `${group.toLowerCase()}:%`);
+  try {
+    const [period] = await prisma.$queryRawUnsafe<Array<{ periodEnd: string | null }>>(
+      `SELECT to_char(MAX("periodEnd"), 'YYYY-MM-DD') AS "periodEnd" FROM "RealEstateFinancialLine"
+       WHERE "companyId"=$1 AND "sourceEntity"='QBD' AND "reportType"='BALANCE' AND "periodEnd" < date_trunc('month', $2::date)`,
+      companyId, firstTxnDate,
+    );
+    if (!period?.periodEnd) return { asOf: null, rows: [] };
+    const rows = await prisma.$queryRawUnsafe<Array<{ accountName: string; amount: number }>>(
+      `SELECT "accountName", "amount"::float AS "amount" FROM "RealEstateFinancialLine"
+       WHERE "companyId"=$1 AND "sourceEntity"='QBD' AND "reportType"='BALANCE' AND "periodEnd"=$2::date
+         AND lower("accountName") LIKE ANY($3::text[]) AND ABS("amount") >= 0.005`,
+      companyId, period.periodEnd, prefixes,
+    );
+    const names = rows.map((row) => row.accountName.toLowerCase());
+    // Parent accounts repeat their children's balances.
+    const leaves = rows.filter((row) => !names.some((name) => name.startsWith(`${row.accountName.toLowerCase()}:`)));
+    return { asOf: period.periodEnd, rows: leaves };
+  } catch {
+    return { asOf: null, rows: [] };
+  }
+}
+
 export async function loadQbdInvestorActivity(
   companyId: string,
   investors: Array<{ id: string; legalName: string }>,
@@ -198,6 +229,34 @@ export async function loadQbdInvestorActivity(
     });
   }
 
+  const firstTxnDate = rows.reduce<string | null>((first, row) => (row.txnDate && (!first || row.txnDate < first) ? row.txnDate : first), null);
+  const opening = await loadOpeningBalances(companyId, equityGroups, firstTxnDate);
+  const openingEntries: QbdInvestorActivity[] = [];
+  for (const row of opening.rows) {
+    const parts = row.accountName.split(':').map((part) => part.trim());
+    const memberName = parts[1];
+    if (!memberName) continue;
+    const pathAfterMember = parts.slice(2);
+    // Balance sheet equity is credit-positive: contributions are positive, distributions negative.
+    const activityType = classify(pathAfterMember, -row.amount);
+    const match = matchFor(memberName);
+    openingEntries.push({
+      memberName,
+      investorId: match.investorId,
+      matchConfidence: match.confidence,
+      activityType,
+      detail: pathAfterMember[pathAfterMember.length - 1] || 'Member capital account',
+      accountName: row.accountName,
+      txnDate: opening.asOf!,
+      txnType: 'Opening balance',
+      refNo: '',
+      payee: '',
+      memo: 'Balance before the first synced QuickBooks transaction',
+      amount: activityType === 'DISTRIBUTION' ? -row.amount : row.amount,
+    });
+  }
+  activity.unshift(...openingEntries);
+
   const byMember = new Map<string, QbdInvestorActivitySummary>();
   for (const entry of activity) {
     const summary = byMember.get(entry.memberName) || {
@@ -216,7 +275,7 @@ export async function loadQbdInvestorActivity(
     else summary.other += entry.amount;
     summary.firstDate = !summary.firstDate || entry.txnDate < summary.firstDate ? entry.txnDate : summary.firstDate;
     summary.lastDate = !summary.lastDate || entry.txnDate > summary.lastDate ? entry.txnDate : summary.lastDate;
-    summary.transactionCount += 1;
+    if (entry.txnType !== 'Opening balance') summary.transactionCount += 1;
     byMember.set(entry.memberName, summary);
   }
 
@@ -225,5 +284,6 @@ export async function loadQbdInvestorActivity(
     activity,
     equityGroups,
     latestSyncAt: latestSyncAt ? latestSyncAt.toISOString() : null,
+    openingBalanceDate: openingEntries.length ? opening.asOf : null,
   };
 }

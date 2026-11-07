@@ -116,7 +116,7 @@ export default function RealEstateWaterfallPanel({ companyId, investors, entries
       if (!response.ok) throw new Error(payload.error || 'Unable to load QuickBooks member activity.');
       const byMember = new Map<string, { amount: number; investorId: string; confidence: NameMatch['confidence'] }>();
       payload.activity
-        .filter((entry) => entry.activityType === 'DISTRIBUTION' && entry.txnDate.startsWith(quickBooksMonth))
+        .filter((entry) => entry.activityType === 'DISTRIBUTION' && entry.txnType !== 'Opening balance' && entry.txnDate.startsWith(quickBooksMonth))
         .forEach((entry) => {
           const current = byMember.get(entry.memberName) || { amount: 0, investorId: entry.investorId || '', confidence: entry.matchConfidence };
           current.amount += entry.amount;

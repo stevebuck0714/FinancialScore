@@ -22,6 +22,10 @@ const th: React.CSSProperties = { padding: '9px 10px', textAlign: 'left', fontSi
 const td: React.CSSProperties = { padding: '9px 10px', borderBottom: '1px solid #f1f5f9', fontSize: 13 };
 const right: React.CSSProperties = { ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
 
+const formatOpeningDate = (ymd: string) => {
+  const [year, month, day] = ymd.split('-').map(Number);
+  return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1]} ${day}, ${year}`;
+};
 const ACTIVITY_LABEL: Record<string, string> = { CONTRIBUTION: 'Contribution', DISTRIBUTION: 'Distribution', OTHER: 'Other' };
 
 export default function QbdInvestorActivityPanel({ companyId, investors, fmt }: Props) {
@@ -96,6 +100,7 @@ export default function QbdInvestorActivityPanel({ companyId, investors, fmt }: 
         <h3 style={{ margin: 0 }}>QuickBooks Member Activity</h3>
         <p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>
           Contributions and distributions posted to each member&apos;s equity accounts in QuickBooks Desktop, compared with the member ledger above. For review only; the rollforward and waterfall still use the member ledger.
+          {result?.openingBalanceDate ? ` QuickBooks amounts include each member's balance at ${formatOpeningDate(result.openingBalanceDate)}, before the first synced transaction; click a member to see it.` : ''}
           {result?.latestSyncAt ? ` QuickBooks data as of ${formatEstDateTime(result.latestSyncAt)}.` : ''}
         </p>
       </div>
