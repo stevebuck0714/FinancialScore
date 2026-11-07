@@ -11,7 +11,7 @@ type ProductSgpPriceChangesReportProps = {
 
 type SortKey = keyof Pick<
   SgpPriceChangeLine,
-  'itemSku' | 'itemName' | 'customerPartNumber' | 'customerGroup' | 'sgpPrice' | 'contractPrice' | 'priceChange' | 'priceChangePct'
+  'itemSku' | 'itemName' | 'customerName' | 'customerPartNumber' | 'customerGroup' | 'sgpPrice' | 'contractPrice' | 'priceChange' | 'priceChangePct'
 >;
 
 const MIN_YEAR = 2018;
@@ -62,6 +62,28 @@ const th: React.CSSProperties = {
   userSelect: 'none',
 };
 
+function customerKeyFor(line: SgpPriceChangeLine): string {
+  return `${line.customerId || ''}||${line.customerName || ''}`;
+}
+
+const filterLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  fontSize: 12,
+  color: '#334155',
+  fontWeight: 600,
+};
+
+const inputStyle: React.CSSProperties = {
+  border: '1px solid #cbd5e1',
+  borderRadius: 8,
+  padding: '8px 10px',
+  fontSize: 12,
+  color: '#0f172a',
+  background: '#ffffff',
+};
+
 const td: React.CSSProperties = {
   padding: '7px 10px',
   fontSize: 12,
@@ -76,7 +98,10 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
   const [dataset, setDataset] = useState<SgpPriceChangesDataset | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [customerIdSearch, setCustomerIdSearch] = useState('');
+  const [customerKey, setCustomerKey] = useState('');
+  const [aprSearch, setAprSearch] = useState('');
+  const [customerGroup, setCustomerGroup] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('itemSku');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -111,14 +136,50 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
     void load();
   }, [load]);
 
+  const customerOptions = useMemo(() => {
+    const byKey = new Map<string, { key: string; customerId: string; label: string }>();
+    for (const line of dataset?.lines || []) {
+      const key = customerKeyFor(line);
+      if (!byKey.has(key)) byKey.set(key, { key, customerId: line.customerId || '', label: line.customerName || line.customerId || 'Unknown customer' });
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  }, [dataset]);
+
+  const groupOptions = useMemo(
+    () =>
+      Array.from(new Set((dataset?.lines || []).map((line) => line.customerGroup).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: 'base' })
+      ),
+    [dataset]
+  );
+
+  const handleCustomerIdSearchChange = (value: string) => {
+    setCustomerIdSearch(value);
+    const match = customerOptions.find((option) => option.customerId.toLowerCase() === value.trim().toLowerCase());
+    if (match) {
+      setCustomerKey(match.key);
+      setCustomerGroup('');
+    }
+  };
+
+  const hasSearch = Boolean(customerIdSearch.trim() || customerKey || aprSearch.trim() || customerGroup);
+
+  const handleReset = () => {
+    setCustomerIdSearch('');
+    setCustomerKey('');
+    setAprSearch('');
+    setCustomerGroup('');
+  };
+
   const rows = useMemo(() => {
-    const term = search.trim().toUpperCase();
+    const idTerm = customerIdSearch.trim().toUpperCase();
+    const aprTerm = aprSearch.trim().toUpperCase();
     const filtered = (dataset?.lines || []).filter(
       (line) =>
-        !term ||
-        line.itemSku.toUpperCase().includes(term) ||
-        line.customerPartNumber.toUpperCase().includes(term) ||
-        line.itemName.toUpperCase().includes(term)
+        (!customerKey || customerKeyFor(line) === customerKey) &&
+        (customerKey || !idTerm || String(line.customerId || '').toUpperCase().includes(idTerm)) &&
+        (!aprTerm || line.itemSku.toUpperCase().includes(aprTerm)) &&
+        (!customerGroup || line.customerGroup === customerGroup)
     );
     return filtered.slice().sort((left, right) => {
       const a = left[sortKey];
@@ -131,7 +192,7 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
       }
       return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' }) * (sortAsc ? 1 : -1);
     });
-  }, [dataset, search, sortAsc, sortKey]);
+  }, [aprSearch, customerGroup, customerIdSearch, customerKey, dataset, sortAsc, sortKey]);
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -139,7 +200,7 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
       return;
     }
     setSortKey(key);
-    setSortAsc(key === 'itemSku' || key === 'itemName' || key === 'customerPartNumber' || key === 'customerGroup');
+    setSortAsc(key === 'itemSku' || key === 'itemName' || key === 'customerName' || key === 'customerPartNumber' || key === 'customerGroup');
   };
 
   const sortHeader = (key: SortKey, label: string, align: 'left' | 'right' = 'right') => (
@@ -151,67 +212,139 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+      <div>
         <div>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Price Changes from SGP</h3>
-          <div style={{ marginTop: 4, fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
-            SGP item price versus the current contract price from Infor, per item and customer P/N.
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search Item ID, name, or customer P/N"
-            style={{ border: '1px solid #cbd5e1', borderRadius: 6, padding: '5px 8px', fontSize: 12, color: '#0f172a', width: 240 }}
-          />
-          <label style={{ fontSize: 12, color: '#334155', fontWeight: 700 }}>Year</label>
-          <select
-            value={year}
-            onChange={(event) => setYear(Number(event.target.value))}
-            style={{ border: '1px solid #cbd5e1', borderRadius: 6, padding: '5px 8px', fontSize: 12, color: '#0f172a' }}
-          >
-            {yearOptions().map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => void load(true)}
-            disabled={loading || !selectedCompanyId}
-            style={{
-              border: '1px solid #4338ca',
-              borderRadius: 8,
-              padding: '6px 12px',
-              background: loading ? '#c7d2fe' : '#4f46e5',
-              color: '#ffffff',
-              fontWeight: 700,
-              fontSize: 12,
-              cursor: loading ? 'default' : 'pointer',
-            }}
-          >
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
-          {onOpenInfo ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Price Changes from SGP</h3>
+            {onOpenInfo ? (
+              <button
+                type="button"
+                onClick={onOpenInfo}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '0 2px',
+                  color: '#2563eb',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: 2,
+                }}
+              >
+                What is this?
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={onOpenInfo}
+              onClick={() => void load(true)}
+              disabled={loading || !selectedCompanyId}
               style={{
-                border: 'none',
-                background: 'transparent',
-                color: '#4f46e5',
-                fontSize: 12,
+                marginLeft: 'auto',
+                border: '1px solid #4338ca',
+                borderRadius: 8,
+                padding: '8px 14px',
+                background: loading ? '#c7d2fe' : '#4f46e5',
+                color: '#ffffff',
                 fontWeight: 700,
-                cursor: 'pointer',
-                textDecoration: 'underline',
+                fontSize: 12,
+                cursor: loading ? 'default' : 'pointer',
               }}
             >
-              How this works
+              {loading ? 'Loading…' : 'Refresh'}
             </button>
-          ) : null}
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={!hasSearch}
+              style={{
+                border: '1px solid #cbd5e1',
+                borderRadius: 8,
+                padding: '8px 14px',
+                background: '#ffffff',
+                color: !hasSearch ? '#94a3b8' : '#334155',
+                fontWeight: 700,
+                cursor: !hasSearch ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+              }}
+            >
+              Reset
+            </button>
+          </div>
+          <p style={{ margin: '8px 0 0', color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
+            SGP item price versus the current contract price from Infor, per item and customer P/N.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginTop: 16 }}>
+          <label style={filterLabelStyle}>
+            Customer ID
+            <input
+              type="search"
+              value={customerIdSearch}
+              onChange={(event) => handleCustomerIdSearchChange(event.target.value)}
+              placeholder="Search customer ID"
+              style={{ ...inputStyle, width: 180 }}
+            />
+          </label>
+          <label style={filterLabelStyle}>
+            Customer Name
+            <select
+              value={customerKey}
+              onChange={(event) => {
+                setCustomerKey(event.target.value);
+                if (event.target.value) setCustomerGroup('');
+              }}
+              style={{ ...inputStyle, minWidth: 280 }}
+            >
+              <option value="">All customers</option>
+              {customerOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={filterLabelStyle}>
+            APR P/N
+            <input
+              type="search"
+              value={aprSearch}
+              onChange={(event) => setAprSearch(event.target.value)}
+              placeholder="Search APR P/N"
+              style={{ ...inputStyle, width: 180 }}
+            />
+          </label>
+          <label style={filterLabelStyle}>
+            Group Name
+            <select
+              value={customerGroup}
+              onChange={(event) => {
+                setCustomerGroup(event.target.value);
+                if (event.target.value) {
+                  setCustomerKey('');
+                  setCustomerIdSearch('');
+                }
+              }}
+              style={{ ...inputStyle, minWidth: 220 }}
+            >
+              <option value="">All groups</option>
+              {groupOptions.map((group) => (
+                <option key={group} value={group}>
+                  {group}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={filterLabelStyle}>
+            Year
+            <select value={year} onChange={(event) => setYear(Number(event.target.value))} style={{ ...inputStyle, width: 108 }}>
+              {yearOptions().map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </div>
 
@@ -227,11 +360,12 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
         ) : null
       ) : (
         <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 620 }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 940 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1080 }}>
             <thead>
               <tr>
-                {sortHeader('itemSku', 'Item ID', 'left')}
+                {sortHeader('itemSku', 'APR P/N', 'left')}
                 {sortHeader('itemName', 'Item Name', 'left')}
+                {sortHeader('customerName', 'Customer Name', 'left')}
                 {sortHeader('customerPartNumber', 'Customer P/N', 'left')}
                 {sortHeader('customerGroup', 'Group', 'left')}
                 {sortHeader('sgpPrice', 'SGP Item\nPrice')}
@@ -242,9 +376,10 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
             </thead>
             <tbody>
               {rows.map((line) => (
-                <tr key={`${line.customerGroup}||${line.itemSku}||${line.customerPartNumber}`}>
+                <tr key={`${line.customerName}||${line.customerGroup}||${line.itemSku}||${line.customerPartNumber}`}>
                   <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>{line.itemSku}</td>
                   <td style={{ ...td, textAlign: 'left', whiteSpace: 'normal', minWidth: 200 }}>{line.itemName || '—'}</td>
+                  <td style={{ ...td, textAlign: 'left' }}>{line.customerName || '—'}</td>
                   <td style={{ ...td, textAlign: 'left' }}>{line.customerPartNumber || '—'}</td>
                   <td style={{ ...td, textAlign: 'left' }}>{line.customerGroup || '—'}</td>
                   <td style={td}>{fmtPrice(line.sgpPrice)}</td>
@@ -255,8 +390,8 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
               ))}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ ...td, textAlign: 'left', color: '#64748b' }}>
-                    No items match {search.trim()}.
+                  <td colSpan={9} style={{ ...td, textAlign: 'left', color: '#64748b' }}>
+                    No items match these filters.
                   </td>
                 </tr>
               ) : null}

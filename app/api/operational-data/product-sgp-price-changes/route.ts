@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     const { payload } = await withProductReportCache({
       namespace: 'product-sgp-price-changes',
       companyId,
-      keyParts: ['sgp-price-changes-v1', year],
+      keyParts: ['sgp-price-changes-v5', year],
       refresh,
       build: async () => {
         await ensureProductRevenueTables();

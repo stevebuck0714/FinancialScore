@@ -206,6 +206,7 @@ type ProductMarginSortKey =
 type WholesaleRawSortKey =
   | 'item'
   | 'order'
+  | 'line'
   | 'customerId'
   | 'isoDate'
   | 'qty'
@@ -215,6 +216,10 @@ type WholesaleRawSortKey =
   | 'customerPartNumber'
   | 'openRevenue'
   | 'revenue';
+function parseWholesaleRawLineNumber(lineId: unknown): number | null {
+  const line = Number.parseInt(String(lineId ?? '').split('-')[0].trim(), 10);
+  return Number.isFinite(line) ? line : null;
+}
 type VendorPricingSortKey =
   | 'item'
   | 'vendorId'
@@ -1555,8 +1560,8 @@ export default function OperationsTab({
   const toggleCustomerTrendSeries = (customerName: string) => {
     setHiddenCustomerTrendSeries((prev) => ({ ...prev, [customerName]: !prev[customerName] }));
   };
-  const toggleProductMarginCustomerExpanded = (key: string) => {
-    setExpandedProductMarginCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleProductMarginCustomerExpanded = (key: string, currentlyExpanded: boolean) => {
+    setExpandedProductMarginCustomers((prev) => ({ ...prev, [key]: !currentlyExpanded }));
   };
   const isCustomersTab = ['customers', 'sales'].includes(String(mapModuleToDataType(activeTab) || '')) || activeTab === 'customers';
   const isVendorsTab = resolveModuleKey(activeTab) === 'vendors';
@@ -4038,6 +4043,86 @@ export default function OperationsTab({
     return formatDateSafeUtc(raw ?? null, options);
   };
 
+  const saveOperationalDateRange = async () => {
+    if (!dateRangeReady) return;
+    const payload = {
+      frequency,
+      startDate,
+      endDate,
+      savedAt: new Date().toISOString(),
+      manualSave: true,
+    };
+    try {
+      if (dateRangeSaveTimerRef.current) {
+        clearTimeout(dateRangeSaveTimerRef.current);
+      }
+      window.localStorage.setItem(`ops:date-range:${selectedCompanyId}`, JSON.stringify(payload));
+      const response = await fetch('/api/ops-dashboard-prefs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          preferences: { dateRange: payload },
+        }),
+      });
+      setCustomerDateRangeSaveStatus(response.ok ? 'Saved' : 'Save failed');
+    } catch {
+      setCustomerDateRangeSaveStatus('Save failed');
+    }
+    window.setTimeout(() => setCustomerDateRangeSaveStatus(null), 2500);
+  };
+
+  const renderInlineDateRange = () => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+        From
+        <input
+          type="date"
+          value={startDate}
+          max={endDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', color: '#0f172a' }}
+        />
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+        To
+        <input
+          type="date"
+          value={endDate}
+          max={effectiveMaxSelectableEndDate}
+          onChange={(e) => {
+            const candidate = e.target.value;
+            setEndDate(candidate > effectiveMaxSelectableEndDate ? effectiveMaxSelectableEndDate : candidate);
+          }}
+          style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', color: '#0f172a' }}
+        />
+      </label>
+      {customerDateRangeSaveStatus && (
+        <span style={{ fontSize: '12px', color: customerDateRangeSaveStatus.includes('failed') ? '#dc2626' : '#16a34a', fontWeight: 600 }}>
+          {customerDateRangeSaveStatus}
+        </span>
+      )}
+      <button
+        type="button"
+        disabled={!dateRangeReady}
+        title={dateRangeReady ? 'Save this date range as the default' : 'Loading saved date range...'}
+        onClick={() => void saveOperationalDateRange()}
+        style={{
+          border: '1px solid #4338ca',
+          borderRadius: '8px',
+          padding: '8px 14px',
+          background: dateRangeReady ? '#4f46e5' : '#c7d2fe',
+          color: '#ffffff',
+          fontSize: '12px',
+          fontWeight: 700,
+          cursor: dateRangeReady ? 'pointer' : 'not-allowed',
+        }}
+      >
+        Save
+      </button>
+    </div>
+  );
+
   const renderFilters = () => {
     const activeDataType = mapModuleToDataType(activeTab);
     if (
@@ -4055,6 +4140,7 @@ export default function OperationsTab({
       isWholesaleRawViewActive ||
       isWholesaleSgpPriceChangesViewActive ||
       isWholesaleRevenueForecastViewActive ||
+      (isWholesaleProductsTab && productReportView === 'productMarginAnalysis') ||
       isVendorsTab
     ) {
       return null;
@@ -4147,34 +4233,7 @@ export default function OperationsTab({
           <button
             disabled={!dateRangeReady}
             title={dateRangeReady ? undefined : 'Loading saved date range...'}
-            onClick={async () => {
-              if (!dateRangeReady) return;
-              const payload = {
-                frequency,
-                startDate,
-                endDate,
-                savedAt: new Date().toISOString(),
-                manualSave: true,
-              };
-              try {
-                if (dateRangeSaveTimerRef.current) {
-                  clearTimeout(dateRangeSaveTimerRef.current);
-                }
-                window.localStorage.setItem(`ops:date-range:${selectedCompanyId}`, JSON.stringify(payload));
-                const response = await fetch('/api/ops-dashboard-prefs', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    companyId: selectedCompanyId,
-                    preferences: { dateRange: payload },
-                  }),
-                });
-                setCustomerDateRangeSaveStatus(response.ok ? 'Saved' : 'Save failed');
-              } catch {
-                setCustomerDateRangeSaveStatus('Save failed');
-              }
-              window.setTimeout(() => setCustomerDateRangeSaveStatus(null), 2500);
-            }}
+            onClick={() => void saveOperationalDateRange()}
             style={{
               padding: '6px 12px',
               background: '#2563eb',
@@ -11029,6 +11088,7 @@ export default function OperationsTab({
             key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}-${String(row?.lineId || '')}`,
             item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
             order: String(row?.orderId || row?.orderNo || row?.coNum || row?.sourceTransaction || '').trim(),
+            line: parseWholesaleRawLineNumber(row?.lineId),
             customerId,
             customerPartNumber,
             isoDate,
@@ -11053,7 +11113,7 @@ export default function OperationsTab({
     const wholesaleRawOrderSearchTerm = wholesaleRawOrderSearch.trim().toLowerCase();
     const isWholesaleRawSearchActive = Boolean(wholesaleRawItemSearchTerm || wholesaleRawOrderSearchTerm);
     const wholesaleRawSearchDescription = [
-      wholesaleRawItemSearchTerm ? `item "${wholesaleRawItemSearch.trim()}"` : '',
+      wholesaleRawItemSearchTerm ? `APR P/N "${wholesaleRawItemSearch.trim()}"` : '',
       wholesaleRawOrderSearchTerm ? `order "${wholesaleRawOrderSearch.trim()}"` : '',
     ]
       .filter(Boolean)
@@ -11073,6 +11133,7 @@ export default function OperationsTab({
       'customerPartNumber',
     ]);
     const wholesaleRawNumericSortKeys = new Set<WholesaleRawSortKey>([
+      'line',
       'qty',
       'qtyShipped',
       'unitPrice',
@@ -11129,6 +11190,7 @@ export default function OperationsTab({
             key: `filled-${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || '')}-${String(row?.lineId || '')}`,
             item: String(row?.sku || row?.itemId || row?.itemName || 'N/A').trim() || 'N/A',
             order: String(row?.orderId || row?.orderNo || row?.coNum || row?.sourceTransaction || '').trim(),
+            line: parseWholesaleRawLineNumber(row?.lineId),
             customerId,
             customerPartNumber,
             isoDate,
@@ -11757,22 +11819,13 @@ export default function OperationsTab({
         { key: 'netProfitPct', label: ['Net', 'Profit', '(%)'], compact: true },
         { key: 'grossMarginPct', label: ['Gross', 'Margin %'], compact: true },
       ];
-      // A single customer and an item search always render expanded.
-      const canToggleVisibleProductMarginCustomers =
-        productMarginCustomerFilter === 'all' && !productMarginItemSearchTerm;
-      const productMarginToggleDisabledReason =
-        productMarginCustomerFilter === 'all'
-          ? 'Clear the Item # search to expand or collapse customers'
-          : 'Available when All customers is selected';
-      const setVisibleCustomersExpanded = (expanded: boolean) => {
-        setExpandedProductMarginCustomers((prev) => {
-          const next = { ...prev };
-          sortedVisibleProductMarginCustomerGroups.forEach((group) => {
-            next[group.key] = expanded;
-          });
-          return next;
-        });
-      };
+      const productMarginExpandedByDefault =
+        productMarginCustomerFilter !== 'all' || Boolean(productMarginItemSearchTerm);
+      const productMarginExpandScope =
+        `${productMarginCustomerFilter}|${productMarginCustomerGroupFilter}|${productMarginItemSearchTerm}`;
+      const productMarginExpandKey = (groupKey: string) => `${productMarginExpandScope}::${groupKey}`;
+      const isProductMarginGroupExpanded = (groupKey: string) =>
+        expandedProductMarginCustomers[productMarginExpandKey(groupKey)] ?? productMarginExpandedByDefault;
       const renderMoneyCell = (value: number | null | undefined, emphasize = false) => (
         <td style={{ padding: '6px 5px', fontSize: '11.5px', color: Number(value || 0) < 0 ? '#b91c1c' : '#334155', textAlign: 'right', fontWeight: emphasize ? 700 : 500, whiteSpace: 'nowrap', width: '64px', maxWidth: '70px' }}>
           {formatMarginNumber(value)}
@@ -11828,7 +11881,8 @@ export default function OperationsTab({
       if (!productMarginRows.length) {
         return (
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', color: '#64748b' }}>
-            No product margin rows are available from the loaded wholesale order-line data.
+            <div style={{ marginBottom: '12px' }}>{renderInlineDateRange()}</div>
+            No product margin rows are available for these dates.
           </div>
         );
       }
@@ -11885,6 +11939,7 @@ export default function OperationsTab({
               )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {renderInlineDateRange()}
               <button
                 type="button"
                 onClick={() => void refreshWholesaleProductsReport()}
@@ -11952,38 +12007,16 @@ export default function OperationsTab({
               </select>
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', fontWeight: 600, flex: '0 0 auto' }}>
-              Item #
+              APR P/N
               <input
                 type="search"
                 value={productMarginItemSearch}
                 onChange={(event) => setProductMarginItemSearch(event.target.value)}
-                placeholder="Search item #"
-                aria-label="Search Item #"
+                placeholder="Search APR P/N"
+                aria-label="Search APR P/N"
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
               />
             </label>
-            {(['Expand Visible', 'Collapse Visible'] as const).map((label) => (
-              <button
-                key={label}
-                type="button"
-                disabled={!canToggleVisibleProductMarginCustomers}
-                title={canToggleVisibleProductMarginCustomers ? undefined : productMarginToggleDisabledReason}
-                onClick={() => setVisibleCustomersExpanded(label === 'Expand Visible')}
-                style={{
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '8px',
-                  padding: '8px 10px',
-                  background: canToggleVisibleProductMarginCustomers ? '#fff' : '#f1f5f9',
-                  color: canToggleVisibleProductMarginCustomers ? '#334155' : '#94a3b8',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: canToggleVisibleProductMarginCustomers ? 'pointer' : 'not-allowed',
-                  flex: '0 0 auto',
-                }}
-              >
-                {label}
-              </button>
-            ))}
           </div>
 
           {!sortedVisibleProductMarginCustomerGroups.length ? (
@@ -12033,17 +12066,14 @@ export default function OperationsTab({
               </thead>
               <tbody>
                 {sortedVisibleProductMarginCustomerGroups.map((group) => {
-                  const expanded =
-                    productMarginCustomerFilter !== 'all' ||
-                    Boolean(productMarginItemSearchTerm) ||
-                    expandedProductMarginCustomers[group.key] === true;
+                  const expanded = isProductMarginGroupExpanded(group.key);
                   return (
                     <React.Fragment key={group.key}>
                       <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                         <td style={productMarginTextCellStyle('aprPartNumber', { color: '#0f172a', fontWeight: 800, maxWidth: '96px' })}>
                           <button
                             type="button"
-                            onClick={() => toggleProductMarginCustomerExpanded(group.key)}
+                            onClick={() => toggleProductMarginCustomerExpanded(productMarginExpandKey(group.key), expanded)}
                             style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontSize: '12px', fontWeight: 800, padding: 0 }}
                           >
                             {expanded ? '▼' : '▶'} Summary
@@ -12158,8 +12188,9 @@ export default function OperationsTab({
         wrap?: boolean;
         render: (row: any) => React.ReactNode;
       }> = [
-        { key: 'item', label: 'Item', render: (row) => row.item || 'N/A' },
+        { key: 'item', label: 'APR P/N', render: (row) => row.item || 'N/A' },
         { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
+        { key: 'line', label: 'Line', align: 'right', width: '44px', maxWidth: '52px', render: (row) => (row.line == null ? '' : row.line) },
         { key: 'customerGroup', label: 'Customer Group', width: '108px', maxWidth: '126px', render: (row) => row.customerGroup || 'N/A' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
@@ -12191,6 +12222,13 @@ export default function OperationsTab({
       ];
 
       const formatWindowDate = (isoDate: string) => (isoDate ? formatRawDate(isoDate) : 'N/A');
+      const wholesaleRawHasSearch = Boolean(
+        wholesaleRawCustomerIdSearch.trim() ||
+          wholesaleRawCustomerFilter ||
+          wholesaleRawCustomerGroupFilter ||
+          wholesaleRawItemSearch.trim() ||
+          wholesaleRawOrderSearch.trim()
+      );
       const emptyMessage = !hasWholesaleRawCustomerScope
         ? 'Select a customer or group to load open order lines.'
         : wholesaleRawLinesLoading
@@ -12262,7 +12300,7 @@ export default function OperationsTab({
               </option>
               {wholesaleRawCustomers.map((customer) => (
                 <option key={customer.key} value={customer.key}>
-                  {customer.label}{customer.customerId ? ` (${customer.customerId})` : ''}
+                  {customer.label}
                 </option>
               ))}
             </select>
@@ -12288,8 +12326,8 @@ export default function OperationsTab({
               type="search"
               value={wholesaleRawItemSearch}
               onChange={(event) => setWholesaleRawItemSearch(event.target.value)}
-              placeholder="Search Item ID"
-              aria-label="Search Item ID"
+              placeholder="APR P/N"
+              aria-label="APR P/N"
               style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '200px', background: 'white' }}
             />
             <input
@@ -12300,6 +12338,30 @@ export default function OperationsTab({
               aria-label="Search Order #"
               style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '160px', background: 'white' }}
             />
+            <button
+              type="button"
+              onClick={() => {
+                setWholesaleRawCustomerIdSearch('');
+                setWholesaleRawCustomerFilter('');
+                setWholesaleRawCustomerGroupFilter('');
+                setWholesaleRawItemSearch('');
+                setWholesaleRawOrderSearch('');
+              }}
+              disabled={!wholesaleRawHasSearch}
+              title="Clear Customer ID, customer, group, APR P/N, and Order # searches"
+              style={{
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '12px',
+                fontWeight: 700,
+                background: 'white',
+                color: wholesaleRawHasSearch ? '#334155' : '#94a3b8',
+                cursor: wholesaleRawHasSearch ? 'pointer' : 'not-allowed',
+              }}
+            >
+              Reset
+            </button>
             </div>
           </div>
 
