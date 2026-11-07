@@ -20,6 +20,7 @@ import {
   type VendorForecastLinePatch,
 } from '@/lib/operations/vendor-monthly-forecast-db';
 import { loadCustomerGroups, withCustomerGroups } from '@/lib/operations/customer-groups';
+import { suggestVendorForecastItems } from '@/lib/operations/item-suggestions';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,13 @@ export async function GET(request: NextRequest) {
     const vendorId = String(request.nextUrl.searchParams.get('vendorId') || '').trim();
     const vendorName = String(request.nextUrl.searchParams.get('vendorName') || '').trim();
     const itemSku = String(request.nextUrl.searchParams.get('itemSku') || '').trim();
+    const itemSuggest = String(request.nextUrl.searchParams.get('itemSuggest') || '').trim();
+
+    if (itemSuggest) {
+      return NextResponse.json({
+        suggestions: await suggestVendorForecastItems({ companyId, year, query: itemSuggest, vendorId: vendorId || undefined }),
+      });
+    }
 
     if (itemSku && !vendorId && !vendorName) {
       const itemVendors = await loadVendorForecastVendorsForItem(companyId, year, itemSku);

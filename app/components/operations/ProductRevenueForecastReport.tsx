@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import SuggestInput, { customerIdSuggestionsFor, fetchSuggestions } from './SuggestInput';
 import {
   FORECAST_MONTH_FULL_LABELS,
   FORECAST_MONTHS,
@@ -251,6 +252,12 @@ export default function ProductRevenueForecastReport({
   const [customerKey, setCustomerKey] = useState('');
   const [customerGroup, setCustomerGroup] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const loadAprSuggestions = useCallback(
+    (query: string, signal: AbortSignal) =>
+      fetchSuggestions('/api/operational-data/product-forecast', { companyId: selectedCompanyId, itemSuggest: query }, signal),
+    [selectedCompanyId]
+  );
+  const customerIdSuggestions = useMemo(() => customerIdSuggestionsFor(customers), [customers]);
   const [lines, setLines] = useState<ForecastLine[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingLines, setLoadingLines] = useState(false);
@@ -997,13 +1004,7 @@ export default function ProductRevenueForecastReport({
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Customer ID
-          <input
-            type="search"
-            value={customerIdSearch}
-            onChange={(event) => handleCustomerIdSearchChange(event.target.value)}
-            placeholder="Search customer ID"
-            style={{ ...inputStyle, width: 144 }}
-          />
+          <SuggestInput value={customerIdSearch} onChange={handleCustomerIdSearchChange} suggestions={customerIdSuggestions} placeholder="Search customer ID" style={{ ...inputStyle, width: 144 }} />
           {customerIdSearchError && <span style={{ color: '#b91c1c', fontSize: 11, fontWeight: 600 }}>{customerIdSearchError}</span>}
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
@@ -1026,10 +1027,10 @@ export default function ProductRevenueForecastReport({
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           APR P/N
-          <input
-            type="search"
+          <SuggestInput
             value={itemIdFilter}
-            onChange={(event) => onItemIdFilterChange?.(event.target.value)}
+            onChange={(value) => onItemIdFilterChange?.(value)}
+            loadSuggestions={loadAprSuggestions}
             placeholder="Search APR P/N"
             style={{ ...inputStyle, width: 144 }}
           />

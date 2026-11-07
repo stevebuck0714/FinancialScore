@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import SuggestInput, { labeledSuggestionsFor } from './SuggestInput';
 import { formatEstDate, formatEstDateLabel } from '@/lib/time/eastern';
 import type { CompanyItemDutyPatch, CompanyItemDutyRow } from '@/lib/hts/item-duty-overlay';
 
@@ -391,6 +392,15 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       .filter((vendor) => Boolean(vendor.label));
   }, [scopedItems, offshoreVendors]);
 
+  const vendorIdSuggestions = useMemo(
+    () => labeledSuggestionsFor(vendorOptions.map((vendor) => ({ value: vendor.vendorId, label: vendor.label }))),
+    [vendorOptions]
+  );
+  const aprSuggestions = useMemo(
+    () => labeledSuggestionsFor(scopedItems.map((row) => ({ value: row.itemSku, label: row.itemDescription }))),
+    [scopedItems]
+  );
+
   const effectiveVendorFilter =
     vendorFilter === ALL_VENDORS_KEY || vendorOptions.some((vendor) => vendor.key === vendorFilter)
       ? vendorFilter
@@ -695,11 +705,10 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
       <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', alignItems: 'end', marginBottom: 12, overflowX: 'auto' }}>
         <label style={filterLabelStyle}>
           Vendor ID
-          <input
-            type="search"
+          <SuggestInput
             value={vendorIdSearch}
-            onChange={(event) => {
-              const nextVendorId = event.target.value;
+            suggestions={vendorIdSuggestions}
+            onChange={(nextVendorId) => {
               setVendorIdSearch(nextVendorId);
               const matchingVendor = vendorOptions.find(
                 (vendor) => vendor.vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
@@ -727,10 +736,10 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
         </label>
         <label style={filterLabelStyle}>
           APR P/N
-          <input
-            type="search"
+          <SuggestInput
             value={aprSearch}
-            onChange={(event) => handleAprSearchChange(event.target.value)}
+            onChange={handleAprSearchChange}
+            suggestions={aprSuggestions}
             placeholder="Search APR P/N"
             style={{ ...inputStyle, width: 160 }}
           />

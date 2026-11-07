@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import SuggestInput, { fetchSuggestions, labeledSuggestionsFor } from './SuggestInput';
 import ReportSummaryCards from './ReportSummaryCards';
 import { useAprVendorLookup } from './useAprVendorLookup';
 import {
@@ -157,12 +158,21 @@ export default function VendorForecastRollupReport({
   onOpenInfo,
 }: VendorForecastRollupReportProps) {
   const [year, setYear] = useState(currentYear());
+  const loadAprSuggestions = useCallback(
+    (query: string, signal: AbortSignal) =>
+      fetchSuggestions('/api/operational-data/vendor-forecast', { companyId: selectedCompanyId, year: String(year), itemSuggest: query }, signal),
+    [selectedCompanyId, year]
+  );
   const [dataThru, setDataThru] = useState('');
   const [vendorIdSearch, setVendorIdSearch] = useState('');
   const [vendorKey, setVendorKey] = useState('');
   const [aprSearch, setAprSearch] = useState('');
   const [aprVendorKey, setAprVendorKey] = useState('');
   const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const vendorIdSuggestions = useMemo(
+    () => labeledSuggestionsFor(vendors.map((vendor) => ({ value: vendor.vendorId, label: vendor.vendorName || vendor.label }))),
+    [vendors]
+  );
   const [lines, setLines] = useState<ForecastLine[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [loadingLines, setLoadingLines] = useState(false);
@@ -458,10 +468,10 @@ export default function VendorForecastRollupReport({
       <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', alignItems: 'end', marginBottom: 12, overflowX: 'auto' }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Vendor ID
-          <input
-            type="search"
+          <SuggestInput
             value={vendorIdSearch}
-            onChange={(event) => handleVendorIdSearchChange(event.target.value)}
+            onChange={handleVendorIdSearchChange}
+            suggestions={vendorIdSuggestions}
             placeholder="Search vendor ID"
             style={{ ...inputStyle, width: 180 }}
           />
@@ -486,10 +496,10 @@ export default function VendorForecastRollupReport({
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           APR P/N
-          <input
-            type="search"
+          <SuggestInput
             value={aprSearch}
-            onChange={(event) => setAprSearch(event.target.value)}
+            onChange={setAprSearch}
+            loadSuggestions={loadAprSuggestions}
             placeholder="Search APR P/N"
             style={{ ...inputStyle, width: 160 }}
           />

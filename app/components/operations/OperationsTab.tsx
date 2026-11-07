@@ -24,6 +24,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
+import SuggestInput, { customerIdSuggestionsFor, labeledSuggestionsFor, valueSuggestionsFor } from './SuggestInput';
 import OperationalReportPanel from './OperationalReportPanel';
 import OperationalReportPageLayout from './OperationalReportPageLayout';
 import SortableReportCollection from './SortableReportCollection';
@@ -11953,17 +11954,18 @@ export default function OperationsTab({
           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', overflowX: 'auto', paddingBottom: '4px', marginBottom: '14px' }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', fontWeight: 600, flex: '0 0 auto' }}>
               Customer ID
-              <input
-                type="search"
+              <SuggestInput
                 value={productMarginCustomerIdSearch}
-                onChange={(event) => {
-                  const nextCustomerId = event.target.value;
+                onChange={(nextCustomerId) => {
                   setProductMarginCustomerIdSearch(nextCustomerId);
                   selectProductMarginCustomer(nextCustomerId);
                 }}
                 onBlur={() => selectProductMarginCustomer(productMarginCustomerIdSearch)}
+                suggestions={customerIdSuggestionsFor(
+                  productMarginCustomerGroups.map((group) => ({ customerId: group.customerId, label: group.customerName }))
+                )}
                 placeholder="Search customer ID"
-                aria-label="Search Customer ID"
+                ariaLabel="Search Customer ID"
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
               />
             </label>
@@ -12008,12 +12010,20 @@ export default function OperationsTab({
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', fontWeight: 600, flex: '0 0 auto' }}>
               APR P/N
-              <input
-                type="search"
+              <SuggestInput
                 value={productMarginItemSearch}
-                onChange={(event) => setProductMarginItemSearch(event.target.value)}
+                onChange={setProductMarginItemSearch}
+                suggestions={valueSuggestionsFor(
+                  productMarginCustomerGroups
+                    .filter(
+                      (group) =>
+                        (!productMarginCustomerFilter || productMarginCustomerFilter === 'all' || group.key === productMarginCustomerFilter) &&
+                        (!productMarginCustomerGroupFilter || group.customerGroup === productMarginCustomerGroupFilter)
+                    )
+                    .flatMap((group) => group.rows.map((row: any) => row?.aprPartNumber))
+                )}
                 placeholder="Search APR P/N"
-                aria-label="Search APR P/N"
+                ariaLabel="Search APR P/N"
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
               />
             </label>
@@ -12265,11 +12275,10 @@ export default function OperationsTab({
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <input
-              type="search"
+            <SuggestInput
               value={wholesaleRawCustomerIdSearch}
-              onChange={(event) => {
-                const nextCustomerId = event.target.value;
+              suggestions={customerIdSuggestionsFor(wholesaleRawCustomers)}
+              onChange={(nextCustomerId) => {
                 setWholesaleRawCustomerIdSearch(nextCustomerId);
                 const matchingCustomer = wholesaleRawCustomers.find(
                   (customer) =>
@@ -12281,7 +12290,7 @@ export default function OperationsTab({
                 }
               }}
               placeholder="Search Customer ID"
-              aria-label="Search Customer ID"
+              ariaLabel="Search Customer ID"
               style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '180px', background: 'white', color: '#0f172a' }}
             />
             <select
@@ -12322,12 +12331,15 @@ export default function OperationsTab({
                 .sort((a, b) => a.localeCompare(b))
                 .map((group) => <option key={group} value={group}>{group}</option>)}
             </select>
-            <input
-              type="search"
+            <SuggestInput
               value={wholesaleRawItemSearch}
-              onChange={(event) => setWholesaleRawItemSearch(event.target.value)}
+              onChange={setWholesaleRawItemSearch}
+              suggestions={valueSuggestionsFor([
+                ...wholesaleRawBaseRows.map((row) => row.item),
+                ...wholesaleRawFilledBaseRows.map((row) => row.item),
+              ].filter((item) => item !== 'N/A'))}
               placeholder="APR P/N"
-              aria-label="APR P/N"
+              ariaLabel="APR P/N"
               style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '200px', background: 'white' }}
             />
             <input
@@ -12666,11 +12678,15 @@ export default function OperationsTab({
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <input
-                type="search"
+              <SuggestInput
                 value={vendorPricingVendorIdSearch}
-                onChange={(event) => {
-                  const nextVendorId = event.target.value;
+                suggestions={labeledSuggestionsFor(
+                  vendorPricingVendorOptions.map((vendor) => {
+                    const [vendorId, vendorName] = vendor.key.split('||');
+                    return { value: vendorId, label: vendorName };
+                  })
+                )}
+                onChange={(nextVendorId) => {
                   setVendorPricingVendorIdSearch(nextVendorId);
                   const matchingVendor = vendorPricingVendorOptions.find(
                     (vendor) => vendor.key.split('||')[0].trim().toLowerCase() === nextVendorId.trim().toLowerCase()
@@ -12678,7 +12694,7 @@ export default function OperationsTab({
                   if (matchingVendor) setVendorPricingVendorFilter(matchingVendor.key);
                 }}
                 placeholder="Search Vendor ID"
-                aria-label="Search Vendor ID"
+                ariaLabel="Search Vendor ID"
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', width: '180px', background: 'white', color: '#0f172a' }}
               />
               <select

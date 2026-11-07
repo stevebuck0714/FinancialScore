@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import SuggestInput, { labeledSuggestionsFor } from './SuggestInput';
 import type {
   CompanyItemFreightPatch,
   CompanyItemFreightRow,
@@ -319,6 +320,15 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
 
   const selectedVendor = vendorOptions.find((vendor) => vendor.key === selectedVendorKey) || null;
 
+  const vendorIdSuggestions = useMemo(
+    () => labeledSuggestionsFor(vendorOptions.map((vendor) => ({ value: vendor.vendorId, label: vendor.label }))),
+    [vendorOptions]
+  );
+  const aprSuggestions = useMemo(
+    () => labeledSuggestionsFor(items.map((row) => ({ value: row.itemSku, label: row.itemDescription }))),
+    [items]
+  );
+
   const aprQuery = aprSearch.trim().toLowerCase();
 
   const aprVendorKeys = useMemo(
@@ -596,11 +606,10 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
       <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', alignItems: 'end', marginBottom: 12, overflowX: 'auto' }}>
         <label style={filterLabelStyle}>
           Vendor ID
-          <input
-            type="search"
+          <SuggestInput
             value={vendorIdSearch}
-            onChange={(event) => {
-              const nextVendorId = event.target.value;
+            suggestions={vendorIdSuggestions}
+            onChange={(nextVendorId) => {
               setVendorIdSearch(nextVendorId);
               const matchingVendor = vendorOptions.find(
                 (vendor) => vendor.vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
@@ -632,10 +641,10 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
         ) : null}
         <label style={filterLabelStyle}>
           APR P/N
-          <input
-            type="search"
+          <SuggestInput
             value={aprSearch}
-            onChange={(event) => handleAprSearchChange(event.target.value)}
+            onChange={handleAprSearchChange}
+            suggestions={aprSuggestions}
             placeholder="Search APR P/N"
             style={{ ...inputStyle, width: 160 }}
           />

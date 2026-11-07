@@ -28,6 +28,7 @@ import {
 import prisma from '@/lib/prisma';
 import { loadCustomerGroups, saveCustomerGroup, withCustomerGroups } from '@/lib/operations/customer-groups';
 import { withProductReportCache } from '@/lib/operations/product-report-cache';
+import { suggestProductItems } from '@/lib/operations/item-suggestions';
 import { getActiveSgpBudgetLock } from '@/lib/operations/product-sgp-budget-lock';
 import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
 import { formatEstDate } from '@/lib/time/eastern';
@@ -241,6 +242,12 @@ export async function GET(request: NextRequest) {
     const refresh = ['1', 'true', 'yes'].includes(
       String(request.nextUrl.searchParams.get('refresh') || '').trim().toLowerCase()
     );
+
+    const itemSuggest = String(request.nextUrl.searchParams.get('itemSuggest') || '').trim();
+    if (itemSuggest) {
+      await ensureProductRevenueForecastTables();
+      return NextResponse.json({ suggestions: await suggestProductItems({ companyId, query: itemSuggest }) });
+    }
 
     if (request.nextUrl.searchParams.get('itemCustomers') === '1') {
       const itemSku = String(request.nextUrl.searchParams.get('itemSku') || '').trim();

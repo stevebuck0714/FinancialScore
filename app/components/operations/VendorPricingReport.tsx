@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import SuggestInput, { labeledSuggestionsFor } from './SuggestInput';
 import ReportSummaryCards from './ReportSummaryCards';
 import {
   VENDOR_PRICING_APPROVAL_STATUSES,
@@ -253,6 +254,10 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
     rows.forEach((row) => byId.set(row.vendorId, row.vendorName || row.vendorId));
     return [...byId.entries()].sort((a, b) => compareText(a[1], b[1]));
   }, [rows]);
+  const vendorIdSuggestions = useMemo(
+    () => labeledSuggestionsFor(vendorOptions.map(([value, label]) => ({ value, label }))),
+    [vendorOptions]
+  );
 
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -351,11 +356,10 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
       </p>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-        <input
-          type="search"
+        <SuggestInput
           value={vendorIdSearch}
-          onChange={(event) => {
-            const nextVendorId = event.target.value;
+          suggestions={vendorIdSuggestions}
+          onChange={(nextVendorId) => {
             setVendorIdSearch(nextVendorId);
             const matchingVendor = vendorOptions.find(
               ([vendorId]) => vendorId.trim().toLowerCase() === nextVendorId.trim().toLowerCase()
@@ -363,7 +367,7 @@ export default function VendorPricingReport({ selectedCompanyId, onOpenInfo }: V
             if (matchingVendor) setVendorFilter(matchingVendor[0]);
           }}
           placeholder="Search Vendor ID"
-          aria-label="Search Vendor ID"
+          ariaLabel="Search Vendor ID"
           style={{ ...inputStyle, width: 180, padding: '7px 8px' }}
         />
         <select

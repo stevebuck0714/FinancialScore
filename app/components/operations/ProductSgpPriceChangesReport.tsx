@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { estYear } from '@/lib/time/eastern';
+import SuggestInput, { customerIdSuggestionsFor } from './SuggestInput';
 import type { SgpPriceChangeLine, SgpPriceChangesDataset } from '@/lib/operations/product-sgp-price-changes';
 
 type ProductSgpPriceChangesReportProps = {
@@ -145,6 +146,16 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
     return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
   }, [dataset]);
 
+  const customerIdSuggestions = useMemo(() => customerIdSuggestionsFor(customerOptions), [customerOptions]);
+
+  const aprSuggestions = useMemo(() => {
+    const nameBySku = new Map<string, string>();
+    for (const line of dataset?.lines || []) {
+      if (!nameBySku.has(line.itemSku)) nameBySku.set(line.itemSku, line.itemName || '');
+    }
+    return Array.from(nameBySku, ([value, label]) => ({ value, label }));
+  }, [dataset]);
+
   const groupOptions = useMemo(
     () =>
       Array.from(new Set((dataset?.lines || []).map((line) => line.customerGroup).filter(Boolean))).sort((a, b) =>
@@ -278,10 +289,10 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginTop: 16 }}>
           <label style={filterLabelStyle}>
             Customer ID
-            <input
-              type="search"
+            <SuggestInput
               value={customerIdSearch}
-              onChange={(event) => handleCustomerIdSearchChange(event.target.value)}
+              onChange={handleCustomerIdSearchChange}
+              suggestions={customerIdSuggestions}
               placeholder="Search customer ID"
               style={{ ...inputStyle, width: 180 }}
             />
@@ -306,10 +317,10 @@ export default function ProductSgpPriceChangesReport({ selectedCompanyId, onOpen
           </label>
           <label style={filterLabelStyle}>
             APR P/N
-            <input
-              type="search"
+            <SuggestInput
               value={aprSearch}
-              onChange={(event) => setAprSearch(event.target.value)}
+              onChange={setAprSearch}
+              suggestions={aprSuggestions}
               placeholder="Search APR P/N"
               style={{ ...inputStyle, width: 180 }}
             />

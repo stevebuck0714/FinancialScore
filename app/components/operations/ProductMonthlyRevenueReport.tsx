@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import SuggestInput, { customerIdSuggestionsFor } from './SuggestInput';
 import ReportSummaryCards from './ReportSummaryCards';
 import {
   FORECAST_MONTH_FULL_LABELS,
@@ -209,6 +210,7 @@ export default function ProductMonthlyRevenueReport({
   const [customerKey, setCustomerKey] = useState('');
   const [customerGroup, setCustomerGroup] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const customerIdSuggestions = useMemo(() => customerIdSuggestionsFor(customers), [customers]);
   const [lines, setLines] = useState<RevenueLine[]>([]);
   const [totals, setTotals] = useState<RevenueTotals>(emptyTotals());
   const [shippingDays, setShippingDays] = useState<ShippingDay[]>([]);
@@ -608,13 +610,7 @@ export default function ProductMonthlyRevenueReport({
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Customer ID
-          <input
-            type="search"
-            value={customerIdSearch}
-            onChange={(event) => handleCustomerIdSearchChange(event.target.value)}
-            placeholder="Search customer ID"
-            style={{ ...inputStyle, width: 180 }}
-          />
+          <SuggestInput value={customerIdSearch} onChange={handleCustomerIdSearchChange} suggestions={customerIdSuggestions} placeholder="Search customer ID" style={{ ...inputStyle, width: 180 }} />
           {customerIdSearchError && <span style={{ color: '#b91c1c', fontSize: 11, fontWeight: 600 }}>{customerIdSearchError}</span>}
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>

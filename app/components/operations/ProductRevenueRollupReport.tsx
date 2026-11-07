@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import SuggestInput, { fetchSuggestions, customerIdSuggestionsFor } from './SuggestInput';
 import ReportSummaryCards from './ReportSummaryCards';
 import {
   FORECAST_MONTH_LABELS,
@@ -235,6 +236,11 @@ export default function ProductRevenueRollupReport({
   onOpenInfo,
 }: ProductRevenueRollupReportProps) {
   const [year, setYear] = useState(currentYear());
+  const loadAprSuggestions = useCallback(
+    (query: string, signal: AbortSignal) =>
+      fetchSuggestions('/api/operational-data/product-forecast', { companyId: selectedCompanyId, itemSuggest: query }, signal),
+    [selectedCompanyId]
+  );
   const [catalogSourceYear, setCatalogSourceYear] = useState<number | null>(null);
   const [dataThru, setDataThru] = useState('');
   const [customerIdSearch, setCustomerIdSearch] = useState('');
@@ -242,6 +248,7 @@ export default function ProductRevenueRollupReport({
   const [customerKey, setCustomerKey] = useState('');
   const [customerGroup, setCustomerGroup] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const customerIdSuggestions = useMemo(() => customerIdSuggestionsFor(customers), [customers]);
   const [lines, setLines] = useState<RevenueLine[]>([]);
   const [totals, setTotals] = useState<RevenueTotals>(emptyTotals());
   const [shippingDays, setShippingDays] = useState<ShippingDay[]>([]);
@@ -550,13 +557,7 @@ export default function ProductRevenueRollupReport({
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 12 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           Customer ID
-          <input
-            type="search"
-            value={customerIdSearch}
-            onChange={(event) => handleCustomerIdSearchChange(event.target.value)}
-            placeholder="Search customer ID"
-            style={{ ...inputStyle, width: 180 }}
-          />
+          <SuggestInput value={customerIdSearch} onChange={handleCustomerIdSearchChange} suggestions={customerIdSuggestions} placeholder="Search customer ID" style={{ ...inputStyle, width: 180 }} />
           {customerIdSearchError && <span style={{ color: '#b91c1c', fontSize: 11, fontWeight: 600 }}>{customerIdSearchError}</span>}
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
@@ -576,10 +577,10 @@ export default function ProductRevenueRollupReport({
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#334155', fontWeight: 600 }}>
           APR P/N
-          <input
-            type="search"
+          <SuggestInput
             value={aprSearch}
-            onChange={(event) => setAprSearch(event.target.value)}
+            onChange={setAprSearch}
+            loadSuggestions={loadAprSuggestions}
             placeholder="Search APR P/N"
             style={{ ...inputStyle, width: 180 }}
           />
