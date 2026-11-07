@@ -213,7 +213,7 @@ type WholesaleRawSortKey =
   | 'qty'
   | 'qtyShipped'
   | 'unitPrice'
-  | 'customerGroup'
+  | 'customerName'
   | 'customerPartNumber'
   | 'openRevenue'
   | 'revenue';
@@ -11101,7 +11101,7 @@ export default function OperationsTab({
             Number(row?.unitPrice ?? row?.price ?? 0) ||
             (qty !== 0 && Number.isFinite(revenue) ? Math.abs(revenue / qty) : 0);
           const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
-          const customerGroup = String(row?.customerGroup || '').trim();
+          const customerName = String(row?.customerName || row?.customer || '').trim();
           const customerPartNumber = String(row?.customerPartNumber || row?.aprSgpCustomerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
           return {
             key: `${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || row?.sourceTransaction || '')}-${String(row?.lineId || '')}`,
@@ -11114,7 +11114,7 @@ export default function OperationsTab({
             qty,
             qtyShipped,
             unitPrice,
-            customerGroup,
+            customerName,
             openRevenue: (qty - shippedQty) * unitPrice,
             revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
           };
@@ -11148,7 +11148,7 @@ export default function OperationsTab({
       'order',
       'customerId',
       'isoDate',
-      'customerGroup',
+      'customerName',
       'customerPartNumber',
     ]);
     const wholesaleRawNumericSortKeys = new Set<WholesaleRawSortKey>([
@@ -11203,7 +11203,7 @@ export default function OperationsTab({
             Number(row?.unitPrice ?? row?.price ?? 0) ||
             (qty !== 0 && Number.isFinite(revenue) ? Math.abs(revenue / qty) : 0);
           const customerId = String(row?.customerId || row?.customerNumber || row?.custNum || '').trim();
-          const customerGroup = String(row?.customerGroup || '').trim();
+          const customerName = String(row?.customerName || row?.customer || '').trim();
           const customerPartNumber = String(row?.customerPartNumber || row?.aprSgpCustomerPartNumber || row?.customerPn || row?.customerPN || row?.customerItem || row?.customerSku || row?.custItem || row?.CustItem || '').trim();
           return {
             key: `filled-${index}-${isoDate}-${String(row?.sku || row?.itemId || row?.itemName || '')}-${String(row?.orderId || '')}-${String(row?.lineId || '')}`,
@@ -11216,7 +11216,7 @@ export default function OperationsTab({
             qty,
             qtyShipped,
             unitPrice,
-            customerGroup,
+            customerName,
             revenue: Number.isFinite(revenue) && revenue !== 0 ? revenue : Math.abs(qty * unitPrice),
           };
         })
@@ -12252,7 +12252,7 @@ export default function OperationsTab({
         { key: 'item', label: 'APR P/N', render: (row) => row.item || 'N/A' },
         { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
         { key: 'line', label: 'Line', align: 'right', width: '44px', maxWidth: '52px', render: (row) => (row.line == null ? '' : row.line) },
-        { key: 'customerGroup', label: 'Customer Group', width: '108px', maxWidth: '126px', render: (row) => row.customerGroup || 'N/A' },
+        { key: 'customerName', label: 'Customer Name', width: '108px', maxWidth: '126px', render: (row) => row.customerName || 'N/A' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
         { key: 'qty', label: 'Qty ordered', align: 'right', width: '72px', maxWidth: '86px', render: (row) => formatRawQty(row.qty) },
