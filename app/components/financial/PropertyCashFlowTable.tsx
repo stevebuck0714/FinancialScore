@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import StatementTrendPopup from './StatementTrendPopup';
+import TopScrollContainer from './TopScrollContainer';
 
 type CashFlowLine = { periodEnd: string; lineKey: string; lineName: string; lineOrder: number; amount: number };
 
@@ -93,7 +94,7 @@ export default function PropertyCashFlowTable({ lines, columns, monthToColumn }:
           Hide lines with no activity
         </label>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflowX: 'auto' }}>
+      <TopScrollContainer style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
         <table style={{ width: 'max-content', borderCollapse: 'collapse', minWidth: 220 + columns.length * 84 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
@@ -127,7 +128,7 @@ export default function PropertyCashFlowTable({ lines, columns, monthToColumn }:
             })}
           </tbody>
         </table>
-      </div>
+      </TopScrollContainer>
       {selectedRow && (
         <StatementTrendPopup
           label={selectedRow.label}
