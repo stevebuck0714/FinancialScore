@@ -16,20 +16,29 @@ export async function GET() {
       where: { id: context.userId },
       select: { id: true, role: true, isAccountManager: true },
     });
-    if (!user || user.role !== 'USER' || !user.isAccountManager) {
+    if (!user || user.role !== 'USER') {
       await auditForbiddenAccess('AccountManagerAccounts', context.userId, 'READ');
       return NextResponse.json(
-        { error: 'Forbidden: Account Manager access required' },
+        { error: 'Forbidden: company user access required' },
         { status: 403, headers: NO_STORE_HEADERS },
       );
     }
 
     await ensureLegacyCompanyAccess(user.id);
     const accessible = await listAccessibleCompaniesForUser(user.id);
+    const accountManager = user.isAccountManager;
+    // Other company users only see My Accounts when they can switch between companies.
+    if (!accountManager && accessible.length < 2) {
+      await auditForbiddenAccess('AccountManagerAccounts', context.userId, 'READ');
+      return NextResponse.json(
+        { error: 'Forbidden: My Accounts requires access to more than one company' },
+        { status: 403, headers: NO_STORE_HEADERS },
+      );
+    }
     const companyIds = accessible.map((c) => c.companyId).filter(Boolean);
     if (companyIds.length === 0) {
       return NextResponse.json(
-        { accounts: [], activeCompanyId: null },
+        { accounts: [], activeCompanyId: null, accountManager },
         { headers: NO_STORE_HEADERS },
       );
     }
@@ -55,10 +64,14 @@ export async function GET() {
       .map((entry) => {
         const company = companyById.get(entry.companyId);
         if (!company || company.name.includes(' (DELETED)')) return null;
-        return {
+        const summary = {
           companyId: company.id,
           name: company.name,
           companyRole: String(entry.companyRole || 'user').toLowerCase() === 'admin' ? 'admin' : 'user',
+        };
+        if (!accountManager) return summary;
+        return {
+          ...summary,
           owner: company.consultant?.companyName || company.consultant?.fullName || 'Standalone business',
           subscriptionStatus: company.subscriptionStatus || null,
           accountingSystem: company.accountingSystem || null,
@@ -73,7 +86,7 @@ export async function GET() {
         ? context.companyId
         : null;
 
-    return NextResponse.json({ accounts, activeCompanyId }, { headers: NO_STORE_HEADERS });
+    return NextResponse.json({ accounts, activeCompanyId, accountManager }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('Unauthorized')) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401, headers: NO_STORE_HEADERS });

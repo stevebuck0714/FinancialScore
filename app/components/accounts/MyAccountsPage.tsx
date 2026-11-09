@@ -8,10 +8,11 @@ type AccountSummary = {
   companyId: string;
   name: string;
   companyRole: 'admin' | 'user';
-  owner: string;
-  subscriptionStatus: string | null;
-  accountingSystem: string | null;
-  lastSyncAt: string | null;
+  /** Account-management details; only returned to Account Managers. */
+  owner?: string;
+  subscriptionStatus?: string | null;
+  accountingSystem?: string | null;
+  lastSyncAt?: string | null;
 };
 
 type StatusFilter = 'all' | 'active' | 'paused' | 'cancelled';
@@ -25,6 +26,7 @@ const statusColors: Record<string, { background: string; color: string }> = {
 export default function MyAccountsPage() {
   const [accounts, setAccounts] = React.useState<AccountSummary[]>([]);
   const [activeCompanyId, setActiveCompanyId] = React.useState<string | null>(null);
+  const [accountManager, setAccountManager] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState('');
@@ -45,6 +47,7 @@ export default function MyAccountsPage() {
         if (cancelled) return;
         setAccounts(Array.isArray(data?.accounts) ? data.accounts : []);
         setActiveCompanyId(typeof data?.activeCompanyId === 'string' ? data.activeCompanyId : null);
+        setAccountManager(Boolean(data?.accountManager));
       } catch (error) {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Failed to load your accounts');
       } finally {
@@ -63,7 +66,7 @@ export default function MyAccountsPage() {
       const status = String(account.subscriptionStatus || '').toLowerCase();
       if (statusFilter !== 'all' && status !== statusFilter) return false;
       if (!query) return true;
-      return account.name.toLowerCase().includes(query) || account.owner.toLowerCase().includes(query);
+      return account.name.toLowerCase().includes(query) || String(account.owner || '').toLowerCase().includes(query);
     });
   }, [accounts, search, statusFilter]);
 
@@ -82,19 +85,19 @@ export default function MyAccountsPage() {
       <div style={{ marginBottom: '20px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', margin: '0 0 6px 0' }}>My Accounts</h1>
         <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-          Companies assigned to you by a site administrator. Opening an account fully closes the one you are in.
+          {accountManager ? 'Companies assigned to you by a site administrator.' : 'Companies you have access to.'} Opening an account fully closes the one you are in.
         </p>
       </div>
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <input
           type="search"
-          placeholder="Search by company or consulting firm"
+          placeholder={accountManager ? 'Search by company or consulting firm' : 'Search by company'}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           style={{ flex: '1 1 280px', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
         />
-        <select
+        {accountManager && <select
           value={statusFilter}
           onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
@@ -103,7 +106,7 @@ export default function MyAccountsPage() {
           <option value="active">Active</option>
           <option value="paused">Paused</option>
           <option value="cancelled">Cancelled</option>
-        </select>
+        </select>}
       </div>
 
       {loading ? (
@@ -123,10 +126,10 @@ export default function MyAccountsPage() {
             <thead>
               <tr style={{ background: '#f8fafc', textAlign: 'left', color: '#475569' }}>
                 <th style={{ padding: '10px 16px', fontWeight: 600 }}>Company</th>
-                <th style={{ padding: '10px 16px', fontWeight: 600 }}>Consulting firm</th>
+                {accountManager && <th style={{ padding: '10px 16px', fontWeight: 600 }}>Consulting firm</th>}
                 <th style={{ padding: '10px 16px', fontWeight: 600 }}>Your access</th>
-                <th style={{ padding: '10px 16px', fontWeight: 600 }}>Status</th>
-                <th style={{ padding: '10px 16px', fontWeight: 600 }}>Last sync</th>
+                {accountManager && <th style={{ padding: '10px 16px', fontWeight: 600 }}>Status</th>}
+                {accountManager && <th style={{ padding: '10px 16px', fontWeight: 600 }}>Last sync</th>}
                 <th style={{ padding: '10px 16px' }} />
               </tr>
             </thead>
@@ -144,11 +147,11 @@ export default function MyAccountsPage() {
                         <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: 700, color: '#1F70C1' }}>CURRENT</span>
                       )}
                     </td>
-                    <td style={{ padding: '12px 16px', color: '#475569' }}>{account.owner}</td>
+                    {accountManager && <td style={{ padding: '12px 16px', color: '#475569' }}>{account.owner}</td>}
                     <td style={{ padding: '12px 16px', color: '#475569' }}>
                       {account.companyRole === 'admin' ? 'Company Admin' : 'Company User'}
                     </td>
-                    <td style={{ padding: '12px 16px' }}>
+                    {accountManager && <td style={{ padding: '12px 16px' }}>
                       {status ? (
                         <span style={{ ...statusStyle, padding: '2px 8px', borderRadius: '999px', fontSize: '12px', fontWeight: 600, textTransform: 'capitalize' }}>
                           {status}
@@ -156,10 +159,10 @@ export default function MyAccountsPage() {
                       ) : (
                         <span style={{ color: '#94a3b8' }}>—</span>
                       )}
-                    </td>
-                    <td style={{ padding: '12px 16px', color: '#475569' }}>
+                    </td>}
+                    {accountManager && <td style={{ padding: '12px 16px', color: '#475569' }}>
                       {account.lastSyncAt ? formatEstDateTime(account.lastSyncAt) : 'Never'}
-                    </td>
+                    </td>}
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <button
                         type="button"
@@ -184,7 +187,7 @@ export default function MyAccountsPage() {
               })}
               {visibleAccounts.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+                  <td colSpan={accountManager ? 6 : 3} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
                     No accounts match your search.
                   </td>
                 </tr>

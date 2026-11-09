@@ -17,6 +17,13 @@ export function isAccountManagerUser(user: any): boolean {
   return Boolean(user?.isAccountManager) && String(user?.role || '').toLowerCase() === 'user';
 }
 
+/** Account Managers, and any company user with access to more than one company, can switch companies from My Accounts. */
+export function canSwitchCompanies(user: any): boolean {
+  if (isAccountManagerUser(user)) return true;
+  const accountCount = Array.isArray(user?.accessibleCompanies) ? user.accessibleCompanies.length : 0;
+  return String(user?.role || '').toLowerCase() === 'user' && accountCount > 1;
+}
+
 export function markAccountManagerLanding(user: any) {
   if (typeof window === 'undefined') return;
   const accountCount = Array.isArray(user?.accessibleCompanies) ? user.accessibleCompanies.length : 0;

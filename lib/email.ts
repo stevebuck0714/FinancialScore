@@ -1043,7 +1043,7 @@ export async function sendExternalCompanyAccessEmail({
             ${safeAddedBy} added ${safeCompany} to your existing Corelytics account.
           </p>
           <p style="margin:0 0 14px;color:#334155;font-size:14px;">
-            Sign in with your existing credentials and select ${safeCompany} from your company list. Your password has not changed.
+            Sign in with your existing credentials, then click My Accounts at the top right and open ${safeCompany}. Your password has not changed.
           </p>
           <p style="margin:0 0 16px;">
             <a href="${safeLoginLink}" style="display:inline-block;padding:12px 18px;background:#1F70C1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">

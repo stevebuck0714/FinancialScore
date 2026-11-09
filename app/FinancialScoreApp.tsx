@@ -6,8 +6,8 @@ import { formatEstDateTime } from '@/lib/time/eastern';
 import { viewToTrafficSection } from '@/lib/traffic/sections';
 import { useSectionTracking } from '@/lib/traffic/useSectionTracking';
 import {
+  canSwitchCompanies,
   clearBrowserCompanyData,
-  isAccountManagerUser,
   shouldLandOnMyAccounts,
   subscribeToCompanySwitches,
 } from '@/lib/auth/company-switch';
@@ -4748,9 +4748,9 @@ function FinancialScorePage() {
         }
       })();
     const isAssessmentUser = savedUser?.userType === 'assessment';
-    // Account Managers move between companies; these caches carry no company
-    // label, so they are never restored for them and always come from the API.
-    if (isAccountManagerUser(savedUser)) {
+    // Users who move between companies never restore these caches; they carry
+    // no company label, so they always come from the API.
+    if (canSwitchCompanies(savedUser)) {
       saved.users = null;
       saved.records = null;
       saved.assessmentResponses = null;
@@ -17369,11 +17369,11 @@ function FinancialScorePage() {
         </div>
       )}
 
-      {currentView === 'my-accounts' && isAccountManagerUser(currentUser) && <MyAccountsPage />}
-      {currentView === 'my-accounts' && !isAccountManagerUser(currentUser) && (
+      {currentView === 'my-accounts' && canSwitchCompanies(currentUser) && <MyAccountsPage />}
+      {currentView === 'my-accounts' && !canSwitchCompanies(currentUser) && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>Not Available</h2>
-          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>My Accounts is only available to Account Managers.</p>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>My Accounts is available to Account Managers and to users with access to more than one company.</p>
         </div>
       )}
 

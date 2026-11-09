@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { APP_TIME_ZONE } from '@/lib/time/eastern';
-import { isAccountManagerUser } from '@/lib/auth/company-switch';
+import { canSwitchCompanies } from '@/lib/auth/company-switch';
 
 interface User {
   name: string | null;
@@ -50,7 +50,7 @@ export default function Header({
       ? currentUser.name
       : (previewAdminName && previewAdminName.trim() ? previewAdminName : currentUser?.name);
 
-  const showMyAccountsLink = isAccountManagerUser(currentUser) && !(previewAdminName && previewAdminName.trim());
+  const showMyAccountsLink = canSwitchCompanies(currentUser) && !(previewAdminName && previewAdminName.trim());
 
   const allowedSections = (isCompanyUser && !isCompanyAdmin && Array.isArray(currentUser?.sidebarAccess))
     ? currentUser.sidebarAccess
