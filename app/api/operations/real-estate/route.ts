@@ -73,6 +73,16 @@ async function ensureTables() {
     )
   `);
   await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RealEstateCashFlowLine" (
+      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text, "companyId" TEXT NOT NULL,
+      "sourceEntity" TEXT NOT NULL, "periodEnd" DATE NOT NULL, "lineKey" TEXT NOT NULL, "lineName" TEXT NOT NULL,
+      "lineOrder" INTEGER NOT NULL, "amount" NUMERIC(18,2) NOT NULL, "budgetAmount" NUMERIC(18,2),
+      "sourceFileName" TEXT, "sourceSheetName" TEXT, "sourceRowNumber" INTEGER,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(), "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE ("companyId","sourceEntity","periodEnd","lineKey")
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RealEstateOperationalMetric" (
       "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text, "companyId" TEXT NOT NULL,
       "periodEnd" DATE NOT NULL, "metric" TEXT NOT NULL, "value" NUMERIC(18,4) NOT NULL,
@@ -93,8 +103,13 @@ export async function GET(request: NextRequest) {
     await ensureRealEstateWaterfallTables();
     await ensureRealEstateTaxReconciliationTables();
     await applyInvestorLedgerCorrections(companyId);
-    const [allLines, investors, occupancy, cashActivities, operationalMetrics, mappings, settingsRows, aliases, taxReturns, taxDepreciationRecords] = await Promise.all([
+    const [allLines, cashFlowLines, investors, occupancy, cashActivities, operationalMetrics, mappings, settingsRows, aliases, taxReturns, taxDepreciationRecords] = await Promise.all([
       prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateFinancialLine" WHERE "companyId"=$1 ORDER BY "periodEnd", "accountCode"`, companyId),
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "sourceEntity", to_char("periodEnd", 'YYYY-MM-DD') AS "periodEnd", "lineKey", "lineName", "lineOrder", "amount"::float AS "amount"
+         FROM "RealEstateCashFlowLine" WHERE "companyId"=$1 ORDER BY "periodEnd", "lineOrder"`,
+        companyId,
+      ),
       prisma.$queryRawUnsafe<any[]>(`
         SELECT i.*, COALESCE(jsonb_agg(jsonb_build_object('entryType',e."entryType",'amount',e."amount",'effectiveDate',e."effectiveDate") ORDER BY e."effectiveDate") FILTER (WHERE e.id IS NOT NULL), '[]') AS entries
         FROM "RealEstateInvestor" i LEFT JOIN "RealEstateInvestorLedgerEntry" e ON e."investorId"=i.id
@@ -148,7 +163,7 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json({
       consolidatedReporting,
-      lines: reportLines, quickBooksLines, quickBooksMappings: savedQuickBooksMappings, bgahSource: bgahFromQuickBooks ? 'QUICKBOOKS' : 'WORKBOOK',
+      lines: reportLines, cashFlowLines, quickBooksLines, quickBooksMappings: savedQuickBooksMappings, bgahSource: bgahFromQuickBooks ? 'QUICKBOOKS' : 'WORKBOOK',
       investors, occupancy, cashActivities, operationalMetrics, mappings: reportMappings, waterfallSettings, aliases,
       taxReturns, taxDepreciationRecords,
     });

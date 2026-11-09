@@ -3,9 +3,12 @@
  *
  * Usage:
  *   npx tsx scripts/import-benns-grant-operating-data.ts --company "BGAH Demo"
+ *   npx tsx scripts/import-benns-grant-operating-data.ts --dry-run true   (parse only, no database)
  *
  * Source rules:
  * - Excel financial statements are the source of record for monthly SLN actuals/budgets and balances.
+ * - The Cash Flow Summary block at the top of each income statement is the SLN cash flow statement.
+ * - Only workbooks inside a month folder are read; loose files in a year folder are working copies.
  * - VHDA operating summaries supply apartment metrics and lender-reporting metrics.
  * - Cash trackers supply dated receipts, owner funding, and vendor disbursements.
  * - Tenant-, resident-, and employee-level rows are excluded.
@@ -93,10 +96,16 @@ function sourceRank(file: string): number {
   return (value.includes('prior') ? -100 : 0) + (value.includes('updated') ? 100 : 0) + (value.includes('5.15.26 version') ? 80 : 0);
 }
 
+function inMonthFolder(file: string): boolean {
+  const parts = file.split(/[\\/]/);
+  const rootIndex = parts.findIndex((part) => /\b20\d\d\s+SLN\s+MONTHLY\s+FINANCIALS\b/i.test(part));
+  return rootIndex >= 0 && parts.length >= rootIndex + 3 && !path.basename(file).startsWith('~$');
+}
+
 function periodFromPath(file: string): string | null {
   const parts = file.split(/[\\/]/);
   const rootIndex = parts.findIndex((part) => /\b20\d\d\s+SLN\s+MONTHLY\s+FINANCIALS\b/i.test(part));
-  if (rootIndex < 0) return null;
+  if (rootIndex < 0 || parts.length < rootIndex + 3) return null;
   const yearMatch = parts[rootIndex].match(/\b(20\d\d)\b/);
   const folder = parts[rootIndex + 1] || '';
   const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
@@ -138,6 +147,7 @@ function identifyFinancialWorkbook(file: string): FinancialCandidate[] {
       ? 'ACTIVITY'
       : /balance[ _-]*sheet/i.test(path.basename(file)) || /\bBalance Sheet\b/i.test(sample) ? 'BALANCE' : null;
     const periodEnd = periodFromPath(file) || periodFromReport(rows);
+    if (kind === 'ACTIVITY' && !statementLayout(rows)) continue;
     if (kind && periodEnd) output.push({ file, sheet, rows, periodEnd, kind, rank: sourceRank(file) });
   }
   return output;
@@ -154,16 +164,67 @@ function statementAccountType(name: string, inExpenseSection: boolean): string {
   return inExpenseSection ? 'Expense' : 'Income';
 }
 
+type StatementLayout = { header: number; nameCol: number; actualCol: number; budgetCol: number | null };
+
+/**
+ * Income statements are usually Actual | Budget | Variance | Name, but some months
+ * add a prior-month column, which moves the names and budget to the right.
+ */
+function statementLayout(rows: unknown[][]): StatementLayout | null {
+  const header = rows.findIndex((row) => row.some((cell) => text(cell) === 'Current Period'));
+  if (header < 0) return null;
+  let nameCol = -1;
+  for (const row of rows.slice(header, header + 60)) {
+    nameCol = row.findIndex((cell) => /SUMMARY BY CATEGORY/i.test(text(cell)) || text(cell) === 'INCOME');
+    if (nameCol >= 0) break;
+  }
+  if (nameCol <= 0) return null;
+  const labels = (rows[header + 1] || []).map(text);
+  const budgetCol = labels.findIndex((label, col) => label === 'Budget' && col < nameCol);
+  return { header, nameCol, actualCol: 0, budgetCol: budgetCol >= 0 ? budgetCol : null };
+}
+
+function cashFlowLines(candidate: FinancialCandidate) {
+  const layout = statementLayout(candidate.rows);
+  if (!layout) return [];
+  const start = candidate.rows.findIndex((row, index) => index > layout.header && /cash flow summary/i.test(text(row[layout.nameCol])));
+  if (start < 0) return [];
+  const occurrence = new Map<string, number>();
+  const rows: Array<{ lineKey: string; lineName: string; lineOrder: number; actual: number; budget: number | null; row: number }> = [];
+  for (let index = start + 1; index < candidate.rows.length; index += 1) {
+    const row = candidate.rows[index];
+    const name = text(row[layout.nameCol]);
+    if (name === 'INCOME') break;
+    const actual = numberValue(row[layout.actualCol]);
+    if (!name || actual === null) continue;
+    const isEnding = /^(total )?cash end of period$/i.test(name);
+    const lineName = isEnding ? 'Cash End of Period' : /^cash beginning of period$/i.test(name) ? 'Cash Beginning of Period' : name;
+    const count = (occurrence.get(slug(lineName)) || 0) + 1;
+    occurrence.set(slug(lineName), count);
+    rows.push({
+      lineKey: count === 1 ? slug(lineName) : `${slug(lineName)}_${count}`,
+      lineName,
+      lineOrder: rows.length,
+      actual,
+      budget: layout.budgetCol === null ? null : numberValue(row[layout.budgetCol]),
+      row: index + 1,
+    });
+    if (isEnding) break;
+  }
+  return rows;
+}
+
 function activityLines(candidate: FinancialCandidate) {
-  const header = candidate.rows.findIndex((row) => row.some((cell) => text(cell) === 'Current Period'));
-  if (header < 0) return [];
+  const layout = statementLayout(candidate.rows);
+  if (!layout) return [];
+  const { header, nameCol, actualCol, budgetCol } = layout;
   let detailed = false;
   let expenseSection = false;
   const occurrence = new Map<string, number>();
   const rows: Array<{ accountCode: string; accountName: string; accountType: string; actual: number; budget: number | null; row: number }> = [];
   for (let index = header + 1; index < candidate.rows.length; index += 1) {
     const row = candidate.rows[index];
-    const name = text(row[3]);
+    const name = text(row[nameCol]);
     if (detailed && /cash flow summary/i.test(name)) break;
     if (name === 'INCOME') {
       detailed = true;
@@ -174,7 +235,7 @@ function activityLines(candidate: FinancialCandidate) {
       if (detailed) expenseSection = true;
       continue;
     }
-    const actual = numberValue(row[0]);
+    const actual = numberValue(row[actualCol]);
     if (!detailed || !name || actual === null || isAggregate(name)) continue;
     const count = (occurrence.get(slug(name)) || 0) + 1;
     occurrence.set(slug(name), count);
@@ -183,7 +244,7 @@ function activityLines(candidate: FinancialCandidate) {
       accountName: name,
       accountType: statementAccountType(name, expenseSection),
       actual,
-      budget: numberValue(row[1]),
+      budget: budgetCol === null ? null : numberValue(row[budgetCol]),
       row: index + 1,
     });
   }
@@ -265,6 +326,15 @@ async function ensureSourcedOperatingTables() {
       UNIQUE ("companyId","periodEnd","metric")
     )
   `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "RealEstateCashFlowLine" (
+      "id" TEXT PRIMARY KEY, "companyId" TEXT NOT NULL, "sourceEntity" TEXT NOT NULL, "periodEnd" DATE NOT NULL,
+      "lineKey" TEXT NOT NULL, "lineName" TEXT NOT NULL, "lineOrder" INTEGER NOT NULL, "amount" NUMERIC(18,2) NOT NULL,
+      "budgetAmount" NUMERIC(18,2), "sourceFileName" TEXT, "sourceSheetName" TEXT, "sourceRowNumber" INTEGER,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(), "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE ("companyId","sourceEntity","periodEnd","lineKey")
+    )
+  `);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "RealEstateCashActivity_companyId_periodEnd_idx" ON "RealEstateCashActivity" ("companyId","periodEnd")`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "RealEstateCashActivity_companyId_activityDate_idx" ON "RealEstateCashActivity" ("companyId","activityDate")`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "RealEstateOperationalMetric_companyId_periodEnd_idx" ON "RealEstateOperationalMetric" ("companyId","periodEnd")`);
@@ -278,6 +348,7 @@ async function addSuggestedMappings(companyId: string, lines: Array<{ accountCod
 }
 
 async function removePriorImport(companyId: string, files: string[]) {
+  await prisma.$executeRawUnsafe(`DELETE FROM "RealEstateCashFlowLine" WHERE "companyId"=$1 AND "sourceEntity"='SLN'`, companyId);
   const sourceNames = [...new Set(files.filter((file) => /\.(xlsx|xlsm)$/i.test(file)).map((file) => path.basename(file)))];
   for (const sourceName of sourceNames) {
     await prisma.$executeRawUnsafe(
@@ -301,9 +372,9 @@ async function upsertMetric(companyId: string, periodEnd: string, metric: Metric
   );
 }
 
-async function importFinancials(companyId: string, files: string[], summary: Summary) {
+function selectFinancialCandidates(files: string[]) {
   const candidates = files
-    .filter((file) => /\.(xlsx|xlsm)$/i.test(file))
+    .filter((file) => /\.(xlsx|xlsm)$/i.test(file) && inMonthFolder(file))
     .flatMap(identifyFinancialWorkbook);
   const selected = new Map<string, FinancialCandidate>();
   for (const candidate of candidates) {
@@ -311,8 +382,31 @@ async function importFinancials(companyId: string, files: string[], summary: Sum
     const previous = selected.get(key);
     if (!previous || candidate.rank >= previous.rank) selected.set(key, candidate);
   }
-  for (const candidate of selected.values()) {
+  return [...selected.values()].sort((a, b) => a.periodEnd.localeCompare(b.periodEnd) || a.kind.localeCompare(b.kind));
+}
+
+async function importCashFlow(companyId: string, candidate: FinancialCandidate, summary: Summary) {
+  const lines = cashFlowLines(candidate);
+  await eachBatch(lines, async (line) => {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "RealEstateCashFlowLine"
+        ("id","companyId","sourceEntity","periodEnd","lineKey","lineName","lineOrder","amount","budgetAmount","sourceFileName","sourceSheetName","sourceRowNumber","updatedAt")
+       VALUES ($1,$2,'SLN',$3::date,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+       ON CONFLICT ("companyId","sourceEntity","periodEnd","lineKey")
+       DO UPDATE SET "lineName"=EXCLUDED."lineName","lineOrder"=EXCLUDED."lineOrder","amount"=EXCLUDED."amount","budgetAmount"=EXCLUDED."budgetAmount",
+         "sourceFileName"=EXCLUDED."sourceFileName","sourceSheetName"=EXCLUDED."sourceSheetName","sourceRowNumber"=EXCLUDED."sourceRowNumber","updatedAt"=NOW()`,
+      randomUUID(), companyId, candidate.periodEnd, line.lineKey, line.lineName, line.lineOrder, line.actual, line.budget,
+      path.basename(candidate.file), candidate.sheet, line.row,
+    );
+    summary.cashFlowLines += 1;
+  });
+}
+
+async function importFinancials(companyId: string, files: string[], summary: Summary) {
+  const selected = selectFinancialCandidates(files);
+  for (const candidate of selected) {
     if (candidate.kind === 'ACTIVITY') {
+      await importCashFlow(companyId, candidate, summary);
       const lines = activityLines(candidate);
       await eachBatch(lines, async (line) => {
         await upsertFinancialLine({
@@ -334,7 +428,33 @@ async function importFinancials(companyId: string, files: string[], summary: Sum
       });
     }
   }
-  summary.financialPeriods = selected.size;
+  summary.financialPeriods = selected.length;
+}
+
+/** Parses every selected statement and prints what would be imported, without touching a database. */
+function dryRun(files: string[]) {
+  for (const candidate of selectFinancialCandidates(files)) {
+    if (candidate.kind !== 'ACTIVITY') continue;
+    const lines = activityLines(candidate);
+    const income = lines.filter((line) => line.accountType === 'Income').reduce((total, line) => total + line.actual, 0);
+    const expense = lines.filter((line) => line.accountType === 'Expense').reduce((total, line) => total + line.actual, 0);
+    const cash = cashFlowLines(candidate);
+    const beginning = cash.find((line) => /^cash beginning of period$/i.test(line.lineName))?.actual ?? null;
+    const ending = cash.find((line) => /^cash end of period$/i.test(line.lineName))?.actual ?? null;
+    const flows = cash.filter((line) => !/^cash (beginning|end) of period$/i.test(line.lineName)).reduce((total, line) => total + line.actual, 0);
+    const difference = beginning === null || ending === null ? null : Math.round(beginning + flows - ending);
+    console.log([
+      candidate.periodEnd,
+      `lines=${lines.length}`,
+      `income=${Math.round(income)}`,
+      `expense=${Math.round(expense)}`,
+      `cashLines=${cash.length}`,
+      `begin=${beginning}`,
+      `end=${ending}`,
+      `cashDiff=${difference}`,
+      path.relative(SOURCE_ROOT, candidate.file),
+    ].join(' | '));
+  }
 }
 
 function vhdaPeriod(rows: unknown[][]): string | null {
@@ -473,6 +593,10 @@ async function importCashTrackers(companyId: string, files: string[], summary: S
 }
 
 async function main() {
+  if (argument('--dry-run') === 'true') {
+    dryRun((await Promise.all(FINANCIAL_ROOTS.map((root) => walk(path.join(SOURCE_ROOT, root))))).flat());
+    return;
+  }
   const companyName = argument('--company');
   const companyId = argument('--company-id');
   if (!companyName && !companyId) throw new Error('Pass --company-id for the target company, or an exact --company name.');
@@ -491,7 +615,7 @@ async function main() {
   await ensureSourcedOperatingTables();
   const files = (await Promise.all(FINANCIAL_ROOTS.map((root) => walk(path.join(SOURCE_ROOT, root))))).flat();
   await removePriorImport(companies[0].id, files);
-  const summary: Summary = { activityActual: 0, activityBudget: 0, balance: 0, financialPeriods: 0, metrics: 0, occupancy: 0, cashActivities: 0 };
+  const summary: Summary = { activityActual: 0, activityBudget: 0, balance: 0, financialPeriods: 0, metrics: 0, occupancy: 0, cashActivities: 0, cashFlowLines: 0 };
   await importFinancials(companies[0].id, files, summary);
   await importVhdaMetrics(companies[0].id, files, summary);
   await importCashTrackers(companies[0].id, files, summary);
