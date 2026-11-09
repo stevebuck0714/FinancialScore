@@ -80,10 +80,27 @@ const statementNumber = (value: number | null | undefined) => {
   return rounded < 0 ? `(${text})` : text;
 };
 
-type Row = { kind: 'heading' | 'subheading' | 'line' | 'total' | 'grand' | 'warning'; label: string; values: Record<string, number> };
+type Row = {
+  kind: 'heading' | 'subheading' | 'section' | 'line' | 'total' | 'grand' | 'warning';
+  label: string;
+  values: Record<string, number>;
+  /** Collapsible equity sub-section the row belongs to (or heads, for `section` rows). */
+  section?: string;
+};
+
+const EQUITY_SECTIONS = [
+  { key: 'contributions', label: 'Contributions', total: 'Total Contributions', pattern: /contribut/i },
+  { key: 'distributions', label: 'Distributions', total: 'Total Distributions', pattern: /distribut/i },
+];
 
 export default function PropertyBalanceSheetTable({ lines, scope, columns, balanceMonthByColumn }: Props) {
   const [hideEmptyLines, setHideEmptyLines] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set(EQUITY_SECTIONS.map((section) => section.key)));
+  const toggleSection = (key: string) => setCollapsedSections((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   const { rows, unclassified } = useMemo(() => {
     const accounts = new Map<string, { code: string; name: string; type: string; values: Record<string, number> }>();
@@ -116,7 +133,19 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
         const groupAccounts = sorted.filter((account) => group.types.includes(account.type));
         sideAccounts.push(...groupAccounts);
         if (side.groups.length > 1) output.push({ kind: 'subheading', label: group.label, values: {} });
-        groupAccounts.forEach((account) => output.push({ kind: 'line', label: account.code ? `${account.code} · ${account.name}` : account.name, values: account.values }));
+        const lineLabel = (account: (typeof sorted)[number]) => (account.code ? `${account.code} · ${account.name}` : account.name);
+        let ungrouped = groupAccounts;
+        if (group.key === 'equity') {
+          EQUITY_SECTIONS.forEach((section) => {
+            const sectionAccounts = ungrouped.filter((account) => section.pattern.test(account.name));
+            if (!sectionAccounts.length) return;
+            ungrouped = ungrouped.filter((account) => !sectionAccounts.includes(account));
+            output.push({ kind: 'section', label: section.label, values: {}, section: section.key });
+            sectionAccounts.forEach((account) => output.push({ kind: 'line', label: lineLabel(account), values: account.values, section: section.key }));
+            output.push({ kind: 'total', label: section.total, values: sum(sectionAccounts) });
+          });
+        }
+        ungrouped.forEach((account) => output.push({ kind: 'line', label: lineLabel(account), values: account.values }));
         if (side.groups.length > 1) output.push({ kind: 'total', label: group.total, values: sum(groupAccounts) });
       });
       sideTotals[side.label] = sum(sideAccounts);
@@ -135,9 +164,11 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const trendColumns = [...columns].sort();
   const indexedRows = rows.map((row, rowIndex) => ({ row, rowIndex }));
-  const visibleRows = hideEmptyLines
-    ? indexedRows.filter(({ row }) => row.kind !== 'line' || columns.some((column) => Math.abs(row.values[column] || 0) >= 0.5))
-    : indexedRows;
+  const visibleRows = indexedRows.filter(({ row }) => {
+    if (row.kind !== 'line') return true;
+    if (row.section && collapsedSections.has(row.section)) return false;
+    return !hideEmptyLines || columns.some((column) => Math.abs(row.values[column] || 0) >= 0.5);
+  });
   const selectedRow = selectedRowIndex === null ? null : rows[selectedRowIndex] || null;
   const cell: React.CSSProperties = { padding: '5px 10px', fontSize: 13, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
 
@@ -165,6 +196,25 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
           </thead>
           <tbody>
             {visibleRows.map(({ row, rowIndex: index }) => {
+              if (row.kind === 'section' && row.section) {
+                const sectionKey = row.section;
+                const collapsed = collapsedSections.has(sectionKey);
+                return (
+                  <tr key={`${row.label}-${index}`}>
+                    <td colSpan={columns.length + 1} style={{ padding: '8px 10px 2px 14px' }}>
+                      <button
+                        type="button"
+                        aria-expanded={!collapsed}
+                        onClick={() => toggleSection(sectionKey)}
+                        style={{ border: 0, padding: 0, background: 'transparent', font: 'inherit', fontSize: 12, fontWeight: 700, color: '#334155', cursor: 'pointer' }}
+                      >
+                        <span style={{ display: 'inline-block', width: 12, color: '#64748b' }}>{collapsed ? '▸' : '▾'}</span>
+                        {row.label}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              }
               if (row.kind === 'heading' || row.kind === 'subheading') {
                 return (
                   <tr key={`${row.label}-${index}`}>
