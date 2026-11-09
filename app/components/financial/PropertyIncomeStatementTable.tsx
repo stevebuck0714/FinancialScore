@@ -46,7 +46,7 @@ export default function PropertyIncomeStatementTable({ lines, mappings, scope, v
   const cell: React.CSSProperties = { padding: '5px 10px', fontSize: 13, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr)' }}>
       {unmapped.length > 0 && (
         <div style={{ padding: '10px 14px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12 }}>
           <strong>{unmapped.length} source account{unmapped.length === 1 ? '' : 's'} not mapped</strong> and excluded from this statement. Map them in Site Admin → Data Mapping by selecting the financial feed.

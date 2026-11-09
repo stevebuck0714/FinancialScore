@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensureRealEstateAccountMappingTable } from '@/lib/real-estate/account-mapping-table';
+import { ensureRealEstateCashFlowLineTable } from '@/lib/real-estate/cash-flow-line-table';
 import { ensureRealEstateWaterfallTables } from '@/lib/real-estate/waterfall-tables';
 import { normalizeName } from '@/lib/real-estate/cash-flow-report';
 import { buildEntityReportLines } from '@/lib/real-estate/entity-report-lines';
@@ -72,16 +73,7 @@ async function ensureTables() {
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE ("companyId","sourceReference")
     )
   `);
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "RealEstateCashFlowLine" (
-      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text, "companyId" TEXT NOT NULL,
-      "sourceEntity" TEXT NOT NULL, "periodEnd" DATE NOT NULL, "lineKey" TEXT NOT NULL, "lineName" TEXT NOT NULL,
-      "lineOrder" INTEGER NOT NULL, "amount" NUMERIC(18,2) NOT NULL, "budgetAmount" NUMERIC(18,2),
-      "sourceFileName" TEXT, "sourceSheetName" TEXT, "sourceRowNumber" INTEGER,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(), "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE ("companyId","sourceEntity","periodEnd","lineKey")
-    )
-  `);
+  await ensureRealEstateCashFlowLineTable();
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RealEstateOperationalMetric" (
       "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text, "companyId" TEXT NOT NULL,

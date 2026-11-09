@@ -173,7 +173,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
   const cell: React.CSSProperties = { padding: '5px 10px', fontSize: 13, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr)' }}>
       {unclassified.length > 0 && (
         <div style={{ padding: '10px 14px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12 }}>
           <strong>{unclassified.length} balance sheet account{unclassified.length === 1 ? '' : 's'} with an unrecognized account type</strong> excluded: {unclassified.map((account) => `${account.code} · ${account.name} (${account.type})`).join('; ')}

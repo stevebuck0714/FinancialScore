@@ -55,6 +55,11 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
   const [reloadKey, setReloadKey] = useState(0);
   const [publishingConsolidated, setPublishingConsolidated] = useState(false);
   const [consolidatedPublishError, setConsolidatedPublishError] = useState('');
+  const [slnUploadMonth, setSlnUploadMonth] = useState('');
+  const [slnUploadFiles, setSlnUploadFiles] = useState<File[]>([]);
+  const [slnUploadInputKey, setSlnUploadInputKey] = useState(0);
+  const [uploadingSln, setUploadingSln] = useState(false);
+  const [slnUploadResult, setSlnUploadResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [entityView, setEntityView] = useState<'statement' | 'balance' | 'cashflow'>('statement');
   const [propertyTypeFilter, setPropertyTypeFilter] = useState<PropertyTypeFilter>('all');
   const [propertyPeriod, setPropertyPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('last-12-months');
@@ -438,11 +443,41 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     }
   };
 
+  const uploadSlnStatements = async () => {
+    setUploadingSln(true);
+    setSlnUploadResult(null);
+    try {
+      const form = new FormData();
+      form.append('companyId', selectedCompanyId);
+      form.append('month', slnUploadMonth);
+      slnUploadFiles.forEach((file) => form.append('files', file));
+      const response = await fetch('/api/operations/real-estate/sln-statements', { method: 'POST', body: form });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to load the SLN statements.');
+      const loaded = [
+        payload.incomeStatementLines ? `${payload.incomeStatementLines} income statement lines` : '',
+        payload.cashFlowLines ? `${payload.cashFlowLines} cash flow lines` : '',
+        payload.balanceSheetLines ? `${payload.balanceSheetLines} balance sheet lines` : '',
+      ].filter(Boolean).join(', ');
+      const publishNote = payload.published === true
+        ? ' Financial Reporting was republished.'
+        : payload.published === false ? ` Financial Reporting was not republished: ${payload.publishError || 'unknown error'}.` : '';
+      setSlnUploadResult({ ok: true, message: `Loaded ${formatMonthLabel(slnUploadMonth)}: ${loaded}.${publishNote}` });
+      setSlnUploadFiles([]);
+      setSlnUploadInputKey((key) => key + 1);
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      setSlnUploadResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setUploadingSln(false);
+    }
+  };
+
   if (loading) return <div style={{ padding: 24, color: '#64748b' }}>Loading real-estate operations…</div>;
   if (error) return <div style={{ margin: 24, ...card, color: '#b91c1c' }}>{error}</div>;
 
   if (mode === 'entity-financials') {
-    return <div style={{ padding: 24, display: 'grid', gap: 16 }}>
+    return <div style={{ padding: 24, display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
       <div><h2 style={{ margin: 0, color: '#0f172a' }}>Entity Financials</h2><p style={{ color: '#64748b', marginBottom: 0 }}>Property income statement and balance sheet for each source ledger, plus the SLN cash flow. The income statement is built from its Data Mapping.{entityScope === 'COMBINED' ? ' Combined includes only periods reported by every feed.' : ''}</p></div>
       {data.consolidatedReporting !== undefined && data.consolidatedReporting !== null && (() => {
         const status = data.consolidatedReporting;
@@ -452,7 +487,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
             <p style={{ color: '#475569', margin: 0, fontSize: 13 }}>Financial Reporting pages and reports use the consolidated SLN + BGAH financials. SLN supplies property operations and working capital; BGAH (QuickBooks Desktop) supplies owner-level assets, the loan, depreciation and non-property items. The Due to/from SLN balance is eliminated. Republished automatically after a QuickBooks Desktop sync or a mapping change.</p>
             <div style={{ color: '#64748b', fontSize: 12 }}>
               {status.publishedAt
-                ? <>Last published {formatEstDateTime(status.publishedAt)} EST · {status.firstMonth ? formatMonthLabel(status.firstMonth) : '—'} to {status.lastMonth ? formatMonthLabel(status.lastMonth) : '—'}</>
+                ? <>Last published {formatEstDateTime(status.publishedAt)} · {status.firstMonth ? formatMonthLabel(status.firstMonth) : '—'} to {status.lastMonth ? formatMonthLabel(status.lastMonth) : '—'}</>
                 : 'Not published yet.'}
               {status.partialMonths.length > 0 && <> · Partial months (one entity missing): {status.partialMonths.map(formatMonthLabel).join(', ')}</>}
               {status.latestCombinedMonth && status.latestUnreconciled !== null && <> · Intercompany difference not yet explained at {formatMonthLabel(status.latestCombinedMonth)}: {fmt(status.latestUnreconciled)}</>}
@@ -463,6 +498,18 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
           <button type="button" onClick={publishConsolidated} disabled={publishingConsolidated} style={{ padding: '7px 11px', border: '1px solid #1d4ed8', borderRadius: 6, background: '#2563eb', color: '#fff', fontWeight: 700, cursor: publishingConsolidated ? 'wait' : 'pointer', opacity: publishingConsolidated ? 0.7 : 1 }}>{publishingConsolidated ? 'Publishing…' : 'Publish to Financial Reporting'}</button>
         </div>;
       })()}
+      {data.lines.some((line) => line.sourceEntity === 'SLN') && <div style={{ ...card, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'grid', gap: 4 }}>
+          <h3 style={{ margin: 0 }}>SLN monthly statements</h3>
+          <p style={{ color: '#475569', margin: 0, fontSize: 13 }}>Load the property manager&apos;s Income Statement with Budget Comparison and/or Balance Sheet workbook for one month. The income statement also supplies the SLN cash flow. Loading a month replaces that month&apos;s SLN lines and republishes Financial Reporting.</p>
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
+          <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' }}>Month<input type="month" value={slnUploadMonth} onChange={(event) => setSlnUploadMonth(event.target.value)} style={{ minWidth: 150, padding: '6px 9px', border: '1px solid #cbd5e1', borderRadius: 6 }} /></label>
+          <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' }}>Workbooks<input key={slnUploadInputKey} type="file" multiple accept=".xlsx,.xlsm,.xls" onChange={(event) => setSlnUploadFiles(Array.from(event.target.files || []))} style={{ fontSize: 12 }} /></label>
+          <button type="button" onClick={uploadSlnStatements} disabled={uploadingSln || !slnUploadMonth || !slnUploadFiles.length} style={{ padding: '7px 11px', border: '1px solid #1d4ed8', borderRadius: 6, background: '#2563eb', color: '#fff', fontWeight: 700, cursor: uploadingSln ? 'wait' : !slnUploadMonth || !slnUploadFiles.length ? 'not-allowed' : 'pointer', opacity: uploadingSln || !slnUploadMonth || !slnUploadFiles.length ? 0.6 : 1 }}>{uploadingSln ? 'Loading…' : 'Load statements'}</button>
+        </div>
+        {slnUploadResult && <div style={{ fontSize: 12, color: slnUploadResult.ok ? '#166534' : '#b91c1c' }}>{slnUploadResult.message}</div>}
+      </div>}
       <div style={{ ...card, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
         <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' }}>Entity<select value={entityScope} onChange={(event) => {
           const scope = event.target.value as 'SLN' | 'BGAH' | 'COMBINED';
@@ -539,7 +586,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
   }
 
   if (mode === 'investors') {
-    return <div style={{ padding: 24, display: 'grid', gap: 16 }}>
+    return <div style={{ padding: 24, display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
       <div>
         <h2 style={{ margin: 0, color: '#0f172a' }}>Investor Ledger</h2>
         <p style={{ color: '#64748b', marginBottom: 0 }}>Capital, distributions, allocations, and waterfall accrual balances by member.</p>
@@ -621,7 +668,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     </div>;
   }
 
-  return <div style={{ padding: 24, display: 'grid', gap: 16 }}>
+  return <div style={{ padding: 24, display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
     <div><h2 style={{ margin: 0, color: '#0f172a' }}>Property Financials</h2><p style={{ color: '#64748b', marginBottom: 0 }}>Approved BGAH and SLN property performance by reporting period.</p></div>
     {reportEnabled('propertyFinancialOverview') && (slnOverview ? (() => {
       const { month, priorMonth, priorYear } = slnOverview;
