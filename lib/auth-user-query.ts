@@ -11,6 +11,7 @@ type AuthUserRecord = {
   consultantId: string | null;
   isPrimaryContact: boolean;
   mfaEnabled: boolean;
+  mustChangePassword: boolean;
   passwordHash: string | null;
   company: {
     affiliateCode: string | null;
@@ -60,6 +61,7 @@ export async function findAuthUserByEmail(email: string): Promise<AuthUserRecord
         u."consultantId" AS "consultantId",
         u."isPrimaryContact" AS "isPrimaryContact",
         u."mfaEnabled" AS "mfaEnabled",
+        u."mustChangePassword" AS "mustChangePassword",
         u."passwordHash" AS "passwordHash",
         c."affiliateCode" AS "companyAffiliateCode",
         c."subscriptionStatus" AS "companySubscriptionStatus",
@@ -91,6 +93,7 @@ export async function findAuthUserByEmail(email: string): Promise<AuthUserRecord
     consultantId: row.consultantId == null ? null : String(row.consultantId),
     isPrimaryContact: Boolean(row.isPrimaryContact),
     mfaEnabled: Boolean(row.mfaEnabled),
+    mustChangePassword: Boolean(row.mustChangePassword),
     passwordHash: row.passwordHash == null ? null : String(row.passwordHash),
     company:
       row.companyAffiliateCode != null ||

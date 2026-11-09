@@ -18,6 +18,7 @@ interface User {
   companyId?: string;
   homeCompanyId?: string | null;
   isExternalCompanyUser?: boolean;
+  isExternalAccount?: boolean;
   invitePending?: boolean;
   employerCompanyName?: string | null;
   consultantId?: string | null;
@@ -140,6 +141,8 @@ interface CompanyDetailsTabProps {
   setExistingCompanyUserEmail: (email: string) => void;
   existingCompanyUserCompanyName: string;
   setExistingCompanyUserCompanyName: (name: string) => void;
+  existingCompanyUserPassword: string;
+  setExistingCompanyUserPassword: (password: string) => void;
   newAssessmentUserName: string;
   setNewAssessmentUserName: (name: string) => void;
   newAssessmentUserTitle: string;
@@ -199,6 +202,8 @@ export default function CompanyDetailsTab({
   setExistingCompanyUserEmail,
   existingCompanyUserCompanyName,
   setExistingCompanyUserCompanyName,
+  existingCompanyUserPassword,
+  setExistingCompanyUserPassword,
   newAssessmentUserName,
   setNewAssessmentUserName,
   newAssessmentUserTitle,
@@ -1102,13 +1107,14 @@ export default function CompanyDetailsTab({
                               </h5>
                               <div
                                 style={{
-                                  fontSize: "11px",
+                                  fontSize: "10px",
                                   color: "#1e293b",
                                   fontWeight: "600",
+                                  lineHeight: "1.3",
                                   textAlign: "right",
                                 }}
                               >
-                                New users receive an invite link.
+                                Temporary password is required for new external users. 8+ chars with uppercase, lowercase, number, and special character.
                               </div>
                             </div>
                             <div style={{ display: "grid", gap: "6px" }}>
@@ -1170,7 +1176,7 @@ export default function CompanyDetailsTab({
                                 style={{
                                   display: "grid",
                                   gridTemplateColumns:
-                                    "repeat(2, minmax(0, 1fr))",
+                                    "repeat(3, minmax(0, 1fr))",
                                   gap: "6px",
                                 }}
                               >
@@ -1201,6 +1207,19 @@ export default function CompanyDetailsTab({
                                     )
                                   }
                                   autoComplete="off"
+                                  style={{
+                                    padding: "8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #cbd5e1",
+                                    fontSize: "12px",
+                                  }}
+                                />
+                                <PasswordInput
+                                  name="existing_company_user_password"
+                                  placeholder="Temporary Password"
+                                  value={existingCompanyUserPassword}
+                                  onChange={setExistingCompanyUserPassword}
+                                  autoComplete="new-password"
                                   style={{
                                     padding: "8px",
                                     borderRadius: "6px",
@@ -1424,7 +1443,7 @@ export default function CompanyDetailsTab({
                                             fontWeight: "700",
                                           }}
                                         >
-                                          Invite pending
+                                          Pending first sign-in
                                         </span>
                                       ) : null}
                                     </div>
@@ -1665,7 +1684,10 @@ export default function CompanyDetailsTab({
                                               checked={
                                                 selectedUserPerm.role === "admin"
                                               }
-                                              disabled={selectedUserIsConsultant}
+                                              disabled={
+                                                selectedUserIsConsultant ||
+                                                Boolean(selectedUser.isExternalAccount)
+                                              }
                                               onChange={() =>
                                                 setUserRole(selectedUser.id, "admin")
                                               }

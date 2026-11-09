@@ -43,6 +43,11 @@ export const authConfig: NextAuthConfig = {
             return null;
           }
 
+          // A temporary password only unlocks /api/auth/initial-password; no session until it is replaced.
+          if (user.mustChangePassword) {
+            return null;
+          }
+
           // For consultant users, get consultantId from either:
           // 1. primaryConsultant relation (if they're the primary contact)
           // 2. consultantId field (if they're a team member)

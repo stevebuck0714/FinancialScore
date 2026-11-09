@@ -72,6 +72,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (user.mustChangePassword) {
+      await auditLoginFailed(normalizedEmail, 'Temporary password must be changed');
+      return NextResponse.json(
+        {
+          error: 'You must choose a new password before signing in.',
+          passwordChangeRequired: true,
+        },
+        { status: 403 }
+      );
+    }
+
     if (String(user.passwordResetToken || '').startsWith('invite-pending:')) {
       await auditLoginFailed(normalizedEmail, 'Invite pending acceptance');
       return NextResponse.json(

@@ -6,6 +6,8 @@ import { signIn as nextAuthSignIn } from 'next-auth/react';
 import LoginView from '@/app/components/auth/LoginView';
 import MFAEnrollmentModal from '@/app/components/auth/MFAEnrollmentModal';
 import MFAVerificationModal from '@/app/components/auth/MFAVerificationModal';
+import InitialPasswordChangeModal from '@/app/components/auth/InitialPasswordChangeModal';
+import { requiresInitialPasswordChange } from '@/lib/auth/initial-password';
 import { authApi, ApiError } from '@/lib/api-client';
 import { enterAppAfterLogin, persistLoggedInUser } from '@/lib/auth/enter-app-after-login';
 import { waitForNextAuthSession } from '@/lib/auth/wait-for-nextauth-session';
@@ -35,6 +37,7 @@ function LoginClientInner() {
   const [mfaUserId, setMfaUserId] = useState('');
   const [mfaUserEmail, setMfaUserEmail] = useState('');
   const [trustDurationDays, setTrustDurationDays] = useState<number | null>(null);
+  const [showInitialPasswordChange, setShowInitialPasswordChange] = useState(false);
 
   useEffect(() => {
     if (searchParams.get('sessionExpired') === '1') {
@@ -57,12 +60,13 @@ function LoginClientInner() {
     enterAppAfterLogin();
   };
 
-  const handleLogin = async () => {
+  const handleLogin = async (passwordOverride?: string) => {
     setLoginError('');
     setIsLoading(true);
     const normalizedEmail = (loginEmail || '').toLowerCase().trim();
+    const password = typeof passwordOverride === 'string' ? passwordOverride : loginPassword;
 
-    if (!normalizedEmail || !loginPassword) {
+    if (!normalizedEmail || !password) {
       setLoginError('Please enter both email and password');
       setIsLoading(false);
       return;
@@ -73,7 +77,7 @@ function LoginClientInner() {
       try {
         signInResult = await nextAuthSignIn('credentials', {
           email: normalizedEmail,
-          password: loginPassword,
+          password,
           redirect: false,
         });
       } catch (error) {
@@ -84,6 +88,11 @@ function LoginClientInner() {
       }
 
       if (signInResult?.error || !signInResult?.ok) {
+        if (await requiresInitialPasswordChange(normalizedEmail, password)) {
+          setShowInitialPasswordChange(true);
+          setIsLoading(false);
+          return;
+        }
         setLoginError('Invalid email or password');
         setIsLoading(false);
         return;
@@ -94,7 +103,7 @@ function LoginClientInner() {
       const loginResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password: loginPassword }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       });
 
       if (!loginResponse.ok) {
@@ -304,6 +313,21 @@ function LoginClientInner() {
         handleLogin={handleLogin}
         handleRegisterConsultant={handleRegisterConsultant}
       />
+      {showInitialPasswordChange && (
+        <InitialPasswordChangeModal
+          email={(loginEmail || '').toLowerCase().trim()}
+          temporaryPassword={loginPassword}
+          onChanged={(newPassword) => {
+            setShowInitialPasswordChange(false);
+            setLoginPassword(newPassword);
+            void handleLogin(newPassword);
+          }}
+          onCancel={() => {
+            setShowInitialPasswordChange(false);
+            setLoginError('Login cancelled');
+          }}
+        />
+      )}
       {showMFAEnrollment && (
         <MFAEnrollmentModal
           userId={mfaUserId}

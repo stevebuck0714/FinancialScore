@@ -85,14 +85,12 @@ interface QboMonthlyUploadReminderProps {
   uploadUrl?: string;
 }
 
-interface CompanyUserInviteEmailProps {
+interface ExternalCompanyAccessEmailProps {
   to: string;
-  inviteeName: string;
+  userName: string;
   companyName: string;
-  inviterNameOrEmail: string;
-  inviteLink: string;
-  expiresAt: string;
-  userType: 'COMPANY' | 'ASSESSMENT';
+  addedByNameOrEmail: string;
+  loginLink: string;
 }
 
 interface WelcomeUserEmailProps {
@@ -1004,66 +1002,56 @@ export async function sendDataRoomPastDueNotification({
   }
 }
 
-export async function sendCompanyUserInviteEmail({
+export async function sendExternalCompanyAccessEmail({
   to,
-  inviteeName,
+  userName,
   companyName,
-  inviterNameOrEmail,
-  inviteLink,
-  expiresAt,
-  userType,
-}: CompanyUserInviteEmailProps) {
+  addedByNameOrEmail,
+  loginLink,
+}: ExternalCompanyAccessEmailProps) {
   const client = getResendClient();
   if (!client) {
-    console.warn('⚠️ RESEND_API_KEY not configured - skipping company user invite email');
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping external company access email');
     return { success: false, reason: 'Email service not configured' };
   }
 
   const safeCompany = escapeHtml(companyName);
-  const safeInviter = escapeHtml(inviterNameOrEmail);
-  const safeInvitee = escapeHtml(inviteeName || to);
-  const safeInviteLink = escapeHtml(inviteLink);
-  const safeRole = userType === 'ASSESSMENT' ? 'Team Assessment User' : 'Company User';
-  const safeExpires = escapeHtml(
-    formatEstDateTime(expiresAt),
-  );
+  const safeAddedBy = escapeHtml(addedByNameOrEmail);
+  const safeUser = escapeHtml(userName || to);
+  const safeLoginLink = escapeHtml(loginLink);
 
   try {
     const { data, error } = await client.emails.send({
       from: DEFAULT_FROM,
       to: [to],
-      subject: `You're invited to Corelytics - ${companyName}`,
+      subject: `Corelytics access added - ${companyName}`,
       html: `
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Corelytics Invite</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Corelytics Access Added</title></head>
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
   <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
     <tr><td align="center">
       <table width="680" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
         <tr><td style="padding:22px 26px;border-bottom:1px solid #e2e8f0;">
-          <h2 style="margin:0;color:#1e293b;font-size:22px;">You are invited to Corelytics</h2>
-          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">You have been invited to access <strong>${safeCompany}</strong> as a <strong>${safeRole}</strong>.</p>
+          <h2 style="margin:0;color:#1e293b;font-size:22px;">Corelytics access added</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">You now have access to <strong>${safeCompany}</strong>.</p>
         </td></tr>
         <tr><td style="padding:20px 26px;">
-          <p style="margin:0 0 10px;color:#334155;font-size:14px;">Hello ${safeInvitee},</p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;">Hello ${safeUser},</p>
           <p style="margin:0 0 10px;color:#334155;font-size:14px;">
-            ${safeInviter} invited you to join Corelytics for company access.
+            ${safeAddedBy} added ${safeCompany} to your existing Corelytics account.
           </p>
           <p style="margin:0 0 14px;color:#334155;font-size:14px;">
-            Click the button below to accept the invite, create your login, and complete security steps.
+            Sign in with your existing credentials and select ${safeCompany} from your company list. Your password has not changed.
           </p>
           <p style="margin:0 0 16px;">
-            <a href="${safeInviteLink}" style="display:inline-block;padding:12px 18px;background:#1F70C1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
-              Accept Invite
+            <a href="${safeLoginLink}" style="display:inline-block;padding:12px 18px;background:#1F70C1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
+              Sign in to Corelytics
             </a>
           </p>
-          <p style="margin:0 0 8px;color:#64748b;font-size:13px;word-break:break-all;">
-            Or paste this link into your browser:<br />
-            <a href="${safeInviteLink}" style="color:#2563eb;text-decoration:none;">${safeInviteLink}</a>
-          </p>
-          <p style="margin:10px 0 0;color:#b45309;font-size:13px;">
-            This invite expires on ${safeExpires}.
+          <p style="margin:14px 0 0;color:#64748b;font-size:13px;">
+            If you did not expect this access, please contact ${safeAddedBy} or reply to this email.
           </p>
         </td></tr>
       </table>
@@ -1077,7 +1065,7 @@ export async function sendCompanyUserInviteEmail({
     if (error) throw new Error(`Failed to send email: ${error.message}`);
     return { success: true, data };
   } catch (sendError) {
-    console.error('❌ Error sending company invite email:', sendError);
+    console.error('❌ Error sending external company access email:', sendError);
     return { success: false, error: sendError };
   }
 }

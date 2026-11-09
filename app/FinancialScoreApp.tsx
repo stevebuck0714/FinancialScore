@@ -32,6 +32,7 @@ import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath'
 import { resolveCompanyIndustrySectorCategory } from '@/lib/industry-sector-resolver';
 import { getOverviewPrintOptions } from '@/lib/operations/overview-print-options';
 import { waitForNextAuthSession } from '@/lib/auth/wait-for-nextauth-session';
+import { requiresInitialPasswordChange } from '@/lib/auth/initial-password';
 import { calculateEbitda } from '@/lib/financial/ebitda';
 import CombinedEntityFinancialStatements from '@/app/components/financial/CombinedEntityFinancialStatements';
 
@@ -66,6 +67,7 @@ const DEFAULT_SELECTED_TREND_ITEMS = ['Revenue', 'Gross Profit', 'Total Operatin
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
 const MFAEnrollmentModal = dynamic(() => import('./components/auth/MFAEnrollmentModal'), { ssr: false });
 const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerificationModal'), { ssr: false });
+const InitialPasswordChangeModal = dynamic(() => import('./components/auth/InitialPasswordChangeModal'), { ssr: false });
 // Dynamic chart components
 const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.LineChart), { ssr: false });
 const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
@@ -1250,6 +1252,7 @@ function FinancialScorePage() {
   // State - MFA
   const [showMFAEnrollment, setShowMFAEnrollment] = useState(false);
   const [showMFAVerification, setShowMFAVerification] = useState(false);
+  const [showInitialPasswordChange, setShowInitialPasswordChange] = useState(false);
   const [mfaUserId, setMfaUserId] = useState('');
   const [mfaUserEmail, setMfaUserEmail] = useState('');
   const [trustDurationDays, setTrustDurationDays] = useState<number | null>(null);
@@ -1664,6 +1667,7 @@ function FinancialScorePage() {
   const [existingCompanyUserName, setExistingCompanyUserName] = useState('');
   const [existingCompanyUserEmail, setExistingCompanyUserEmail] = useState('');
   const [existingCompanyUserCompanyName, setExistingCompanyUserCompanyName] = useState('');
+  const [existingCompanyUserPassword, setExistingCompanyUserPassword] = useState('');
   // Separate state for Assessment Users (no phone field)
   const [newAssessmentUserName, setNewAssessmentUserName] = useState('');
   const [newAssessmentUserTitle, setNewAssessmentUserTitle] = useState('');
@@ -7117,13 +7121,14 @@ function FinancialScorePage() {
   };
 
   // Handlers
-  const handleLogin = async () => {
+  const handleLogin = async (passwordOverride?: string) => {
     setLoginError('');
     setIsLoading(true);
     
     const normalizedEmail = (loginEmail || '').toLowerCase().trim();
+    const password = typeof passwordOverride === 'string' ? passwordOverride : loginPassword;
 
-    if (!normalizedEmail || !loginPassword) {
+    if (!normalizedEmail || !password) {
       setLoginError('Please enter both email and password');
       setIsLoading(false);
       return;
@@ -7135,7 +7140,7 @@ function FinancialScorePage() {
       try {
         signInResult = await nextAuthSignIn('credentials', {
           email: normalizedEmail,
-          password: loginPassword,
+          password,
           redirect: false,
         });
       } catch (e) {
@@ -7146,6 +7151,11 @@ function FinancialScorePage() {
       }
       
       if (signInResult?.error || !signInResult?.ok) {
+        if (await requiresInitialPasswordChange(normalizedEmail, password)) {
+          setShowInitialPasswordChange(true);
+          setIsLoading(false);
+          return;
+        }
         console.warn('⚠️ NextAuth signIn failed:', signInResult);
         // NextAuth returns opaque error codes; keep message user-friendly.
         setLoginError('Invalid email or password');
@@ -7164,7 +7174,7 @@ function FinancialScorePage() {
       const loginResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password: loginPassword }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       });
       
       if (!loginResponse.ok) {
@@ -7699,6 +7709,7 @@ function FinancialScorePage() {
     setExistingCompanyUserName('');
     setExistingCompanyUserEmail('');
     setExistingCompanyUserCompanyName('');
+    setExistingCompanyUserPassword('');
     setExistingAssessmentUserName('');
     setExistingAssessmentUserEmail('');
     setRawRows([]);
@@ -10013,15 +10024,22 @@ function FinancialScorePage() {
           email,
           userType: userType.toUpperCase(),
           ...(employerCompanyName ? { employerCompanyName } : {}),
+          ...(userType === 'company' && existingCompanyUserPassword
+            ? { password: existingCompanyUserPassword }
+            : {}),
         }),
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new ApiError(response.status, data?.error || 'Failed to invite user');
+        const details = Array.isArray(data?.details) ? `\n\n• ${data.details.join('\n• ')}` : '';
+        throw new ApiError(response.status, `${data?.error || 'Failed to add external user'}${details}`);
       }
 
-      const linkedExistingUser = Boolean(data?.linkedExistingUser);
-      const inviteSent = Boolean(data?.inviteSent);
+      const outcome = String(data?.outcome || '');
+      const emailSent = Boolean(data?.emailSent);
+      const emailFailure = emailSent
+        ? ''
+        : `\n\n⚠️ The email could NOT be delivered.${data?.emailError ? `\nReason: ${data.emailError}` : ''}`;
       const user = data?.user;
       if (user) {
         const normalizedUser = {
@@ -10030,11 +10048,9 @@ function FinancialScorePage() {
           companyId,
           role: String(user.role || 'user').toLowerCase(),
           userType: String(user.userType || userType).toLowerCase(),
-          isExternalCompanyUser:
-            Boolean(user.isExternalCompanyUser) ||
-            (Boolean(user.companyId) && String(user.companyId) !== String(companyId)) ||
-            Boolean(data?.pendingInvite),
-          invitePending: Boolean(data?.pendingInvite || user.invitePending),
+          isExternalCompanyUser: true,
+          isExternalAccount: true,
+          invitePending: Boolean(user.invitePending),
           employerCompanyName:
             user.employerCompanyName || employerCompanyName || undefined,
         };
@@ -10051,36 +10067,39 @@ function FinancialScorePage() {
         });
       }
 
-      if (linkedExistingUser) {
+      if (outcome === 'created') {
         alert(
-          `Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`,
+          emailSent
+            ? `External user created:\n\n${email}\n\nA welcome email with sign-in instructions was sent. The temporary password was NOT included. Share it with the user separately. They must choose a new password the first time they sign in.`
+            : `External user created:\n\n${email}${emailFailure}\n\nThe account stays pending. Give the user the sign-in address and temporary password yourself, or add them again later to resend.`,
         );
-      } else if (inviteSent) {
+      } else if (outcome === 'resent') {
         alert(
-          `Invite sent:\n\n${email}${employerCompanyName ? `\nCompany: ${employerCompanyName}` : ''}\n\nThey now appear in External Users so you can assign rights before they join. The recipient can use the invite link to create/login and will complete MFA in production.`,
+          emailSent
+            ? `Welcome email resent:\n\n${email}\n\nThe user's temporary password was replaced with the one you entered. Share it with them separately.`
+            : `Temporary password updated:\n\n${email}${emailFailure}`,
+        );
+      } else if (outcome === 'access_added') {
+        alert(
+          emailSent
+            ? `Access added for existing external user:\n\n${email}\n\nThey can now open this company with their existing sign-in. Their password was not changed, and they were emailed about the new access.`
+            : `Access added for existing external user:\n\n${email}\n\nTheir password was not changed.${emailFailure}`,
         );
       } else {
-        alert(`Invite processed for:\n\n${email}`);
+        alert(`External user processed:\n\n${email}`);
       }
 
       if (userType === 'company') {
         setExistingCompanyUserName('');
         setExistingCompanyUserEmail('');
         setExistingCompanyUserCompanyName('');
+        setExistingCompanyUserPassword('');
       } else {
         setExistingAssessmentUserName('');
         setExistingAssessmentUserEmail('');
       }
     } catch (error) {
-      if (error instanceof ApiError) {
-        if (error.message.includes('already has access to this company')) {
-          alert(`User already has access\n\n"${email}" already has access to this company.`);
-        } else {
-          alert(error.message);
-        }
-      } else {
-        alert('Failed to send invite');
-      }
+      alert(error instanceof ApiError ? error.message : 'Failed to add external user');
     } finally {
       setIsLoading(false);
     }
@@ -14520,6 +14539,22 @@ function FinancialScorePage() {
           handleRegisterConsultant={handleRegisterConsultant}
         />
         
+        {showInitialPasswordChange && (
+          <InitialPasswordChangeModal
+            email={(loginEmail || '').toLowerCase().trim()}
+            temporaryPassword={loginPassword}
+            onChanged={(newPassword) => {
+              setShowInitialPasswordChange(false);
+              setLoginPassword(newPassword);
+              void handleLogin(newPassword);
+            }}
+            onCancel={() => {
+              setShowInitialPasswordChange(false);
+              setLoginError('Login cancelled');
+            }}
+          />
+        )}
+
         {/* MFA Enrollment Modal */}
         {showMFAEnrollment && (
           <MFAEnrollmentModal
@@ -15653,6 +15688,8 @@ function FinancialScorePage() {
               setExistingCompanyUserEmail={setExistingCompanyUserEmail}
               existingCompanyUserCompanyName={existingCompanyUserCompanyName}
               setExistingCompanyUserCompanyName={setExistingCompanyUserCompanyName}
+              existingCompanyUserPassword={existingCompanyUserPassword}
+              setExistingCompanyUserPassword={setExistingCompanyUserPassword}
               newAssessmentUserName={newAssessmentUserName}
               setNewAssessmentUserName={setNewAssessmentUserName}
               newAssessmentUserTitle={newAssessmentUserTitle}

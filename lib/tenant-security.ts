@@ -493,6 +493,12 @@ export async function getCompanyRoleForUser(userId: string, companyId: string): 
 }
 
 export async function isCompanyAdminForCompany(userId: string, companyId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isExternal: true },
+  })
+  // External users never get company-admin rights, whatever their membership row says.
+  if (user?.isExternal) return false
   return (await getCompanyRoleForUser(userId, companyId)) === 'admin'
 }
 

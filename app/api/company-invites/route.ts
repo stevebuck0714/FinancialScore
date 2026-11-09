@@ -2,26 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess, isCompanyAdminForCompany } from '@/lib/tenant-security';
 import {
-  createInviteToken,
   getCompanyInvites,
-  hashInviteToken,
-  type CompanyUserInvite,
+  recordExternalUserForCompany,
   upsertCompanyInvites,
 } from '@/lib/company-invites';
-import { sendCompanyUserInviteEmail } from '@/lib/email';
 import { grantUserCompanyAccess } from '@/lib/user-company-access';
-import { auditUserOperation } from '@/lib/audit-logger';
-import { generateSecureToken, hashPassword } from '@/lib/auth';
+import { auditForbiddenAccess, auditUserOperation } from '@/lib/audit-logger';
+import { hashPassword } from '@/lib/auth';
+import { validatePassword } from '@/lib/password-validator';
+import { canAddExternalUsers } from '@/lib/external-users';
+import {
+  sendExternalAccessAddedEmail,
+  sendManagedUserWelcomeEmail,
+} from '@/lib/managed-user-email';
 
-const INVITE_EXPIRY_DAYS = Number(process.env.COMPANY_INVITE_EXPIRY_DAYS || 7);
-
-function normalizeUserType(value: unknown): 'COMPANY' | 'ASSESSMENT' | null {
-  const v = String(value || '').trim().toUpperCase();
-  if (v === 'COMPANY' || v === 'ASSESSMENT') return v;
-  return null;
-}
-
-const invitedUserSelect = {
+const externalUserSelect = {
   id: true,
   name: true,
   title: true,
@@ -34,9 +29,34 @@ const invitedUserSelect = {
   companyRole: true,
   sidebarAccess: true,
   operationalDashboardAccess: true,
+  mustChangePassword: true,
   createdAt: true,
 } as const;
 
+function passwordError(password: string) {
+  if (!password) {
+    return NextResponse.json(
+      { error: 'A temporary password is required. Share it with the user separately.' },
+      { status: 400 },
+    );
+  }
+  const validation = validatePassword(password);
+  if (!validation.isValid) {
+    return NextResponse.json(
+      { error: 'Password does not meet requirements', details: validation.errors },
+      { status: 400 },
+    );
+  }
+  return null;
+}
+
+/**
+ * Add an external user to a company.
+ * - New email: create a pending external account with a temporary password.
+ * - Existing external account without access: add this company to it.
+ * - Pending external account with access: resend with a new temporary password.
+ * - Any other existing account: refuse; it is never linked or converted.
+ */
 export async function POST(request: NextRequest) {
   try {
     const context = await requireAuth();
@@ -45,188 +65,240 @@ export async function POST(request: NextRequest) {
     const name = String(body?.name || '').trim();
     const email = String(body?.email || '').trim().toLowerCase();
     const employerCompanyName = String(body?.employerCompanyName || '').trim();
-    const userType = normalizeUserType(body?.userType);
+    const password = typeof body?.password === 'string' ? body.password : '';
 
-    if (!companyId || !name || !email || !userType) {
+    if (!companyId || !name || !email) {
       return NextResponse.json(
-        { error: 'companyId, name, email, and valid userType are required' },
+        { error: 'companyId, name, and email are required' },
         { status: 400 },
       );
     }
 
-    const hasAccess = await validateCompanyAccess(companyId);
-    if (!hasAccess) {
+    if (!(await validateCompanyAccess(companyId))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    // USER role requires company-admin membership to invite.
-    if (context.role === 'USER') {
-      if (!(await isCompanyAdminForCompany(context.userId, companyId))) {
-        return NextResponse.json(
-          { error: 'Forbidden: Only company admins can invite users' },
-          { status: 403 },
-        );
-      }
     }
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { id: true, name: true, consultantId: true, userDefinedAllocations: true },
+      select: { id: true, name: true, consultantId: true },
     });
     if (!company) {
       return NextResponse.json({ error: 'Company not found' }, { status: 404 });
     }
 
+    if (!(await canAddExternalUsers(context, companyId, company))) {
+      await auditForbiddenAccess('User', companyId, 'CREATE');
+      return NextResponse.json(
+        {
+          error:
+            'Forbidden: Only the Company Admin, the consultant admin for this company, or a Site Admin can add external users',
+        },
+        { status: 403 },
+      );
+    }
+
+    const companyName = company.name || 'your company';
     const existingUser = await prisma.user.findUnique({
       where: { email },
-      select: { id: true, name: true, email: true, role: true, userType: true, companyId: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isExternal: true,
+        isAccountManager: true,
+        mustChangePassword: true,
+        passwordResetToken: true,
+      },
     });
 
-    // Existing identity: just grant access immediately (no invite token required).
     if (existingUser) {
-      const grant = await grantUserCompanyAccess({
-        userId: existingUser.id,
-        companyId,
-        companyRole: userType === 'COMPANY' ? 'user' : undefined,
-      });
-      if (!grant.created) {
+      // Accounts created by the retired invite-link flow never received a password.
+      const isLegacyInviteStub =
+        existingUser.role === 'USER' &&
+        !existingUser.isAccountManager &&
+        !existingUser.isExternal &&
+        Boolean(existingUser.passwordResetToken?.startsWith('invite-pending:'));
+
+      if (
+        !isLegacyInviteStub &&
+        (existingUser.role !== 'USER' || existingUser.isAccountManager || !existingUser.isExternal)
+      ) {
         return NextResponse.json(
-          { error: 'User already has access to this company' },
+          {
+            error: `${email} belongs to an existing Corelytics account that is not an external user. It cannot be added as an external user. Contact a Site Admin if this person needs access.`,
+            conflict: 'non_external_account',
+          },
           { status: 409 },
         );
       }
-      await auditUserOperation('USER_UPDATED', existingUser.id, {
-        action: 'company_access_granted_via_invite_flow',
+
+      const membership = await prisma.userCompanyAccess.findUnique({
+        where: { userId_companyId: { userId: existingUser.id, companyId } },
+        select: { id: true },
+      });
+
+      if (membership || isLegacyInviteStub) {
+        if (!isLegacyInviteStub && !existingUser.mustChangePassword) {
+          return NextResponse.json(
+            {
+              error: `${email} already has access to this company. If they cannot sign in, they can use Forgot Password on the sign-in page.`,
+              conflict: 'already_has_access',
+            },
+            { status: 409 },
+          );
+        }
+
+        const invalidPassword = passwordError(password);
+        if (invalidPassword) return invalidPassword;
+
+        const resentUser = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            passwordHash: await hashPassword(password),
+            isExternal: true,
+            mustChangePassword: true,
+            passwordResetToken: null,
+            passwordResetExpires: null,
+          },
+          select: externalUserSelect,
+        });
+        if (!membership) {
+          await grantUserCompanyAccess({ userId: resentUser.id, companyId, companyRole: 'user' });
+        }
+        await recordExternalUserForCompany({
+          companyId,
+          user: resentUser,
+          employerCompanyName,
+          createdByUserId: context.userId,
+          createdByEmail: context.email,
+        });
+        const delivery = await sendManagedUserWelcomeEmail({
+          request,
+          actorUserId: context.userId,
+          to: resentUser.email,
+          userName: resentUser.name,
+          companyName,
+          userType: 'COMPANY',
+          roleLabel: 'External User',
+        });
+        await auditUserOperation('USER_UPDATED', resentUser.id, {
+          action: 'external_user_invite_resent',
+          companyId,
+          emailDelivered: delivery.emailSent,
+          emailError: delivery.emailError,
+        });
+        return NextResponse.json({
+          outcome: 'resent',
+          ...delivery,
+          user: toCompanyUser(resentUser, companyId, employerCompanyName),
+        });
+      }
+
+      await grantUserCompanyAccess({ userId: existingUser.id, companyId, companyRole: 'user' });
+      await recordExternalUserForCompany({
         companyId,
-        invitedBy: context.userId,
+        user: existingUser,
+        employerCompanyName,
+        createdByUserId: context.userId,
+        createdByEmail: context.email,
+      });
+      const delivery = await sendExternalAccessAddedEmail({
+        request,
+        actorUserId: context.userId,
+        to: existingUser.email,
+        userName: existingUser.name,
+        companyName,
+      });
+      await auditUserOperation('USER_COMPANY_ACCESS_GRANTED', existingUser.id, {
+        action: 'external_user_company_added',
+        companyId,
+        addedBy: context.userId,
+        emailDelivered: delivery.emailSent,
+        emailError: delivery.emailError,
       });
       const linkedUser = await prisma.user.findUnique({
         where: { id: existingUser.id },
-        select: invitedUserSelect,
+        select: externalUserSelect,
       });
       return NextResponse.json({
-        linkedExistingUser: true,
-        user: linkedUser
-          ? {
-              ...linkedUser,
-              homeCompanyId: linkedUser.companyId,
-              companyId,
-              isExternalCompanyUser:
-                Boolean(linkedUser.companyId) && String(linkedUser.companyId) !== String(companyId),
-              invitePending: false,
-              employerCompanyName: employerCompanyName || undefined,
-            }
-          : existingUser,
+        outcome: 'access_added',
+        ...delivery,
+        user: linkedUser ? toCompanyUser(linkedUser, companyId, employerCompanyName) : null,
       });
     }
 
-    // New invitee: create a stub User + company access immediately so Manage Users
-    // can assign rights before they accept the invite and set a password.
-    const stubPasswordHash = await hashPassword(generateSecureToken());
-    const pendingUser = await prisma.user.create({
+    const invalidPassword = passwordError(password);
+    if (invalidPassword) return invalidPassword;
+
+    const createdUser = await prisma.user.create({
       data: {
         email,
         name,
-        passwordHash: stubPasswordHash,
+        passwordHash: await hashPassword(password),
         role: 'USER',
-        userType,
+        userType: 'COMPANY',
+        isExternal: true,
+        mustChangePassword: true,
         companyId,
-        consultantId: company.consultantId || null,
-        companyRole: userType === 'COMPANY' ? 'user' : null,
-        // Marker so accept-invite can safely set the first real password.
-        passwordResetToken: `invite-pending:${crypto.randomUUID()}`,
-        passwordResetExpires: new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+        companyRole: 'user',
       },
-      select: invitedUserSelect,
+      select: externalUserSelect,
     });
-    await grantUserCompanyAccess({
-      userId: pendingUser.id,
+    await grantUserCompanyAccess({ userId: createdUser.id, companyId, companyRole: 'user' });
+    await recordExternalUserForCompany({
       companyId,
-      companyRole: userType === 'COMPANY' ? 'user' : undefined,
-    });
-
-    const token = createInviteToken();
-    const tokenHash = hashInviteToken(token);
-    const now = Date.now();
-    const expiresAt = new Date(now + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    const invites = getCompanyInvites(company.userDefinedAllocations);
-    const filtered = invites.filter((i) => {
-      const sameTarget =
-        String(i?.email || '').toLowerCase() === email &&
-        String(i?.userType || '').toUpperCase() === userType &&
-        String(i?.status || '') === 'pending';
-      return !sameTarget;
-    });
-
-    const invite: CompanyUserInvite = {
-      id: crypto.randomUUID(),
-      email,
-      name,
-      userType,
-      tokenHash,
-      status: 'pending',
-      expiresAt,
-      createdAt: new Date(now).toISOString(),
+      user: createdUser,
+      employerCompanyName,
       createdByUserId: context.userId,
       createdByEmail: context.email,
-      pendingUserId: pendingUser.id,
-      ...(employerCompanyName ? { employerCompanyName } : {}),
-    };
-
-    const updatedUDA = upsertCompanyInvites(company.userDefinedAllocations, [
-      ...filtered,
-      invite,
-    ]);
-    await prisma.company.update({
-      where: { id: companyId },
-      data: { userDefinedAllocations: updatedUDA as any },
     });
-
-    const baseUrl = String(
-      process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || request.nextUrl.origin || 'http://localhost:3002'
-    ).replace(/\/+$/, '');
-    const inviteLink = `${baseUrl}/accept-invite/${token}`;
-    await sendCompanyUserInviteEmail({
-      to: email,
-      inviteeName: name,
-      companyName: company.name || 'Company',
-      inviterNameOrEmail: context.email,
-      inviteLink,
-      expiresAt,
-      userType,
+    const delivery = await sendManagedUserWelcomeEmail({
+      request,
+      actorUserId: context.userId,
+      to: createdUser.email,
+      userName: createdUser.name,
+      companyName,
+      userType: 'COMPANY',
+      roleLabel: 'External User',
     });
-
-    await auditUserOperation('USER_CREATED', pendingUser.id, {
-      action: 'company_user_invite_created',
+    await auditUserOperation('USER_CREATED', createdUser.id, {
+      action: 'external_user_created',
       companyId,
       email,
-      userType,
-      pendingInvite: true,
+      emailDelivered: delivery.emailSent,
+      emailError: delivery.emailError,
     });
 
     return NextResponse.json({
-      inviteSent: true,
-      email,
-      expiresAt,
-      pendingInvite: true,
-      user: {
-        ...pendingUser,
-        homeCompanyId: pendingUser.companyId,
-        companyId,
-        isExternalCompanyUser: true,
-        invitePending: true,
-        employerCompanyName: employerCompanyName || undefined,
-      },
+      outcome: 'created',
+      ...delivery,
+      user: toCompanyUser(createdUser, companyId, employerCompanyName),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error?.message || 'Failed to create invite' },
+      { error: error?.message || 'Failed to add external user' },
       { status: 500 },
     );
   }
 }
 
-/** Update employer company name for an external invitee already on the company. */
+function toCompanyUser(
+  user: { companyId: string | null; mustChangePassword: boolean } & Record<string, unknown>,
+  companyId: string,
+  employerCompanyName: string,
+) {
+  return {
+    ...user,
+    homeCompanyId: user.companyId,
+    companyId,
+    isExternalCompanyUser: true,
+    invitePending: user.mustChangePassword,
+    employerCompanyName: employerCompanyName || undefined,
+  };
+}
+
+/** Update employer company name for an external user already on the company. */
 export async function PATCH(request: NextRequest) {
   try {
     const context = await requireAuth();

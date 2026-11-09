@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "isExternal" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "mustChangePassword" BOOLEAN NOT NULL DEFAULT false;

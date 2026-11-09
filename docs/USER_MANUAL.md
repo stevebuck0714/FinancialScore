@@ -47,6 +47,7 @@ B.  Roles at a Glance
 * Consultant (Team Member): Can work on assigned companies; limited billing and administrative access.
 * Business User: Can manage their own company; cannot manage other companies.
 * Company Users: Client users added by a consultant for a specific company.
+* External Users: People from outside the company (for example, an outside accountant or advisor) who are given access to one or more client companies. External users never have Site Admin, accounting, user management, or consultant access.
 * Site Admin: Can configure accounting integrations and operational sync behavior per company.
 
 C. Sign In Page 
@@ -121,6 +122,25 @@ Once a company is selected, you can manage:
 * Users associated with the company.
 * Set User admin rights
 * Assessment users (if enabled in your workflow).
+
+ Adding External Users
+External users are added from the External Users section of the company's user management. The following people can add an external user to a company: that company's Company Admin, the consultant admin (primary contact) of the consultant firm that manages the company, or a Corelytics Site Admin.
+
+When you enter an email address, Corelytics checks it and does one of the following:
+
+* Email is not on Corelytics yet: A new external account is created and stays pending until the user activates it. You set a temporary password and give it to the user separately. The welcome email does not include the password, and the user must change it the first time they sign in.
+* Email belongs to an external user at another company: The same account is given access to this company too. No second account is created and their password is not changed. The user receives an email saying they now have access to this company. If their account is still pending, they must finish their first sign-in before they can use any company.
+* User already has access to this company: If the user is still pending, the welcome email is sent again with a new temporary password. If the user is active, the request is refused because they already have access; if they cannot sign in, they can use Forgot Password on the sign-in page.
+* Email belongs to an internal, consultant, account manager, or Site Admin account: The request is refused with a clear message. Internal accounts are never linked to or converted into external accounts.
+
+If the email cannot be delivered, Corelytics tells you it was not delivered. It does not report it as sent.
+
+Rules for external users:
+
+* Each company stands alone: Role, visible sections, and Operational Dashboard rights are set separately for each company. External users can never be made Company Admins.
+* Companies cannot see each other: A company's admins never see which other companies an external user can access.
+* Access is limited to assigned companies: External users only see the companies they were added to and can switch between them. They never see Site Admin, accounting, user management, or consultant screens.
+* Removal is per company: Removing an external user from one company leaves their other companies unchanged. Removing their last company removes the account completely, so adding them again later starts fresh.
 
 F.  Connect Accounting Data
 Corelytics supports API-based accounting integrations and file uploads, with system-specific configuration in Site Admin.

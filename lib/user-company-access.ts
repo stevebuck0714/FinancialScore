@@ -219,6 +219,7 @@ export async function ensureLegacyCompanyAccess(userId: string): Promise<void> {
       companyRole: true,
       sidebarAccess: true,
       operationalDashboardAccess: true,
+      isExternal: true,
     },
   });
 
@@ -235,7 +236,7 @@ export async function ensureLegacyCompanyAccess(userId: string): Promise<void> {
     create: {
       userId,
       companyId: user.companyId,
-      companyRole: user.companyRole || 'user',
+      companyRole: user.isExternal ? 'user' : user.companyRole || 'user',
       sidebarAccess: user.sidebarAccess ?? undefined,
       operationalDashboardAccess: user.operationalDashboardAccess ?? undefined,
     },
@@ -258,7 +259,7 @@ export async function grantUserCompanyAccess(params: {
 
   const user = await db.user.findUnique({
     where: { id: params.userId },
-    select: { id: true },
+    select: { id: true, isExternal: true },
   });
   if (!user) {
     throw new Error('Cannot grant company access because the user does not exist');
@@ -282,7 +283,8 @@ export async function grantUserCompanyAccess(params: {
     data: {
       userId: params.userId,
       companyId: params.companyId,
-      companyRole: params.companyRole || 'user',
+      // External users are never company admins.
+      companyRole: user.isExternal ? 'user' : params.companyRole || 'user',
       sidebarAccess:
         params.sidebarAccess === undefined ? undefined : (params.sidebarAccess as any),
       operationalDashboardAccess:

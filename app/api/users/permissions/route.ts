@@ -26,13 +26,20 @@ export async function PATCH(req: NextRequest) {
     // Fetch the user whose permissions are being modified
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, companyId: true, role: true, companyRole: true }
+      select: { id: true, companyId: true, role: true, companyRole: true, isExternal: true }
     });
 
     if (!targetUser) {
       return NextResponse.json(
         { error: 'Target user not found' },
         { status: 404 }
+      );
+    }
+
+    if (targetUser.isExternal && normalizedCompanyRole === 'admin') {
+      return NextResponse.json(
+        { error: 'External users cannot be company admins' },
+        { status: 400 }
       );
     }
 

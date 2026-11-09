@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
       where: { id: user.id },
       data: {
         passwordHash,
+        mustChangePassword: false,
         passwordResetToken: null,
         passwordResetExpires: null
       }

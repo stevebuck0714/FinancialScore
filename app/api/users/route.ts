@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { hashPassword } from '@/lib/auth';
+import { generateSecureToken, hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
 import {
   requireAuth,
@@ -12,10 +12,11 @@ import {
 import { auditUserOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import { createUserSchema, validateInput } from '@/lib/validation-schemas';
 import { grantUserCompanyAccess } from '@/lib/user-company-access';
-import { sendWelcomeUserEmail } from '@/lib/email';
+import { sendManagedUserWelcomeEmail } from '@/lib/managed-user-email';
 import {
   getCompanyInvites,
-  materializePendingCompanyInvites,
+  inviteMatchesUser,
+  removeCompanyInvitesForUser,
 } from '@/lib/company-invites';
 
 const DEFAULT_ALLOWED_SECTIONS = [
@@ -36,62 +37,6 @@ const DEFAULT_ALLOWED_SECTIONS = [
   'digital-presence',
   'custom-reports',
 ];
-
-async function sendManagedUserWelcomeEmail({
-  request,
-  actorUserId,
-  to,
-  userName,
-  companyName,
-  userType,
-}: {
-  request: NextRequest;
-  actorUserId: string;
-  to: string;
-  userName: string;
-  companyName: string;
-  userType: 'ASSESSMENT' | 'COMPANY';
-}) {
-  let welcomeEmailSent = false;
-  let welcomeEmailError: string | null = null;
-
-  try {
-    const requester = await prisma.user.findUnique({
-      where: { id: actorUserId },
-      select: { name: true, email: true },
-    });
-    const addedByNameOrEmail =
-      (requester?.name && requester.name.trim()) || requester?.email || 'A Corelytics administrator';
-
-    const baseUrl = String(
-      process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || request.nextUrl.origin || 'http://localhost:3002'
-    ).replace(/\/+$/, '');
-    const loginLink = baseUrl;
-
-    const result = await sendWelcomeUserEmail({
-      to,
-      userName: userName || to,
-      companyName,
-      addedByNameOrEmail,
-      loginLink,
-      userType,
-    });
-
-    if (result.success) {
-      welcomeEmailSent = true;
-    } else {
-      welcomeEmailError =
-        (result as { reason?: string }).reason ||
-        ((result as { error?: unknown }).error instanceof Error
-          ? ((result as { error: Error }).error.message)
-          : 'Email delivery failed');
-    }
-  } catch (emailErr) {
-    welcomeEmailError = emailErr instanceof Error ? emailErr.message : 'Email delivery failed';
-  }
-
-  return { welcomeEmailSent, welcomeEmailError };
-}
 
 // GET users for a company (or all users if no companyId provided - for site admin)
 export async function GET(request: NextRequest) {
@@ -141,6 +86,7 @@ export async function GET(request: NextRequest) {
       isAccountManager?: boolean;
       homeCompanyId?: string | null;
       isExternalCompanyUser?: boolean;
+      isExternalAccount?: boolean;
       invitePending?: boolean;
       companyAccess?: Array<{
         companyId: string;
@@ -156,14 +102,6 @@ export async function GET(request: NextRequest) {
     }> = [];
 
     if (companyId) {
-      // Backfill stub users + membership for pending invites created before
-      // invitees were materialized into Manage Users.
-      try {
-        await materializePendingCompanyInvites(companyId);
-      } catch (backfillErr) {
-        console.error('[users] Failed to materialize pending invites:', backfillErr);
-      }
-
       const memberships = await prisma.userCompanyAccess.findMany({
         where: {
           companyId,
@@ -185,6 +123,8 @@ export async function GET(request: NextRequest) {
               companyRole: true,
               sidebarAccess: true,
               operationalDashboardAccess: true,
+              isExternal: true,
+              mustChangePassword: true,
             },
           },
           companyRole: true,
@@ -200,53 +140,43 @@ export async function GET(request: NextRequest) {
         select: { consultantId: true, userDefinedAllocations: true },
       });
       const companyInvites = getCompanyInvites(company?.userDefinedAllocations);
-      const acceptedInviteUserIds = new Set(
-        companyInvites
-          .filter((invite) => String(invite?.status || '') === 'accepted')
-          .map((invite) => String(invite?.acceptedByUserId || ''))
-          .filter(Boolean),
-      );
-      const pendingInviteByUserId = new Map(
-        companyInvites
-          .filter((invite) => String(invite?.status || '') === 'pending')
-          .map((invite) => [String(invite?.pendingUserId || ''), invite] as const)
-          .filter(([userId]) => Boolean(userId)),
-      );
-      const pendingInviteByEmail = new Map(
-        companyInvites
-          .filter((invite) => String(invite?.status || '') === 'pending')
-          .map((invite) => [String(invite?.email || '').toLowerCase(), invite] as const)
-          .filter(([email]) => Boolean(email)),
-      );
 
-      users = memberships.map((m) => ({
-        ...m.user,
-        companyId,
-        homeCompanyId: m.user.companyId,
-        companyRole: m.companyRole || m.user.companyRole,
-        sidebarAccess: (m.sidebarAccess ?? m.user.sidebarAccess) as any,
-        operationalDashboardAccess:
-          (m.operationalDashboardAccess ?? m.user.operationalDashboardAccess) as any,
-        isExternalCompanyUser:
-          acceptedInviteUserIds.has(String(m.user.id)) ||
-          pendingInviteByUserId.has(String(m.user.id)) ||
-          pendingInviteByEmail.has(String(m.user.email || '').toLowerCase()) ||
-          (Boolean(m.user.companyId) && String(m.user.companyId) !== String(companyId)),
-        invitePending:
-          pendingInviteByUserId.has(String(m.user.id)) ||
-          pendingInviteByEmail.has(String(m.user.email || '').toLowerCase()),
-        employerCompanyName:
-          pendingInviteByUserId.get(String(m.user.id))?.employerCompanyName ||
-          pendingInviteByEmail.get(String(m.user.email || '').toLowerCase())
-            ?.employerCompanyName ||
-          companyInvites.find(
-            (invite) =>
-              String(invite?.status || '') === 'accepted' &&
-              String(invite?.acceptedByUserId || '') === String(m.user.id) &&
-              String(invite?.employerCompanyName || '').trim(),
-          )?.employerCompanyName ||
-          undefined,
-      }));
+      users = memberships.map(({ user: { isExternal, mustChangePassword, ...memberUser }, ...m }) => {
+        // Users added through the retired invite-link flow are not flagged isExternal.
+        const legacyAccepted = companyInvites.some(
+          (invite) =>
+            String(invite?.status || '') === 'accepted' &&
+            String(invite?.acceptedByUserId || '') === memberUser.id,
+        );
+        const legacyPending = companyInvites.some(
+          (invite) =>
+            String(invite?.status || '') === 'pending' &&
+            (String(invite?.pendingUserId || '') === memberUser.id ||
+              String(invite?.email || '').toLowerCase() === String(memberUser.email || '').toLowerCase()),
+        );
+        return {
+          ...memberUser,
+          companyId,
+          homeCompanyId: memberUser.companyId,
+          companyRole: m.companyRole || memberUser.companyRole,
+          sidebarAccess: (m.sidebarAccess ?? memberUser.sidebarAccess) as any,
+          operationalDashboardAccess:
+            (m.operationalDashboardAccess ?? memberUser.operationalDashboardAccess) as any,
+          isExternalCompanyUser:
+            isExternal ||
+            legacyAccepted ||
+            legacyPending ||
+            (Boolean(memberUser.companyId) && String(memberUser.companyId) !== String(companyId)),
+          isExternalAccount: isExternal,
+          invitePending: (isExternal && mustChangePassword) || legacyPending,
+          employerCompanyName:
+            companyInvites.find(
+              (invite) =>
+                inviteMatchesUser(invite, memberUser) &&
+                String(invite?.employerCompanyName || '').trim(),
+            )?.employerCompanyName || undefined,
+        };
+      });
 
       if (company?.consultantId) {
         const consultantTeam = await prisma.user.findMany({
@@ -291,6 +221,7 @@ export async function GET(request: NextRequest) {
         const fallbackUsers = await prisma.user.findMany({
           where: {
             companyId,
+            isExternal: false,
             ...(userType ? { userType: userType as any } : {}),
           },
           select: {
@@ -329,8 +260,12 @@ export async function GET(request: NextRequest) {
         users = fallbackUsers;
       }
     } else {
+      // The site-wide list feeds Site Admin; external portal users never appear there.
       users = await prisma.user.findMany({
-        where: userType ? { userType: userType as any } : undefined,
+        where: {
+          isExternal: false,
+          ...(userType ? { userType: userType as any } : {}),
+        },
         select: {
           id: true,
           name: true,
@@ -436,6 +371,15 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
+      if (existingUser.isExternal) {
+        return NextResponse.json(
+          {
+            error: `${normalizedEmail} is an external user. Add them from the Invite External User form instead.`,
+          },
+          { status: 409 }
+        );
+      }
+
       if (userType === 'ASSESSMENT' && existingUser.userType === 'ASSESSMENT') {
         if (!password) {
           return NextResponse.json(
@@ -506,7 +450,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        const { welcomeEmailSent, welcomeEmailError } = await sendManagedUserWelcomeEmail({
+        const { emailSent: welcomeEmailSent, emailError: welcomeEmailError } = await sendManagedUserWelcomeEmail({
           request,
           actorUserId: userContext.userId,
           to: refreshedAssessmentUser.email,
@@ -653,7 +597,7 @@ export async function POST(request: NextRequest) {
       companyId: user.companyId,
     });
 
-    const { welcomeEmailSent, welcomeEmailError } = await sendManagedUserWelcomeEmail({
+    const { emailSent: welcomeEmailSent, emailError: welcomeEmailError } = await sendManagedUserWelcomeEmail({
       request,
       actorUserId: userContext.userId,
       to: user.email,
@@ -734,7 +678,15 @@ export async function DELETE(request: NextRequest) {
     // SECURITY: First, check if user exists and get their companyId
     const targetUser = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, companyId: true, consultantId: true, role: true, userType: true }
+      select: {
+        id: true,
+        email: true,
+        companyId: true,
+        consultantId: true,
+        role: true,
+        userType: true,
+        isExternal: true,
+      }
     });
 
     if (!targetUser) {
@@ -874,6 +826,42 @@ export async function DELETE(request: NextRequest) {
         orderBy: { createdAt: 'asc' },
       });
       const firstRemaining = remainingMemberships[0];
+
+      if (targetUser.isExternal) {
+        await removeCompanyInvitesForUser(targetCompanyForAction, targetUser);
+
+        if (remainingMemberships.length === 0) {
+          try {
+            await prisma.user.delete({ where: { id } });
+          } catch (deleteError) {
+            // Records that must be kept (for example uploaded financial data) block
+            // deletion; lock the account instead so it cannot be used.
+            console.warn('External user delete blocked; locking account instead:', deleteError);
+            await prisma.user.update({
+              where: { id },
+              data: {
+                companyId: null,
+                passwordHash: await hashPassword(generateSecureToken()),
+                mustChangePassword: true,
+                passwordResetToken: null,
+                passwordResetExpires: null,
+              },
+            });
+            await auditUserOperation('USER_UPDATED', id, {
+              email: targetUser.email,
+              companyId: targetCompanyForAction,
+              action: 'external_user_locked_after_last_company_removed',
+            });
+            return NextResponse.json({ success: true, revokedAccessOnly: true, accountLocked: true });
+          }
+          await auditUserOperation('USER_DELETED', id, {
+            email: targetUser.email,
+            companyId: targetCompanyForAction,
+            reason: 'external_user_last_company_removed',
+          });
+          return NextResponse.json({ success: true, deletedUser: true });
+        }
+      }
 
       const shouldClearLegacyCompany = targetUser.companyId === targetCompanyForAction;
       await prisma.user.update({

@@ -1,8 +1,10 @@
-import crypto from 'crypto';
 import prisma from '@/lib/prisma';
-import { generateSecureToken, hashPassword } from '@/lib/auth';
-import { grantUserCompanyAccess } from '@/lib/user-company-access';
 
+/**
+ * External-user records stored on Company.userDefinedAllocations.dataRoom.
+ * Accounts and access live on User / UserCompanyAccess; these records only
+ * carry per-company details such as the external user's employer name.
+ */
 export type CompanyUserInvite = {
   id: string;
   email: string;
@@ -14,9 +16,8 @@ export type CompanyUserInvite = {
   createdAt: string;
   createdByUserId: string;
   createdByEmail: string;
-  /** Pre-created User row so Manage Users can assign rights before join. */
   pendingUserId?: string;
-  /** Employer / affiliation entered when inviting an external user. */
+  /** Employer / affiliation entered when adding an external user. */
   employerCompanyName?: string;
   acceptedAt?: string;
   acceptedByUserId?: string;
@@ -25,14 +26,6 @@ export type CompanyUserInvite = {
 function asObject(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Record<string, any>;
-}
-
-export function hashInviteToken(token: string) {
-  return crypto.createHash('sha256').update(String(token)).digest('hex');
-}
-
-export function createInviteToken() {
-  return crypto.randomBytes(32).toString('hex');
 }
 
 export function getCompanyInvites(userDefinedAllocations: unknown): CompanyUserInvite[] {
@@ -59,118 +52,80 @@ export function upsertCompanyInvites(
   };
 }
 
-/**
- * Ensures every pending invite has a User + UserCompanyAccess row so Manage Users
- * can assign rights before the invitee joins. Backfills invites created before
- * stub users were introduced.
- */
-export async function materializePendingCompanyInvites(companyId: string): Promise<{
-  createdUsers: number;
-  linkedUsers: number;
-  updatedInvites: number;
-}> {
+export function inviteMatchesUser(
+  invite: CompanyUserInvite,
+  user: { id: string; email: string },
+): boolean {
+  return (
+    String(invite?.pendingUserId || '') === user.id ||
+    String(invite?.acceptedByUserId || '') === user.id ||
+    String(invite?.email || '').toLowerCase() === String(user.email || '').toLowerCase()
+  );
+}
+
+/** Stores the external user's record for one company, replacing any earlier one. */
+export async function recordExternalUserForCompany(params: {
+  companyId: string;
+  user: { id: string; email: string; name: string };
+  employerCompanyName?: string;
+  createdByUserId: string;
+  createdByEmail: string;
+}): Promise<void> {
   const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: {
-      id: true,
-      consultantId: true,
-      userDefinedAllocations: true,
-    },
+    where: { id: params.companyId },
+    select: { userDefinedAllocations: true },
   });
-  if (!company) {
-    return { createdUsers: 0, linkedUsers: 0, updatedInvites: 0 };
-  }
+  if (!company) return;
 
   const invites = getCompanyInvites(company.userDefinedAllocations);
-  const now = Date.now();
-  let createdUsers = 0;
-  let linkedUsers = 0;
-  let updatedInvites = 0;
-  let invitesChanged = false;
+  const previous = invites.find((invite) => inviteMatchesUser(invite, params.user));
+  const now = new Date().toISOString();
+  const record: CompanyUserInvite = {
+    id: previous?.id || crypto.randomUUID(),
+    email: params.user.email.toLowerCase(),
+    name: params.user.name,
+    userType: 'COMPANY',
+    tokenHash: '',
+    status: 'accepted',
+    expiresAt: now,
+    createdAt: previous?.createdAt || now,
+    createdByUserId: params.createdByUserId,
+    createdByEmail: params.createdByEmail,
+    pendingUserId: params.user.id,
+    acceptedByUserId: params.user.id,
+    acceptedAt: previous?.acceptedAt || now,
+    ...(params.employerCompanyName || previous?.employerCompanyName
+      ? { employerCompanyName: params.employerCompanyName || previous?.employerCompanyName }
+      : {}),
+  };
 
-  const nextInvites: CompanyUserInvite[] = [];
-  for (const invite of invites) {
-    const status = String(invite?.status || '');
-    const email = String(invite?.email || '').trim().toLowerCase();
-    const name = String(invite?.name || '').trim() || email;
-    const userType =
-      String(invite?.userType || '').toUpperCase() === 'ASSESSMENT' ? 'ASSESSMENT' : 'COMPANY';
-    const expired = invite?.expiresAt ? new Date(invite.expiresAt).getTime() < now : false;
+  const nextInvites = [
+    ...invites.filter((invite) => !inviteMatchesUser(invite, params.user)),
+    record,
+  ];
+  await prisma.company.update({
+    where: { id: params.companyId },
+    data: { userDefinedAllocations: upsertCompanyInvites(company.userDefinedAllocations, nextInvites) as any },
+  });
+}
 
-    if (status !== 'pending' || !email || expired) {
-      nextInvites.push(invite);
-      continue;
-    }
+/** Removes every invite record for this user from one company. */
+export async function removeCompanyInvitesForUser(
+  companyId: string,
+  user: { id: string; email: string },
+): Promise<void> {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { userDefinedAllocations: true },
+  });
+  if (!company) return;
 
-    let pendingUserId = String(invite.pendingUserId || '').trim();
-    let user =
-      pendingUserId
-        ? await prisma.user.findUnique({
-            where: { id: pendingUserId },
-            select: { id: true, email: true },
-          })
-        : null;
+  const invites = getCompanyInvites(company.userDefinedAllocations);
+  const nextInvites = invites.filter((invite) => !inviteMatchesUser(invite, user));
+  if (nextInvites.length === invites.length) return;
 
-    if (!user) {
-      user = await prisma.user.findUnique({
-        where: { email },
-        select: { id: true, email: true },
-      });
-    }
-
-    if (!user) {
-      const stubPasswordHash = await hashPassword(generateSecureToken());
-      const created = await prisma.user.create({
-        data: {
-          email,
-          name,
-          passwordHash: stubPasswordHash,
-          role: 'USER',
-          userType,
-          companyId,
-          consultantId: company.consultantId || null,
-          companyRole: userType === 'COMPANY' ? 'user' : null,
-          passwordResetToken: `invite-pending:${crypto.randomUUID()}`,
-          passwordResetExpires: invite.expiresAt
-            ? new Date(invite.expiresAt)
-            : new Date(now + 7 * 24 * 60 * 60 * 1000),
-        },
-        select: { id: true, email: true },
-      });
-      user = created;
-      createdUsers += 1;
-      pendingUserId = created.id;
-      invitesChanged = true;
-      updatedInvites += 1;
-    } else if (!pendingUserId || pendingUserId !== user.id) {
-      pendingUserId = user.id;
-      invitesChanged = true;
-      updatedInvites += 1;
-    }
-
-    const grant = await grantUserCompanyAccess({
-      userId: user.id,
-      companyId,
-      companyRole: userType === 'COMPANY' ? 'user' : undefined,
-    });
-    if (grant.created) linkedUsers += 1;
-
-    nextInvites.push({
-      ...invite,
-      email,
-      name,
-      userType,
-      pendingUserId,
-    });
-  }
-
-  if (invitesChanged) {
-    const updatedUDA = upsertCompanyInvites(company.userDefinedAllocations, nextInvites);
-    await prisma.company.update({
-      where: { id: companyId },
-      data: { userDefinedAllocations: updatedUDA as any },
-    });
-  }
-
-  return { createdUsers, linkedUsers, updatedInvites };
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { userDefinedAllocations: upsertCompanyInvites(company.userDefinedAllocations, nextInvites) as any },
+  });
 }
