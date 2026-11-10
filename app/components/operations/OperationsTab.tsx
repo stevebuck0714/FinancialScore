@@ -47,7 +47,6 @@ import VendorForecastRollupReport from './VendorForecastRollupReport';
 import VendorPricingReport from './VendorPricingReport';
 import DefaultVendorReport from './DefaultVendorReport';
 import VendorItemOrderHistoryReport from './VendorItemOrderHistoryReport';
-import ResidentialRevenueForecast from './real-estate-forecast/ResidentialRevenueForecast';
 import LoansTab from './LoansTab';
 import RealEstateOperationsTab from './RealEstateOperationsTab';
 import RealEstateConstructionTab from './RealEstateConstructionTab';
@@ -279,7 +278,13 @@ type WholesaleRawCustomerOption = {
   label: string;
   customerGroup?: string;
 };
-type ForecastSubTab = 'income-statement-forecast' | 'cash-forecast' | 'graphs' | 'residential-revenue-forecast';
+type ForecastSubTab = 'income-statement-forecast' | 'cash-forecast' | 'graphs';
+/** Forecast reports, each gated by its Site Admin report customization toggle. */
+const FORECAST_SUB_TABS: Array<{ key: ForecastSubTab; label: string; sectionKey: string }> = [
+  { key: 'cash-forecast', label: '13 Week Cash Forecast', sectionKey: 'forecastStd13WeekCashForecast' },
+  { key: 'income-statement-forecast', label: 'Income Statement', sectionKey: 'forecastStdIncomeStatement' },
+  { key: 'graphs', label: 'Graphs', sectionKey: 'forecastStdGraphs' },
+];
 
 const WHOLESALE_INVENTORY_EXCLUDED_SECTION_KEYS = new Set([
   'inventoryRetailTurns',
@@ -857,14 +862,11 @@ export default function OperationsTab({
   >('enterprise-reports');
   const [activeCashSubTab, setActiveCashSubTab] = useState<'cash-conversion-analysis' | 'cash-position'>('cash-conversion-analysis');
   const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<ForecastSubTab>('income-statement-forecast');
-  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<ForecastSubTab>(() => (
-    isRealEstateSector ? 'residential-revenue-forecast' : 'cash-forecast'
-  ));
+  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<ForecastSubTab>('cash-forecast');
   const [cashForecastToolbarActions, setCashForecastToolbarActions] = useState<WorkingCapitalForecastToolbarActions | null>(null);
   const setCashForecastToolbar = useCallback((actions: WorkingCapitalForecastToolbarActions | null) => {
     setCashForecastToolbarActions(actions);
   }, []);
-  const hasAppliedRealEstateForecastDefaultRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -1867,14 +1869,6 @@ export default function OperationsTab({
       setActiveForecastBasisTab(initialForecastBasisTab);
     }
   }, [initialForecastBasisTab]);
-
-  useEffect(() => {
-    if (!isRealEstateSector || initialForecastSubTab || hasAppliedRealEstateForecastDefaultRef.current) return;
-    hasAppliedRealEstateForecastDefaultRef.current = true;
-    setActiveAccrualBasisForecastTab((current) => (
-      current === 'cash-forecast' ? 'residential-revenue-forecast' : current
-    ));
-  }, [isRealEstateSector, initialForecastSubTab]);
 
   useEffect(() => {
     if (!initialOverviewSubTab) return;
@@ -18903,76 +18897,36 @@ Strategies to Improve the CCC
       isSaving: savingReportLayout,
       onReorder: (orderedIds: string[]) => void saveReportOrder('forecast', orderedIds),
     };
+    const forecastSubTabs = FORECAST_SUB_TABS.filter((tab) => isSectionEnabled(tab.sectionKey));
+    if (!forecastSubTabs.length) {
+      return <div style={{ padding: '32px', color: '#64748b' }}>No Forecast reports are enabled for this company.</div>;
+    }
+    const activeForecastTab = forecastSubTabs.some((tab) => tab.key === activeAccrualBasisForecastTab)
+      ? activeAccrualBasisForecastTab
+      : forecastSubTabs[0].key;
     return (
-      <div style={{ padding: activeAccrualBasisForecastTab === 'cash-forecast' ? '8px 12px 24px' : '8px 32px 32px' }}>
+      <div style={{ padding: activeForecastTab === 'cash-forecast' ? '8px 12px 24px' : '8px 32px 32px' }}>
         <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
-          {isRealEstateSector && (
+          {forecastSubTabs.map((tab) => (
             <button
-              onClick={() => setActiveAccrualBasisForecastTab('residential-revenue-forecast')}
+              key={tab.key}
+              onClick={() => setActiveAccrualBasisForecastTab(tab.key)}
               style={{
                 padding: '12px 18px',
                 background: 'none',
-                color: activeAccrualBasisForecastTab === 'residential-revenue-forecast' ? '#2751d0' : '#64748b',
+                color: activeForecastTab === tab.key ? '#2751d0' : '#64748b',
                 border: 'none',
-                borderBottom: activeAccrualBasisForecastTab === 'residential-revenue-forecast' ? '3px solid #2751d0' : '3px solid transparent',
+                borderBottom: activeForecastTab === tab.key ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '14px',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
             >
-              Residential Revenue Forecast
+              {tab.label}
             </button>
-          )}
-          <button
-            onClick={() => setActiveAccrualBasisForecastTab('cash-forecast')}
-            style={{
-              padding: '12px 18px',
-              background: 'none',
-              color: activeAccrualBasisForecastTab === 'cash-forecast' ? '#2751d0' : '#64748b',
-              border: 'none',
-              borderBottom: activeAccrualBasisForecastTab === 'cash-forecast' ? '3px solid #2751d0' : '3px solid transparent',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            13 Week Cash Forecast
-          </button>
-          <button
-            onClick={() => setActiveAccrualBasisForecastTab('income-statement-forecast')}
-            style={{
-              padding: '12px 18px',
-              background: 'none',
-              color: activeAccrualBasisForecastTab === 'income-statement-forecast' ? '#2751d0' : '#64748b',
-              border: 'none',
-              borderBottom: activeAccrualBasisForecastTab === 'income-statement-forecast' ? '3px solid #2751d0' : '3px solid transparent',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            Income Statement
-          </button>
-          <button
-            onClick={() => setActiveAccrualBasisForecastTab('graphs')}
-            style={{
-              padding: '12px 18px',
-              background: 'none',
-              color: activeAccrualBasisForecastTab === 'graphs' ? '#2751d0' : '#64748b',
-              border: 'none',
-              borderBottom: activeAccrualBasisForecastTab === 'graphs' ? '3px solid #2751d0' : '3px solid transparent',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            Graphs
-          </button>
-          {activeAccrualBasisForecastTab === 'cash-forecast' && cashForecastToolbarActions && (
+          ))}
+          {activeForecastTab === 'cash-forecast' && cashForecastToolbarActions && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '8px' }}>
               <button
                 type="button"
@@ -18992,13 +18946,9 @@ Strategies to Improve the CCC
           )}
         </div>
 
-        {isRealEstateSector && activeAccrualBasisForecastTab === 'residential-revenue-forecast' && (
-          <ResidentialRevenueForecast companyId={selectedCompanyId} reportLayout={forecastReportLayout} />
-        )}
-
-        {(activeAccrualBasisForecastTab === 'income-statement-forecast' ||
-          activeAccrualBasisForecastTab === 'cash-forecast') && (
-          <div style={{ display: activeAccrualBasisForecastTab === 'income-statement-forecast' ? undefined : 'none' }}>
+        {(activeForecastTab === 'income-statement-forecast' ||
+          activeForecastTab === 'cash-forecast') && (
+          <div style={{ display: activeForecastTab === 'income-statement-forecast' ? undefined : 'none' }}>
             <FinancialForecastTab
               selectedCompanyId={selectedCompanyId}
               companyName={companyName}
@@ -19010,10 +18960,10 @@ Strategies to Improve the CCC
           </div>
         )}
 
-        {activeAccrualBasisForecastTab === 'cash-forecast' && (
+        {activeForecastTab === 'cash-forecast' && (
           <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} basisMode="accrual" onToolbarReady={setCashForecastToolbar} />
         )}
-        {activeAccrualBasisForecastTab === 'graphs' && (
+        {activeForecastTab === 'graphs' && (
           <FinancialForecastTab
             selectedCompanyId={selectedCompanyId}
             companyName={companyName}
