@@ -4,6 +4,7 @@ import { addEstCalendarDays } from '@/lib/time/eastern';
 import { RAMQUEST_TITLE_LABEL } from '@/lib/operational/ramquest-title';
 import { RSMEANS_PM_LABEL } from '@/lib/operational/rsmeans-pm';
 import { BUILDOUT_CRE_LABEL } from '@/lib/operational/buildout-cre';
+import { REALPAGE_ONESITE_LABEL, REALPAGE_ONESITE_SOURCE_CODE } from '@/lib/operational/realpage-onesite';
 import { payloadToOutput } from '../payload';
 import type { OperationalSourceAdapter, OperationalSourceContext } from '../types';
 
@@ -85,6 +86,11 @@ export const SPREADSHEET_ADAPTERS = {
   RAMQUEST_TITLE: spreadsheetAdapter({ sourceCode: 'RAMQUEST_TITLE', label: RAMQUEST_TITLE_LABEL, datasetPrefix: 'ramquest' }),
   RSMEANS_PM: spreadsheetAdapter({ sourceCode: 'RSMEANS_PM', label: RSMEANS_PM_LABEL, datasetPrefix: 'rsmeans' }),
   BUILDOUT_CRE: spreadsheetAdapter({ sourceCode: 'BUILDOUT_CRE', label: BUILDOUT_CRE_LABEL, datasetPrefix: 'buildout' }),
+  [REALPAGE_ONESITE_SOURCE_CODE]: spreadsheetAdapter({
+    sourceCode: REALPAGE_ONESITE_SOURCE_CODE,
+    label: REALPAGE_ONESITE_LABEL,
+    datasetPrefix: 'realpage_onesite',
+  }),
   APPLIED_EPIC_INSURANCE_SERVICES: spreadsheetAdapter({
     sourceCode: 'APPLIED_EPIC_INSURANCE_SERVICES',
     label: 'Applied Epic - Insurance Services',

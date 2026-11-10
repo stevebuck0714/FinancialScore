@@ -5,6 +5,7 @@ import { RAMQUEST_TITLE_LABEL, RAMQUEST_TITLE_SOURCE_CODE } from '@/lib/operatio
 import { RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 import { ISOLVED_PEOPLE_CLOUD_LABEL, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
+import { REALPAGE_ONESITE_LABEL, REALPAGE_ONESITE_SOURCE_CODE } from '@/lib/operational/realpage-onesite';
 
 export type OperationalSourceProvider = 'BAMBOOHR' | 'HUBSPOT' | 'SPREADSHEET_UPLOAD' | 'ISOLVED' | 'HIGHLEVEL' | 'JOBBOSS' | 'PROSHOP';
 
@@ -36,6 +37,7 @@ export const OPERATIONAL_SOURCE_DEFINITIONS = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: RAMQUEST_TITLE_SOURCE_CODE, label: RAMQUEST_TITLE_LABEL, sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: RSMEANS_PM_SOURCE_CODE, label: RSMEANS_PM_LABEL, sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: BUILDOUT_CRE_SOURCE_CODE, label: BUILDOUT_CRE_LABEL, sectorCategories: ['53'] },
+  { provider: 'SPREADSHEET_UPLOAD', sourceCode: REALPAGE_ONESITE_SOURCE_CODE, label: REALPAGE_ONESITE_LABEL, sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'APPLIED_EPIC_INSURANCE_SERVICES', label: 'Applied Epic - Insurance Services', sectorCategories: ['53'] },
   { provider: 'ISOLVED', sourceCode: ISOLVED_PEOPLE_CLOUD_SOURCE_CODE, label: ISOLVED_PEOPLE_CLOUD_LABEL, sectorCategories: ['54'] },
   { provider: 'BAMBOOHR', sourceCode: 'BAMBOOHR_STANDARD', label: 'BambooHR', sectorCategories: ['56'] },

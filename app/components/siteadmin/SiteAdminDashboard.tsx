@@ -62,6 +62,7 @@ import { DEFAULT_RAMQUEST_TITLE_DATA_DOMAINS, RAMQUEST_TITLE_LABEL, RAMQUEST_TIT
 import { DEFAULT_RSMEANS_PM_DATA_DOMAINS, RSMEANS_PM_LABEL, RSMEANS_PM_SOURCE_CODE } from '@/lib/operational/rsmeans-pm';
 import { DEFAULT_BUILDOUT_CRE_DATA_DOMAINS, BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/buildout-cre';
 import { DEFAULT_ISOLVED_PEOPLE_CLOUD_DATA_DOMAINS, ISOLVED_PEOPLE_CLOUD_LABEL, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
+import { DEFAULT_REALPAGE_ONESITE_DATA_DOMAINS, REALPAGE_ONESITE_LABEL, REALPAGE_ONESITE_SOURCE_CODE } from '@/lib/operational/realpage-onesite';
 
 const AFFILIATE_ADD_ON_OPTIONS = [
   { key: 'dataRoom', label: 'Data Room' },
@@ -4748,6 +4749,9 @@ export default function SiteAdminDashboard(props: any) {
       if (selected.some((source: any) => String(source?.sourceCode || '') === BUILDOUT_CRE_SOURCE_CODE)) {
         loadOperationalSourceDataDomains(companyId, BUILDOUT_CRE_SOURCE_CODE);
       }
+      if (selected.some((source: any) => String(source?.sourceCode || '') === REALPAGE_ONESITE_SOURCE_CODE)) {
+        loadOperationalSourceDataDomains(companyId, REALPAGE_ONESITE_SOURCE_CODE);
+      }
       if (selected.some((source: any) => String(source?.sourceCode || '') === ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)) {
         loadOperationalSourceDataDomains(companyId, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE);
       }
@@ -5967,6 +5971,12 @@ export default function SiteAdminDashboard(props: any) {
       credentialFields: ['API Base URL', 'Account / Tenant ID', 'Client ID', 'Client Secret', 'API Key', 'OAuth Redirect URI', 'Webhook Secret'],
       domains: DEFAULT_BUILDOUT_CRE_DATA_DOMAINS,
     },
+    [REALPAGE_ONESITE_SOURCE_CODE]: {
+      label: REALPAGE_ONESITE_LABEL,
+      description: 'Read-oriented OneSite data. RealPage must provision this integration through AppPartner / RealPage Exchange and enable the requested API families for the client.',
+      credentialFields: ['RealPage API Base URL', 'RPX Service Username', 'RPX Service Password', 'License Key', 'PMC ID', 'Site ID / Property IDs', 'Source System (defaults to OneSite)', 'Sandbox / Production Environment'],
+      domains: DEFAULT_REALPAGE_ONESITE_DATA_DOMAINS,
+    },
     [ISOLVED_PEOPLE_CLOUD_SOURCE_CODE]: {
       label: ISOLVED_PEOPLE_CLOUD_LABEL,
       description: 'Cloud HCM REST API for HR, payroll, time, benefits, and workforce data. Use beside QuickBooks Desktop for census, pay runs, time, and GL payroll export.',
@@ -5987,8 +5997,9 @@ export default function SiteAdminDashboard(props: any) {
     if (normalizedSourceCode === RAMQUEST_TITLE_SOURCE_CODE) return 16 + offset;
     if (normalizedSourceCode === RSMEANS_PM_SOURCE_CODE) return 18 + offset;
     if (normalizedSourceCode === BUILDOUT_CRE_SOURCE_CODE) return 20 + offset;
+    if (normalizedSourceCode === REALPAGE_ONESITE_SOURCE_CODE) return 22 + offset;
     if (normalizedSourceCode === ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) return 6 + offset;
-    return 22 + offset;
+    return 24 + offset;
   };
 
   const renderConstructionOperationalIntegrationCard = (companyId: string, companyName: string, sourceCode: string) => {
@@ -9936,6 +9947,8 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, RSMEANS_PM_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, RSMEANS_PM_SOURCE_CODE)}
                                             {isOperationalSourceSelected(company.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, BUILDOUT_CRE_SOURCE_CODE)}
                                             {isOperationalSourceSelected(company.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, BUILDOUT_CRE_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, REALPAGE_ONESITE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, REALPAGE_ONESITE_SOURCE_CODE)}
+                                            {isOperationalSourceSelected(company.id, REALPAGE_ONESITE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, REALPAGE_ONESITE_SOURCE_CODE)}
                                             {isOperationalSourceSelected(company.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)}
                                             {isOperationalSourceSelected(company.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(company.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)}
                                             <div style={{ gridColumn: '1 / -1', order: 3, display: 'none' }}>
@@ -13741,6 +13754,8 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, RSMEANS_PM_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, RSMEANS_PM_SOURCE_CODE)}
                                   {isOperationalSourceSelected(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, BUILDOUT_CRE_SOURCE_CODE)}
                                   {isOperationalSourceSelected(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, BUILDOUT_CRE_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, REALPAGE_ONESITE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, REALPAGE_ONESITE_SOURCE_CODE)}
+                                  {isOperationalSourceSelected(businessCompany.id, REALPAGE_ONESITE_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, REALPAGE_ONESITE_SOURCE_CODE)}
                                   {isOperationalSourceSelected(businessCompany.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)}
                                   {isOperationalSourceSelected(businessCompany.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE) && renderConstructionOperationalDataDomainsCard(businessCompany.id, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE)}
                                 </div>
