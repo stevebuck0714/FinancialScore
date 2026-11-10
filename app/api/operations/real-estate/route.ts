@@ -8,7 +8,7 @@ import { ensureRealEstateCashFlowLineTable } from '@/lib/real-estate/cash-flow-l
 import { ensureRealEstateWaterfallTables } from '@/lib/real-estate/waterfall-tables';
 import { normalizeName } from '@/lib/real-estate/cash-flow-report';
 import { buildEntityReportLines } from '@/lib/real-estate/entity-report-lines';
-import { publishConsolidatedFinancials } from '@/lib/real-estate/consolidated-financials';
+import { buildConsolidatedMonthlyRows, loadConsolidationInput, publishConsolidatedFinancials } from '@/lib/real-estate/consolidated-financials';
 import { applyInvestorLedgerCorrections } from '@/lib/real-estate/investor-ledger-corrections';
 import { CONSOLIDATED_FINANCIALS_SOURCE, isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 import { ensureRealEstateTaxReconciliationTables } from '@/lib/real-estate/tax-reconciliation-tables';
@@ -135,7 +135,9 @@ export async function GET(request: NextRequest) {
     const waterfallSettings = settingsRows[0] || { stabilizationDate: null, preferredReturnRate: 6 };
     const { lines: reportLines, mappings: reportMappings, quickBooksLines, savedQuickBooksMappings, bgahFromQuickBooks } = buildEntityReportLines(allLines, mappings);
     let consolidatedReporting = null;
+    let consolidatedBalanceLines = null;
     if (isConsolidatedReportingCompany(companyId)) {
+      if (bgahFromQuickBooks) consolidatedBalanceLines = buildConsolidatedMonthlyRows(await loadConsolidationInput(companyId)).balanceLines;
       const [latest] = await prisma.$queryRawUnsafe<any[]>(
         `SELECT "createdAt", "rawData"->'payload'->'metadata' AS metadata FROM "FinancialRecord"
          WHERE "companyId"=$1 AND "rawData"->>'source'=$2 ORDER BY "createdAt" DESC LIMIT 1`,
@@ -155,6 +157,7 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json({
       consolidatedReporting,
+      consolidatedBalanceLines,
       lines: reportLines, cashFlowLines, quickBooksLines, quickBooksMappings: savedQuickBooksMappings, bgahSource: bgahFromQuickBooks ? 'QUICKBOOKS' : 'WORKBOOK',
       investors, occupancy, cashActivities, operationalMetrics, mappings: reportMappings, waterfallSettings, aliases,
       taxReturns, taxDepreciationRecords,

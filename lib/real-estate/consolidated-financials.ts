@@ -24,9 +24,10 @@ import { CONSOLIDATED_FINANCIALS_SOURCE, type ContributedLand, contributedLand, 
  *   month the deeds transferred, when one is configured, instead of
  *   QuickBooks' tax carryover basis; contributed capital changes by the same
  *   amount.
- * - BGAH's Due to/from SLN account is eliminated. SLN keeps no equity, so the
- *   consolidated retained earnings is the balancing amount; `unreconciled` is
- *   what remains after BGAH's own equity and SLN's cumulative earnings.
+ * - BGAH's Due to/from SLN account is eliminated and SLN's own equity is not
+ *   carried, so the consolidated retained earnings is the balancing amount;
+ *   `unreconciled` is what remains after BGAH's own equity and SLN's
+ *   cumulative earnings. `balanceLines` is the line detail behind those totals.
  */
 
 type Line = {
@@ -55,6 +56,17 @@ export type ConsolidatedMonth = {
   entities: Array<'SLN' | 'BGAH'>;
   partial: boolean;
   unreconciled: number | null;
+};
+
+/** One balance sheet line of the consolidation, so its detail ties to the published totals. */
+export type ConsolidatedBalanceLine = {
+  sourceEntity: 'SLN' | 'BGAH' | 'CONSOLIDATION';
+  reportType: 'BALANCE';
+  periodEnd: string;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  amount: number;
 };
 
 const EXPENSE_FIELDS = new Set([
@@ -195,7 +207,7 @@ export function buildConsolidatedMonthlyRows(input: {
   contributedLand?: ContributedLand | null;
 }) {
   const allLines = [...input.slnLines, ...input.bgahLines];
-  if (!allLines.length) return { rows: [] as Row[], months: [] as ConsolidatedMonth[], unmappedSlnAccounts: 0, unmappedBgahAccounts: [] as string[], remappedBgahAccounts: [] as string[] };
+  if (!allLines.length) return { rows: [] as Row[], months: [] as ConsolidatedMonth[], balanceLines: [] as ConsolidatedBalanceLine[], unmappedSlnAccounts: 0, unmappedBgahAccounts: [] as string[], remappedBgahAccounts: [] as string[] };
   const lineMonths = allLines.map((line) => monthOf(line.periodEnd)).sort();
   const months = monthRange(lineMonths[0], lineMonths[lineMonths.length - 1]);
   const rows = new Map(months.map((month) => [month, createRow(month)]));
@@ -224,8 +236,12 @@ export function buildConsolidatedMonthlyRows(input: {
   const slnNet = new Map<string, number>();
   const principal = new Map<string, number>();
   const capitalized = new Map<string, number>();
-  const contributedLandBasis = new Map<string, { field: string; amount: number }>();
+  const contributedLandBasis = new Map<string, { field: string; accountType: string; amount: number }>();
   const addTo = (map: Map<string, number>, month: string, amount: number) => map.set(month, (map.get(month) || 0) + amount);
+  const balanceLines: ConsolidatedBalanceLine[] = [];
+  const addBalanceLine = (sourceEntity: ConsolidatedBalanceLine['sourceEntity'], month: string, line: Pick<Line, 'accountCode' | 'accountName' | 'accountType'>, amount: number) => {
+    if (amount) balanceLines.push({ sourceEntity, reportType: 'BALANCE', periodEnd: `${month}-01`, accountCode: String(line.accountCode || ''), accountName: line.accountName, accountType: line.accountType, amount: round(amount) });
+  };
 
   for (const line of input.bgahLines) {
     const month = monthOf(line.periodEnd);
@@ -267,9 +283,10 @@ export function buildConsolidatedMonthlyRows(input: {
     }
     if (side === 'asset' && CONTRIBUTED_LAND_ACCOUNT.test(line.accountName)) {
       const basis = contributedLandBasis.get(month);
-      contributedLandBasis.set(month, { field, amount: (basis?.amount || 0) + amount });
+      contributedLandBasis.set(month, { field, accountType: line.accountType, amount: (basis?.amount || 0) + amount });
     }
     row[field] = Number(row[field] || 0) + amount;
+    addBalanceLine('BGAH', month, line, amount);
   }
 
   // Each year's booked depreciation and amortization, spread evenly over its twelve months.
@@ -321,6 +338,7 @@ export function buildConsolidatedMonthlyRows(input: {
     const field = TYPE_FIELD[normalizeType(line.accountType)];
     const row = rows.get(month)!;
     row[field] = Number(row[field] || 0) + amount;
+    addBalanceLine('SLN', month, line, amount);
   }
 
   const firstSlnMonth = input.slnLines.map((line) => monthOf(line.periodEnd)).sort()[0] || null;
@@ -337,11 +355,16 @@ export function buildConsolidatedMonthlyRows(input: {
     const timing = depreciationTiming.get(month) || 0;
     row.ltd = Number(row.ltd || 0) - cumulativePrincipal;
     row.fixedAssets = Number(row.fixedAssets || 0) + cumulativeCapital + timing;
+    addBalanceLine('CONSOLIDATION', month, { accountCode: '', accountName: 'Loan principal paid through SLN', accountType: 'LongTermDebt' }, -cumulativePrincipal);
+    addBalanceLine('CONSOLIDATION', month, { accountCode: '', accountName: 'Capital improvements paid through SLN', accountType: 'FixedAsset' }, cumulativeCapital);
+    addBalanceLine('CONSOLIDATION', month, { accountCode: '', accountName: 'Depreciation spread evenly over the year', accountType: 'FixedAsset' }, timing);
     if (input.contributedLand && month >= input.contributedLand.fromMonth) {
-      const landBasis = contributedLandBasis.get(month) || { field: 'fixedAssets', amount: 0 };
+      const landBasis = contributedLandBasis.get(month) || { field: 'fixedAssets', accountType: 'FixedAsset', amount: 0 };
       const stepUp = input.contributedLand.bookValue - landBasis.amount;
       row[landBasis.field] = Number(row[landBasis.field] || 0) + stepUp;
       row.ownersCapital = Number(row.ownersCapital || 0) + stepUp;
+      addBalanceLine('CONSOLIDATION', month, { accountCode: '', accountName: 'Land Contributions - GAAP book value adjustment', accountType: landBasis.accountType }, stepUp);
+      addBalanceLine('CONSOLIDATION', month, { accountCode: '', accountName: 'Land Contributions - GAAP book value adjustment', accountType: 'Equity' }, stepUp);
     }
     row.tca = sum(CURRENT_ASSET_FIELDS);
     row.totalAssets = row.tca + sum(FIXED_ASSET_FIELDS) + sum(OTHER_ASSET_FIELDS);
@@ -358,6 +381,13 @@ export function buildConsolidatedMonthlyRows(input: {
     if (cover.slnActivity || cover.slnBalance) entities.push('SLN');
     if (cover.bgah) entities.push('BGAH');
     const expectedRetained = (bgahEquityResidual.get(month) || 0) + cumulativeSlnNet + timing + (slnEquity.get(month) || 0);
+    const retainedLine = { accountCode: '', accountName: 'Retained Earnings', accountType: 'Equity' };
+    if (cover.bgah) {
+      addBalanceLine('CONSOLIDATION', month, retainedLine, expectedRetained);
+      addBalanceLine('CONSOLIDATION', month, { accountCode: '', accountName: 'Intercompany difference not yet explained', accountType: 'Equity' }, row.retainedEarnings - expectedRetained);
+    } else {
+      addBalanceLine('CONSOLIDATION', month, retainedLine, row.retainedEarnings);
+    }
     monthInfo.push({
       month,
       entities,
@@ -369,6 +399,7 @@ export function buildConsolidatedMonthlyRows(input: {
   return {
     rows: months.map((month) => rows.get(month)!),
     months: monthInfo,
+    balanceLines,
     unmappedSlnAccounts: mapped.unmapped.length,
     unmappedBgahAccounts: [...unmappedBgah].sort(),
     remappedBgahAccounts: [...remappedBgah].sort(),

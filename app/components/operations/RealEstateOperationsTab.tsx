@@ -51,7 +51,7 @@ const monthEnd = (month: string) => {
 
 export default function RealEstateOperationsTab({ selectedCompanyId, mode, operationalHubSections }: Props) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
-  const [data, setData] = useState<{ lines: any[]; cashFlowLines?: any[]; quickBooksLines?: any[]; quickBooksMappings?: any[]; bgahSource?: 'QUICKBOOKS' | 'WORKBOOK'; investors: any[]; occupancy: any[]; cashActivities: any[]; operationalMetrics: any[]; mappings?: any[]; waterfallSettings?: WaterfallSettings; aliases?: Array<{ alias: string; investorId: string }>; taxReturns?: any[]; taxDepreciationRecords?: any[]; consolidatedReporting?: { publishedAt: string | null; firstMonth: string | null; lastMonth: string | null; partialMonths: string[]; latestCombinedMonth: string | null; latestUnreconciled: number | null; unmappedSlnAccounts: number } | null }>({ lines: [], investors: [], occupancy: [], cashActivities: [], operationalMetrics: [], mappings: [], taxReturns: [], taxDepreciationRecords: [] });
+  const [data, setData] = useState<{ lines: any[]; cashFlowLines?: any[]; quickBooksLines?: any[]; quickBooksMappings?: any[]; bgahSource?: 'QUICKBOOKS' | 'WORKBOOK'; investors: any[]; occupancy: any[]; cashActivities: any[]; operationalMetrics: any[]; mappings?: any[]; waterfallSettings?: WaterfallSettings; aliases?: Array<{ alias: string; investorId: string }>; taxReturns?: any[]; taxDepreciationRecords?: any[]; consolidatedReporting?: { publishedAt: string | null; firstMonth: string | null; lastMonth: string | null; partialMonths: string[]; latestCombinedMonth: string | null; latestUnreconciled: number | null; unmappedSlnAccounts: number } | null; consolidatedBalanceLines?: any[] | null }>({ lines: [], investors: [], occupancy: [], cashActivities: [], operationalMetrics: [], mappings: [], taxReturns: [], taxDepreciationRecords: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [publishingConsolidated, setPublishingConsolidated] = useState(false);
   const [consolidatedPublishError, setConsolidatedPublishError] = useState('');
@@ -524,7 +524,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
         ? <PropertyIncomeStatementTable lines={data.lines} mappings={data.mappings || []} scope={entityScope} columns={entityColumns} monthToColumn={entityMonthToColumn} />
         : <div style={{ ...card, color: '#64748b' }}>No income-statement activity is available for this entity and period.</div>)}
       {entityView === 'balance' && (entityColumns.length
-        ? <PropertyBalanceSheetTable lines={data.lines} scope={entityScope} columns={entityColumns} balanceMonthByColumn={entityBalanceMonthByColumn} />
+        ? <PropertyBalanceSheetTable lines={data.lines} scope={entityScope} columns={entityColumns} balanceMonthByColumn={entityBalanceMonthByColumn} consolidatedLines={data.consolidatedBalanceLines} />
         : <div style={{ ...card, color: '#64748b' }}>No balance sheet data is available for this entity and period.</div>)}
       {entityView === 'cashflow' && entityScope === 'SLN' && (entityColumns.length && (data.cashFlowLines || []).some((line) => entityMonthToColumn(String(line.periodEnd).slice(0, 7)))
         ? <PropertyCashFlowTable lines={(data.cashFlowLines || []).filter((line) => line.sourceEntity === 'SLN')} columns={entityColumns} monthToColumn={entityMonthToColumn} />

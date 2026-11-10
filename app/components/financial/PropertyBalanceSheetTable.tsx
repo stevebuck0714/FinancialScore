@@ -11,6 +11,8 @@ type Props = {
   /** Ordered period columns and the source month (YYYY-MM) whose balances each column shows. */
   columns: string[];
   balanceMonthByColumn: Record<string, string>;
+  /** Consolidated SLN + BGAH balance lines; when present, Combined shows these instead of adding the two entities. */
+  consolidatedLines?: any[] | null;
 };
 
 type Group = { key: string; label: string; total: string; types: string[] };
@@ -94,7 +96,8 @@ const EQUITY_SECTIONS = [
   { key: 'distributions', label: 'Distributions', total: 'Total Distributions', pattern: /distribut/i },
 ];
 
-export default function PropertyBalanceSheetTable({ lines, scope, columns, balanceMonthByColumn }: Props) {
+export default function PropertyBalanceSheetTable({ lines, scope, columns, balanceMonthByColumn, consolidatedLines }: Props) {
+  const consolidated = scope === 'COMBINED' && Array.isArray(consolidatedLines);
   const [hideEmptyLines, setHideEmptyLines] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set(EQUITY_SECTIONS.map((section) => section.key)));
   const toggleSection = (key: string) => setCollapsedSections((current) => {
@@ -105,7 +108,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
 
   const { rows, unclassified } = useMemo(() => {
     const accounts = new Map<string, { code: string; name: string; type: string; values: Record<string, number> }>();
-    lines.forEach((line) => {
+    (consolidated ? consolidatedLines! : lines).forEach((line) => {
       if (String(line.reportType).toUpperCase() !== 'BALANCE') return;
       if (scope !== 'COMBINED' && line.sourceEntity !== scope) return;
       const month = String(line.periodEnd).slice(0, 7);
@@ -160,7 +163,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
     }
     const knownTypes = new Set(SIDES.flatMap((side) => side.groups.flatMap((group) => group.types)));
     return { rows: output, unclassified: sorted.filter((account) => !knownTypes.has(account.type)) };
-  }, [lines, scope, columns, balanceMonthByColumn]);
+  }, [lines, consolidated, consolidatedLines, scope, columns, balanceMonthByColumn]);
 
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const trendColumns = [...columns].sort();
@@ -181,7 +184,10 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#64748b' }}>Click any line to see its trend.</span>
+        <span style={{ fontSize: 12, color: '#64748b' }}>
+          {consolidated && 'Consolidated as in Financial Reporting: BGAH’s books plus SLN’s property working capital, with the Due to/from SLN balance and SLN’s own equity eliminated. '}
+          Click any line to see its trend.
+        </span>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569' }}>
           <input type="checkbox" checked={hideEmptyLines} onChange={(event) => setHideEmptyLines(event.target.checked)} />
           Hide lines with no activity
@@ -251,7 +257,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
       {selectedRow && (
         <StatementTrendPopup
           label={selectedRow.label}
-          subtitle={`${scope === 'COMBINED' ? 'Combined BGAH + SLN' : scope} · Balance as of period end · ${trendColumns[0]}${trendColumns.length > 1 ? ` – ${trendColumns[trendColumns.length - 1]}` : ''}`}
+          subtitle={`${scope === 'COMBINED' ? (consolidated ? 'Consolidated BGAH + SLN' : 'Combined BGAH + SLN') : scope} · Balance as of period end · ${trendColumns[0]}${trendColumns.length > 1 ? ` – ${trendColumns[trendColumns.length - 1]}` : ''}`}
           columns={trendColumns}
           values={selectedRow.values}
           onClose={() => setSelectedRowIndex(null)}
