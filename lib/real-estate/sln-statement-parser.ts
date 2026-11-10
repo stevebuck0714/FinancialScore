@@ -162,12 +162,12 @@ export function slnBalanceAccountType(name: string): string {
   if (/mmi security deposits/i.test(name)) return 'Bank';
   if (/transfer to owner/i.test(name)) return 'Equity';
   if (/partner.?s?\s*equity|^equity\b|retained earnings/i.test(name)) return 'Equity';
-  if (/mortgage payable|long.term debt|notes? payable/i.test(name)) return 'Long Term Debt';
+  if (/mortgage pay|principal reduction|\bvhda\b|loan payable|long.term debt|notes? payable/i.test(name)) return 'Long Term Debt';
   if (/payable|accrued payroll|security dep/i.test(name)) return 'Other Current Liability';
   if (/accounts receivable|a\/r\b/i.test(name)) return 'Accounts Receivable';
   if (/land|capital improvements|development cost|furniture|fixtures|building|equipment/i.test(name)) return 'Fixed Asset';
   if (/prepaid|escrow|deposit|other asset/i.test(name)) return 'Other Current Asset';
-  if (/cash|operating acct|money market|petty cash|bank/i.test(name) || value.includes('acct')) return 'Bank';
+  if (/cash|operating acc(?:t|ount)|checking|money market|petty cash|bank/i.test(name) || value.includes('acct')) return 'Bank';
   return 'Other Asset';
 }
 
