@@ -381,7 +381,7 @@ export function buildConsolidatedMonthlyRows(input: {
     if (cover.slnActivity || cover.slnBalance) entities.push('SLN');
     if (cover.bgah) entities.push('BGAH');
     const expectedRetained = (bgahEquityResidual.get(month) || 0) + cumulativeSlnNet + timing + (slnEquity.get(month) || 0);
-    const retainedLine = { accountCode: '', accountName: 'Retained Earnings', accountType: 'Equity' };
+    const retainedLine = { accountCode: '', accountName: 'Cumulative Earnings (Deficit)', accountType: 'Equity' };
     if (cover.bgah) {
       addBalanceLine('CONSOLIDATION', month, retainedLine, expectedRetained);
       addBalanceLine('CONSOLIDATION', month, { accountCode: '', accountName: 'Intercompany difference not yet explained', accountType: 'Equity' }, row.retainedEarnings - expectedRetained);
