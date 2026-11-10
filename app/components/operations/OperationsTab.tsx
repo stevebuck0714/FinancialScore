@@ -16887,7 +16887,16 @@ export default function OperationsTab({
       });
     const renderBalanceRowLabel = (rowDef: { label: string; toggleField?: string; toggleExpanded?: boolean; isAccountDetail?: boolean }) => {
       if (rowDef.isAccountDetail) {
-        return <span style={{ display: 'inline-block', paddingLeft: '24px', fontSize: '12px', color: '#64748b' }}>{rowDef.label.trim()}</span>;
+        const fullName = rowDef.label.trim();
+        const leafName = fullName.split(':').pop()?.trim() || fullName;
+        return (
+          <span
+            title={fullName}
+            style={{ display: 'inline-block', paddingLeft: '24px', fontSize: '12px', color: '#64748b', whiteSpace: 'normal', maxWidth: '320px' }}
+          >
+            {leafName}
+          </span>
+        );
       }
       if (!rowDef.toggleField) return rowDef.label;
       return (

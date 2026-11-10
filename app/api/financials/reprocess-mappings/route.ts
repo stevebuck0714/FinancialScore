@@ -2686,9 +2686,16 @@ async function persistQuickBooksDesktopBalanceSheetAnchor(companyId: string, pay
     .filter((accountRow): accountRow is NonNullable<typeof accountRow> => accountRow !== null);
 
   if (parsedAccountAnchors.length > 0) {
-    const anchorDates = parsedAccountAnchors.map((accountRow) => accountRow.anchorDate);
-    const minAnchorDate = new Date(Math.min(...anchorDates.map((anchor) => anchor.getTime())));
-    const maxAnchorDate = new Date(Math.max(...anchorDates.map((anchor) => anchor.getTime())));
+    // One anchor per account per day can exceed V8's spread-argument limit, so no Math.min(...dates).
+    let minAnchorTime = Infinity;
+    let maxAnchorTime = -Infinity;
+    for (const accountRow of parsedAccountAnchors) {
+      const time = accountRow.anchorDate.getTime();
+      if (time < minAnchorTime) minAnchorTime = time;
+      if (time > maxAnchorTime) maxAnchorTime = time;
+    }
+    const minAnchorDate = new Date(minAnchorTime);
+    const maxAnchorDate = new Date(maxAnchorTime);
     await prisma.balanceSheetAccountAnchor.deleteMany({
       where: {
         companyId,
