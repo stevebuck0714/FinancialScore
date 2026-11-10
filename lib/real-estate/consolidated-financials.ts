@@ -8,7 +8,7 @@ import {
   aggregateMappedAmounts,
   propertyLineGroup,
 } from '@/lib/real-estate/property-income-statement';
-import { CONSOLIDATED_FINANCIALS_SOURCE, isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
+import { CONSOLIDATED_FINANCIALS_SOURCE, type ContributedLand, contributedLand, isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 
 /**
  * Consolidated SLN + BGAH monthly financials for Financial Reporting.
@@ -20,6 +20,10 @@ import { CONSOLIDATED_FINANCIALS_SOURCE, isConsolidatedReportingCompany } from '
  * - BGAH (QuickBooks Desktop) adds owner-level activity through the company's
  *   Data Mapping. Each year's depreciation and amortization is spread evenly
  *   over that year's months; fixed assets carry the same timing difference.
+ * - Land contributed by members is carried at its GAAP book value from the
+ *   month the deeds transferred, when one is configured, instead of
+ *   QuickBooks' tax carryover basis; contributed capital changes by the same
+ *   amount.
  * - BGAH's Due to/from SLN account is eliminated. SLN keeps no equity, so the
  *   consolidated retained earnings is the balancing amount; `unreconciled` is
  *   what remains after BGAH's own equity and SLN's cumulative earnings.
@@ -74,6 +78,7 @@ const TYPE_FIELD: Record<string, string> = {
 };
 const SKIP_TARGETS = new Set(['ignored', 'ignore', 'unmapped', 'skip', 'exclude', 'excluded']);
 const INTERCOMPANY_ACCOUNT = /due\s*to\s*\/\s*from\s*sln|due\s+(to|from)\s+sln|nusbaum/i;
+const CONTRIBUTED_LAND_ACCOUNT = /land\s+contributions?\b/i;
 // SLN's balance sheet varies month to month and sometimes repeats owner-level
 // items BGAH already carries (land, development cash, capital improvements,
 // the mortgage, lender escrows). Only property working capital is taken from SLN.
@@ -187,6 +192,7 @@ export function buildConsolidatedMonthlyRows(input: {
   slnMappings: PropertyMapping[];
   bgahLines: Line[];
   accountMappings: AccountMappingRow[];
+  contributedLand?: ContributedLand | null;
 }) {
   const allLines = [...input.slnLines, ...input.bgahLines];
   if (!allLines.length) return { rows: [] as Row[], months: [] as ConsolidatedMonth[], unmappedSlnAccounts: 0, unmappedBgahAccounts: [] as string[], remappedBgahAccounts: [] as string[] };
@@ -218,6 +224,7 @@ export function buildConsolidatedMonthlyRows(input: {
   const slnNet = new Map<string, number>();
   const principal = new Map<string, number>();
   const capitalized = new Map<string, number>();
+  const contributedLandBasis = new Map<string, { field: string; amount: number }>();
   const addTo = (map: Map<string, number>, month: string, amount: number) => map.set(month, (map.get(month) || 0) + amount);
 
   for (const line of input.bgahLines) {
@@ -257,6 +264,10 @@ export function buildConsolidatedMonthlyRows(input: {
     if (field === 'retainedEarnings') {
       addTo(bgahEquityResidual, month, amount);
       continue;
+    }
+    if (side === 'asset' && CONTRIBUTED_LAND_ACCOUNT.test(line.accountName)) {
+      const basis = contributedLandBasis.get(month);
+      contributedLandBasis.set(month, { field, amount: (basis?.amount || 0) + amount });
     }
     row[field] = Number(row[field] || 0) + amount;
   }
@@ -326,6 +337,12 @@ export function buildConsolidatedMonthlyRows(input: {
     const timing = depreciationTiming.get(month) || 0;
     row.ltd = Number(row.ltd || 0) - cumulativePrincipal;
     row.fixedAssets = Number(row.fixedAssets || 0) + cumulativeCapital + timing;
+    if (input.contributedLand && month >= input.contributedLand.fromMonth) {
+      const landBasis = contributedLandBasis.get(month) || { field: 'fixedAssets', amount: 0 };
+      const stepUp = input.contributedLand.bookValue - landBasis.amount;
+      row[landBasis.field] = Number(row[landBasis.field] || 0) + stepUp;
+      row.ownersCapital = Number(row.ownersCapital || 0) + stepUp;
+    }
     row.tca = sum(CURRENT_ASSET_FIELDS);
     row.totalAssets = row.tca + sum(FIXED_ASSET_FIELDS) + sum(OTHER_ASSET_FIELDS);
     row.tcl = sum(CURRENT_LIABILITY_FIELDS);
@@ -378,6 +395,7 @@ export async function loadConsolidationInput(companyId: string) {
     slnMappings: propertyMappings.filter((mapping) => mapping.financialFeed === 'SLN') as PropertyMapping[],
     bgahLines: allLines.filter((line) => line.sourceEntity === 'QBD') as Line[],
     accountMappings,
+    contributedLand: contributedLand(companyId),
   };
 }
 
