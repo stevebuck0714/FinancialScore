@@ -454,15 +454,15 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
       const response = await fetch('/api/operations/real-estate/sln-statements', { method: 'POST', body: form });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Unable to load the SLN statements.');
-      const loaded = [
-        payload.incomeStatementLines ? `${payload.incomeStatementLines} income statement lines` : '',
-        payload.cashFlowLines ? `${payload.cashFlowLines} cash flow lines` : '',
-        payload.balanceSheetLines ? `${payload.balanceSheetLines} balance sheet lines` : '',
-      ].filter(Boolean).join(', ');
+      const loaded = (payload.months || []).map((load: { month: string; incomeStatementLines: number; cashFlowLines: number; balanceSheetLines: number }) => `${formatMonthLabel(load.month)} (${[
+        load.incomeStatementLines ? `${load.incomeStatementLines} income statement lines` : '',
+        load.cashFlowLines ? `${load.cashFlowLines} cash flow lines` : '',
+        load.balanceSheetLines ? `${load.balanceSheetLines} balance sheet lines` : '',
+      ].filter(Boolean).join(', ')})`).join('; ');
       const publishNote = payload.published === true
         ? ' Financial Reporting was republished.'
         : payload.published === false ? ` Financial Reporting was not republished: ${payload.publishError || 'unknown error'}.` : '';
-      setSlnUploadResult({ ok: true, message: `Loaded ${formatMonthLabel(slnUploadMonth)}: ${loaded}.${publishNote}` });
+      setSlnUploadResult({ ok: true, message: `Loaded ${loaded}.${publishNote}` });
       setSlnUploadFiles([]);
       setSlnUploadInputKey((key) => key + 1);
       setReloadKey((key) => key + 1);
@@ -501,12 +501,12 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
       {data.lines.some((line) => line.sourceEntity === 'SLN') && <div style={{ ...card, display: 'grid', gap: 10 }}>
         <div style={{ display: 'grid', gap: 4 }}>
           <h3 style={{ margin: 0 }}>SLN monthly statements</h3>
-          <p style={{ color: '#475569', margin: 0, fontSize: 13 }}>Load the property manager&apos;s Income Statement with Budget Comparison and/or Balance Sheet workbook for one month. The income statement also supplies the SLN cash flow. Loading a month replaces that month&apos;s SLN lines and republishes Financial Reporting.</p>
+          <p style={{ color: '#475569', margin: 0, fontSize: 13 }}>Load the property manager&apos;s Income Statement with Budget Comparison and/or Balance Sheet workbooks. Leave Month blank to load each workbook into the month printed on it, so several months can be loaded at once. The income statement also supplies the SLN cash flow. Loading a month replaces that month&apos;s SLN lines and republishes Financial Reporting.</p>
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
           <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' }}>Month<input type="month" value={slnUploadMonth} onChange={(event) => setSlnUploadMonth(event.target.value)} style={{ minWidth: 150, padding: '6px 9px', border: '1px solid #cbd5e1', borderRadius: 6 }} /></label>
           <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' }}>Workbooks<input key={slnUploadInputKey} type="file" multiple accept=".xlsx,.xlsm,.xls" onChange={(event) => setSlnUploadFiles(Array.from(event.target.files || []))} style={{ fontSize: 12 }} /></label>
-          <button type="button" onClick={uploadSlnStatements} disabled={uploadingSln || !slnUploadMonth || !slnUploadFiles.length} style={{ padding: '7px 11px', border: '1px solid #1d4ed8', borderRadius: 6, background: '#2563eb', color: '#fff', fontWeight: 700, cursor: uploadingSln ? 'wait' : !slnUploadMonth || !slnUploadFiles.length ? 'not-allowed' : 'pointer', opacity: uploadingSln || !slnUploadMonth || !slnUploadFiles.length ? 0.6 : 1 }}>{uploadingSln ? 'Loading…' : 'Load statements'}</button>
+          <button type="button" onClick={uploadSlnStatements} disabled={uploadingSln || !slnUploadFiles.length} style={{ padding: '7px 11px', border: '1px solid #1d4ed8', borderRadius: 6, background: '#2563eb', color: '#fff', fontWeight: 700, cursor: uploadingSln ? 'wait' : !slnUploadFiles.length ? 'not-allowed' : 'pointer', opacity: uploadingSln || !slnUploadFiles.length ? 0.6 : 1 }}>{uploadingSln ? 'Loading…' : 'Load statements'}</button>
         </div>
         {slnUploadResult && <div style={{ fontSize: 12, color: slnUploadResult.ok ? '#166534' : '#b91c1c' }}>{slnUploadResult.message}</div>}
       </div>}

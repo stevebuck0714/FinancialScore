@@ -26,8 +26,16 @@ export function monthEndDate(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
 }
 
-/** Period end printed in the report header ("Basis:" row), when present. */
+/** Period end printed in the report header ("Basis:" row, or "As of Date:" in the newer layout), when present. */
 export function periodFromReport(rows: unknown[][]): string | null {
+  for (const row of rows.slice(0, 15)) {
+    const joined = row.map((cell) => (cell instanceof Date ? '' : text(cell))).join(' ');
+    if (!/as of date:/i.test(joined)) continue;
+    const dateCell = row.find((cell) => cell instanceof Date && !Number.isNaN(cell.valueOf()));
+    if (dateCell instanceof Date) return dateCell.toISOString().slice(0, 10);
+    const date = joined.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d\d)\b/);
+    if (date) return `${date[3]}-${date[1].padStart(2, '0')}-${date[2].padStart(2, '0')}`;
+  }
   for (const row of rows.slice(0, 10)) {
     const joined = row.map(text).join(' ');
     if (!/basis:/i.test(joined)) continue;
@@ -53,7 +61,7 @@ export function statementKind(fileName: string, rows: unknown[][]): SlnStatement
 
 function isAggregate(name: string): boolean {
   return /^(total|net )/i.test(name)
-    || /^(assets|liabilities|current assets|current liabilities|property\s*&\s*equipment|partners?\s*equity|equity|other assets)$/i.test(name)
+    || /^(assets|liabilities|current assets|current liabilities|property\s*&\s*equipment|equity|other assets)$/i.test(name)
     || /^\*{3,}/.test(name);
 }
 
@@ -163,17 +171,41 @@ export function slnBalanceAccountType(name: string): string {
   return 'Other Asset';
 }
 
+const isAmountCell = (cell: unknown) => typeof cell === 'number' || (typeof cell === 'string' && /\d/.test(cell) && numberValue(cell) !== null);
+
+const firstNameCol = (row: unknown[]) => row.findIndex((cell) => typeof cell === 'string' && text(cell) !== '' && !isAmountCell(cell));
+
+/**
+ * Balance sheets put the account name in the first text cell and its amount in the column
+ * that holds TOTAL ASSETS: column B in the older SLN_BALSHT layout, further right in
+ * MFBALSHEET. Columns after it (for example "Adjustments" notes) are ignored.
+ * PARTNERS EQUITY is an amount line here (it balances the sheet), not a heading.
+ */
 export function slnBalanceLines(sheetRows: unknown[][]) {
   const occurrence = new Map<string, number>();
   const rows: Array<{ accountCode: string; accountName: string; accountType: string; amount: number; row: number }> = [];
+  const totalAssetsRow = sheetRows.find((row) => {
+    const nameCol = firstNameCol(row);
+    return nameCol >= 0 && /^total assets$/i.test(text(row[nameCol]));
+  });
+  const totalAssetsNameCol = totalAssetsRow ? firstNameCol(totalAssetsRow) : -1;
+  const amountCol = totalAssetsRow ? totalAssetsRow.findIndex((cell, col) => col > totalAssetsNameCol && isAmountCell(cell)) : -1;
+  let inLiabilities = false;
   for (let index = 0; index < sheetRows.length; index += 1) {
     const row = sheetRows[index];
-    const name = text(row[0]);
-    const amount = numberValue(row[1]);
+    const nameCol = firstNameCol(row);
+    if (nameCol < 0) continue;
+    const name = text(row[nameCol]);
+    if (/^liabilities\b/i.test(name)) inLiabilities = true;
+    const amountCell = amountCol > nameCol ? row[amountCol] : row.slice(nameCol + 1).find(isAmountCell);
+    const amount = amountCell === undefined || !isAmountCell(amountCell) ? null : numberValue(amountCell);
     if (!name || amount === null || isAggregate(name)) continue;
     const count = (occurrence.get(slug(name)) || 0) + 1;
     occurrence.set(slug(name), count);
-    rows.push({ accountCode: `sln_${slug(name)}_${count}`, accountName: name, accountType: slnBalanceAccountType(name), amount, row: index + 1 });
+    let accountType = slnBalanceAccountType(name);
+    // Prepaid Rents and similar names read as assets, but under LIABILITIES they are liabilities.
+    if (inLiabilities && !['Equity', 'Long Term Debt', 'Other Current Liability'].includes(accountType)) accountType = 'Other Current Liability';
+    rows.push({ accountCode: `sln_${slug(name)}_${count}`, accountName: name, accountType, amount, row: index + 1 });
   }
   return rows;
 }

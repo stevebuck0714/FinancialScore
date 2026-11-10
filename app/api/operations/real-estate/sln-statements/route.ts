@@ -24,16 +24,19 @@ function isUploadBlob(value: FormDataEntryValue): value is File {
 }
 
 /**
- * Replaces one month of SLN data from the property manager's monthly workbooks:
+ * Replaces SLN months from the property manager's monthly workbooks:
  * the Income Statement (actuals, budget, and its Cash Flow Summary) and/or the Balance Sheet.
+ * With a month chosen, every workbook must be for that month; without one, each workbook
+ * is loaded into the month printed in its header, so several months can be loaded at once.
  */
 export async function POST(request: NextRequest) {
   try {
     const form = await request.formData();
     const companyId = String(form.get('companyId') || '').trim();
     const month = String(form.get('month') || '').trim();
-    if (!companyId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
-      return NextResponse.json({ error: 'Choose the month these statements are for.' }, { status: 400 });
+    if (!companyId) return NextResponse.json({ error: 'Choose a company.' }, { status: 400 });
+    if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return NextResponse.json({ error: 'Choose a valid month.' }, { status: 400 });
     }
     await requireAuth();
     if (!(await validateCompanyAccess(companyId))) {
@@ -52,8 +55,7 @@ export async function POST(request: NextRequest) {
     if (!files.length) return NextResponse.json({ error: 'Choose the SLN Income Statement and/or Balance Sheet workbook.' }, { status: 400 });
     if (files.some((file) => file.size > MAX_UPLOAD_BYTES)) return NextResponse.json({ error: 'Each workbook must be 20 MB or smaller.' }, { status: 400 });
 
-    const periodEnd = monthEndDate(Number(month.slice(0, 4)), Number(month.slice(5, 7)));
-    const statements: Statement[] = [];
+    const statementsByMonth = new Map<string, Statement[]>();
     for (const file of files) {
       const workbook = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: true });
       const found = workbook.SheetNames.flatMap((sheet) => {
@@ -65,29 +67,41 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `${file.name} is not an SLN Income Statement with Budget Comparison or Balance Sheet.` }, { status: 400 });
       }
       for (const statement of found) {
-        const reportPeriod = periodFromReport(statement.rows);
-        if (reportPeriod && reportPeriod.slice(0, 7) !== month) {
-          return NextResponse.json({ error: `${file.name} is for ${reportPeriod.slice(0, 7)}, not ${month}.` }, { status: 400 });
+        const reportMonth = periodFromReport(statement.rows)?.slice(0, 7) || null;
+        if (month && reportMonth && reportMonth !== month) {
+          return NextResponse.json({ error: `${file.name} is for ${reportMonth}, not ${month}.` }, { status: 400 });
         }
+        const statementMonth = month || reportMonth;
+        if (!statementMonth) {
+          return NextResponse.json({ error: `${file.name} does not show which month it is for. Choose the month and load it on its own.` }, { status: 400 });
+        }
+        statementsByMonth.set(statementMonth, [...(statementsByMonth.get(statementMonth) || []), statement]);
       }
-      statements.push(...found);
-    }
-    const incomeStatements = statements.filter((statement) => statement.kind === 'ACTIVITY');
-    const balanceSheets = statements.filter((statement) => statement.kind === 'BALANCE');
-    if (incomeStatements.length > 1 || balanceSheets.length > 1) {
-      return NextResponse.json({ error: 'Upload one Income Statement and one Balance Sheet at most.' }, { status: 400 });
     }
 
-    const income = incomeStatements[0];
-    const balance = balanceSheets[0];
-    const activity = income ? slnActivityLines(income.rows) : [];
-    const cashFlow = income ? slnCashFlowLines(income.rows) : [];
-    const balances = balance ? slnBalanceLines(balance.rows) : [];
-    if (income && !activity.length) return NextResponse.json({ error: `No account lines were found in ${income.fileName}.` }, { status: 400 });
-    if (balance && !balances.length) return NextResponse.json({ error: `No account lines were found in ${balance.fileName}.` }, { status: 400 });
+    const loads = [];
+    for (const [loadMonth, statements] of [...statementsByMonth.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const incomeStatements = statements.filter((statement) => statement.kind === 'ACTIVITY');
+      const balanceSheets = statements.filter((statement) => statement.kind === 'BALANCE');
+      if (incomeStatements.length > 1 || balanceSheets.length > 1) {
+        return NextResponse.json({ error: `Upload one Income Statement and one Balance Sheet at most for ${loadMonth}.` }, { status: 400 });
+      }
+      const income = incomeStatements[0];
+      const balance = balanceSheets[0];
+      const activity = income ? slnActivityLines(income.rows) : [];
+      const cashFlow = income ? slnCashFlowLines(income.rows) : [];
+      const balances = balance ? slnBalanceLines(balance.rows) : [];
+      if (income && !activity.length) return NextResponse.json({ error: `No account lines were found in ${income.fileName}.` }, { status: 400 });
+      if (balance && !balances.length) return NextResponse.json({ error: `No account lines were found in ${balance.fileName}.` }, { status: 400 });
+      loads.push({
+        month: loadMonth,
+        periodEnd: monthEndDate(Number(loadMonth.slice(0, 4)), Number(loadMonth.slice(5, 7))),
+        income, balance, activity, cashFlow, balances,
+      });
+    }
 
     await ensureRealEstateCashFlowLineTable();
-    const insertLine = (tx: typeof prisma, statement: Statement, reportType: string, line: { accountCode: string; accountName: string; accountType: string; row: number }, amount: number) =>
+    const insertLine = (tx: typeof prisma, periodEnd: string, statement: Statement, reportType: string, line: { accountCode: string; accountName: string; accountType: string; row: number }, amount: number) =>
       tx.$executeRawUnsafe(
         `INSERT INTO "RealEstateFinancialLine"
           ("id","companyId","sourceEntity","legalEntity","reportType","periodEnd","accountCode","accountName","accountType","amount","sourceFileName","sourceSheetName","sourceRowNumber","updatedAt")
@@ -96,7 +110,7 @@ export async function POST(request: NextRequest) {
         line.accountType, amount, statement.fileName, statement.sheet, line.row,
       );
 
-    await prisma.$transaction(async (tx) => {
+    for (const { periodEnd, income, balance, activity, cashFlow, balances } of loads) await prisma.$transaction(async (tx) => {
       const db = tx as unknown as typeof prisma;
       if (income) {
         await db.$executeRawUnsafe(
@@ -106,8 +120,8 @@ export async function POST(request: NextRequest) {
         );
         await db.$executeRawUnsafe(`DELETE FROM "RealEstateCashFlowLine" WHERE "companyId"=$1 AND "sourceEntity"='SLN' AND "periodEnd"=$2::date`, companyId, periodEnd);
         for (const line of activity) {
-          await insertLine(db, income, 'ACTIVITY', line, line.actual);
-          if (line.budget !== null) await insertLine(db, income, 'ACTIVITY_BUDGET', line, line.budget);
+          await insertLine(db, periodEnd, income, 'ACTIVITY', line, line.actual);
+          if (line.budget !== null) await insertLine(db, periodEnd, income, 'ACTIVITY_BUDGET', line, line.budget);
         }
         for (const line of cashFlow) {
           await db.$executeRawUnsafe(
@@ -125,7 +139,7 @@ export async function POST(request: NextRequest) {
              AND "reportType"='BALANCE' AND "accountCode" LIKE 'sln\\_%'`,
           companyId, periodEnd,
         );
-        for (const line of balances) await insertLine(db, balance, 'BALANCE', line, line.amount);
+        for (const line of balances) await insertLine(db, periodEnd, balance, 'BALANCE', line, line.amount);
       }
     }, { maxWait: 20_000, timeout: 120_000 });
 
@@ -134,10 +148,12 @@ export async function POST(request: NextRequest) {
       : null;
     return NextResponse.json({
       ok: true,
-      periodEnd,
-      incomeStatementLines: activity.length,
-      cashFlowLines: cashFlow.length,
-      balanceSheetLines: balances.length,
+      months: loads.map((load) => ({
+        month: load.month,
+        incomeStatementLines: load.activity.length,
+        cashFlowLines: load.cashFlow.length,
+        balanceSheetLines: load.balances.length,
+      })),
       published: published ? published.ok : null,
       publishError: published && !published.ok && 'error' in published ? published.error : null,
     });
