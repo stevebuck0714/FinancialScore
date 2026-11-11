@@ -58,6 +58,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       where: { companyId_platform: { companyId, platform: plugin.platform } },
       data: {
         status: result.success ? 'ACTIVE' : 'ERROR',
+        // Only a successful connection test may enable scheduled syncs and
+        // their associated watchdog alerts.
+        ...(result.success ? { autoSync: true } : {}),
         errorMessage: result.success ? null : result.errors.join(' | ').slice(0, 900),
       },
     });

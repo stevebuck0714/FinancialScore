@@ -143,6 +143,22 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           Manage Users
         </button>
         <button
+          onClick={() => props.setCompanyManagementSubTab('company-context')}
+          style={{
+            padding: '10px 20px',
+            background: 'none',
+            color: props.companyManagementSubTab === 'company-context' ? '#2751d0' : '#64748b',
+            border: 'none',
+            borderBottom: props.companyManagementSubTab === 'company-context' ? '3px solid #2751d0' : '3px solid transparent',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          Company Context
+        </button>
+        <button
           onClick={() => props.setCompanyManagementSubTab('payments')}
           style={{
             padding: '10px 20px',
@@ -223,6 +239,32 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
               setCompanySizeCategory={props.setCompanySizeCategory}
               setIndustrySectorCategory={props.setIndustrySectorCategory}
               setShowCompanyDetailsModal={props.setShowCompanyDetailsModal}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Company Context Sub-tab */}
+      {props.companyManagementSubTab === 'company-context' && (
+        <div id="company-context-wrapper">
+          {!props.selectedCompanyId ? (
+            <div className="no-print" style={{ background: '#f8fafc', borderRadius: '8px', padding: '48px 24px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to edit company context.</p>
+            </div>
+          ) : (
+            <ProfileTab
+              selectedCompanyId={props.selectedCompanyId}
+              currentUser={props.currentUser}
+              company={props.company}
+              companyProfiles={props.companyProfiles}
+              setCompanyProfiles={props.setCompanyProfiles}
+              monthly={monthlyData}
+              trendData={props.trendData}
+              isLoading={props.isLoading}
+              setIsLoading={props.setIsLoading}
+              onCompanyUpdated={props.onCompanyUpdated}
+              section="company-context"
             />
           )}
         </div>

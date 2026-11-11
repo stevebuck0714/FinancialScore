@@ -2741,7 +2741,7 @@ function FinancialScorePage() {
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
-  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation' | 'team-assessment' | 'dataroom'>('profile');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'company-context' | 'payments' | 'documentation' | 'team-assessment' | 'dataroom'>('profile');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'user-access' | 'affiliates' | 'default-pricing' | 'billing' | 'traffic' | 'siteadmins'>('consultants');
   const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
@@ -4796,6 +4796,7 @@ function FinancialScorePage() {
       const allowedCompanySubTabs = new Set([
         'details',
         'profile',
+        'company-context',
         'documentation',
         'team-assessment',
         'dataroom',

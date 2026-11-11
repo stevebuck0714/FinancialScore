@@ -564,6 +564,10 @@ export async function runDataLoadWatchdog(options: {
     prisma.accountingConnection.findMany({
       where: {
         ...companyFilter,
+        // Inactive configurations are saved setup, not connected sources.
+        // ERROR remains included so a previously connected source that fails
+        // continues to alert until it is resolved or disconnected.
+        status: { in: ['ACTIVE', 'ERROR'] },
         autoSync: true,
         syncFrequency: { not: 'manual' },
       },

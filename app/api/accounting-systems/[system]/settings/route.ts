@@ -153,7 +153,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const existing = await prisma.accountingConnection.findUnique({
       where: { companyId_platform: { companyId, platform: plugin.platform } },
-      select: { status: true, platformVersion: true, connectionMetadata: true },
+      select: { status: true, autoSync: true, platformVersion: true, connectionMetadata: true },
     });
 
     const existingMetadata = pickMetadata(existing?.connectionMetadata);
@@ -175,7 +175,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         connectionMetadata: mergedMetadata,
         platformVersion: platformVersionTag,
         status: existing?.status || 'INACTIVE',
-        autoSync: true,
+        // Saving credentials/configuration must not opt an unconnected system
+        // into scheduled syncs or watchdog alerts. Connect enables it after a
+        // successful initial pull.
+        autoSync: existing?.autoSync ?? false,
         syncFrequency: scheduleFrequency,
         errorMessage: null,
       },
@@ -184,7 +187,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         platform: plugin.platform,
         status: 'INACTIVE',
         platformVersion: platformVersionTag,
-        autoSync: true,
+        autoSync: false,
         syncFrequency: scheduleFrequency,
         connectionMetadata: mergedMetadata,
       },

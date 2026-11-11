@@ -36,6 +36,7 @@ interface ProfileTabProps {
   setCompanySizeCategory?: (size: string) => void;
   setIndustrySectorCategory?: (sector: string) => void;
   setShowCompanyDetailsModal?: (show: boolean) => void;
+  section?: 'profile' | 'company-context';
 }
 
 type DisclosureStatus = 'NONE' | 'YES';
@@ -91,6 +92,7 @@ export default function ProfileTab({
   isLoading,
   setIsLoading,
   onCompanyUpdated,
+  section = 'profile',
 }: ProfileTabProps) {
   // State for LOB management
   const [linesOfBusiness, setLinesOfBusiness] = React.useState<string[]>(['', '', '', '', '']);
@@ -417,8 +419,15 @@ export default function ProfileTab({
       `}</style>
       
 
-      {/* 2-Column Layout */}
-      <div className="profile-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '12px' }}>
+      <div
+        style={{
+          display: section === 'profile' ? 'grid' : 'block',
+          gridTemplateColumns: section === 'profile' ? 'minmax(0, 0.8fr) minmax(0, 1.2fr)' : undefined,
+          gap: section === 'profile' ? '24px' : undefined,
+        }}
+      >
+      {section === 'profile' && (
+      <div className="profile-grid" style={{ display: 'block', marginBottom: '12px' }}>
         
         {/* Container 1: Company Profile */}
         <div id="first-profile-section" className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -455,7 +464,7 @@ export default function ProfileTab({
               <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{company?.name}</h3>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '10px 12px', alignItems: 'center', fontSize: '13px', color: '#64748b', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '10px 8px', alignItems: 'center', fontSize: '13px', color: '#64748b', marginBottom: '10px' }}>
             <div>
               <span style={{ fontWeight: '600' }}>Address Street:</span>
             </div>
@@ -515,7 +524,7 @@ export default function ProfileTab({
               />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '10px 12px', alignItems: 'center', fontSize: '13px', color: '#64748b' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '10px 8px', alignItems: 'center', fontSize: '13px', color: '#64748b' }}>
             <div>
               <span style={{ fontWeight: '600' }}>
                 Accounting System: <span style={{ color: '#ef4444' }}>*</span>
@@ -597,7 +606,7 @@ export default function ProfileTab({
         {/* Business Details Fields */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
           {/* Business Status */}
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '8px', alignItems: 'center' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               BUSINESS STATUS
             </label>
@@ -622,7 +631,7 @@ export default function ProfileTab({
           </div>
 
           {/* Legal Structure */}
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '8px', alignItems: 'center' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               LEGAL STRUCTURE
             </label>
@@ -642,7 +651,7 @@ export default function ProfileTab({
           </div>
 
           {/* Ownership */}
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '8px', alignItems: 'center' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               OWNERSHIP
             </label>
@@ -662,7 +671,7 @@ export default function ProfileTab({
           </div>
 
           {/* Workforce */}
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '8px', alignItems: 'center' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               WORKFORCE
             </label>
@@ -682,7 +691,7 @@ export default function ProfileTab({
           </div>
 
           {/* Key Advisors */}
-          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '8px', alignItems: 'center' }}>
             <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               KEY ADVISORS
             </label>
@@ -817,8 +826,11 @@ export default function ProfileTab({
           )}
         </div>
         </div>
+      </div>
+      )}
 
-        {/* Container 2: Industry Brief Company Context */}
+        {/* Company Context tab */}
+        {section === 'company-context' && (
         <div className="no-print" style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
             <div>
@@ -914,8 +926,10 @@ export default function ProfileTab({
             </div>
           </div>
         </div>
+        )}
 
-        {/* Container 3: Company Disclosures */}
+        {/* Company Disclosures */}
+        {section === 'profile' && (
         <div style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
@@ -943,7 +957,7 @@ export default function ProfileTab({
             </button>
           </div>
           <div style={{ margin: '-8px 0 18px 0', padding: '10px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', color: '#1e40af', fontSize: '13px', lineHeight: 1.5 }}>
-            If you answer YES to any questions add relevant notes and then upload relevant documents to the legal section of the Data Room.
+            Explain each disclosure below and upload any relevant supporting documents to the Data Room.
           </div>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 160px', gap: '12px', alignItems: 'start' }}>
@@ -963,36 +977,35 @@ export default function ProfileTab({
                   <option value="NONE">NONE</option>
                   <option value="YES">YES</option>
                 </select>
-                {disclosure.status === 'YES' ? (
-                  <div style={{ gridColumn: '1 / -1', marginTop: '-4px', marginBottom: '4px' }}>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                      Notes for {item.label}
-                    </label>
-                    <textarea
-                      value={disclosure.notes}
-                      onChange={(e) => updateDisclosure(item.key, { notes: e.target.value })}
-                      placeholder="Add relevant details, sources, dates, parties, or document references."
-                      rows={3}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '6px',
-                        border: '1px solid #cbd5e1',
-                        fontSize: '14px',
-                        resize: 'vertical',
-                        minHeight: '76px',
-                      }}
-                    />
-                  </div>
-                ) : null}
+                <div style={{ gridColumn: '1 / -1', marginTop: '-4px', marginBottom: '4px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                    Explanation for {item.label}
+                  </label>
+                  <textarea
+                    value={disclosure.notes}
+                    onChange={(e) => updateDisclosure(item.key, { notes: e.target.value })}
+                    placeholder="Explain the issue, including relevant details, dates, parties, and document references."
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '14px',
+                      resize: 'vertical',
+                      minHeight: '76px',
+                    }}
+                  />
+                </div>
               </React.Fragment>
             );
           })}
         </div>
         </div>
-      
+      )}
       </div>
 
+      {section === 'profile' && (
       <div className="no-print" style={{ textAlign: 'center', padding: '24px' }}>
         <button
           onClick={handleSaveProfile}
@@ -1013,6 +1026,7 @@ export default function ProfileTab({
           {isLoading ? 'Saving...' : 'Save Profile'}
         </button>
       </div>
+      )}
     </div>
   );
 }
