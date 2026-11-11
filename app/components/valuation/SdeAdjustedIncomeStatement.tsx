@@ -283,6 +283,8 @@ export default function SdeAdjustedIncomeStatement({
         ['Training & certifications', sum(columnRows, 'trainingCert'), 'trainingCert'],
         ['Meals & entertainment', sum(columnRows, 'mealsEntertainment'), 'mealsEntertainment'],
         ['Other expense', sum(columnRows, 'otherExpense'), 'otherExpense'],
+        ['Interest expense', interest, 'interestExpense'],
+        ['Depreciation & amortization', depreciation, 'depreciationAmortization'],
       ] as Array<[string, number, string]>,
       grossProfit: revenue - cogs,
       operatingIncome: revenue - cogs - expenses,
@@ -354,7 +356,6 @@ export default function SdeAdjustedIncomeStatement({
   const cogsSeries = reportedSeries('cogsTotal');
   const expenseSeries = reportedSeries('expense');
   const interestSeries = reportedSeries('interestExpense');
-  const taxSeries = addSeries(reportedSeries('stateIncomeTaxes'), reportedSeries('federalIncomeTaxes'));
   const depreciationSeries = reportedSeries('depreciationAmortization');
   const revenueAdjustmentSeries = lineSeries(model.oneTimeRevenue);
   const cogsAdjustmentSeries = lineSeries(operatingAdjustments.filter(isCogsLine));
@@ -374,11 +375,10 @@ export default function SdeAdjustedIncomeStatement({
   for (const line of unclassifiedCogsAdjustments) monthlyRows.push({ label: line.label, values: line.byMonth, kind: 'adjustment' });
   pushTotal('Gross profit', grossProfitSeries, grossProfitAdjustmentSeries);
   pushDetails(model.operatingExpenseDetails);
-  pushTotal('Operating expenses', expenseSeries, expenseAdjustmentSeries);
-  pushTotal('Operating income', operatingIncomeSeries, operatingIncomeAdjustmentSeries);
-  monthlyRows.push({ label: 'Interest expense', values: interestSeries, kind: 'line' });
-  monthlyRows.push({ label: 'Income taxes', values: taxSeries, kind: 'line' });
-  monthlyRows.push({ label: 'Depreciation & amortization', values: depreciationSeries, kind: 'line' });
+  pushTotal('Expenses', expenseSeries, expenseAdjustmentSeries);
+  pushTotal('Income before taxes', operatingIncomeSeries, operatingIncomeAdjustmentSeries);
+  monthlyRows.push({ label: 'Add back: Interest expense', values: interestSeries, kind: 'line' });
+  monthlyRows.push({ label: 'Add back: Depreciation & amortization', values: depreciationSeries, kind: 'line' });
   monthlyRows.push({ label: 'EBITDA', values: ebitdaSeries, kind: 'total' });
   if (otherQoeSeries !== zeroSeries) {
     monthlyRows.push({ label: 'Other saved QoE adjustments (spread evenly)', values: otherQoeSeries, kind: 'adjustment' });
@@ -446,7 +446,10 @@ export default function SdeAdjustedIncomeStatement({
           const lines = adjustmentLinesFor(field, operatingAdjustments);
           return [[label, amount, totalOf(lines), amount + totalOf(lines)], ...lines.map((line) => [`  ${line.label}`, '', line.amount, ''])];
         }),
-        ['Operating expenses', model.expenses, operatingExpenseAdjustment, adjustedExpenses],
+        ['Expenses', model.expenses, operatingExpenseAdjustment, adjustedExpenses],
+        ['Income before taxes', model.operatingIncome, totalOf(model.oneTimeRevenue) - cogsAdjustment - operatingExpenseAdjustment, adjustedRevenue - adjustedCogs - adjustedExpenses],
+        ['Add back: Interest expense', model.interest, '', model.interest],
+        ['Add back: Depreciation & amortization', model.depreciation, '', model.depreciation],
         ['EBITDA', model.ebitda, model.adjustmentTotal, model.adjustedEbitda],
       ];
     const csv = csvRows
@@ -592,11 +595,10 @@ export default function SdeAdjustedIncomeStatement({
             const adjustmentsForLine = adjustmentLinesFor(field, operatingAdjustments);
             return [row(label, amount, totalOf(adjustmentsForLine), amount + totalOf(adjustmentsForLine)), ...adjustmentsForLine.map(adjustmentRow)];
           })}
-          {row('Operating expenses', model.expenses, operatingExpenseAdjustment, adjustedExpenses, true)}
-          {row('Operating income', model.operatingIncome, totalOf(model.oneTimeRevenue) - cogsAdjustment - operatingExpenseAdjustment, adjustedRevenue - adjustedCogs - adjustedExpenses, true)}
-          {row('Interest expense', model.interest)}
-          {row('Income taxes', model.taxes)}
-          {row('Depreciation & amortization', model.depreciation)}
+          {row('Expenses', model.expenses, operatingExpenseAdjustment, adjustedExpenses, true)}
+          {row('Income before taxes', model.operatingIncome, totalOf(model.oneTimeRevenue) - cogsAdjustment - operatingExpenseAdjustment, adjustedRevenue - adjustedCogs - adjustedExpenses, true)}
+          {row('Add back: Interest expense', model.interest)}
+          {row('Add back: Depreciation & amortization', model.depreciation)}
           {row('EBITDA', model.ebitda, model.adjustmentTotal, model.adjustedEbitda, true)}
         </div>
       )}
