@@ -1768,6 +1768,7 @@ enum OperationalSystemProvider {
   HIGHLEVEL
   JOBBOSS
   PROSHOP
+  FOODREADY
 }
 
 enum ConnectionStatus {

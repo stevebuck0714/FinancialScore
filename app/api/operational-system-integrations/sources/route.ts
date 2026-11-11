@@ -38,7 +38,7 @@ function normalizePullTime(value: unknown): string {
 }
 
 function isApiScheduledSource(source: SourceDefinition | null): boolean {
-  return source?.provider === 'BAMBOOHR' || source?.provider === 'HUBSPOT' || source?.provider === 'ISOLVED' || source?.provider === 'HIGHLEVEL' || source?.provider === 'PROSHOP';
+  return source?.provider === 'BAMBOOHR' || source?.provider === 'HUBSPOT' || source?.provider === 'ISOLVED' || source?.provider === 'HIGHLEVEL' || source?.provider === 'PROSHOP' || source?.provider === 'FOODREADY';
 }
 
 /** Turns the company's Sales tab on (CRM added) or back to its sector default (last CRM removed). */

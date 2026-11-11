@@ -5,6 +5,7 @@ import { HUBSPOT_ADAPTER } from './sources/hubspot';
 import { HIGHLEVEL_ADAPTER } from './sources/highlevel';
 import { JOBBOSS_ADAPTER } from './sources/jobboss';
 import { PROSHOP_ADAPTER } from './sources/proshop';
+import { FOODREADY_ADAPTER } from './sources/foodready';
 import { BAMBOOHR_ADAPTER } from './sources/bamboohr';
 import { ISOLVED_ADAPTER } from './sources/isolved';
 import { SPREADSHEET_ADAPTERS } from './sources/spreadsheet';
@@ -30,6 +31,7 @@ const SOURCE_ADAPTERS: Record<OperationalSourceCode, OperationalSourceAdapter> =
   HIGHLEVEL_STANDARD: HIGHLEVEL_ADAPTER,
   JOBBOSS2_STANDARD: JOBBOSS_ADAPTER,
   PROSHOP_STANDARD: PROSHOP_ADAPTER,
+  FOODREADY_AI: FOODREADY_ADAPTER,
 };
 
 /** Sources not offered in the source picker (internal or legacy upload paths). */

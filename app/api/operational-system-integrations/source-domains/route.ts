@@ -12,6 +12,7 @@ import { HIGHLEVEL_SOURCE_CODE } from '@/lib/highlevel';
 import { DEFAULT_HIGHLEVEL_DATA_DOMAINS } from '@/lib/crm/highlevel-sales';
 import { DEFAULT_JOBBOSS_DATA_DOMAINS, JOBBOSS_SOURCE_CODE } from '@/lib/jobboss';
 import { DEFAULT_PROSHOP_DATA_DOMAINS, PROSHOP_SOURCE_CODE } from '@/lib/proshop';
+import { DEFAULT_FOODREADY_DATA_DOMAINS, FOODREADY_SOURCE_CODE, foodReadyEndpointForDomain } from '@/lib/foodready';
 import { DEFAULT_REALPAGE_ONESITE_DATA_DOMAINS, REALPAGE_ONESITE_SOURCE_CODE } from '@/lib/operational/realpage-onesite';
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,7 @@ const SOURCE_PROVIDERS: Record<string, string> = {
   [PROSHOP_SOURCE_CODE]: 'PROSHOP',
   ICE_ENCOMPASS: 'SPREADSHEET_UPLOAD',
   LANTRAX_PROFIT_POWER: 'SPREADSHEET_UPLOAD',
-  FOODREADY_AI: 'SPREADSHEET_UPLOAD',
+  [FOODREADY_SOURCE_CODE]: 'FOODREADY',
   APPLIED_EPIC_INSURANCE_SERVICES: 'SPREADSHEET_UPLOAD',
   [RAMQUEST_TITLE_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
   [RSMEANS_PM_SOURCE_CODE]: 'SPREADSHEET_UPLOAD',
@@ -48,14 +49,7 @@ const DEFAULT_DATA_DOMAINS: Record<string, EditableDataDomain[]> = {
     { dataDomain: 'Sales Activities', sourceObject: 'Calls, meetings, and tasks', enabled: true },
     { dataDomain: 'Deal Owners', sourceObject: 'HubSpot owners and sales-rep assignment details', enabled: true },
   ],
-  FOODREADY_AI: [
-    { dataDomain: 'Inventory On Hand', sourceObject: 'Current ingredient, work-in-process, and finished-good quantities and values by location', enabled: true },
-    { dataDomain: 'Lots, Expiration & Traceability', sourceObject: 'Lot / batch identifiers, receipt dates, expiration dates, supplier links, and trace events', enabled: true },
-    { dataDomain: 'Inventory Movements', sourceObject: 'Receipts, consumption, production output, transfers, adjustments, and waste transactions', enabled: true },
-    { dataDomain: 'Items, Ingredients & Units', sourceObject: 'Item master, ingredients, SKUs, categories, units of measure, and reorder thresholds', enabled: true },
-    { dataDomain: 'Recipes & Production Batches', sourceObject: 'Recipes / BOMs, planned and actual production, yields, and ingredient consumption', enabled: true },
-    { dataDomain: 'Suppliers & Purchase Orders', sourceObject: 'Supplier master, purchase orders, expected receipts, and purchasing status', enabled: true },
-  ],
+  [FOODREADY_SOURCE_CODE]: [...DEFAULT_FOODREADY_DATA_DOMAINS],
   ICE_ENCOMPASS: [
     { dataDomain: 'Loans', sourceObject: 'Loan details and selected loan fields', enabled: true },
     { dataDomain: 'Loan Pipeline', sourceObject: 'Pipeline views, folders, milestones, dates, loan teams', enabled: true },
@@ -131,7 +125,9 @@ function sanitizeDataDomains(value: unknown, sourceCode: string): EditableDataDo
         sourceObject:
           sourceCode === 'HUBSPOT_STANDARD' && dataDomain === 'Sales Activities'
             ? 'Calls, meetings, and tasks'
-            : sourceObject,
+            : sourceCode === FOODREADY_SOURCE_CODE
+              ? foodReadyEndpointForDomain(dataDomain, sourceObject) || sourceObject
+              : sourceObject,
         enabled: candidate.enabled !== false,
       };
     })
@@ -142,6 +138,15 @@ function sanitizeDataDomains(value: unknown, sourceCode: string): EditableDataDo
     return [
       ...rows,
       ...fallback.filter((row) => !configuredDomains.has(row.dataDomain)),
+    ];
+  }
+
+  if (sourceCode === FOODREADY_SOURCE_CODE) {
+    const configuredDomains = new Set(rows.map((row) => row.dataDomain));
+    const configuredEndpoints = new Set(rows.map((row) => row.sourceObject));
+    return [
+      ...rows,
+      ...fallback.filter((row) => !configuredDomains.has(row.dataDomain) && !configuredEndpoints.has(row.sourceObject)),
     ];
   }
 

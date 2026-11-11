@@ -70,7 +70,6 @@ export const SPREADSHEET_ADAPTERS = {
     datasetPrefix: 'hilti',
     mockPayload: ({ companyId, window }) => buildHiltiInventoryMock(companyId, { asOf: new Date(`${window.endDate}T12:00:00Z`) }),
   }),
-  FOODREADY_AI: spreadsheetAdapter({ sourceCode: 'FOODREADY_AI', label: 'FoodReady AI', datasetPrefix: 'foodready' }),
   ICE_ENCOMPASS: spreadsheetAdapter({
     sourceCode: 'ICE_ENCOMPASS',
     label: 'ICE Encompass',

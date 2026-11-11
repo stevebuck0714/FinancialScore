@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { getOperationalSystemConnection, saveOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
-
-const SOURCE_CODE = 'FOODREADY_AI';
-const PROVIDER = 'SPREADSHEET_UPLOAD';
+import { FOODREADY_API_BASE_URL, FOODREADY_LABEL, FOODREADY_SOURCE_CODE } from '@/lib/foodready';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,11 +14,17 @@ function response(connection: Awaited<ReturnType<typeof getOperationalSystemConn
   const settings = metadata(connection).foodReadySettings;
   const configured = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings as Record<string, unknown> : {};
   return {
-    sourceCode: SOURCE_CODE,
+    sourceCode: FOODREADY_SOURCE_CODE,
     status: connection?.status || 'NOT_CONNECTED',
-    credentialsConfigured: Boolean(connection?.baseUrl && connection?.accessToken),
-    baseUrl: connection?.baseUrl || '',
-    tenantId: typeof configured.tenantId === 'string' ? configured.tenantId : '',
+    lastSyncAt: connection?.lastSyncAt || null,
+    errorMessage: connection?.errorMessage || null,
+    credentialsConfigured: Boolean(connection?.accessToken),
+    baseUrl: connection?.baseUrl || FOODREADY_API_BASE_URL,
+    organizationId: typeof configured.organizationId === 'string' ? configured.organizationId : '',
+    syncFrequency: connection?.syncFrequency && connection.syncFrequency !== 'manual' ? connection.syncFrequency : 'daily',
+    syncTime: typeof configured.syncTime === 'string' ? configured.syncTime : '08:00',
+    initialSyncStartDate: typeof configured.initialSyncStartDate === 'string' ? configured.initialSyncStartDate : '',
+    incrementalSync: configured.incrementalSync === 'NO' ? 'NO' : 'YES',
   };
 }
 
@@ -37,7 +41,7 @@ function validHttpsUrl(value: unknown): string | null {
 export async function GET(request: NextRequest) {
   try {
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
-    return NextResponse.json({ ok: true, companyId, ...response(await getOperationalSystemConnection(companyId, PROVIDER, SOURCE_CODE)) });
+    return NextResponse.json({ ok: true, companyId, ...response(await getOperationalSystemConnection(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE)) });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || 'Failed to load FoodReady settings.' }, { status: 400 });
   }
@@ -47,35 +51,32 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
-    const existing = await getOperationalSystemConnection(companyId, PROVIDER, SOURCE_CODE);
+    const existing = await getOperationalSystemConnection(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
     const submittedBaseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : '';
-    const baseUrl = submittedBaseUrl ? validHttpsUrl(submittedBaseUrl) : existing?.baseUrl || null;
+    const baseUrl = submittedBaseUrl ? validHttpsUrl(submittedBaseUrl) : existing?.baseUrl || FOODREADY_API_BASE_URL;
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+    const organizationId = typeof body.organizationId === 'string' ? body.organizationId.trim() : '';
     if (!baseUrl) return NextResponse.json({ ok: false, error: 'A valid HTTPS FoodReady API Base URL is required.' }, { status: 400 });
     if (!apiKey && !existing?.accessToken) return NextResponse.json({ ok: false, error: 'A FoodReady API key is required.' }, { status: 400 });
-
+    if (!organizationId) return NextResponse.json({ ok: false, error: 'The FoodReady Organization ID is required.' }, { status: 400 });
+    const syncTime = typeof body.syncTime === 'string' && /^\d{2}:\d{2}$/.test(body.syncTime) ? body.syncTime : '08:00';
     await saveOperationalSystemConnection({
-      companyId,
-      provider: PROVIDER,
-      sourceCode: SOURCE_CODE,
-      authType: 'API_KEY',
-      status: 'ACTIVE',
-      accessToken: apiKey || existing?.accessToken || null,
-      refreshToken: null,
-      tokenExpiresAt: null,
-      baseUrl,
-      autoSync: false,
-      syncFrequency: 'manual',
+      companyId, provider: 'FOODREADY', sourceCode: FOODREADY_SOURCE_CODE, authType: 'API_KEY',
+      status: 'ACTIVE', accessToken: apiKey || existing?.accessToken || null, refreshToken: null,
+      tokenExpiresAt: null, baseUrl, autoSync: body.autoSync !== false,
+      syncFrequency: ['daily', 'weekly', 'monthly'].includes(String(body.syncFrequency)) ? String(body.syncFrequency) : 'daily',
       connectionMetadata: {
-        ...metadata(existing),
-        sourceLabel: 'FoodReady AI',
+        ...metadata(existing), sourceLabel: FOODREADY_LABEL, operationalPullTime: syncTime,
         foodReadySettings: {
-          tenantId: typeof body.tenantId === 'string' ? body.tenantId.trim() : '',
+          organizationId,
+          syncTime,
+          initialSyncStartDate: typeof body.initialSyncStartDate === 'string' ? body.initialSyncStartDate : '',
+          incrementalSync: body.incrementalSync === 'NO' ? 'NO' : 'YES',
         },
       },
       errorMessage: null,
     });
-    return NextResponse.json({ ok: true, companyId, ...response(await getOperationalSystemConnection(companyId, PROVIDER, SOURCE_CODE)) });
+    return NextResponse.json({ ok: true, companyId, ...response(await getOperationalSystemConnection(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE)) });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || 'Failed to save FoodReady settings.' }, { status: 400 });
   }
@@ -85,22 +86,11 @@ export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
-    const existing = await getOperationalSystemConnection(companyId, PROVIDER, SOURCE_CODE);
+    const existing = await getOperationalSystemConnection(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
     await saveOperationalSystemConnection({
-      companyId,
-      provider: PROVIDER,
-      sourceCode: SOURCE_CODE,
-      authType: 'API_KEY',
-      status: 'INACTIVE',
-      accessToken: null,
-      refreshToken: null,
-      tokenExpiresAt: null,
-      baseUrl: existing?.baseUrl || null,
-      lastSyncAt: existing?.lastSyncAt || null,
-      autoSync: false,
-      syncFrequency: 'manual',
-      connectionMetadata: metadata(existing),
-      errorMessage: null,
+      companyId, provider: 'FOODREADY', sourceCode: FOODREADY_SOURCE_CODE, authType: 'API_KEY', status: 'INACTIVE',
+      accessToken: null, refreshToken: null, tokenExpiresAt: null, baseUrl: existing?.baseUrl || FOODREADY_API_BASE_URL, lastSyncAt: existing?.lastSyncAt || null,
+      autoSync: false, syncFrequency: 'manual', connectionMetadata: metadata(existing), errorMessage: null,
     });
     return NextResponse.json({ ok: true, companyId, status: 'INACTIVE' });
   } catch (error: any) {

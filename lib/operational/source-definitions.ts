@@ -7,7 +7,7 @@ import { BUILDOUT_CRE_LABEL, BUILDOUT_CRE_SOURCE_CODE } from '@/lib/operational/
 import { ISOLVED_PEOPLE_CLOUD_LABEL, ISOLVED_PEOPLE_CLOUD_SOURCE_CODE } from '@/lib/operational/isolved-people-cloud';
 import { REALPAGE_ONESITE_LABEL, REALPAGE_ONESITE_SOURCE_CODE } from '@/lib/operational/realpage-onesite';
 
-export type OperationalSourceProvider = 'BAMBOOHR' | 'HUBSPOT' | 'SPREADSHEET_UPLOAD' | 'ISOLVED' | 'HIGHLEVEL' | 'JOBBOSS' | 'PROSHOP';
+export type OperationalSourceProvider = 'BAMBOOHR' | 'HUBSPOT' | 'SPREADSHEET_UPLOAD' | 'ISOLVED' | 'HIGHLEVEL' | 'JOBBOSS' | 'PROSHOP' | 'FOODREADY';
 
 export type OperationalSourceDefinition = {
   provider: OperationalSourceProvider;
@@ -30,7 +30,7 @@ export const OPERATIONAL_SOURCE_DEFINITIONS = [
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'CREWTRACKS', label: 'Crewtracks', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'HILTI', label: 'Hilti', sectorCategories: ['23'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: BAKERS_COGS_SOURCE_CODE, label: BAKERS_COGS_LABEL, sectorCategories: ['32'] },
-  { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'FOODREADY_AI', label: 'FoodReady AI', sectorCategories: ['32'] },
+  { provider: 'FOODREADY', sourceCode: 'FOODREADY_AI', label: 'FoodReady AI', sectorCategories: ['32'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: APR_SGP_GMPA_SOURCE_CODE, label: APR_SGP_GMPA_LABEL, sectorCategories: ['32', '33', '42'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'ICE_ENCOMPASS', label: 'ICE Encompass', sectorCategories: ['53'] },
   { provider: 'SPREADSHEET_UPLOAD', sourceCode: 'LANTRAX_PROFIT_POWER', label: 'Profit Power Enterprise', sectorCategories: ['53'] },

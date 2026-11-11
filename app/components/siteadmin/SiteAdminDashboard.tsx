@@ -4735,9 +4735,6 @@ export default function SiteAdminDashboard(props: any) {
       if (selected.some((source: any) => String(source?.sourceCode || '') === 'ICE_ENCOMPASS')) {
         loadOperationalSourceDataDomains(companyId, 'ICE_ENCOMPASS');
       }
-      if (selected.some((source: any) => String(source?.sourceCode || '') === 'FOODREADY_AI')) {
-        loadOperationalSourceDataDomains(companyId, 'FOODREADY_AI');
-      }
       if (selected.some((source: any) => String(source?.sourceCode || '') === 'LANTRAX_PROFIT_POWER')) {
         loadOperationalSourceDataDomains(companyId, 'LANTRAX_PROFIT_POWER');
       }
@@ -5917,19 +5914,6 @@ export default function SiteAdminDashboard(props: any) {
         { dataDomain: 'Webhooks', sourceObject: 'Loan, document, condition, task, org/user events', enabled: true },
       ],
     },
-    FOODREADY_AI: {
-      label: 'FoodReady AI',
-      description: 'FoodReady inventory, lot traceability, production, recipe, purchasing, and supplier data for food-manufacturing operational reporting. FoodReady must provision the API or an approved export before this source can be connected.',
-      credentialFields: ['FoodReady API Base URL', 'Tenant / Account ID', 'API Key or OAuth Credentials', 'Webhook Signing Secret (if enabled)'],
-      domains: [
-        { dataDomain: 'Inventory On Hand', sourceObject: 'Current ingredient, work-in-process, and finished-good quantities and values by location', enabled: true },
-        { dataDomain: 'Lots, Expiration & Traceability', sourceObject: 'Lot / batch identifiers, receipt dates, expiration dates, supplier links, and trace events', enabled: true },
-        { dataDomain: 'Inventory Movements', sourceObject: 'Receipts, consumption, production output, transfers, adjustments, and waste transactions', enabled: true },
-        { dataDomain: 'Items, Ingredients & Units', sourceObject: 'Item master, ingredients, SKUs, categories, units of measure, and reorder thresholds', enabled: true },
-        { dataDomain: 'Recipes & Production Batches', sourceObject: 'Recipes / BOMs, planned and actual production, yields, and ingredient consumption', enabled: true },
-        { dataDomain: 'Suppliers & Purchase Orders', sourceObject: 'Supplier master, purchase orders, expected receipts, and purchasing status', enabled: true },
-      ],
-    },
     LANTRAX_PROFIT_POWER: {
       label: 'Profit Power Enterprise',
       description: 'Enterprise brokerage system data for listings, closings, commissions, agents, offices, receivables, escrow, and residential real estate operational analytics.',
@@ -5993,7 +5977,6 @@ export default function SiteAdminDashboard(props: any) {
     if (normalizedSourceCode === 'CREWTRACKS') return 8 + offset;
     if (normalizedSourceCode === 'HILTI') return 10 + offset;
     if (normalizedSourceCode === 'ICE_ENCOMPASS') return 12 + offset;
-    if (normalizedSourceCode === 'FOODREADY_AI') return 13 + offset;
     if (normalizedSourceCode === 'LANTRAX_PROFIT_POWER') return 14 + offset;
     if (normalizedSourceCode === RAMQUEST_TITLE_SOURCE_CODE) return 16 + offset;
     if (normalizedSourceCode === RSMEANS_PM_SOURCE_CODE) return 18 + offset;
@@ -9939,7 +9922,6 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'ICE_ENCOMPASS')}
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(company.id, 'ICE_ENCOMPASS')}
                                             {isOperationalSourceSelected(company.id, 'FOODREADY_AI') && <FoodReadyIntegrationCard companyId={company.id} />}
-                                            {isOperationalSourceSelected(company.id, 'FOODREADY_AI') && renderConstructionOperationalDataDomainsCard(company.id, 'FOODREADY_AI')}
                                             {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'LANTRAX_PROFIT_POWER')}
                                             {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(company.id, 'LANTRAX_PROFIT_POWER')}
                                             {isOperationalSourceSelected(company.id, RAMQUEST_TITLE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(company.id, company.name, RAMQUEST_TITLE_SOURCE_CODE)}
@@ -13746,7 +13728,6 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'ICE_ENCOMPASS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'ICE_ENCOMPASS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'FOODREADY_AI') && <FoodReadyIntegrationCard companyId={businessCompany.id} />}
-                                  {isOperationalSourceSelected(businessCompany.id, 'FOODREADY_AI') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'FOODREADY_AI')}
                                   {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'LANTRAX_PROFIT_POWER')}
                                   {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'LANTRAX_PROFIT_POWER')}
                                   {isOperationalSourceSelected(businessCompany.id, RAMQUEST_TITLE_SOURCE_CODE) && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, RAMQUEST_TITLE_SOURCE_CODE)}
