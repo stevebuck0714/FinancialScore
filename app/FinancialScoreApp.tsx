@@ -6,6 +6,13 @@ import { formatEstDateTime } from '@/lib/time/eastern';
 import { viewToTrafficSection } from '@/lib/traffic/sections';
 import { useSectionTracking } from '@/lib/traffic/useSectionTracking';
 import {
+  exportElementToWord,
+  exportHtmlToWord,
+  safeWordFileName,
+  waitForChartsToRender,
+  type WordPageOrientation,
+} from '@/lib/valuation/exportValuationWord';
+import {
   canSwitchCompanies,
   clearBrowserCompanyData,
   shouldLandOnMyAccounts,
@@ -1797,6 +1804,8 @@ function FinancialScorePage() {
   const [valuationSelectionSaveStatus, setValuationSelectionSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [valuationSectionPreview, setValuationSectionPreview] = useState<{ id: string; title: string; content: string } | null>(null);
   const [pendingRichValuationPrint, setPendingRichValuationPrint] = useState(false);
+  const [pendingRichValuationWordExport, setPendingRichValuationWordExport] = useState(false);
+  const [valuationWordExportingId, setValuationWordExportingId] = useState<string | null>(null);
   const [valuationDataRoomFolders, setValuationDataRoomFolders] = useState<
     Array<{ id: string; key?: string | null; name: string; order?: number; documents: Array<{ id: string; originalFileName: string; createdAt?: string | null }> }>
   >([]);
@@ -11768,6 +11777,7 @@ function FinancialScorePage() {
         name,
         title,
         yearsWithCompany,
+        about: String(emp?.about || '').trim(),
       };
     });
   }, [selectedCompanyProfile]);
@@ -12378,11 +12388,17 @@ function FinancialScorePage() {
             ${businessOverviewKeyEmployees
               .map(
                 (emp) =>
-                  `<tr style="border-bottom:1px solid #f1f5f9;">
+                  `<tr style="${emp.about ? '' : 'border-bottom:1px solid #f1f5f9;'}">
                   <td style="padding:8px 10px;">${esc(emp.name)}</td>
                   <td style="padding:8px 10px;">${esc(emp.title)}</td>
                   <td style="padding:8px 10px;text-align:right;font-weight:700;">${esc(emp.yearsWithCompany)}</td>
-                </tr>`,
+                </tr>${
+                  emp.about
+                    ? `<tr style="border-bottom:1px solid #f1f5f9;">
+                  <td colspan="3" style="padding:0 10px 10px 10px;color:#475569;line-height:1.6;white-space:pre-wrap;">${esc(emp.about)}</td>
+                </tr>`
+                    : ''
+                }`,
               )
               .join('')}
             </tbody></table></div>`
@@ -14039,6 +14055,28 @@ function FinancialScorePage() {
     const content = buildValuationSectionReportText(sectionId, sectionTitle);
     setValuationSectionPreview({ id: sectionId, title: sectionTitle, content });
   }, [buildValuationSectionReportText]);
+  const buildValuationSectionStyledHtml = useCallback(
+    (sectionId: string, content: string): string =>
+      sectionId === '3'
+        ? buildHistoricalFinancialSummaryReportHtml()
+        : sectionId === '2'
+          ? buildBusinessOverviewReportHtml()
+          : sectionId === '10'
+            ? buildMarketOpportunityScanReportHtml()
+            : sectionId === '12'
+              ? buildDataRoomReportHtml()
+              : content.includes(VALUATION_PAGE_BREAK_MARKER)
+                ? buildStyledValuationReportPaginatedHtml(content)
+                : buildStyledValuationReportHtml(content),
+    [
+      buildHistoricalFinancialSummaryReportHtml,
+      buildBusinessOverviewReportHtml,
+      buildMarketOpportunityScanReportHtml,
+      buildDataRoomReportHtml,
+      buildStyledValuationReportPaginatedHtml,
+      buildStyledValuationReportHtml,
+    ]
+  );
   const handleValuationSectionPrint = useCallback(
     (sectionId: string, sectionTitle: string) => {
       if (['4', '5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
@@ -14053,18 +14091,7 @@ function FinancialScorePage() {
         alert('Please allow pop-ups to print this section.');
         return;
       }
-      const styledHtml =
-        sectionId === '3'
-          ? buildHistoricalFinancialSummaryReportHtml()
-          : sectionId === '2'
-            ? buildBusinessOverviewReportHtml()
-            : sectionId === '10'
-              ? buildMarketOpportunityScanReportHtml()
-              : sectionId === '12'
-                ? buildDataRoomReportHtml()
-                : content.includes(VALUATION_PAGE_BREAK_MARKER)
-                  ? buildStyledValuationReportPaginatedHtml(content)
-                  : buildStyledValuationReportHtml(content);
+      const styledHtml = buildValuationSectionStyledHtml(sectionId, content);
       const pageCss =
         sectionId === '3' || sectionId === '12'
           ? `@page { size: letter landscape; margin: 0.4in; }`
@@ -14089,20 +14116,70 @@ function FinancialScorePage() {
       sdeValuationReportPreviewModel,
     ]
   );
-  const handleValuationSectionDownload = useCallback((sectionId: string, sectionTitle: string) => {
-    let content = buildValuationSectionReportText(sectionId, sectionTitle);
-    content = content.split(`\n${VALUATION_PAGE_BREAK_MARKER}\n`).join('\n\n');
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    const safeName = sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    anchor.download = `${safeName || 'valuation-section'}.txt`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
-  }, [buildValuationSectionReportText]);
+  const valuationWordExportOptions = useCallback(
+    (sectionId: string, sectionTitle: string) => ({
+      title: `${sectionTitle} - ${companyName || 'Company'}`,
+      fileName: safeWordFileName(`${sectionTitle} - ${companyName || 'Company'}`),
+      orientation: (['3', '4', '12'].includes(sectionId) ? 'landscape' : 'portrait') as WordPageOrientation,
+    }),
+    [companyName]
+  );
+  const handleValuationSectionDownload = useCallback(
+    async (sectionId: string, sectionTitle: string) => {
+      if (valuationWordExportingId) return;
+      const content = buildValuationSectionReportText(sectionId, sectionTitle);
+      setValuationWordExportingId(sectionId);
+      if (['4', '5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
+        setValuationSectionPreview({ id: sectionId, title: sectionTitle, content });
+        setPendingRichValuationWordExport(true);
+        return;
+      }
+      try {
+        await exportHtmlToWord(
+          buildValuationSectionStyledHtml(sectionId, content),
+          valuationWordExportOptions(sectionId, sectionTitle)
+        );
+      } catch (error) {
+        console.error('Failed to export valuation section to Word:', error);
+        alert('Unable to export this section to Word. Please try again.');
+      } finally {
+        setValuationWordExportingId(null);
+      }
+    },
+    [
+      valuationWordExportingId,
+      buildValuationSectionReportText,
+      buildValuationSectionStyledHtml,
+      sdeValuationReportPreviewModel,
+      valuationWordExportOptions,
+    ]
+  );
+  useEffect(() => {
+    if (!pendingRichValuationWordExport || !valuationSectionPreview) return;
+    let cancelled = false;
+    const { id, title } = valuationSectionPreview;
+    const run = async () => {
+      try {
+        const card = document.querySelector<HTMLElement>('.valuation-rich-print-card');
+        if (!card) throw new Error('Valuation preview did not render');
+        await waitForChartsToRender(card);
+        if (cancelled) return;
+        await exportElementToWord(card, valuationWordExportOptions(id, title));
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to export valuation section to Word:', error);
+        alert('Unable to export this section to Word. Please try again.');
+      } finally {
+        if (!cancelled) setValuationSectionPreview(null);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+      setPendingRichValuationWordExport(false);
+      setValuationWordExportingId(null);
+    };
+  }, [pendingRichValuationWordExport, valuationSectionPreview, valuationWordExportOptions]);
   const handleSaveValuationSelections = useCallback(() => {
     if (!selectedCompanyId) {
       alert('Please select a company first.');
@@ -21710,10 +21787,12 @@ function FinancialScorePage() {
                         Print
                       </button>
                       <button
-                        onClick={() => handleValuationSectionDownload(section.id, section.title)}
-                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #1f70c1', background: '#eff6ff', color: '#1f70c1', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                        onClick={() => void handleValuationSectionDownload(section.id, section.title)}
+                        disabled={!!valuationWordExportingId}
+                        title="Download as a Word document with charts and tables"
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #1f70c1', background: '#eff6ff', color: '#1f70c1', fontSize: '12px', fontWeight: 700, cursor: valuationWordExportingId ? 'not-allowed' : 'pointer', opacity: valuationWordExportingId && valuationWordExportingId !== section.id ? 0.6 : 1 }}
                       >
-                        Download
+                        {valuationWordExportingId === section.id ? 'Preparing...' : 'Download'}
                       </button>
                     </div>
                   </div>
@@ -22020,11 +22099,20 @@ function FinancialScorePage() {
                             </thead>
                             <tbody>
                               {businessOverviewKeyEmployees.map((emp, idx) => (
-                                <tr key={`${emp.name}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                  <td style={{ padding: '8px 10px' }}>{emp.name}</td>
-                                  <td style={{ padding: '8px 10px' }}>{emp.title}</td>
-                                  <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{emp.yearsWithCompany}</td>
-                                </tr>
+                                <React.Fragment key={`${emp.name}-${idx}`}>
+                                  <tr style={emp.about ? undefined : { borderBottom: '1px solid #f1f5f9' }}>
+                                    <td style={{ padding: '8px 10px' }}>{emp.name}</td>
+                                    <td style={{ padding: '8px 10px' }}>{emp.title}</td>
+                                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{emp.yearsWithCompany}</td>
+                                  </tr>
+                                  {emp.about && (
+                                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                      <td colSpan={3} style={{ padding: '0 10px 10px 10px', color: '#475569', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                                        {emp.about}
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
                               ))}
                             </tbody>
                           </table>
