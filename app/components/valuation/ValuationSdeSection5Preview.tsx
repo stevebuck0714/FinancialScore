@@ -456,7 +456,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                   <div style={{ fontSize: '24px', fontWeight: 700, color: '#10b981' }}>${Math.round(model.ttmSDE).toLocaleString()}</div>
                 </div>
                 <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Estimated Business Value (SDE)</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Estimated Business Value</div>
                   <div style={{ fontSize: '24px', fontWeight: 700, color: '#10b981' }}>${Math.round(model.sdeValuation).toLocaleString()}</div>
                 </div>
                 <div style={{ background: '#ecfdf5', borderRadius: '8px', padding: '12px', border: '1px solid #86efac' }}>

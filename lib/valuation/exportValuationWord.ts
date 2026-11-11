@@ -34,11 +34,15 @@ type Ctx = {
   maxWidthPx: number;
   pageContentWidthPx: number;
   align?: 'left' | 'center' | 'right';
+  /** Card styling applied to every paragraph inside a bordered/shaded container. */
+  box?: { fill: string | null; border: { width: number; color: string } | null };
+  inCell?: boolean;
 };
 
 type Segment =
   | { kind: 'text'; text: string; style: IRunOptions }
   | { kind: 'break' }
+  | { kind: 'tab' }
   | { kind: 'image'; run: ParagraphChild };
 
 function contentWidthPx(orientation: WordPageOrientation): number {
@@ -228,7 +232,7 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
 }
 
 /** Charts get the full available width so their labels stay legible, capped by a max height. */
-function chartSize(rect: DOMRect, ctx: Ctx): { width: number; height: number } {
+function chartSize(rect: { width: number; height: number }, ctx: Ctx): { width: number; height: number } {
   const aspect = rect.height / Math.max(1, rect.width);
   let width = Math.min(ctx.maxWidthPx, ctx.pageContentWidthPx);
   let height = width * aspect;
@@ -243,7 +247,7 @@ function chartSize(rect: DOMRect, ctx: Ctx): { width: number; height: number } {
 async function chartRun(el: SVGSVGElement | HTMLCanvasElement, ctx: Ctx): Promise<ParagraphChild | null> {
   const rect = el.getBoundingClientRect();
   if (rect.width < 1 || rect.height < 1) return null;
-  const size = chartSize(rect, ctx);
+  let size = chartSize(rect, ctx);
   let dataUrl: string;
   if (el instanceof HTMLCanvasElement) {
     dataUrl = el.toDataURL('image/png');
@@ -251,7 +255,24 @@ async function chartRun(el: SVGSVGElement | HTMLCanvasElement, ctx: Ctx): Promis
     const clone = el.cloneNode(true) as SVGSVGElement;
     inlineSvgStyles(el, clone);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    if (!clone.getAttribute('viewBox')) clone.setAttribute('viewBox', `0 0 ${rect.width} ${rect.height}`);
+    // Axis labels often overflow the viewBox (overflow: visible); widen it so the raster keeps them.
+    const base = el.viewBox?.baseVal;
+    const vb = base && base.width > 0 && base.height > 0
+      ? { x: base.x, y: base.y, w: base.width, h: base.height }
+      : { x: 0, y: 0, w: rect.width, h: rect.height };
+    let view = vb;
+    try {
+      const bbox = el.getBBox();
+      const x0 = Math.min(vb.x, bbox.x);
+      const y0 = Math.min(vb.y, bbox.y);
+      const x1 = Math.max(vb.x + vb.w, bbox.x + bbox.width);
+      const y1 = Math.max(vb.y + vb.h, bbox.y + bbox.height);
+      view = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    } catch {
+      // getBBox throws for SVGs that are not rendered; keep the original view.
+    }
+    clone.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+    size = chartSize({ width: rect.width * (view.w / vb.w), height: rect.height * (view.h / vb.h) }, ctx);
     clone.setAttribute('width', String(size.width * CHART_PIXEL_RATIO));
     clone.setAttribute('height', String(size.height * CHART_PIXEL_RATIO));
     clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -320,13 +341,33 @@ async function collectSegments(node: Node, ctx: Ctx, out: Segment[]): Promise<vo
   if (hasBadge) out.push({ kind: 'text', text: ' ', style: runStyle(ctx.D, style) });
 }
 
-function segmentsToRuns(D: Docx, segments: Segment[]): ParagraphChild[] {
-  const trimmed = [...segments];
-  while (trimmed.length && trimmed[0].kind !== 'image' && (trimmed[0].kind === 'break' || !trimmed[0].text.trim())) trimmed.shift();
-  const last = () => trimmed[trimmed.length - 1];
-  while (trimmed.length && last().kind !== 'image' && (last().kind === 'break' || !(last() as { text: string }).text.trim())) trimmed.pop();
-  if (!trimmed.length) return [];
+function isBlankText(seg: Segment): boolean {
+  return seg.kind === 'break' || seg.kind === 'tab' || (seg.kind === 'text' && !seg.text.trim());
+}
 
+function trimSegments(segments: Segment[]): Segment[] {
+  const trimmed = [...segments];
+  while (trimmed.length && isBlankText(trimmed[0])) trimmed.shift();
+  while (trimmed.length && isBlankText(trimmed[trimmed.length - 1])) trimmed.pop();
+  return trimmed;
+}
+
+/** Large, all-bold, short text lines become Word headings so they use styles, keep-with-next, and the Navigation Pane. */
+function headingLevel(segments: Segment[], ctx: Ctx): 1 | 2 | null {
+  if (ctx.box || ctx.inCell) return null;
+  const texts = segments.filter((s): s is Extract<Segment, { kind: 'text' }> => s.kind === 'text' && !!s.text.trim());
+  if (!texts.length || segments.some((s) => s.kind === 'image')) return null;
+  const text = texts.map((s) => s.text).join('').trim();
+  if (text.length > 100 || !/[A-Za-z]/.test(text) || /^[$€£(+\-\d]/.test(text)) return null;
+  if (!texts.every((s) => s.style.bold)) return null;
+  const size = Math.max(...texts.map((s) => Number(s.style.size) || 0));
+  if (size >= 27) return 1;
+  if (size >= 23) return 2;
+  return null;
+}
+
+function segmentsToRuns(D: Docx, segments: Segment[], plain = false): ParagraphChild[] {
+  const trimmed = trimSegments(segments);
   const runs: ParagraphChild[] = [];
   let previousEndsWithSpace = true;
   trimmed.forEach((seg, i) => {
@@ -335,8 +376,8 @@ function segmentsToRuns(D: Docx, segments: Segment[]): ParagraphChild[] {
       previousEndsWithSpace = true;
       return;
     }
-    if (seg.kind === 'break') {
-      runs.push(new D.TextRun({ text: '', break: 1 }));
+    if (seg.kind === 'break' || seg.kind === 'tab') {
+      runs.push(seg.kind === 'break' ? new D.TextRun({ text: '', break: 1 }) : new D.TextRun({ children: [new D.Tab()] }));
       previousEndsWithSpace = true;
       return;
     }
@@ -346,27 +387,60 @@ function segmentsToRuns(D: Docx, segments: Segment[]): ParagraphChild[] {
     if (i === trimmed.length - 1) text = text.trimEnd();
     if (!text) return;
     previousEndsWithSpace = text.endsWith(' ');
-    runs.push(new D.TextRun({ ...seg.style, text }));
+    runs.push(new D.TextRun(plain ? { text, italics: seg.style.italics } : { ...seg.style, text }));
   });
   return runs;
 }
 
-function paragraphFromRuns(runs: ParagraphChild[], el: Element | null, ctx: Ctx): Paragraph {
+function boxFormatting(ctx: Ctx) {
+  const { D, box } = ctx;
+  if (!box) return {};
+  const side = box.border
+    ? { style: D.BorderStyle.SINGLE, size: Math.max(4, Math.round(box.border.width * 6)), color: box.border.color, space: 4 }
+    : box.fill
+      ? { style: D.BorderStyle.SINGLE, size: 4, color: box.fill, space: 4 }
+      : undefined;
+  return {
+    shading: box.fill ? { type: D.ShadingType.CLEAR, fill: box.fill, color: 'auto' } : undefined,
+    border: side ? { top: side, bottom: side, left: side, right: side } : undefined,
+    indent: { left: 80, right: 80 },
+  };
+}
+
+function paragraphFromSegments(segments: Segment[], el: Element | null, ctx: Ctx, tabStopPx?: number): Paragraph | null {
   const { D } = ctx;
+  const level = headingLevel(segments, ctx);
+  const runs = segmentsToRuns(D, segments, level !== null);
+  if (!runs.length) return null;
   const style = el ? window.getComputedStyle(el) : null;
+  const alignment = style ? alignmentFor(D, style, ctx.align) : ctx.align === 'right' ? D.AlignmentType.RIGHT : undefined;
+  if (level !== null) {
+    return new D.Paragraph({
+      children: runs,
+      heading: level === 1 ? D.HeadingLevel.HEADING_1 : D.HeadingLevel.HEADING_2,
+      alignment,
+    });
+  }
   const bottomBorder = style && !SIDES.slice(0, 3).some((s) => borderFor(style, s)) ? borderFor(style, 'Bottom') : null;
   const isListItem = el?.tagName === 'LI' || style?.display === 'list-item';
+  const boxed = boxFormatting(ctx);
+  const titlesChart = !!el?.nextElementSibling && containsChart(el.nextElementSibling);
   return new D.Paragraph({
     children: runs,
-    alignment: style ? alignmentFor(D, style, ctx.align) : ctx.align === 'right' ? D.AlignmentType.RIGHT : undefined,
+    alignment,
+    keepNext: titlesChart || undefined,
     spacing: {
       before: style ? twips(Math.min(px(style.marginTop), 16)) : 0,
       after: style ? twips(Math.max(4, Math.min(px(style.marginBottom) + px(style.paddingBottom), 16))) : 60,
     },
     bullet: isListItem ? { level: 0 } : undefined,
-    border: bottomBorder
-      ? { bottom: { style: D.BorderStyle.SINGLE, size: Math.max(2, Math.round(bottomBorder.width * 6)), color: bottomBorder.color, space: 2 } }
-      : undefined,
+    tabStops: tabStopPx ? [{ type: D.TabStopType.RIGHT, position: twips(tabStopPx) }] : undefined,
+    ...boxed,
+    border:
+      boxed.border ||
+      (bottomBorder
+        ? { bottom: { style: D.BorderStyle.SINGLE, size: Math.max(2, Math.round(bottomBorder.width * 6)), color: bottomBorder.color, space: 2 } }
+        : undefined),
   });
 }
 
@@ -385,31 +459,6 @@ function cellChildren(D: Docx, blocks: Block[]): Block[] {
   return blocks;
 }
 
-function wrapInBox(blocks: Block[], el: Element, style: CSSStyleDeclaration, ctx: Ctx): Block[] {
-  const { D } = ctx;
-  if (!blocks.length) return blocks;
-  const fill = backgroundHex(style);
-  const widthTwips = twips(ctx.maxWidthPx);
-  const pad = (side: string) => twips(Math.min(px(style.getPropertyValue(`padding-${side}`)), 14));
-  const cell = new D.TableCell({
-    children: cellChildren(D, blocks),
-    shading: fill ? { type: D.ShadingType.CLEAR, fill, color: 'auto' } : undefined,
-    borders: cellBorders(D, [style]),
-    margins: { top: pad('top'), bottom: pad('bottom'), left: pad('left'), right: pad('right') },
-    width: { size: widthTwips, type: D.WidthType.DXA },
-  });
-  return [
-    new D.Table({
-      rows: [new D.TableRow({ children: [cell], cantSplit: el.getBoundingClientRect().height < 400 })],
-      width: { size: widthTwips, type: D.WidthType.DXA },
-      columnWidths: [widthTwips],
-      borders: noBorders(D),
-      layout: D.TableLayoutType.FIXED,
-    }),
-    spacer(D),
-  ];
-}
-
 async function layoutTable(el: Element, rows: Element[][], style: CSSStyleDeclaration, ctx: Ctx): Promise<Block[]> {
   const { D } = ctx;
   const containerWidth = el.getBoundingClientRect().width || 1;
@@ -418,7 +467,7 @@ async function layoutTable(el: Element, rows: Element[][], style: CSSStyleDeclar
   const widestRow = rows.find((r) => r.length === columnCount) || rows[0];
   const rawWidths = widestRow.map((c) => Math.max(1, c.getBoundingClientRect().width));
   const rawTotal = rawWidths.reduce((a, b) => a + b, 0);
-  const columnWidths = rawWidths.map((w) => Math.round((w / rawTotal) * totalTwips));
+  const columnPcts = rawWidths.map((w) => (w / rawTotal) * 100);
   const alignLastRight = style.justifyContent === 'space-between';
 
   const tableRows: TableRow[] = [];
@@ -426,34 +475,53 @@ async function layoutTable(el: Element, rows: Element[][], style: CSSStyleDeclar
     const cells: TableCell[] = [];
     for (let i = 0; i < row.length; i += 1) {
       const span = i === row.length - 1 && row.length < columnCount ? columnCount - row.length + 1 : 1;
-      const cellWidthTwips = columnWidths.slice(i, i + span).reduce((a, b) => a + b, 0);
+      const cellPct = columnPcts.slice(i, i + span).reduce((a, b) => a + b, 0);
+      const cellStyle = window.getComputedStyle(row[i]);
+      const cellIsCard = isBox(row[i], cellStyle);
+      const fill = cellIsCard ? backgroundHex(cellStyle) : null;
       const cellCtx: Ctx = {
         ...ctx,
-        maxWidthPx: Math.max(60, (row[i].getBoundingClientRect().width / containerWidth) * ctx.maxWidthPx - 8),
+        maxWidthPx: Math.max(60, (row[i].getBoundingClientRect().width / containerWidth) * ctx.maxWidthPx - 12),
         align: alignLastRight && row.length > 1 && i === row.length - 1 ? 'right' : undefined,
+        inCell: true,
+        box: undefined,
       };
       cells.push(
         new D.TableCell({
-          children: cellChildren(D, await walkElement(row[i], cellCtx)),
+          children: cellChildren(D, cellIsCard ? await walkChildren(row[i], cellCtx) : await walkElement(row[i], cellCtx)),
           columnSpan: span > 1 ? span : undefined,
-          width: { size: cellWidthTwips, type: D.WidthType.DXA },
-          margins: { top: 0, bottom: 0, left: 60, right: 60 },
+          width: { size: Math.round(cellPct), type: D.WidthType.PERCENTAGE },
+          shading: fill ? { type: D.ShadingType.CLEAR, fill, color: 'auto' } : undefined,
+          borders: cellIsCard ? cellBorders(D, [cellStyle]) : undefined,
+          margins: { top: cellIsCard ? 60 : 0, bottom: cellIsCard ? 60 : 0, left: 80, right: 80 },
           verticalAlign: D.VerticalAlign.TOP,
         })
       );
     }
-    tableRows.push(new D.TableRow({ children: cells, cantSplit: true }));
+    const rowHeight = Math.max(...row.map((c) => c.getBoundingClientRect().height));
+    tableRows.push(new D.TableRow({ children: cells, cantSplit: rowHeight < 3 * PX_PER_INCH || undefined }));
   }
   return [
     new D.Table({
       rows: tableRows,
-      width: { size: totalTwips, type: D.WidthType.DXA },
-      columnWidths,
+      width: { size: 100, type: D.WidthType.PERCENTAGE },
+      columnWidths: columnPcts.map((p) => Math.round((p / 100) * totalTwips)),
       borders: noBorders(D),
-      layout: D.TableLayoutType.FIXED,
+      layout: D.TableLayoutType.AUTOFIT,
     }),
     spacer(D),
   ];
+}
+
+/** A two-item flex row (label on the left, value on the right) becomes one line with a right tab stop. */
+async function labelValueParagraph(el: Element, left: Element, right: Element, ctx: Ctx): Promise<Paragraph | null> {
+  const segments: Segment[] = [];
+  for (const child of Array.from(left.childNodes)) await collectSegments(child, ctx, segments);
+  segments.push({ kind: 'tab' });
+  for (const child of Array.from(right.childNodes)) await collectSegments(child, ctx, segments);
+  const leftText = segments.some((s) => s.kind === 'text' && s.text.trim());
+  if (!leftText) return null;
+  return paragraphFromSegments(segments, el, { ...ctx, align: undefined }, ctx.maxWidthPx - (ctx.box ? 12 : 0));
 }
 
 async function htmlTable(table: HTMLTableElement, ctx: Ctx): Promise<Block[]> {
@@ -490,7 +558,7 @@ async function htmlTable(table: HTMLTableElement, ctx: Ctx): Promise<Block[]> {
       const widthTwips = columnWidths.slice(colIndex, colIndex + span).reduce((a, b) => a + b, 0);
       colIndex += span;
       const fill = backgroundHex(tdStyle) || backgroundHex(trStyle) || (sectionStyle ? backgroundHex(sectionStyle) : null);
-      const cellCtx: Ctx = { ...ctx, maxWidthPx: Math.max(40, widthTwips * pxPerTwip - 12), align: undefined };
+      const cellCtx: Ctx = { ...ctx, maxWidthPx: Math.max(40, widthTwips * pxPerTwip - 12), align: undefined, inCell: true, box: undefined };
       const pad = (side: string) => twips(Math.min(px(tdStyle.getPropertyValue(`padding-${side}`)), 8));
       cells.push(
         new D.TableCell({
@@ -510,10 +578,10 @@ async function htmlTable(table: HTMLTableElement, ctx: Ctx): Promise<Block[]> {
   return [
     new D.Table({
       rows,
-      width: { size: totalTwips, type: D.WidthType.DXA },
+      width: { size: Math.round(Math.max(0.5, widthRatio) * 100), type: D.WidthType.PERCENTAGE },
       columnWidths,
       borders: noBorders(D),
-      layout: D.TableLayoutType.FIXED,
+      layout: D.TableLayoutType.AUTOFIT,
     }),
     spacer(D),
   ];
@@ -524,8 +592,8 @@ async function walkChildren(el: Element, ctx: Ctx): Promise<Block[]> {
   const blocks: Block[] = [];
   let pending: Segment[] = [];
   const flush = () => {
-    const runs = segmentsToRuns(ctx.D, pending);
-    if (runs.length) blocks.push(paragraphFromRuns(runs, el, ctx));
+    const paragraph = paragraphFromSegments(pending, el, ctx);
+    if (paragraph) blocks.push(paragraph);
     pending = [];
   };
   for (const child of Array.from(el.childNodes)) {
@@ -552,39 +620,59 @@ async function walkElement(el: Element, ctx: Ctx): Promise<Block[]> {
 
   if (isChartElement(el)) {
     const run = await chartRun(el as SVGSVGElement | HTMLCanvasElement, ctx);
-    if (run) out.push(new D.Paragraph({ alignment: D.AlignmentType.CENTER, spacing: { before: 60, after: 120 }, children: [run] }));
+    if (run) {
+      out.push(
+        new D.Paragraph({ alignment: D.AlignmentType.CENTER, spacing: { before: 60, after: 120 }, ...boxFormatting(ctx), children: [run] })
+      );
+    }
     return out;
   }
   if (el instanceof SVGElement) return out;
   if (el instanceof HTMLTableElement) {
-    out.push(...(await htmlTable(el, ctx)));
+    out.push(...(await htmlTable(el, { ...ctx, box: undefined })));
     return out;
   }
 
   const style = window.getComputedStyle(el);
   const box = isBox(el, style);
-  const innerCtx: Ctx = box ? { ...ctx, maxWidthPx: Math.max(60, ctx.maxWidthPx - 24) } : ctx;
+  const innerCtx: Ctx = box
+    ? {
+        ...ctx,
+        maxWidthPx: Math.max(60, ctx.maxWidthPx - 16),
+        box: { fill: backgroundHex(style), border: SIDES.map((side) => borderFor(style, side)).find(Boolean) || null },
+      }
+    : ctx;
   let blocks: Block[];
 
   if (!hasBlockChildren(el)) {
     const segments: Segment[] = [];
     for (const child of Array.from(el.childNodes)) await collectSegments(child, innerCtx, segments);
-    const runs = segmentsToRuns(D, segments);
-    blocks = runs.length ? [paragraphFromRuns(runs, el, innerCtx)] : [];
+    const paragraph = paragraphFromSegments(segments, el, innerCtx);
+    blocks = paragraph ? [paragraph] : [];
   } else {
     const children = visibleChildren(el);
     const isRowLayout = /(^|-)(grid|flex)$/.test(style.display) && !style.flexDirection.startsWith('column');
     const rows = isRowLayout && children.length > 1 && !hasDirectText(el) ? groupIntoRows(children) : null;
-    if (rows && rows.some((r) => r.length > 1)) {
+    const isLabelValueRow =
+      !!rows &&
+      rows.length === 1 &&
+      rows[0].length === 2 &&
+      style.display.endsWith('flex') &&
+      rows[0].every((child) => !hasBlockChildren(child) && !containsChart(child));
+    if (rows && isLabelValueRow) {
+      const paragraph = await labelValueParagraph(el, rows[0][0], rows[0][1], innerCtx);
+      blocks = paragraph ? [paragraph] : [];
+    } else if (rows && rows.some((r) => r.length > 1)) {
       blocks = children.some(containsChart)
         ? (await Promise.all(children.map((child) => walkElement(child, innerCtx)))).flat()
-        : await layoutTable(el, rows, style, innerCtx);
+        : await layoutTable(el, rows, style, { ...innerCtx, box: undefined });
     } else {
       blocks = await walkChildren(el, innerCtx);
     }
   }
 
-  out.push(...(box ? wrapInBox(blocks, el, style, ctx) : blocks));
+  out.push(...blocks);
+  if (box && blocks.length) out.push(spacer(D));
   return out;
 }
 
@@ -595,6 +683,7 @@ async function buildDocument(root: HTMLElement, options: { title: string; orient
   const pageContentWidthPx = contentWidthPx(options.orientation);
   const ctx: Ctx = { D, maxWidthPx: pageContentWidthPx, pageContentWidthPx };
   const blocks = await walkChildren(root, ctx);
+  if (!blocks.length) throw new Error('The report had no content to export yet.');
   const margin = Math.round(PAGE_MARGIN_INCHES * 1440);
   const doc = new D.Document({
     creator: 'Corelytics',
@@ -604,6 +693,14 @@ async function buildDocument(root: HTMLElement, options: { title: string; orient
         document: {
           run: { font: 'Arial', size: 20, color: '334155' },
           paragraph: { spacing: { after: 60 } },
+        },
+        heading1: {
+          run: { font: 'Arial', size: 30, bold: true, color: '0F172A' },
+          paragraph: { spacing: { before: 240, after: 120 }, keepNext: true, keepLines: true },
+        },
+        heading2: {
+          run: { font: 'Arial', size: 24, bold: true, color: '1E293B' },
+          paragraph: { spacing: { before: 200, after: 80 }, keepNext: true, keepLines: true },
         },
       },
     },
@@ -657,7 +754,7 @@ export async function waitForChartsToRender(root: HTMLElement, timeoutMs = 4000)
     const count = root.querySelectorAll('svg, canvas').length;
     stableTicks = count === lastCount ? stableTicks + 1 : 0;
     lastCount = count;
-    if (stableTicks >= 3) return;
+    if (stableTicks >= 3 && root.innerText.trim().length > 0) return;
   }
 }
 
