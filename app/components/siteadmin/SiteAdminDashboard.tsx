@@ -47,6 +47,7 @@ import HubSpotIntegrationCard from '@/app/components/siteadmin/HubSpotIntegratio
 import HighLevelIntegrationCard from '@/app/components/siteadmin/HighLevelIntegrationCard';
 import JobBossIntegrationCard from '@/app/components/siteadmin/JobBossIntegrationCard';
 import ProShopIntegrationCard from '@/app/components/siteadmin/ProShopIntegrationCard';
+import FoodReadyIntegrationCard from '@/app/components/siteadmin/FoodReadyIntegrationCard';
 import { DEFAULT_ALLOWED_SECTIONS } from '@/app/components/admin/CompanyDetailsTab';
 import { getSectorMasterTabLabel, getSectorMasterTabKeys } from '@/lib/operations/sector-master-tabs';
 import {
@@ -9937,7 +9938,7 @@ export default function SiteAdminDashboard(props: any) {
                                             {isOperationalSourceSelected(company.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(company.id, 'HILTI')}
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'ICE_ENCOMPASS')}
                                             {isOperationalSourceSelected(company.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(company.id, 'ICE_ENCOMPASS')}
-                                            {isOperationalSourceSelected(company.id, 'FOODREADY_AI') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'FOODREADY_AI')}
+                                            {isOperationalSourceSelected(company.id, 'FOODREADY_AI') && <FoodReadyIntegrationCard companyId={company.id} />}
                                             {isOperationalSourceSelected(company.id, 'FOODREADY_AI') && renderConstructionOperationalDataDomainsCard(company.id, 'FOODREADY_AI')}
                                             {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(company.id, company.name, 'LANTRAX_PROFIT_POWER')}
                                             {isOperationalSourceSelected(company.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(company.id, 'LANTRAX_PROFIT_POWER')}
@@ -13744,7 +13745,7 @@ export default function SiteAdminDashboard(props: any) {
                                   {isOperationalSourceSelected(businessCompany.id, 'HILTI') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'HILTI')}
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'ICE_ENCOMPASS')}
                                   {isOperationalSourceSelected(businessCompany.id, 'ICE_ENCOMPASS') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'ICE_ENCOMPASS')}
-                                  {isOperationalSourceSelected(businessCompany.id, 'FOODREADY_AI') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'FOODREADY_AI')}
+                                  {isOperationalSourceSelected(businessCompany.id, 'FOODREADY_AI') && <FoodReadyIntegrationCard companyId={businessCompany.id} />}
                                   {isOperationalSourceSelected(businessCompany.id, 'FOODREADY_AI') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'FOODREADY_AI')}
                                   {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalIntegrationCard(businessCompany.id, businessCompany.name, 'LANTRAX_PROFIT_POWER')}
                                   {isOperationalSourceSelected(businessCompany.id, 'LANTRAX_PROFIT_POWER') && renderConstructionOperationalDataDomainsCard(businessCompany.id, 'LANTRAX_PROFIT_POWER')}
