@@ -69,6 +69,7 @@ type AccountListEntry = {
   ltm: number;
   sdeAdjustmentBucket: SdeBucket | null;
   sdeAdjustmentLineItem: string | null;
+  history?: number[];
 };
 
 type EbitdaAdjustmentsApiResponse = {
@@ -80,7 +81,66 @@ type EbitdaAdjustmentsApiResponse = {
   sourceUsed: string;
   buckets: BucketDetail[];
   allAccounts?: AccountListEntry[];
+  historyMonths?: string[];
 };
+
+const ACCOUNT_EXPORT_MONTHS = 24;
+
+async function exportAccountsToExcel(companyId: string, asOfMonth: string): Promise<void> {
+  const params = new URLSearchParams({ companyId, asOfMonth, history: String(ACCOUNT_EXPORT_MONTHS) });
+  const res = await fetch(`/api/sde/ebitda-adjustments?${params.toString()}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as EbitdaAdjustmentsApiResponse;
+  const historyMonths = data.historyMonths ?? [];
+  const ltmStart = Math.max(0, historyMonths.length - 12);
+  const accounts = (data.allAccounts ?? []).filter((a) => a.category === 'Revenue' || a.category === 'Expense');
+  const header = ['Category', 'Account code', 'Account name', 'Mapped to', 'EBITDA adjustment', ...historyMonths.map((m) => formatMonthShort(m)), 'LTM total', `${ACCOUNT_EXPORT_MONTHS}-month total`];
+  const rows: Array<Array<string | number>> = [
+    [data.companyName || 'Company'],
+    [`Accounts — ${ACCOUNT_EXPORT_MONTHS} months (${historyMonths[0] ?? ''} through ${historyMonths[historyMonths.length - 1] ?? ''})`],
+    [],
+    header,
+  ];
+  const roundCents = (v: number) => Math.round(v * 100) / 100;
+  for (const category of ['Revenue', 'Expense'] as const) {
+    for (const a of accounts.filter((x) => x.category === category)) {
+      const raw = a.history ?? historyMonths.map(() => 0);
+      // Match the rail, which shows each account's magnitude (revenue credits come through negative).
+      const sign = raw.reduce((s, v) => s + v, 0) < 0 ? -1 : 1;
+      const values = raw.map((v) => roundCents(v * sign));
+      const bucket = a.sdeAdjustmentBucket;
+      const lineItem = bucket && a.sdeAdjustmentLineItem
+        ? SDE_LINE_ITEMS[bucket].find((li) => li.key === a.sdeAdjustmentLineItem)?.label
+        : null;
+      rows.push([
+        category === 'Revenue' ? 'Income' : 'Expense',
+        a.accountCode || '',
+        a.accountName,
+        a.targetField || '',
+        bucket ? `${SDE_BUCKET_SHORT_LABELS[bucket]}${lineItem ? ` — ${lineItem}` : ''}` : '',
+        ...values,
+        roundCents(values.slice(ltmStart).reduce((s, v) => s + v, 0)),
+        roundCents(values.reduce((s, v) => s + v, 0)),
+      ]);
+    }
+  }
+  const xlsxModule = await import('xlsx');
+  const XLSX = xlsxModule.default ?? xlsxModule;
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet['!cols'] = [{ wch: 10 }, { wch: 14 }, { wch: 40 }, { wch: 22 }, { wch: 28 }, ...header.slice(5).map(() => ({ wch: 13 }))];
+  const headerRow = 3;
+  sheet['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: headerRow, c: 0 }, e: { r: rows.length - 1, c: header.length - 1 } }) };
+  for (let r = headerRow + 1; r < rows.length; r += 1) {
+    for (let c = 5; c < header.length; c += 1) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+      if (cell && typeof cell.v === 'number') cell.z = '#,##0.00;(#,##0.00)';
+    }
+  }
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Accounts');
+  const safeName = (data.companyName || 'Company').replace(/[<>:"/\\|?*]+/g, '-').trim() || 'Company';
+  XLSX.writeFile(workbook, `${safeName}_Accounts_${ACCOUNT_EXPORT_MONTHS}_Months_${historyMonths[historyMonths.length - 1] ?? asOfMonth}.xlsx`);
+}
 
 export type LiveTotals = {
   ownerComp: number;
@@ -995,6 +1055,20 @@ export const EbitdaAccountList: React.FC = () => {
     Expense: false,
   });
   const [pickerForRow, setPickerForRow] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const handleExport = async () => {
+    if (!ctx.api?.companyId || exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      await exportAccountsToExcel(ctx.api.companyId, ctx.api.asOfMonth);
+    } catch (e: unknown) {
+      setExportError(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const allAccounts = ctx.api?.allAccounts;
   const accounts = useMemo(() => allAccounts ?? [], [allAccounts]);
@@ -1055,8 +1129,29 @@ export const EbitdaAccountList: React.FC = () => {
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
         <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>Accounts (LTM)</div>
-        <div style={{ fontSize: '10px', color: '#64748b' }}>{accounts.length} mapped</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ fontSize: '10px', color: '#64748b' }}>{accounts.length} mapped</div>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting || !ctx.api?.companyId || accounts.length === 0}
+            title={`Download every income and expense account with ${ACCOUNT_EXPORT_MONTHS} months of activity`}
+            style={{
+              padding: '3px 8px',
+              border: '1px solid #94a3b8',
+              borderRadius: '4px',
+              background: 'white',
+              color: '#334155',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: exporting ? 'wait' : 'pointer',
+            }}
+          >
+            {exporting ? 'Exporting…' : 'Export to Excel'}
+          </button>
+        </div>
       </div>
+      {exportError && <div style={{ fontSize: '10px', color: '#b91c1c', marginBottom: '6px' }}>{exportError}</div>}
       <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '8px' }}>
         Click a row to assign it to an EBITDA adjustment bucket. Edits queue until you click Save Changes.
       </div>

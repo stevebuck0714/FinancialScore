@@ -92,6 +92,8 @@ type AccountListEntry = {
   ltm: number;
   sdeAdjustmentBucket: SdeBucket | null;
   sdeAdjustmentLineItem: string | null;
+  /** Signed period activity per `historyMonths` entry; only when `history` is requested. */
+  history?: number[];
 };
 
 // Lookup tables for classifying mapped accounts into the 5 user-facing
@@ -165,19 +167,19 @@ function toMonthKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-function buildLtmWindow(asOfMonth: string): { start: Date; end: Date; months: string[] } {
+function buildLtmWindow(asOfMonth: string, monthCount = 12): { start: Date; end: Date; months: string[] } {
   const m = asOfMonth.match(/^(\d{4})-(\d{2})$/);
   if (!m) {
     const now = new Date();
-    return buildLtmWindow(`${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`);
+    return buildLtmWindow(`${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`, monthCount);
   }
   const year = Number(m[1]);
   const month = Number(m[2]);
   const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-  const start = new Date(Date.UTC(year, month - 12, 1, 0, 0, 0, 0));
+  const start = new Date(Date.UTC(year, month - monthCount, 1, 0, 0, 0, 0));
   const months: string[] = [];
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(Date.UTC(year, month - 12 + i, 1));
+  for (let i = 0; i < monthCount; i++) {
+    const d = new Date(Date.UTC(year, month - monthCount + i, 1));
     months.push(toMonthKey(d));
   }
   return { start, end, months };
@@ -466,7 +468,11 @@ export async function GET(request: NextRequest) {
 
     const requestedAsOf = String(sp.get('asOfMonth') || '').trim() || null;
     const asOfMonth = await resolveAsOfMonth(companyId, requestedAsOf);
-    const { start, end, months: ltmMonths } = buildLtmWindow(asOfMonth);
+    const { end, months: ltmMonths } = buildLtmWindow(asOfMonth);
+    // `history=24` widens the per-account load (for the accounts download) without changing LTM math.
+    const historyCount = sp.get('history') === '24' ? 24 : sp.get('history') === '12' ? 12 : 0;
+    const { start, months: loadMonths } = buildLtmWindow(asOfMonth, Math.max(12, historyCount));
+    const historyMonths = historyCount > 0 ? loadMonths.slice(-historyCount) : [];
 
     const company = await withPrismaReconnectRetry(
       () => prisma.company.findUnique({
@@ -522,7 +528,7 @@ export async function GET(request: NextRequest) {
       monthlyByAccount = await loadGlMonthlyByAccount(companyId, start, end);
       if (monthlyByAccount.size > 0) monthlySource = 'gl_transaction_fact';
     } else if (accountingSystem === 'QUICKBOOKS_DESKTOP' || accountingSystem === 'QUICKBOOKS_ENTERPRISE') {
-      monthlyByAccount = await loadQbdGlMonthlyByAccount(companyId, ltmMonths);
+      monthlyByAccount = await loadQbdGlMonthlyByAccount(companyId, loadMonths);
       if (monthlyByAccount.size > 0) monthlySource = 'qbd_general_ledger';
     } else if (accountingSystem === 'QUICKBOOKS') {
       const latestRecord = await withPrismaReconnectRetry(
@@ -534,13 +540,13 @@ export async function GET(request: NextRequest) {
           }),
         'sde-ebitda-adjustments.qboLatestRecord',
       );
-      monthlyByAccount = loadQboReportMonthlyByAccount(latestRecord?.rawData, ltmMonths, nameLookupKeys);
+      monthlyByAccount = loadQboReportMonthlyByAccount(latestRecord?.rawData, loadMonths, nameLookupKeys);
       if (monthlyByAccount.size > 0) monthlySource = 'qbo_reports';
     }
     // QBD General Ledger values are period movement only, never month-end balances.
     const monthlyHasBsBalances = monthlySource !== 'qbd_general_ledger';
     if (monthlyByAccount.size === 0) {
-      monthlyByAccount = await loadCsvMonthlyByAccount(companyId, ltmMonths);
+      monthlyByAccount = await loadCsvMonthlyByAccount(companyId, loadMonths);
     }
 
     // For ERP-shaped companies, separately resolve true cumulative
@@ -700,6 +706,9 @@ export async function GET(request: NextRequest) {
         ltm: Math.abs(ltmRaw),
         sdeAdjustmentBucket: bucket,
         sdeAdjustmentLineItem: lineItem,
+        history: historyCount > 0 && !isBs
+          ? historyMonths.map((m) => normalizeNumber(monthMap?.get(m) ?? 0))
+          : undefined,
       };
     });
 
@@ -710,6 +719,7 @@ export async function GET(request: NextRequest) {
         accountingSystem,
         asOfMonth,
         ltmWindow: { start: ltmMonths[0], end: ltmMonths[ltmMonths.length - 1], months: ltmMonths },
+        historyMonths: historyCount > 0 ? historyMonths : undefined,
         sourceUsed: isRawDataSystem || monthlySource !== 'rawdata_trial_balance'
           ? monthlySource
           : 'rawdata_fallback',
