@@ -3,12 +3,11 @@
 import { useEffect, useState } from 'react';
 
 export default function SupportPage() {
-  const [activeTab, setActiveTab] = useState<'getting-started' | 'privacy' | 'license' | 'request-support'>('getting-started');
+  const [activeTab, setActiveTab] = useState<'getting-started' | 'privacy' | 'request-support'>('getting-started');
 
   const tabs = [
     { id: 'getting-started' as const, label: 'Getting Started', description: 'Onboarding, login, and setup' },
     { id: 'privacy' as const, label: 'Privacy Policy', description: 'Data handling and privacy' },
-    { id: 'license' as const, label: 'License Agreement', description: 'Product terms and usage' },
     { id: 'request-support' as const, label: 'Request Support', description: 'Submit a support ticket' },
   ];
 
@@ -79,7 +78,6 @@ export default function SupportPage() {
           <div style={{ padding: activeTab === 'request-support' ? '24px 28px' : '32px' }}>
             {activeTab === 'getting-started' && <GettingStartedContent />}
             {activeTab === 'privacy' && <PrivacyPolicyContent />}
-            {activeTab === 'license' && <LicenseAgreementContent />}
             {activeTab === 'request-support' && <RequestSupportContent />}
           </div>
         </main>
@@ -517,59 +515,6 @@ function PrivacyPolicyContent() {
           <span style={{ color: '#1e40af' }}> For the complete privacy policy with all sections, visit the </span>
           <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" style={{ color: '#1e40af', fontWeight: '600' }}>
             full Privacy Policy page
-          </a>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// License Agreement Content Component
-function LicenseAgreementContent() {
-  return (
-    <div>
-      <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '24px', textAlign: 'center' }}>
-        License Agreement
-      </h2>
-      
-      <div style={{ lineHeight: '1.8', color: '#475569', fontSize: '16px' }}>
-        <p style={{ marginBottom: '24px', fontSize: '17px', color: '#1e293b' }}>
-          Corelytics™ is a software product owned by Venturis Financial, LLC. and licensed to companies to support financial analysis, business goal setting and benchmark comparisons.
-        </p>
-
-        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-          1. License
-        </h3>
-        <p style={{ marginBottom: '16px' }}>
-          Subject to the terms and conditions of this End User License Agreement (the "EULA"), Corelytics hereby grants Customer a non-exclusive, non-transferable, non-sublicensable license to access and use the Corelytics™ system during the term of this agreement for the sole purpose of analyzing the Customer&apos;s company financial performance.
-        </p>
-
-        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-          2. Ownership
-        </h3>
-        <p style={{ marginBottom: '16px' }}>
-          The Software and supporting instructions and usage guidelines (Documentation) are licensed to Customer, not sold, solely for use under the terms of this EULA. CORELYTICS retains all right, title and interest, including all intellectual property rights, relating to or embodied in the Software and Documentation.
-        </p>
-
-        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-          3. Restrictions
-        </h3>
-        <p style={{ marginBottom: '16px' }}>
-          Customer acknowledges that it is not entitled to a copy of the Software, and further acknowledges that it will not and will not permit third parties to reverse engineer, translate or attempt to learn the source code or functional capabilities of the Software.
-        </p>
-
-        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-          4. Payment for Services
-        </h3>
-        <p style={{ marginBottom: '16px' }}>
-          Customer will pay the monthly fee as defined on the registration web page for the license to use the Corelytics™ software. Monthly payments will be made by credit card.
-        </p>
-
-        <div style={{ background: '#fef3c7', borderLeft: '4px solid #f59e0b', padding: '16px', borderRadius: '0 8px 8px 0', marginTop: '32px' }}>
-          <strong style={{ color: '#92400e' }}>📄 Full Agreement:</strong>
-          <span style={{ color: '#92400e' }}> For the complete license agreement with all terms, visit the </span>
-          <a href="/license-agreement" target="_blank" rel="noopener noreferrer" style={{ color: '#92400e', fontWeight: '600' }}>
-            full License Agreement page
           </a>
         </div>
       </div>
