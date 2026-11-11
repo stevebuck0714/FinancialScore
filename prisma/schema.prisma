@@ -150,6 +150,7 @@ model Company {
   inforRawRecords                 InforRawRecord[]
   inforRawCompleteness            InforRawCompleteness[]
   assessmentRecords               AssessmentRecord[]
+  teamAssessmentGroups            TeamAssessmentGroup[]
   revenueRecords                  RevenueRecord[]
   subscriptionEvents              SubscriptionEvent[]
   affiliate                       Affiliate?                       @relation(fields: [affiliateId], references: [id])
@@ -394,14 +395,32 @@ model UserCompanyAccess {
   // Set when a company user is invited to take this company's Team Assessment.
   assessmentInvitedAt        DateTime?
   assessmentLastOpenedAt     DateTime?
+  assessmentGroupId          String?
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assessmentGroup TeamAssessmentGroup? @relation(fields: [assessmentGroupId], references: [id], onDelete: SetNull)
 
   @@unique([userId, companyId])
   @@index([userId])
+  @@index([companyId])
+  @@index([assessmentGroupId])
+}
+
+// A set of up to 5 people who take the Team Assessment together; results are averaged per group.
+model TeamAssessmentGroup {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  members UserCompanyAccess[]
+  records AssessmentRecord[]
+
   @@index([companyId])
 }
 
@@ -641,13 +660,16 @@ model AssessmentRecord {
   isCompleted  Boolean   @default(false)
   overallScore Float?
   completedAt  DateTime?
+  groupId      String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group        TeamAssessmentGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([companyId])
+  @@index([groupId])
   @@index([isCompleted])
   @@index([completedAt])
 }

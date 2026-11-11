@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { User, Consultant, AssessmentRecord, AssessmentResponses } from '../../types';
+import { formatEstDateTime } from '@/lib/time/eastern';
 
 interface MAYourResultsViewProps {
   selectedCompanyId: number;
@@ -11,6 +12,8 @@ interface MAYourResultsViewProps {
   assessmentData: Array<{ id: number; name: string; questions: Array<{ id: string }> }>;
   assessmentResponses: AssessmentResponses;
   setCurrentView: (view: string) => void;
+  isReviewer?: boolean;
+  embedded?: boolean;
 }
 
 export default function MAYourResultsView({
@@ -20,18 +23,21 @@ export default function MAYourResultsView({
   assessmentRecords,
   assessmentData,
   assessmentResponses,
-  setCurrentView
+  setCurrentView,
+  isReviewer = (currentUser as any)?.role === 'consultant',
+  embedded = false,
 }: MAYourResultsViewProps) {
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-          {(currentUser as any)?.role === 'consultant' ? 'Assessment Results - All Participants' : 'Your Assessment Results'}
-        </h1>
-      </div>
+    <div style={embedded ? undefined : { maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
+      {!embedded && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+            {isReviewer ? 'Assessment Results - All Participants' : 'Your Assessment Results'}
+          </h1>
+        </div>
+      )}
       
-      {(currentUser as any)?.role === 'consultant' ? (
-        // Show all participants' results for consultants
+      {isReviewer ? (
         <>
           {assessmentRecords.filter(r => String(r.companyId) === String(selectedCompanyId)).length === 0 ? (
             <div style={{ background: 'white', borderRadius: '12px', padding: '60px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -47,7 +53,7 @@ export default function MAYourResultsView({
                     <div>
                       <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{record.user?.name || record.userName || 'Unknown User'}</h2>
                       <div style={{ fontSize: '14px', color: '#64748b' }}>
-                        Completed: {new Date(record.completedAt || record.completedDate || '').toLocaleDateString()} | 
+                        Completed: {formatEstDateTime(record.completedAt || record.completedDate)} | 
                         <span style={{ fontWeight: '600', color: '#667eea', marginLeft: '8px' }}>Overall Score: {record.overallScore.toFixed(2)}/5.0</span>
                       </div>
                     </div>

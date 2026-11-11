@@ -279,6 +279,7 @@ export interface AssessmentRecord {
     email: string;
   };
   companyId: string;
+  groupId?: string | null;
   company?: {
     id: string;
     name: string;

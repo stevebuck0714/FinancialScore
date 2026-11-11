@@ -25,9 +25,6 @@ export default function SupportPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <a href="/?view=ma-welcome" style={{ padding: '9px 14px', background: '#f8fafc', color: '#334155', textDecoration: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '13px', border: '1px solid #dbe3ee' }}>
-            Team Assessment
-          </a>
           <a href="/" style={{ padding: '9px 14px', background: '#0f172a', color: 'white', textDecoration: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '13px', border: '1px solid #0f172a' }}>
             Back to Dashboard
           </a>

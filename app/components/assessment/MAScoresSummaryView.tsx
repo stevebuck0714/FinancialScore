@@ -7,16 +7,18 @@ interface MAScoresSummaryViewProps {
   selectedCompanyId: number;
   assessmentData: Array<{ id: number; name: string; questions: Array<{ id: string }> }>;
   assessmentRecords: AssessmentRecord[];
+  embedded?: boolean;
 }
 
 export default function MAScoresSummaryView({
   selectedCompanyId,
   assessmentData,
-  assessmentRecords
+  assessmentRecords,
+  embedded = false,
 }: MAScoresSummaryViewProps) {
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
-      <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Scores Summary - All Participants</h1>
+    <div style={embedded ? undefined : { maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
+      {!embedded && <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Scores Summary - All Participants</h1>}
       
       <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Average Scores Across All Participants</h2>

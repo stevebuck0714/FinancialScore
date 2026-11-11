@@ -123,6 +123,7 @@ const MAWelcomeView = dynamic(() => import('./components/assessment/MAWelcomeVie
 const MAScoringGuideView = dynamic(() => import('./components/assessment/MAScoringGuideView'), { ssr: false });
 const MAScoresSummaryView = dynamic(() => import('./components/assessment/MAScoresSummaryView'), { ssr: false });
 const MAYourResultsView = dynamic(() => import('./components/assessment/MAYourResultsView'), { ssr: false });
+const MAChartsView = dynamic(() => import('./components/assessment/MAChartsView'), { ssr: false });
 const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), { ssr: false });
 import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
@@ -234,7 +235,7 @@ const restrictedCompanyUserSections = (user: any): string[] | null => {
   return Array.isArray(user?.sidebarAccess) ? (user.sidebarAccess as string[]) : null;
 };
 
-// The Support page's Team Assessment link opens `/?view=ma-welcome`. Login and
+// The Team Assessment invitation email opens `/?view=ma-welcome`. Login and
 // session-restore landing must honor it until the user navigates elsewhere.
 let teamAssessmentLinkRequestedAt = 0;
 const TEAM_ASSESSMENT_LINK_TTL_MS = 5 * 60 * 1000;
@@ -1975,12 +1976,18 @@ function FinancialScorePage() {
   const [teamAssessmentAccess, setTeamAssessmentAccess] = useState<{ companyId: string; hasAccess: boolean } | null>(null);
   const isLegacyAssessmentUser = currentUser?.role === 'user' && currentUser?.userType === 'assessment';
   const isTeamAssessmentInviteUser = isLoggedIn && currentUser?.role === 'user' && !isLegacyAssessmentUser;
-  const canUseTeamAssessment =
-    isLegacyAssessmentUser ||
+  const isInvitedToTeamAssessment =
+    isTeamAssessmentInviteUser &&
+    teamAssessmentAccess?.companyId === selectedCompanyId &&
+    teamAssessmentAccess.hasAccess;
+  const isCompanyAdminUser =
+    currentUser?.role === 'user' && currentUser?.userType === 'company' && (currentUser as any)?.companyRole === 'admin';
+  // Consultants, site admins, and company admins who weren't invited review results but don't take the assessment.
+  const isTeamAssessmentReviewer =
     currentUser?.role === 'consultant' ||
-    (isTeamAssessmentInviteUser &&
-      teamAssessmentAccess?.companyId === selectedCompanyId &&
-      teamAssessmentAccess.hasAccess);
+    String(currentUser?.role || '').toLowerCase() === 'siteadmin' ||
+    (isCompanyAdminUser && !isInvitedToTeamAssessment);
+  const canUseTeamAssessment = isLegacyAssessmentUser || isTeamAssessmentReviewer || isInvitedToTeamAssessment;
   const teamAssessmentAccessResolved =
     !isTeamAssessmentInviteUser || !selectedCompanyId || teamAssessmentAccess?.companyId === selectedCompanyId;
 
@@ -2011,7 +2018,7 @@ function FinancialScorePage() {
       teamAssessmentOpenedRef.current = false;
       return;
     }
-    if (teamAssessmentOpenedRef.current || currentUser?.role !== 'user' || !canUseTeamAssessment) return;
+    if (teamAssessmentOpenedRef.current || !(isLegacyAssessmentUser || isInvitedToTeamAssessment)) return;
     const companyId = selectedCompanyId || currentUser?.companyId;
     if (!companyId) return;
     teamAssessmentOpenedRef.current = true;
@@ -2021,7 +2028,7 @@ function FinancialScorePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId }),
     }).catch(() => {});
-  }, [currentView, currentUser?.role, currentUser?.companyId, canUseTeamAssessment, selectedCompanyId]);
+  }, [currentView, currentUser?.companyId, isLegacyAssessmentUser, isInvitedToTeamAssessment, selectedCompanyId]);
 
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
@@ -3697,6 +3704,21 @@ function FinancialScorePage() {
   const [assessmentNotes, setAssessmentNotes] = useState<AssessmentNotes>({});
   const [assessmentRecords, setAssessmentRecords] = useState<AssessmentRecord[]>([]);
   const [unansweredQuestions, setUnansweredQuestions] = useState<string[]>([]);
+
+  // Participants edit their own saved assessment; browser storage may hold another user's answers.
+  const loadedParticipantAssessmentRef = useRef('');
+  useEffect(() => {
+    const companyId = selectedCompanyId || currentUser?.companyId || '';
+    if (!(isLegacyAssessmentUser || isInvitedToTeamAssessment) || !currentUser?.id || !companyId) return;
+    const ownRecord = assessmentRecords.find(
+      (record) => record.userId === currentUser.id && String(record.companyId) === String(companyId)
+    );
+    const key = `${currentUser.id}:${companyId}:${ownRecord?.id || 'none'}`;
+    if (loadedParticipantAssessmentRef.current === key) return;
+    loadedParticipantAssessmentRef.current = key;
+    setAssessmentResponses((ownRecord?.responses as any) || {});
+    setAssessmentNotes((ownRecord?.notes as any) || {});
+  }, [assessmentRecords, currentUser?.id, currentUser?.companyId, isInvitedToTeamAssessment, isLegacyAssessmentUser, selectedCompanyId]);
   
   // State - Trend Analysis
   const [selectedTrendItem, setSelectedTrendItem] = useState<string>('revenue');
@@ -4914,7 +4936,9 @@ function FinancialScorePage() {
         ).trim();
         const candidateView = String((savedSiteAdminLocation as any)?.currentView || '').trim();
         const allowedViews = new Set(['admin', 'operations', 'daily-alerts', 'dataroom', 'custom-reports', 'fs-score', 'fs-insights', 'siteadmin']);
-        if (candidateView && allowedViews.has(candidateView)) {
+        if (new URLSearchParams(window.location.search).get('view') === 'ma-welcome') {
+          setCurrentView('ma-welcome');
+        } else if (candidateView && allowedViews.has(candidateView)) {
           setCurrentView(candidateView as any);
         } else if (restoredCompanyId) {
           setCurrentView('admin');
@@ -4922,7 +4946,9 @@ function FinancialScorePage() {
           setCurrentView('siteadmin');
         }
       } else if (user.role === 'consultant') {
-        setCurrentView('consultant-dashboard');
+        setCurrentView(
+          new URLSearchParams(window.location.search).get('view') === 'ma-welcome' ? 'ma-welcome' : 'consultant-dashboard'
+        );
       } else if ((user.userType || '').toLowerCase() === 'company') {
         setCurrentView(resolveCompanyLandingView(user));
       } else {
@@ -5947,6 +5973,10 @@ function FinancialScorePage() {
   useEffect(() => {
     if (!isLoggedIn || !currentUser || currentView !== 'login') return;
     const role = String(currentUser.role || '').toLowerCase();
+    if ((role === 'siteadmin' || role === 'consultant') && hasPendingTeamAssessmentLink()) {
+      setCurrentView('ma-welcome');
+      return;
+    }
     if (role === 'siteadmin') {
       setCurrentView(selectedCompanyId ? 'admin' : 'siteadmin');
       return;
@@ -7323,13 +7353,13 @@ function FinancialScorePage() {
       
       // Set appropriate default view based on user type
       if (String(normalizedUser.role || '').toLowerCase() === 'siteadmin') {
-        setCurrentView('siteadmin');
+        setCurrentView(hasPendingTeamAssessmentLink() ? 'ma-welcome' : 'siteadmin');
       } else if (normalizedUser.role === 'consultant') {
         if (!normalizedUser.isPrimaryContact) {
           setSelectedCompanyId('');
           localStorage.removeItem('fs_selectedCompanyId');
         }
-        setCurrentView('consultant-dashboard');
+        setCurrentView(hasPendingTeamAssessmentLink() ? 'ma-welcome' : 'consultant-dashboard');
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
       } else if (normalizedUser.userType === 'company') {
@@ -15141,11 +15171,61 @@ function FinancialScorePage() {
                   {currentView === 'custom-print' && '› '}REPORT PACKAGES
                 </h3>
               )}
+
+              {isInvitedToTeamAssessment && (
+                <>
+                  <h3
+                    onClick={() => handleViewChange('ma-welcome')}
+                    style={{
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      color: currentView.startsWith('ma-') ? '#1F70C1' : '#334155',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      padding: '1px 32px',
+                      margin: '16px 0 0 0',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                      whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#1F70C1';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = currentView.startsWith('ma-') ? '#1F70C1' : '#334155';
+                    }}
+                  >
+                    {currentView.startsWith('ma-') && '› '}TEAM ASSESSMENT
+                  </h3>
+                  {currentView.startsWith('ma-') && (
+                    <div style={{ paddingLeft: '44px', marginTop: '4px' }}>
+                      {([
+                        ['ma-questionnaire', 'Questionnaire'],
+                        ['ma-your-results', 'Your Results'],
+                        ['ma-charts', 'Charts'],
+                        ['ma-scoring-guide', 'Scoring Guide'],
+                      ] as const).map(([view, label]) => (
+                        <div
+                          key={view}
+                          onClick={() => handleViewChange(view)}
+                          style={{
+                            fontSize: '13px',
+                            color: currentView === view ? '#1F70C1' : '#475569',
+                            fontWeight: currentView === view ? '600' : '400',
+                            padding: '4px 0',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Legacy financial health section removed from sidebar; functionality commented out below */}
-
-            {/* Team Assessment - moved to Support page; link there goes to /?view=ma-welcome */}
 
             {/* Bottom section: User/Consultant - grouped at bottom of sidebar */}
             <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
@@ -30566,17 +30646,17 @@ function FinancialScorePage() {
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
           
-          {currentUser?.role === 'consultant' && (
+          {isTeamAssessmentReviewer && (
             <div style={{ background: '#fffbeb', border: '2px solid #fbbf24', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>Consultant View Only</h3>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>View Only</h3>
               <p style={{ fontSize: '14px', color: '#78350f', margin: 0 }}>
-                As a consultant, you can view this questionnaire but cannot fill it out. Only company users can complete assessments. 
-                Navigate to "View Assessments" in the Administrator Dashboard to see user responses.
+                You can view this questionnaire but cannot fill it out. Only invited users complete the assessment.
+                Open Your Results to see all participants&apos; responses.
               </p>
             </div>
           )}
           
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', opacity: currentUser?.role === 'consultant' ? 0.6 : 1, pointerEvents: currentUser?.role === 'consultant' ? 'none' : 'auto' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', opacity: isTeamAssessmentReviewer ? 0.6 : 1, pointerEvents: isTeamAssessmentReviewer ? 'none' : 'auto' }}>
             <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#0c4a6e', marginBottom: '8px' }}>Rating Scale</h3>
               <div style={{ fontSize: '13px', color: '#0c4a6e', lineHeight: '1.6' }}>
@@ -30660,6 +30740,8 @@ function FinancialScorePage() {
                       // Add to local state with proper structure
                       const assessmentRecord: AssessmentRecord = {
                         id: record.id,
+                        userId: currentUser!.id,
+                        groupId: record.groupId ?? null,
                         userEmail: currentUser?.email || '',
                         userName: currentUser?.name || '',
                         companyId: selectedCompanyId,
@@ -30670,7 +30752,7 @@ function FinancialScorePage() {
                         overallScore: totalScore
                       };
                       
-                      setAssessmentRecords(prev => [...prev, assessmentRecord]);
+                      setAssessmentRecords(prev => [...prev.filter(r => r.id !== record.id), assessmentRecord]);
                       alert('Assessment saved successfully!');
                       setCurrentView('ma-your-results');
                     } catch (error) {
@@ -30716,6 +30798,7 @@ function FinancialScorePage() {
           assessmentData={assessmentData}
           assessmentResponses={assessmentResponses}
           setCurrentView={setCurrentView}
+          isReviewer={isTeamAssessmentReviewer}
         />
       )}
 
@@ -30770,187 +30853,14 @@ function FinancialScorePage() {
 
       {/* Team Assessment - Charts View */}
       {currentView === 'ma-charts' && selectedCompanyId && canUseTeamAssessment && (
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Assessment Charts</h1>
-          
-          {(currentUser?.role === 'consultant' ? assessmentRecords.filter(r => r.companyId === selectedCompanyId).length === 0 : Object.keys(assessmentResponses).length === 0) ? (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '40px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#64748b', marginBottom: '16px' }}>No Assessment Data</h2>
-              <p style={{ fontSize: '16px', color: '#94a3b8', marginBottom: '12px' }}>
-                {currentUser?.role === 'consultant' ? 'No users have completed assessments for this company yet.' : 'Please complete the questionnaire first to view charts.'}
-              </p>
-              {currentUser?.role !== 'consultant' && (
-                <button 
-                  onClick={() => setCurrentView('ma-questionnaire')}
-                  style={{ padding: '12px 32px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
-                >
-                  Go to Questionnaire
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                  {currentUser?.role === 'consultant' ? 'Average Category Scores - All Participants' : 'Category Scores - Bar Chart'}
-                </h2>
-                
-                <div style={{ padding: '20px' }}>
-              {assessmentData.map((category) => {
-                const categoryQuestions = category.questions.map(q => q.id);
-                
-                let avgScore = 0;
-                if (currentUser?.role === 'consultant') {
-                  // Calculate average across all assessment records for this company
-                  const companyRecords = assessmentRecords.filter(r => r.companyId === selectedCompanyId);
-                  const allCategoryScores = companyRecords.map(record => {
-                    const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
-                    return categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                  }).filter(s => s > 0);
-                  avgScore = allCategoryScores.length > 0 ? allCategoryScores.reduce((sum, val) => sum + val, 0) / allCategoryScores.length : 0;
-                } else {
-                  // Use current user's responses
-                  const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
-                  avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                }
-                
-                const percentage = (avgScore / 5) * 100;
-                
-                return (
-                  <div key={category.id} style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#475569' }}>{category.name}</span>
-                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#667eea' }}>{avgScore.toFixed(2)} / 5.0</span>
-                    </div>
-                    <div style={{ background: '#e2e8f0', borderRadius: '8px', height: '24px', overflow: 'hidden' }}>
-                      <div style={{ background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)', height: '100%', width: `${percentage}%`, transition: 'width 0.5s', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '8px' }}>
-                        {percentage > 15 && <span style={{ fontSize: '12px', fontWeight: '600', color: 'white' }}>{percentage.toFixed(0)}%</span>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Category Scores - Radar Chart</h2>
-            
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
-              <svg width="500" height="500" viewBox="0 0 500 500">
-                <g transform="translate(250, 250)">
-                  {/* Draw concentric circles */}
-                  {[1, 2, 3, 4, 5].map((level) => (
-                    <circle
-                      key={level}
-                      cx="0"
-                      cy="0"
-                      r={level * 40}
-                      fill="none"
-                      stroke="#e2e8f0"
-                      strokeWidth="1"
-                    />
-                  ))}
-                  
-                  {/* Draw axis lines and labels */}
-                  {assessmentData.map((category, idx) => {
-                    const angle = (idx * 2 * Math.PI) / assessmentData.length - Math.PI / 2;
-                    const x2 = Math.cos(angle) * 200;
-                    const y2 = Math.sin(angle) * 200;
-                    const labelX = Math.cos(angle) * 220;
-                    const labelY = Math.sin(angle) * 220;
-                    
-                    return (
-                      <g key={category.id}>
-                        <line x1="0" y1="0" x2={x2} y2={y2} stroke="#cbd5e1" strokeWidth="1" />
-                        <text
-                          x={labelX}
-                          y={labelY}
-                          textAnchor="middle"
-                          fontSize="11"
-                          fontWeight="600"
-                          fill="#475569"
-                          dominantBaseline="middle"
-                        >
-                          {category.name.length > 20 ? category.name.substring(0, 18) + '...' : category.name}
-                        </text>
-                      </g>
-                    );
-                  })}
-                  
-                  {/* Draw data polygon */}
-                  <polygon
-                    points={assessmentData.map((category, idx) => {
-                      const categoryQuestions = category.questions.map(q => q.id);
-                      
-                      let avgScore = 0;
-                      if (currentUser?.role === 'consultant') {
-                        // Calculate average across all assessment records for this company
-                        const companyRecords = assessmentRecords.filter(r => r.companyId === selectedCompanyId);
-                        const allCategoryScores = companyRecords.map(record => {
-                          const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
-                          return categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                        }).filter(s => s > 0);
-                        avgScore = allCategoryScores.length > 0 ? allCategoryScores.reduce((sum, val) => sum + val, 0) / allCategoryScores.length : 0;
-                      } else {
-                        // Use current user's responses
-                        const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
-                        avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                      }
-                      
-                      const angle = (idx * 2 * Math.PI) / assessmentData.length - Math.PI / 2;
-                      const radius = (avgScore / 5) * 200;
-                      const x = Math.cos(angle) * radius;
-                      const y = Math.sin(angle) * radius;
-                      return `${x},${y}`;
-                    }).join(' ')}
-                    fill="rgba(102, 126, 234, 0.2)"
-                    stroke="#667eea"
-                    strokeWidth="3"
-                  />
-                  
-                  {/* Draw data points */}
-                  {assessmentData.map((category, idx) => {
-                    const categoryQuestions = category.questions.map(q => q.id);
-                    
-                    let avgScore = 0;
-                    if (currentUser?.role === 'consultant') {
-                      // Calculate average across all assessment records for this company
-                      const companyRecords = assessmentRecords.filter(r => r.companyId === selectedCompanyId);
-                      const allCategoryScores = companyRecords.map(record => {
-                        const categoryResponses = categoryQuestions.map(qId => record.responses[qId]).filter(r => r !== undefined);
-                        return categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                      }).filter(s => s > 0);
-                      avgScore = allCategoryScores.length > 0 ? allCategoryScores.reduce((sum, val) => sum + val, 0) / allCategoryScores.length : 0;
-                    } else {
-                      // Use current user's responses
-                      const categoryResponses = categoryQuestions.map(qId => assessmentResponses[qId]).filter(r => r !== undefined);
-                      avgScore = categoryResponses.length > 0 ? categoryResponses.reduce((sum, val) => sum + val, 0) / categoryResponses.length : 0;
-                    }
-                    
-                    const angle = (idx * 2 * Math.PI) / assessmentData.length - Math.PI / 2;
-                    const radius = (avgScore / 5) * 200;
-                    const x = Math.cos(angle) * radius;
-                    const y = Math.sin(angle) * radius;
-                    
-                    return (
-                      <circle key={category.id} cx={x} cy={y} r="6" fill="#667eea" stroke="white" strokeWidth="2">
-                        <title>{category.name}: {avgScore.toFixed(2)}</title>
-                      </circle>
-                    );
-                  })}
-                  
-                  {/* Center circle with legend */}
-                  <circle cx="0" cy="0" r="30" fill="white" stroke="#cbd5e1" strokeWidth="1" />
-                  <text x="0" y="-5" textAnchor="middle" fontSize="10" fontWeight="600" fill="#64748b">Scale</text>
-                  <text x="0" y="8" textAnchor="middle" fontSize="10" fill="#64748b">1 to 5</text>
-                </g>
-              </svg>
-            </div>
-          </div>
-            </>
-          )}
-        </div>
+        <MAChartsView
+          selectedCompanyId={selectedCompanyId}
+          assessmentData={assessmentData}
+          assessmentRecords={assessmentRecords}
+          assessmentResponses={assessmentResponses}
+          isReviewer={isTeamAssessmentReviewer}
+          setCurrentView={setCurrentView}
+        />
       )}
 
       {/* Custom Print View - For Consultants and Company Users */}

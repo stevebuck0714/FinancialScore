@@ -2,10 +2,10 @@
 
 import React from 'react';
 
-export default function MAScoringGuideView() {
+export default function MAScoringGuideView({ embedded = false }: { embedded?: boolean }) {
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
-      <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Scoring Guide</h1>
+    <div style={embedded ? undefined : { maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
+      {!embedded && <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Scoring Guide</h1>}
       
       <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Rating Scale Descriptions</h2>

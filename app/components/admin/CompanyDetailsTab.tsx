@@ -4,7 +4,6 @@ import React from "react";
 import { INDUSTRY_SECTORS } from "@/data/industrySectors";
 import { formatPhoneNumber } from "@/app/utils/phone";
 import PasswordInput from "@/app/components/common/PasswordInput";
-import TeamAssessmentInvitesPanel from "@/app/components/admin/TeamAssessmentInvitesPanel";
 import {
   getEnabledOperationalDashboardModulesForCompany,
   normalizeOperationalDashboardAccess,
@@ -2188,10 +2187,6 @@ export default function CompanyDetailsTab({
                 </div>
                 )}
 
-                {/* Team Assessment Users */}
-                {userSection !== "company-users" && (
-                  <TeamAssessmentInvitesPanel companyId={comp.id} />
-                )}
               </div>
             </React.Fragment>
           ))}

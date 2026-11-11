@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import ProfileTab from '../dashboard/ProfileTab';
 import CompanyDetailsTab from './CompanyDetailsTab';
+import TeamAssessmentTab from './TeamAssessmentTab';
 import DocumentationTab from '../consultant/DocumentationTab';
 import PaymentsTab from '../dashboard/PaymentsTab';
 import { useFinancialData } from '../../hooks/useFinancialData';
@@ -368,63 +369,11 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
       )}
 
       {/* Team Assessment Sub-tab */}
-      {props.companyManagementSubTab === 'team-assessment' && (
-        <CompanyDetailsTab
+      {props.companyManagementSubTab === 'team-assessment' && props.selectedCompanyId && (
+        <TeamAssessmentTab
+          companyId={props.selectedCompanyId}
           currentUser={props.currentUser}
-          selectedCompanyId={props.selectedCompanyId}
-          companies={props.companies}
-          users={props.users}
           assessmentRecords={props.assessmentRecords}
-          isLoading={props.isLoading}
-          newCompanyName={props.newCompanyName}
-          selectedAffiliateCodeForNewCompany={props.selectedAffiliateCodeForNewCompany}
-          setSelectedAffiliateCodeForNewCompany={props.setSelectedAffiliateCodeForNewCompany}
-          setNewCompanyName={props.setNewCompanyName}
-          addCompany={props.addCompany}
-          setEditingCompanyId={props.setEditingCompanyId}
-          setCompanyAddressStreet={props.setCompanyAddressStreet}
-          setCompanyAddressCity={props.setCompanyAddressCity}
-          setCompanyAddressState={props.setCompanyAddressState}
-          setCompanyAddressZip={props.setCompanyAddressZip}
-          setCompanyAddressCountry={props.setCompanyAddressCountry}
-          setCompanyIndustrySector={props.setCompanyIndustrySector}
-          setShowCompanyDetailsModal={props.setShowCompanyDetailsModal}
-          deleteUser={props.deleteUser}
-          newCompanyUserName={props.newCompanyUserName}
-          setNewCompanyUserName={props.setNewCompanyUserName}
-          newCompanyUserTitle={props.newCompanyUserTitle}
-          setNewCompanyUserTitle={props.setNewCompanyUserTitle}
-          newCompanyUserEmail={props.newCompanyUserEmail}
-          setNewCompanyUserEmail={props.setNewCompanyUserEmail}
-          newCompanyUserPhone={props.newCompanyUserPhone}
-          setNewCompanyUserPhone={props.setNewCompanyUserPhone}
-          newCompanyUserPassword={props.newCompanyUserPassword}
-          setNewCompanyUserPassword={props.setNewCompanyUserPassword}
-          addUser={props.addUser}
-          existingCompanyUserName={props.existingCompanyUserName}
-          setExistingCompanyUserName={props.setExistingCompanyUserName}
-          existingCompanyUserEmail={props.existingCompanyUserEmail}
-          setExistingCompanyUserEmail={props.setExistingCompanyUserEmail}
-          existingCompanyUserCompanyName={props.existingCompanyUserCompanyName}
-          setExistingCompanyUserCompanyName={props.setExistingCompanyUserCompanyName}
-          existingCompanyUserPassword={props.existingCompanyUserPassword}
-          setExistingCompanyUserPassword={props.setExistingCompanyUserPassword}
-          newAssessmentUserName={props.newAssessmentUserName}
-          setNewAssessmentUserName={props.setNewAssessmentUserName}
-          newAssessmentUserTitle={props.newAssessmentUserTitle}
-          setNewAssessmentUserTitle={props.setNewAssessmentUserTitle}
-          newAssessmentUserEmail={props.newAssessmentUserEmail}
-          setNewAssessmentUserEmail={props.setNewAssessmentUserEmail}
-          newAssessmentUserPassword={props.newAssessmentUserPassword}
-          setNewAssessmentUserPassword={props.setNewAssessmentUserPassword}
-          existingAssessmentUserName={props.existingAssessmentUserName}
-          setExistingAssessmentUserName={props.setExistingAssessmentUserName}
-          existingAssessmentUserEmail={props.existingAssessmentUserEmail}
-          setExistingAssessmentUserEmail={props.setExistingAssessmentUserEmail}
-          grantExistingUserAccess={props.grantExistingUserAccess}
-          onUserPermissionsUpdated={props.onUserPermissionsUpdated}
-          setSelectedCompanyId={props.setSelectedCompanyId}
-          userSection="team-assessment"
         />
       )}
 

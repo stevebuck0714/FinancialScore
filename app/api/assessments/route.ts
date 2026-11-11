@@ -112,6 +112,12 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    const access = await prisma.userCompanyAccess.findUnique({
+      where: { userId_companyId: { userId, companyId } },
+      select: { assessmentGroupId: true },
+    });
+    const groupId = access?.assessmentGroupId ?? existingRecord?.groupId ?? null;
+
     let record;
     
     if (existingRecord) {
@@ -123,7 +129,8 @@ export async function POST(request: NextRequest) {
           notes: notes || {},
           overallScore,
           isCompleted: isCompleted || false,
-          completedAt: isCompleted ? new Date() : null
+          completedAt: isCompleted ? new Date() : null,
+          groupId,
         },
         include: {
           user: {
@@ -150,7 +157,8 @@ export async function POST(request: NextRequest) {
           notes: notes || {},
           overallScore,
           isCompleted: isCompleted || false,
-          completedAt: isCompleted ? new Date() : null
+          completedAt: isCompleted ? new Date() : null,
+          groupId,
         },
         include: {
           user: {
