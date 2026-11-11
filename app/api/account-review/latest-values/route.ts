@@ -273,6 +273,15 @@ async function loadQbdBalanceSheetSnapshotRecords(
       WHERE p."companyId" = ${companyId}
         AND p."requestName" = 'BalanceSheetStandardReportQuery'
         AND x->>'reportSubtitle' = ${selectedSubtitle}
+        AND p."jobId" = (
+          SELECT p2."jobId"
+          FROM "QuickBooksDesktopBackfillPage" p2
+          WHERE p2."companyId" = ${companyId}
+            AND p2."requestName" = 'BalanceSheetStandardReportQuery'
+            AND p2."payload"::jsonb @> jsonb_build_array(jsonb_build_object('reportSubtitle', ${selectedSubtitle}::text))
+          ORDER BY p2."createdAt" DESC
+          LIMIT 1
+        )
       ORDER BY p."jobId", p."pageNumber", e.ord
     `,
     'account-review.latest-values.loadQbdBalanceSheetSnapshotRecords.rows',

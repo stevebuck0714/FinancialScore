@@ -782,6 +782,27 @@ function qbdBalanceSheetReportDateKey(records: Record<string, unknown>[]): strin
   return null;
 }
 
+// Overlap-day syncs put one Balance Sheet report per business day in the same
+// batch. Summing them multiplies every balance, so keep only the newest report.
+function qbdLatestBalanceSheetReport(records: Record<string, unknown>[]): {
+  reportDate: string | null;
+  rows: Record<string, unknown>[];
+} {
+  const rowsByDate = new Map<string, Record<string, unknown>[]>();
+  let currentDate: string | null = null;
+  for (const record of records) {
+    const dateKey = qbdBalanceSheetReportDateKey([record]);
+    if (dateKey) currentDate = dateKey;
+    if (!currentDate) continue;
+    const rows = rowsByDate.get(currentDate) || [];
+    rows.push(record);
+    rowsByDate.set(currentDate, rows);
+  }
+  if (rowsByDate.size === 0) return { reportDate: qbdBalanceSheetReportDateKey(records), rows: records };
+  const reportDate = Array.from(rowsByDate.keys()).sort().pop() as string;
+  return { reportDate, rows: rowsByDate.get(reportDate) || [] };
+}
+
 function qbdAddDays(dateKey: string, days: number): string | null {
   const date = new Date(`${dateKey}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) return null;
@@ -1501,12 +1522,14 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     return null;
   };
 
-  const [accounts, balanceSheetReportRows, generalLedgerReportRows] =
+  const [accounts, balanceSheetBatchRows, generalLedgerReportRows] =
     await Promise.all([
       loadQbdPageRecords(companyId, 'AccountQuery'),
       loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery'),
       loadQbdGeneralLedgerRowsForMonthlyBuild(companyId),
     ]);
+  const { reportDate: balanceSheetReportDate, rows: balanceSheetReportRows } =
+    qbdLatestBalanceSheetReport(balanceSheetBatchRows);
 
   const accountIdByName = new Map<string, string>();
   for (const account of accounts) {
@@ -1549,7 +1572,6 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
     if (Object.keys(expenseBreakdown).length) row.expenseBreakdown = expenseBreakdown as Record<string, number>;
   }
 
-  const balanceSheetReportDate = qbdBalanceSheetReportDateKey(balanceSheetReportRows);
   const balanceSheetAnchor = balanceSheetReportDate ? createQbdMappedDailySnapshot(balanceSheetReportDate) : null;
   const accountBalancesAtReportDate = new Map<string, { accountId: string; accountName: string; balance: number }>();
   if (balanceSheetAnchor) {
@@ -2376,8 +2398,9 @@ async function rebuildQuickBooksDesktopDailyBalanceSheetMonth(companyId: string,
     glMovementsByDate.set(dateKey, dateMovements);
   }
 
-  const balanceSheetReportRows = await loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery');
-  const reportDate = qbdBalanceSheetReportDateKey(balanceSheetReportRows);
+  const { reportDate, rows: balanceSheetReportRows } = qbdLatestBalanceSheetReport(
+    await loadQbdPageRecords(companyId, 'BalanceSheetStandardReportQuery'),
+  );
   const reportSnap = reportDate ? createQbdMappedDailySnapshot(reportDate) : null;
   if (reportSnap) {
     for (const reportRow of balanceSheetReportRows) {
