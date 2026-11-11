@@ -56,8 +56,12 @@ export function buildSdeValuationPreviewModel(params: {
   industrySectorCategory: string | null | undefined;
   companyIndustrySectorCategory: string | null | undefined;
   customerQualityRecords: any[];
+  /** Saved account assignments per (bucket, line item), as shown on the Quality of Earnings page. */
+  assignedLineItemTotals?: Partial<Record<string, Record<string, number>>>;
 }): SdeValuationPreviewModel | null {
   const { monthly, sdeManualInputs, sdeMultiplier, customerQualityRecords } = params;
+  const assigned = (bucket: string, lineItem: string): number =>
+    Number(params.assignedLineItemTotals?.[bucket]?.[lineItem]) || 0;
   if (!Array.isArray(monthly) || monthly.length === 0) return null;
 
   const formatDollars = (value: number): string => {
@@ -114,14 +118,12 @@ export function buildSdeValuationPreviewModel(params: {
   const ttmEbitdaAnalysis =
     ttmNetIncomeAfterTax + ttmInterest + ttmTaxesAnalysis + ttmDepreciationOnly + ttmAmortizationOnly;
 
-  const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
-  const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
-  const effectiveOwnerSalaryAdj =
-    ownerSalaryAdj > 0 ? ownerSalaryAdj : Math.abs(sdeManualInputs.ownerSalary ?? 0);
-  const effectiveOwnersDrawAdj =
-    ownersDrawAdj > 0 ? ownersDrawAdj : Math.abs(sdeManualInputs.ownersDraw ?? 0);
-  const effectiveMarketReplacementSalary = Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
-  const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
+  // Same rules as the Quality of Earnings page: assigned account amounts plus manual entries.
+  const effectiveOwnerSalaryAdj = assigned('OWNER_COMP', 'ownerSalary') + Math.abs(sdeManualInputs.ownerSalary ?? 0);
+  const effectiveOwnersDrawAdj = assigned('OWNER_COMP', 'ownersDraw') + Math.abs(sdeManualInputs.ownersDraw ?? 0);
+  const effectiveMarketReplacementSalary =
+    assigned('OWNER_COMP', 'marketReplacementSalary') + Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
+  const effectiveOwnerCompOther = assigned('OWNER_COMP', 'ownerCompOther') + (sdeManualInputs.ownerCompOther ?? 0);
   const coreSellerAdjustment =
     effectiveOwnerSalaryAdj + effectiveOwnersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
 
@@ -130,12 +132,12 @@ export function buildSdeValuationPreviewModel(params: {
   const consultingExpense = sumTtmByKeywords(['consulting'], ['expense']);
   const erpInstall = sumTtmByKeywords(['erpinstall', 'erpimplementation'], ['expense']);
   const relocation = sumTtmByKeywords(['relocation', 'movingexpense'], ['expense']);
-  const effectiveLegalSettlements = sdeManualInputs.legalSettlements ?? legalSettlements;
-  const effectiveMajorRepairs = sdeManualInputs.majorRepairs ?? majorRepairs;
-  const effectiveConsulting = sdeManualInputs.consulting ?? consultingExpense;
-  const effectiveErpInstall = sdeManualInputs.erpInstall ?? erpInstall;
-  const effectiveRelocation = sdeManualInputs.relocation ?? relocation;
-  const effectiveNonRecurringOther = sdeManualInputs.nonRecurringOther ?? 0;
+  const effectiveLegalSettlements = assigned('NON_RECURRING', 'legalSettlements') + (sdeManualInputs.legalSettlements ?? legalSettlements);
+  const effectiveMajorRepairs = assigned('NON_RECURRING', 'majorRepairs') + (sdeManualInputs.majorRepairs ?? majorRepairs);
+  const effectiveConsulting = assigned('NON_RECURRING', 'consulting') + (sdeManualInputs.consulting ?? consultingExpense);
+  const effectiveErpInstall = assigned('NON_RECURRING', 'erpInstall') + (sdeManualInputs.erpInstall ?? erpInstall);
+  const effectiveRelocation = assigned('NON_RECURRING', 'relocation') + (sdeManualInputs.relocation ?? relocation);
+  const effectiveNonRecurringOther = assigned('NON_RECURRING', 'nonRecurringOther') + (sdeManualInputs.nonRecurringOther ?? 0);
   const nonRecurringExpenseAdj =
     effectiveLegalSettlements +
     effectiveMajorRepairs +
@@ -149,12 +151,12 @@ export function buildSdeValuationPreviewModel(params: {
   const autoLeases = sumTtmByKeywords(['autolease', 'vehiclelease'], ['expense']);
   const mealsAndEntertainmentAdj = sumTtmField('mealsEntertainment');
   const clubDues = sumTtmByKeywords(['clubdues'], ['expense']);
-  const effectivePersonalTravel = sdeManualInputs.personalTravel ?? personalTravel;
-  const effectiveFamilyPayroll = sdeManualInputs.familyPayroll ?? familyPayroll;
-  const effectiveAutoLeases = sdeManualInputs.autoLeases ?? autoLeases;
-  const effectiveMealsEntertainment = sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj;
-  const effectiveClubDues = sdeManualInputs.clubDues ?? clubDues;
-  const effectivePersonalOther = sdeManualInputs.personalOther ?? 0;
+  const effectivePersonalTravel = assigned('PERSONAL', 'personalTravel') + (sdeManualInputs.personalTravel ?? personalTravel);
+  const effectiveFamilyPayroll = assigned('PERSONAL', 'familyPayroll') + (sdeManualInputs.familyPayroll ?? familyPayroll);
+  const effectiveAutoLeases = assigned('PERSONAL', 'autoLeases') + (sdeManualInputs.autoLeases ?? autoLeases);
+  const effectiveMealsEntertainment = assigned('PERSONAL', 'mealsEntertainment') + (sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj);
+  const effectiveClubDues = assigned('PERSONAL', 'clubDues') + (sdeManualInputs.clubDues ?? clubDues);
+  const effectivePersonalOther = assigned('PERSONAL', 'personalOther') + (sdeManualInputs.personalOther ?? 0);
   const personalDiscretionaryAdj =
     effectivePersonalTravel +
     effectiveFamilyPayroll +
@@ -166,10 +168,10 @@ export function buildSdeValuationPreviewModel(params: {
   const assetSales = sumTtmByKeywords(['assetsale', 'gainonsale'], ['revenue']);
   const insuranceProceeds = sumTtmByKeywords(['insuranceproceed'], ['revenue']);
   const oneTimeContract = sumTtmByKeywords(['onetimecontract'], ['revenue']);
-  const effectiveAssetSales = sdeManualInputs.assetSales ?? assetSales;
-  const effectiveInsuranceProceeds = sdeManualInputs.insuranceProceeds ?? insuranceProceeds;
-  const effectiveOneTimeContract = sdeManualInputs.oneTimeContract ?? oneTimeContract;
-  const effectiveOneTimeRevenueOther = sdeManualInputs.oneTimeRevenueOther ?? 0;
+  const effectiveAssetSales = assigned('ONE_TIME_REVENUE', 'assetSales') + (sdeManualInputs.assetSales ?? assetSales);
+  const effectiveInsuranceProceeds = assigned('ONE_TIME_REVENUE', 'insuranceProceeds') + (sdeManualInputs.insuranceProceeds ?? insuranceProceeds);
+  const effectiveOneTimeContract = assigned('ONE_TIME_REVENUE', 'oneTimeContract') + (sdeManualInputs.oneTimeContract ?? oneTimeContract);
+  const effectiveOneTimeRevenueOther = assigned('ONE_TIME_REVENUE', 'oneTimeRevenueOther') + (sdeManualInputs.oneTimeRevenueOther ?? 0);
   const oneTimeRevenueAdj =
     effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract + effectiveOneTimeRevenueOther;
 

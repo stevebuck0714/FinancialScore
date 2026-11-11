@@ -3889,6 +3889,11 @@ function FinancialScorePage() {
   const [ebitdaLineItemTotals, setEbitdaLineItemTotals] = useState<
     Partial<Record<'OWNER_COMP' | 'PERSONAL' | 'NON_RECURRING' | 'ONE_TIME_REVENUE', Record<string, number>>>
   >({});
+  /** Saved assignment sums for valuation reports, which render without the Quality of Earnings provider mounted. */
+  const [savedEbitdaLineItemTotalsState, setSavedEbitdaLineItemTotals] = useState<{
+    companyId: string;
+    totals: Partial<Record<string, Record<string, number>>>;
+  } | null>(null);
 
   // State - Goals
   const [expenseGoals, setExpenseGoals] = useState<{[key: string]: number}>({});
@@ -12100,6 +12105,35 @@ function FinancialScorePage() {
     growth_24mo,
     businessOverviewCustomerConcentration,
   ]);
+  useEffect(() => {
+    if (!selectedCompanyId || currentView !== 'valuation-reports') return;
+    let cancelled = false;
+    fetch(`/api/sde/ebitda-adjustments?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        const totals: Record<string, Record<string, number>> = {};
+        for (const bucket of data.buckets || []) {
+          for (const lineItem of bucket.lineItems || []) {
+            const amount = Number(lineItem.ownerAmountTotal) || 0;
+            if (!amount) continue;
+            (totals[bucket.bucket] ||= {})[lineItem.key] = amount;
+          }
+        }
+        setSavedEbitdaLineItemTotals({ companyId: selectedCompanyId, totals });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId, currentView]);
+  const savedEbitdaLineItemTotals = useMemo(
+    () =>
+      savedEbitdaLineItemTotalsState && savedEbitdaLineItemTotalsState.companyId === selectedCompanyId
+        ? savedEbitdaLineItemTotalsState.totals
+        : undefined,
+    [savedEbitdaLineItemTotalsState, selectedCompanyId],
+  );
   const sdeValuationReportPreviewModel = useMemo(
     () =>
       buildSdeValuationPreviewModel({
@@ -12109,8 +12143,9 @@ function FinancialScorePage() {
         industrySectorCategory,
         companyIndustrySectorCategory: effectiveCompanySectorCategory,
         customerQualityRecords,
+        assignedLineItemTotals: savedEbitdaLineItemTotals,
       }),
-    [monthly, sdeManualInputs, sdeMultiplier, industrySectorCategory, effectiveCompanySectorCategory, customerQualityRecords],
+    [monthly, sdeManualInputs, sdeMultiplier, industrySectorCategory, effectiveCompanySectorCategory, customerQualityRecords, savedEbitdaLineItemTotals],
   );
   const valuationSectionDefinitions = useMemo(() => ([
     {
