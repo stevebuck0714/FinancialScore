@@ -816,6 +816,22 @@ export default function ProfileTab({
                       />
                     </div>
                   </div>
+                  <div style={{ marginTop: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>
+                      About This Employee
+                    </label>
+                    <textarea
+                      value={employee.about || ''}
+                      onChange={(e) => {
+                        const newEmployees = [...profile.keyEmployees];
+                        newEmployees[index] = { ...newEmployees[index], about: e.target.value };
+                        updateProfile({ keyEmployees: newEmployees });
+                      }}
+                      placeholder="Add or paste background, responsibilities, experience, bio..."
+                      rows={4}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical' }}
+                    />
+                  </div>
                 </div>
               ))}
             </div>

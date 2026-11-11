@@ -234,8 +234,19 @@ const restrictedCompanyUserSections = (user: any): string[] | null => {
   return Array.isArray(user?.sidebarAccess) ? (user.sidebarAccess as string[]) : null;
 };
 
+// The Support page's Team Assessment link opens `/?view=ma-welcome`. Login and
+// session-restore landing must honor it until the user navigates elsewhere.
+let teamAssessmentLinkRequestedAt = 0;
+const TEAM_ASSESSMENT_LINK_TTL_MS = 5 * 60 * 1000;
+const hasPendingTeamAssessmentLink = () =>
+  teamAssessmentLinkRequestedAt > 0 && Date.now() - teamAssessmentLinkRequestedAt < TEAM_ASSESSMENT_LINK_TTL_MS;
+const clearPendingTeamAssessmentLink = () => {
+  teamAssessmentLinkRequestedAt = 0;
+};
+
 const resolveCompanyLandingView = (user: any, company?: any): CompanyLandingView => {
   if (shouldLandOnMyAccounts(user)) return 'my-accounts';
+  if (hasPendingTeamAssessmentLink()) return 'ma-welcome';
   const userIsDemo = Boolean(user?.demoCompany || user?.isDemoSignup);
   const companyStatus = String(company?.subscriptionStatus || '').trim().toLowerCase();
   const companyAffiliateCode = String(company?.affiliateCode || '').trim().toUpperCase();
@@ -1960,6 +1971,58 @@ function FinancialScorePage() {
   const [siteAdminSessionUser, setSiteAdminSessionUser] = useState<any>(null);
 
 
+  // Company users open the Team Assessment once invited from Company Management.
+  const [teamAssessmentAccess, setTeamAssessmentAccess] = useState<{ companyId: string; hasAccess: boolean } | null>(null);
+  const isLegacyAssessmentUser = currentUser?.role === 'user' && currentUser?.userType === 'assessment';
+  const isTeamAssessmentInviteUser = isLoggedIn && currentUser?.role === 'user' && !isLegacyAssessmentUser;
+  const canUseTeamAssessment =
+    isLegacyAssessmentUser ||
+    currentUser?.role === 'consultant' ||
+    (isTeamAssessmentInviteUser &&
+      teamAssessmentAccess?.companyId === selectedCompanyId &&
+      teamAssessmentAccess.hasAccess);
+  const teamAssessmentAccessResolved =
+    !isTeamAssessmentInviteUser || !selectedCompanyId || teamAssessmentAccess?.companyId === selectedCompanyId;
+
+  useEffect(() => {
+    if (!isTeamAssessmentInviteUser || !selectedCompanyId) return;
+    let cancelled = false;
+    fetch(`/api/team-assessment?companyId=${encodeURIComponent(selectedCompanyId)}`, { credentials: 'include' })
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null)
+      .then((data) => {
+        if (!cancelled) {
+          setTeamAssessmentAccess({ companyId: selectedCompanyId, hasAccess: Boolean(data?.viewerHasAccess) });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isTeamAssessmentInviteUser, selectedCompanyId, currentUser?.id]);
+
+  useEffect(() => {
+    if (isLoggedIn && currentView !== 'login' && !currentView.startsWith('ma-')) clearPendingTeamAssessmentLink();
+  }, [currentView, isLoggedIn]);
+
+  const teamAssessmentOpenedRef = useRef(false);
+  useEffect(() => {
+    const inTeamAssessment = currentView.startsWith('ma-');
+    if (!inTeamAssessment) {
+      teamAssessmentOpenedRef.current = false;
+      return;
+    }
+    if (teamAssessmentOpenedRef.current || currentUser?.role !== 'user' || !canUseTeamAssessment) return;
+    const companyId = selectedCompanyId || currentUser?.companyId;
+    if (!companyId) return;
+    teamAssessmentOpenedRef.current = true;
+    fetch('/api/team-assessment/opened', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId }),
+    }).catch(() => {});
+  }, [currentView, currentUser?.role, currentUser?.companyId, canUseTeamAssessment, selectedCompanyId]);
+
   // Check if current view is allowed for assessment users
   const isAssessmentUserViewAllowed = (view: string) => {
     if (currentUser?.userType !== 'assessment') return true;
@@ -2403,8 +2466,10 @@ function FinancialScorePage() {
 
   // Handle navigation with payment gate
   const handleNavigation = async (view: string, options?: { operationalDataType?: string }) => {
+    if (!view.startsWith('ma-')) clearPendingTeamAssessmentLink();
     const section = viewToCompanySection(view);
-    if (section && !hasCompanySectionAccess(section)) {
+    const invitedToTeamAssessment = section === 'management-assessment' && canUseTeamAssessment;
+    if (section && !invitedToTeamAssessment && !hasCompanySectionAccess(section)) {
       alert('Access Restricted\n\nYour account does not have access to this section.');
       return;
     }
@@ -2728,6 +2793,7 @@ function FinancialScorePage() {
 
   // Helper function to handle view changes for assessment users
   const handleViewChange = (newView: string) => {
+    if (!newView.startsWith('ma-')) clearPendingTeamAssessmentLink();
     console.log('?? handleViewChange called - newView:', newView, 'userType:', currentUser?.userType, 'isAllowed:', isAssessmentUserViewAllowed(newView));
     if (currentUser?.userType === 'assessment' && !isAssessmentUserViewAllowed(newView)) {
       console.log('?? View not allowed, redirecting to ma-welcome');
@@ -5791,6 +5857,7 @@ function FinancialScorePage() {
       setFinancialStatementsTab('mda');
       setCurrentView('financial-statements');
     } else if (view && view !== 'login' && NAVIGABLE_VIEWS.has(view)) {
+      if (view === 'ma-welcome') teamAssessmentLinkRequestedAt = Date.now();
       setCurrentView(view as any);
     }
 
@@ -30490,8 +30557,7 @@ function FinancialScorePage() {
       {/* Team Assessment - Questionnaire View */}
       {(() => {
         const hasCompanyId = selectedCompanyId || currentUser?.companyId;
-        const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
-        const canView = currentView === 'ma-questionnaire' && hasCompanyId && hasCorrectRole;
+        const canView = currentView === 'ma-questionnaire' && hasCompanyId && canUseTeamAssessment;
         return canView;
       })() && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
@@ -30641,7 +30707,7 @@ function FinancialScorePage() {
           )}
 
       {/* Team Assessment - Your Results View */}
-      {currentView === 'ma-your-results' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+      {currentView === 'ma-your-results' && selectedCompanyId && canUseTeamAssessment && (
         <MAYourResultsView
           selectedCompanyId={selectedCompanyId}
           currentUser={currentUser}
@@ -30654,8 +30720,33 @@ function FinancialScorePage() {
       )}
 
       {/* Team Assessment Views - Available to all users including assessment users */}
+      {/* Team Assessment - Not Invited */}
+      {currentView.startsWith('ma-') && isLoggedIn && !canUseTeamAssessment && teamAssessmentAccessResolved && (
+        <div style={{ maxWidth: '640px', margin: '64px auto', padding: '32px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: '700', color: '#1e293b', margin: '0 0 12px 0' }}>Team Assessment</h2>
+          <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 20px 0', lineHeight: 1.6 }}>
+            {selectedCompanyId
+              ? `You have not been invited to the Team Assessment${companyName ? ` for ${companyName}` : ''}. Ask your Company Admin to invite you from Company Management > Team Assessment.`
+              : 'Select a company to open its Team Assessment.'}
+          </p>
+          <button
+            onClick={() => {
+              clearPendingTeamAssessmentLink();
+              if (String(currentUser?.role || '').toLowerCase() === 'siteadmin') {
+                setCurrentView(selectedCompanyId ? 'admin' : 'siteadmin');
+              } else {
+                setCurrentView(resolveCompanyLandingView(currentUser, selectedCompany));
+              }
+            }}
+            style={{ padding: '10px 20px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      )}
+
           {/* Team Assessment - Welcome View */}
-      {currentView === 'ma-welcome' && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+      {currentView === 'ma-welcome' && canUseTeamAssessment && (
         <MAWelcomeView
           companyName={companyName}
           assessmentData={assessmentData}
@@ -30664,7 +30755,7 @@ function FinancialScorePage() {
       )}
 
       {/* Team Assessment - Scores Summary View */}
-      {currentView === 'ma-scores-summary' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+      {currentView === 'ma-scores-summary' && selectedCompanyId && canUseTeamAssessment && (
         <MAScoresSummaryView
           selectedCompanyId={selectedCompanyId}
           assessmentData={assessmentData}
@@ -30673,12 +30764,12 @@ function FinancialScorePage() {
       )}
 
       {/* Team Assessment - Scoring Guide View */}
-      {currentView === 'ma-scoring-guide' && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+      {currentView === 'ma-scoring-guide' && canUseTeamAssessment && (
         <MAScoringGuideView />
       )}
 
       {/* Team Assessment - Charts View */}
-      {currentView === 'ma-charts' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
+      {currentView === 'ma-charts' && selectedCompanyId && canUseTeamAssessment && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Assessment Charts</h1>
           

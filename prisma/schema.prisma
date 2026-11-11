@@ -391,6 +391,9 @@ model UserCompanyAccess {
   companyRole                String?  @default("user")
   sidebarAccess              Json?
   operationalDashboardAccess Json?
+  // Set when a company user is invited to take this company's Team Assessment.
+  assessmentInvitedAt        DateTime?
+  assessmentLastOpenedAt     DateTime?
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 

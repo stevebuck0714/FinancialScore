@@ -1,6 +1,10 @@
 import type { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
-import { sendExternalCompanyAccessEmail, sendWelcomeUserEmail } from '@/lib/email';
+import {
+  sendExternalCompanyAccessEmail,
+  sendTeamAssessmentInvitationEmail,
+  sendWelcomeUserEmail,
+} from '@/lib/email';
 
 export type EmailDeliveryResult = { emailSent: boolean; emailError: string | null };
 
@@ -25,8 +29,33 @@ function deliveryResult(result: unknown): EmailDeliveryResult {
     emailSent: false,
     emailError:
       typed?.reason ||
-      (typed?.error instanceof Error ? typed.error.message : 'Email delivery failed'),
+      (typed?.error instanceof Error
+        ? typed.error.message
+        : typed?.error
+          ? String((typed.error as { message?: unknown }).message || typed.error)
+          : 'Email delivery failed'),
   };
+}
+
+export async function sendTeamAssessmentInviteEmail(params: {
+  request: NextRequest;
+  actorUserId: string;
+  to: string;
+  userName: string;
+  companyName: string;
+}): Promise<EmailDeliveryResult> {
+  try {
+    const result = await sendTeamAssessmentInvitationEmail({
+      to: params.to,
+      userName: params.userName || params.to,
+      companyName: params.companyName,
+      invitedByNameOrEmail: await addedByLabel(params.actorUserId),
+      assessmentLink: `${appBaseUrl(params.request)}/?view=ma-welcome`,
+    });
+    return deliveryResult(result);
+  } catch (error) {
+    return { emailSent: false, emailError: error instanceof Error ? error.message : 'Email delivery failed' };
+  }
 }
 
 export async function sendManagedUserWelcomeEmail(params: {

@@ -241,7 +241,7 @@ export default function Header({
               whiteSpace: 'nowrap',
             }}
           >
-            📞 SUPPORT
+            SUPPORT
           </a>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
           <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>{displayedUserName}</span>

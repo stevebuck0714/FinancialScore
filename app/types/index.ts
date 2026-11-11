@@ -244,7 +244,7 @@ export interface CompanyProfile {
   legalStructure: string;
   businessStatus: string;
   ownership: string;
-  keyEmployees?: Array<{ name: string; title: string; yearEmployed: string }>;
+  keyEmployees?: Array<{ name: string; title: string; yearEmployed: string; about?: string }>;
   workforce: string;
   keyAdvisors: string;
   specialNotes: string;

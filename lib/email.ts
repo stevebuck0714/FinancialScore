@@ -1153,6 +1153,82 @@ export async function sendWelcomeUserEmail({
   }
 }
 
+export async function sendTeamAssessmentInvitationEmail({
+  to,
+  userName,
+  companyName,
+  invitedByNameOrEmail,
+  assessmentLink,
+}: {
+  to: string;
+  userName: string;
+  companyName: string;
+  invitedByNameOrEmail: string;
+  assessmentLink: string;
+}) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping Team Assessment invitation email');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const safeCompany = escapeHtml(companyName);
+  const safeInvitedBy = escapeHtml(invitedByNameOrEmail);
+  const safeUser = escapeHtml(userName || to);
+  const safeLink = escapeHtml(assessmentLink);
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: [to],
+      subject: `Team Assessment invitation - ${companyName}`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Team Assessment invitation</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="680" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:22px 26px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;color:#1e293b;font-size:22px;">You're invited to the Team Assessment</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">${safeCompany}</p>
+        </td></tr>
+        <tr><td style="padding:20px 26px;">
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;">Hello ${safeUser},</p>
+          <p style="margin:0 0 14px;color:#334155;font-size:14px;">
+            ${safeInvitedBy} has invited you to complete the Team Assessment for <strong>${safeCompany}</strong> in Corelytics.
+            Sign in with your existing Corelytics email and password to begin.
+          </p>
+          <p style="margin:0 0 16px;">
+            <a href="${safeLink}" style="display:inline-block;padding:12px 18px;background:#1F70C1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
+              Open Team Assessment
+            </a>
+          </p>
+          <p style="margin:0 0 8px;color:#64748b;font-size:13px;word-break:break-all;">
+            Or paste this link into your browser:<br />
+            <a href="${safeLink}" style="color:#2563eb;text-decoration:none;">${safeLink}</a>
+          </p>
+          <p style="margin:14px 0 0;color:#64748b;font-size:13px;">
+            You can also open it any time from Support &gt; Team Assessment after signing in.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) throw new Error(`Failed to send email: ${error.message}`);
+    return { success: true, data };
+  } catch (sendError) {
+    console.error('❌ Error sending Team Assessment invitation email:', sendError);
+    return { success: false, error: sendError };
+  }
+}
+
 interface AskThreadSharedEmailProps {
   to: string;
   recipientName: string;
