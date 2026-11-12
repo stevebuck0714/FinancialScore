@@ -79,6 +79,7 @@ const STANDARD_CASH_REPORTS: OperationalHubReportDefinition[] = [
   { key: 'cashBridge', label: 'Cash Bridge', group: 'Cash' },
   { key: 'cashBankAccounts', label: 'Bank Accounts', group: 'Cash' },
   { key: 'cashDistributionByAccount', label: 'Cash Distribution by Account', group: 'Cash' },
+  { key: 'cashFlowMap', label: 'Cash Flow Map', group: 'Cash' },
 ];
 
 const DATA_TYPE_GROUP: Record<string, string> = {

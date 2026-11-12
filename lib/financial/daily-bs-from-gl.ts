@@ -1223,6 +1223,8 @@ export type RebuildDailyBSOptions = {
    *   default for routine rebuilds (e.g. mapping-save propagation).
    */
   pnlUpdateMode?: 'preserve' | 'overwrite';
+  /** Written to `DailyFinancialSnapshot.sourcePlatform`; defaults to `INFOR_M3_GL_REBUILD`. */
+  sourcePlatform?: string;
 };
 
 // Fields the rebuild owns on update: balance-sheet snapshot lines plus the
@@ -1312,6 +1314,7 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   const fyMonth = Number(opts.fiscalYearStartMonth || 1);
   const fyDay = Number(opts.fiscalYearStartDay || 1);
   const pnlUpdateMode: 'preserve' | 'overwrite' = opts.pnlUpdateMode || 'preserve';
+  const sourcePlatform = String(opts.sourcePlatform || '').trim() || 'INFOR_M3_GL_REBUILD';
   if (!(fyMonth >= 1 && fyMonth <= 12)) {
     throw new Error('rebuildDailyFinancialSnapshotsFromGL: fiscalYearStartMonth must be 1-12');
   }
@@ -1511,7 +1514,7 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
     // is intentionally narrower than `create`: existing P&L is preserved
     // unless `pnlUpdateMode === 'overwrite'` (see option doc).
     const updatePayload: Record<string, unknown> = {
-      sourcePlatform: 'INFOR_M3_GL_REBUILD',
+      sourcePlatform,
     };
     for (const f of REBUILD_BS_UPDATE_FIELDS) {
       updatePayload[f as string] = (snapshot as unknown as Record<string, number>)[f as string];
@@ -1536,7 +1539,7 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
         snapshotDate,
         frequency,
         ...snapshot,
-        sourcePlatform: 'INFOR_M3_GL_REBUILD',
+        sourcePlatform,
       },
     });
 

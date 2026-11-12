@@ -12145,6 +12145,36 @@ export async function GET(request: NextRequest) {
             }
           }
 
+          if (!glLogs.length) {
+            // QBO lines share a transaction `ref`; transNum is per posting line.
+            const facts = await prisma.gLTransactionFact.findMany({
+              where: {
+                companyId,
+                sourcePlatform: 'QUICKBOOKS_ONLINE',
+                transDate: { gte: startDate, lte: endDate },
+              },
+              select: { accountId: true, accountName: true, signedAmount: true, transDate: true, transNum: true, ref: true },
+              take: 200_000,
+            });
+            for (const fact of facts) {
+              const amount = Number(fact.signedAmount || 0);
+              if (!amount) continue;
+              glLines.push({
+                acct: fact.accountId,
+                accountName: String(fact.accountName || fact.accountId).trim(),
+                amount,
+                transDate: fact.transDate,
+                transNum: String(fact.ref || fact.transNum || ''),
+                site: '',
+              });
+            }
+          }
+
+          const accountNames: Record<string, string> = {};
+          for (const line of glLines) {
+            if (!accountNames[line.acct]) accountNames[line.acct] = line.accountName || line.acct;
+          }
+
           const byJournal = new Map<string, GlLine[]>();
           for (const line of glLines) {
             const key = `${line.site}|${line.transNum}|${dateKeyUtc(line.transDate)}`;
@@ -12178,13 +12208,24 @@ export async function GET(request: NextRequest) {
             }
           }
 
-          const flows = Array.from(flowByPair.values()).sort((a, b) => Math.abs(b.netAmount) - Math.abs(a.netAmount)).slice(0, Math.max(limit, 50));
+          const allFlows = Array.from(flowByPair.values()).map((flow) => ({
+            ...flow,
+            fromAccountName: accountNames[flow.fromAccount] || flow.fromAccount,
+            toAccountName: accountNames[flow.toAccount] || flow.toAccount,
+            direction: cashAccountTokens.has(normalizeAccountToken(flow.toAccount)) ? 'inflow' : 'outflow',
+          }));
+          const flows = allFlows
+            .slice()
+            .sort((a, b) => Math.abs(b.netAmount) - Math.abs(a.netAmount))
+            .slice(0, Math.max(limit, 50));
           return NextResponse.json({
             records: flows,
             summary: {
               journalsAnalyzed: byJournal.size,
               glLinesAnalyzed: glLines.length,
               cashAccountsTracked: Array.from(cashAccountTokens.values()).sort(),
+              totalInflow: allFlows.filter((flow) => flow.direction === 'inflow').reduce((sum, flow) => sum + flow.netAmount, 0),
+              totalOutflow: allFlows.filter((flow) => flow.direction === 'outflow').reduce((sum, flow) => sum + flow.netAmount, 0),
             },
           });
         }

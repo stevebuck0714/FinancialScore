@@ -881,6 +881,9 @@ export default function OperationsTab({
   const [wholesaleProductsRefreshing, setWholesaleProductsRefreshing] = useState(false);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
+  const [cashFlowMapData, setCashFlowMapData] = useState<any>(null);
+  const [cashFlowMapLoading, setCashFlowMapLoading] = useState(false);
+  const [cashFlowMapError, setCashFlowMapError] = useState<string | null>(null);
   const [selectedCashTrendAccount, setSelectedCashTrendAccount] = useState<string>('__TOTAL__');
   const [selectedHealthcareServiceRegion, setSelectedHealthcareServiceRegion] = useState<string>('__ALL__');
   const [selectedHealthcareRegionMetric, setSelectedHealthcareRegionMetric] = useState<'revenue' | 'grossMarginPct'>('revenue');
@@ -1441,6 +1444,7 @@ export default function OperationsTab({
         'cashBridge',
         'cashBankAccounts',
         'cashDistributionByAccount',
+        'cashFlowMap',
       ],
     };
     const availableKeys = [
@@ -3215,6 +3219,37 @@ export default function OperationsTab({
     const payload = await response.json();
     return Array.isArray(payload?.unitCostHistory) ? payload.unitCostHistory : [];
   };
+
+  const isCashFlowMapEnabled = activeTab === 'cash' && isSectionEnabled('cashFlowMap');
+  useEffect(() => {
+    if (!isCashFlowMapEnabled || !selectedCompanyId || !startDate || !endDate) return;
+    let cancelled = false;
+    setCashFlowMapLoading(true);
+    setCashFlowMapError(null);
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      type: 'cash-flow-map',
+      startDate,
+      endDate,
+      limit: '50',
+      ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+    });
+    fetch(`/api/operational-data?${params}`, { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to load cash flow map');
+        const payload = await response.json();
+        if (!cancelled) setCashFlowMapData(payload);
+      })
+      .catch((error: any) => {
+        if (!cancelled) setCashFlowMapError(error?.message || 'Failed to load cash flow map');
+      })
+      .finally(() => {
+        if (!cancelled) setCashFlowMapLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCashFlowMapEnabled, selectedCompanyId, startDate, endDate, industrySectorCategory]);
 
   const fetchInventoryAgingReport = async () => {
     const inventoryWarmStartDate = addEstCalendarDays(endDate, -90);
@@ -16764,6 +16799,73 @@ export default function OperationsTab({
             )}
           </div>
         )}
+
+        {isSectionEnabled('cashFlowMap') && renderReorderableStandardReport('cashFlowMap', (() => {
+          const flowRecords: any[] = Array.isArray(cashFlowMapData?.records) ? cashFlowMapData.records : [];
+          const flowSummary = cashFlowMapData?.summary || {};
+          const flowRangeLabel = `${formatDateSafeUtc(startDate, { year: 'numeric', month: 'short', day: 'numeric' })} - ${formatDateSafeUtc(endDate, { year: 'numeric', month: 'short', day: 'numeric' })}`;
+          const headerCell = (align: 'left' | 'right') => ({
+            textAlign: align,
+            padding: '8px 10px',
+            fontSize: '12px',
+            fontWeight: '600',
+            color: '#475569',
+          } as const);
+          return (
+            <div style={{ background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
+                Cash Flow Map
+              </h3>
+              <div style={{ marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
+                Input Range: {flowRangeLabel} | Inflows: {formatCurrencyWithCents(Number(flowSummary.totalInflow || 0))} | Outflows: {formatCurrencyWithCents(Number(flowSummary.totalOutflow || 0))} | Journal Entries: {Number(flowSummary.journalsAnalyzed || 0).toLocaleString('en-US')}
+              </div>
+              {cashFlowMapLoading && !flowRecords.length ? (
+                <div style={{ padding: '16px', fontSize: '12px', color: '#64748b' }}>Loading cash flow map...</div>
+              ) : cashFlowMapError ? (
+                <div style={{ padding: '16px', fontSize: '12px', color: '#ef4444' }}>{cashFlowMapError}</div>
+              ) : !flowRecords.length ? (
+                <div style={{ padding: '16px', fontSize: '12px', color: '#64748b' }}>
+                  No general ledger activity touching cash accounts in this range.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={headerCell('left')}>From</th>
+                        <th style={headerCell('left')}>To</th>
+                        <th style={headerCell('left')}>Direction</th>
+                        <th style={headerCell('right')}>Amount</th>
+                        <th style={headerCell('right')}>Journal Entries</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {flowRecords.map((flow: any, index: number) => (
+                        <tr key={`${flow.fromAccount}->${flow.toAccount}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '7px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '600' }}>
+                            {flow.fromAccountName || flow.fromAccount}
+                          </td>
+                          <td style={{ padding: '7px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '600' }}>
+                            {flow.toAccountName || flow.toAccount}
+                          </td>
+                          <td style={{ padding: '7px 10px', fontSize: '12px', color: flow.direction === 'inflow' ? '#10b981' : '#ef4444' }}>
+                            {flow.direction === 'inflow' ? 'Inflow' : 'Outflow'}
+                          </td>
+                          <td style={{ padding: '7px 10px', fontSize: '12px', color: flow.direction === 'inflow' ? '#10b981' : '#ef4444', textAlign: 'right', fontWeight: '600' }}>
+                            {formatCurrencyWithCents(Number(flow.netAmount || 0))}
+                          </td>
+                          <td style={{ padding: '7px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>
+                            {Number(flow.journalCount || 0).toLocaleString('en-US')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })(), { gridColumn: '1 / -1' })}
 
         </div>
           </div>

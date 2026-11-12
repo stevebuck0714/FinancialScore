@@ -9,6 +9,27 @@ import {
   type QboOperationalBackfillState,
 } from '@/lib/quickbooks-online/qbo-operational-metadata';
 import { deleteQuickBooksOperationalDataInRange } from '@/lib/quickbooks-online/delete-operational-range';
+import { QuickBooksAdapter } from '@/lib/accounting-adapters/quickbooks-adapter';
+import type { AccountingAdapter } from '@/lib/accounting-adapters/types';
+import { addEstCalendarDays, formatEstDate } from '@/lib/time/eastern';
+
+async function syncDailyFinancialsFromGL(
+  adapter: AccountingAdapter,
+  companyId: string,
+  startYmd: string,
+  endYmd: string
+): Promise<string | null> {
+  if (!(adapter instanceof QuickBooksAdapter)) return null;
+  try {
+    const result = await adapter.syncDailyFinancialsFromGeneralLedger(startYmd, endYmd);
+    console.log('[QBO daily financials] GL rebuild complete', { companyId, ...result });
+    return null;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[QBO daily financials] GL rebuild failed', { companyId, startYmd, endYmd, message });
+    return `Daily financials (GL) sync failed: ${message}`;
+  }
+}
 
 export type QboOperationalOrchestratorResult =
   | {
@@ -161,10 +182,18 @@ export async function orchestrateQuickBooksOnlineOperationalSync(companyId: stri
 
   const result = await adapter.syncAll('daily');
 
+  const glEndYmd = formatEstDate();
+  const glError = await syncDailyFinancialsFromGL(
+    adapter,
+    companyId,
+    addEstCalendarDays(glEndYmd, -(QBO_ROLLING_OPERATIONAL_DAYS - 1)),
+    glEndYmd
+  );
+
   return {
     kind: 'rolling_complete',
     recordsCreated: result.recordsCreated,
-    errors: result.errors || [],
+    errors: [...(result.errors || []), ...(glError ? [glError] : [])],
     moduleCounts: result.moduleCounts,
   };
 }
@@ -256,6 +285,8 @@ export async function processQuickBooksOperationalBackfillStep(): Promise<{
     });
 
     const result = await adapter.syncAll('daily');
+    // A GL failure is logged but does not stall the operational backfill.
+    await syncDailyFinancialsFromGL(adapter, running.companyId, cursor.slice(0, 10), monthEnd.toISOString().slice(0, 10));
     const now = new Date().toISOString();
 
     if (!result.success) {

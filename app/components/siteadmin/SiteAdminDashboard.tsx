@@ -170,6 +170,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'cashConversionAnalysis', label: 'Cash Conversion Analysis', group: 'Cash' },
   { key: 'cashBankAccounts', label: 'Bank Accounts Table', group: 'Cash' },
   { key: 'cashDistributionByAccount', label: 'Distribution by Account', group: 'Cash' },
+  { key: 'cashFlowMap', label: 'Cash Flow Map', group: 'Cash' },
   { key: 'loansInstrumentTable', label: 'Loan Instruments Table', group: 'Loans' },
   { key: 'loansTermsEditor', label: 'Loan Terms Editor', group: 'Loans' },
   { key: 'loansSchedules', label: 'Loan Schedules Tab', group: 'Loans' },

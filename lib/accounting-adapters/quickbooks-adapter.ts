@@ -13,6 +13,10 @@ import {
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { getValidQuickBooksToken } from '@/lib/quickbooks-online/token-manager';
+import {
+  syncQuickBooksDailyFinancialsFromGL,
+  type QboDailyFinancialsSyncResult,
+} from '@/lib/quickbooks-online/general-ledger-sync';
 
 /**
  * QuickBooks Adapter
@@ -1726,6 +1730,19 @@ export class QuickBooksAdapter implements AccountingAdapter {
     }
   }
   
+  /**
+   * Pull the general ledger for an EST calendar window (YYYY-MM-DD) and
+   * rebuild daily financial snapshots from it.
+   */
+  async syncDailyFinancialsFromGeneralLedger(startYmd: string, endYmd: string): Promise<QboDailyFinancialsSyncResult> {
+    return syncQuickBooksDailyFinancialsFromGL({
+      companyId: this.config.companyId,
+      request: async (endpoint) => (await this.makeRequest(endpoint)).json(),
+      startYmd,
+      endYmd,
+    });
+  }
+
   /**
    * Make authenticated request to QuickBooks API
    */
