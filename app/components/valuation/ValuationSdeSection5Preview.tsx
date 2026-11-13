@@ -22,6 +22,8 @@ type Props = {
   sdeRecommendationsApi: SdeRecommendation[];
   currency?: string | null;
   locale?: string | null;
+  /** `qoe` renders the QoE Report summary: EBITDA metrics in place of SDE valuation. */
+  variant?: 'sde' | 'qoe';
 };
 
 const sectionTitle = (title: string) => (
@@ -241,16 +243,53 @@ function QoeWaterfallChart({
 }
 
 export default function ValuationSdeSection5Preview(props: Props) {
-  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale } = props;
+  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale, variant = 'sde' } = props;
+  const isQoe = variant === 'qoe';
   const fmt = model.formatDollars;
   const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
-  const adjustmentValuationImpactSummary = [
+  const materialAdjustments = [
     { label: 'Owner compensation normalization', adjustment: model.qoeOwnerSalaryAdjustment },
     { label: 'Personal / discretionary expense removal', adjustment: model.qoePersonalAutoLease },
     { label: 'Non-recurring expense removal', adjustment: model.qoeOneTimeExpenses },
     { label: 'One-time revenue removal', adjustment: model.qoeOneTimeRevenue },
-  ]
-    .filter(({ adjustment }) => Math.abs(adjustment) >= 0.5)
+  ].filter(({ adjustment }) => Math.abs(adjustment) >= 0.5);
+  const adjustmentEarningsImpactSummary = materialAdjustments
+    .map(({ label, adjustment }) => `${label} ${adjustment > 0 ? 'adds' : 'removes'} ${fmt(Math.abs(adjustment))}`)
+    .join('; ');
+  const ttmRevenue = monthly.slice(-12).reduce((total, row) => total + (Number(row?.revenue) || 0), 0);
+  const ebitdaMarginPct = ttmRevenue !== 0 ? (model.ttmEbitdaAnalysis / ttmRevenue) * 100 : null;
+  const adjustedEbitdaMarginPct = ttmRevenue !== 0 ? (model.qualityOfEarnings / ttmRevenue) * 100 : null;
+  const adjustmentPctOfEbitda =
+    Math.abs(model.ttmEbitdaAnalysis) >= 0.5 ? (model.qoeTotalAdjustments / Math.abs(model.ttmEbitdaAnalysis)) * 100 : null;
+  const qoeExecutiveSummary = (() => {
+    const parts = [`Reported trailing 12-month EBITDA is ${fmt(model.ttmEbitdaAnalysis)}.`];
+    if (materialAdjustments.length === 0) {
+      parts.push(
+        `No normalization adjustments have been recorded on the Quality of Earnings tab, so Adjusted EBITDA equals reported EBITDA at ${fmt(model.qualityOfEarnings)}.`,
+      );
+    } else {
+      parts.push(
+        `Quality of earnings adjustments total ${model.qoeTotalAdjustments >= 0 ? '+' : '−'}${fmt(Math.abs(model.qoeTotalAdjustments))}: ${adjustmentEarningsImpactSummary}.`,
+      );
+      parts.push(
+        `Adjusted EBITDA is ${fmt(model.qualityOfEarnings)}${
+          adjustmentPctOfEbitda !== null
+            ? `, ${Math.abs(adjustmentPctOfEbitda).toFixed(1)}% ${adjustmentPctOfEbitda >= 0 ? 'above' : 'below'} reported EBITDA`
+            : ''
+        }.`,
+      );
+    }
+    if (ebitdaMarginPct !== null && adjustedEbitdaMarginPct !== null) {
+      parts.push(
+        `On trailing 12-month revenue of ${fmt(ttmRevenue)}, the reported EBITDA margin is ${ebitdaMarginPct.toFixed(1)}% and the Adjusted EBITDA margin is ${adjustedEbitdaMarginPct.toFixed(1)}%.`,
+      );
+    }
+    if (adjustmentPctOfEbitda !== null && Math.abs(adjustmentPctOfEbitda) >= 20) {
+      parts.push('Adjustments exceed 20% of reported EBITDA, so each add-back should be supported by documentation in the Data Room before relying on Adjusted EBITDA.');
+    }
+    return parts.join(' ');
+  })();
+  const adjustmentValuationImpactSummary = materialAdjustments
     .map(({ label, adjustment }) => {
       const direction = adjustment > 0 ? 'increases' : 'reduces';
       return `${label} ${direction} normalized earnings by ${fmt(Math.abs(adjustment))} and indicated value by ${fmt(Math.abs(adjustment) * model.sdeMultiplier)}`;
@@ -434,8 +473,8 @@ export default function ValuationSdeSection5Preview(props: Props) {
         }
       `}</style>
       <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-        <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>Corelytics Valuation Report</div>
-        <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800, marginTop: '6px' }}>SDE Valuation</div>
+        <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>{isQoe ? 'Corelytics QoE Report' : 'Corelytics Valuation Report'}</div>
+        <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800, marginTop: '6px' }}>{isQoe ? 'QoE Summary' : 'SDE Valuation'}</div>
         <div style={{ fontSize: '16px', color: '#475569', marginTop: '4px', lineHeight: 1.45 }}>
           Prepared for: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')}
         </div>
@@ -446,10 +485,35 @@ export default function ValuationSdeSection5Preview(props: Props) {
           <div className="valuation-print-category">
             {sectionTitle('Executive Summary')}
             <ExecutiveSummary>
-              Trailing 12-month SDE is {fmt(model.ttmSDE)} and the indicated business value is {fmt(model.sdeValuation)} at a {model.sdeMultiplier.toFixed(1)}x SDE multiple. The multiple applies to each dollar of normalized SDE and is {sectorMultiplePosition} the {model.sdeSectorBenchmarks.sectorLabel} sector range of {sectorMultipleRange.low.toFixed(1)}x–{sectorMultipleRange.high.toFixed(1)}x.
+              {isQoe
+                ? qoeExecutiveSummary
+                : `Trailing 12-month SDE is ${fmt(model.ttmSDE)} and the indicated business value is ${fmt(model.sdeValuation)} at a ${model.sdeMultiplier.toFixed(1)}x SDE multiple. The multiple applies to each dollar of normalized SDE and is ${sectorMultiplePosition} the ${model.sdeSectorBenchmarks.sectorLabel} sector range of ${sectorMultipleRange.low.toFixed(1)}x–${sectorMultipleRange.high.toFixed(1)}x.`}
             </ExecutiveSummary>
             <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '10px' }}>Seller&apos;s Discretionary Earnings (SDE) Method</div>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '10px' }}>
+                {isQoe ? 'Quality of Earnings (Trailing 12 Months)' : <>Seller&apos;s Discretionary Earnings (SDE) Method</>}
+              </div>
+              {isQoe ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px' }}>
+                    <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>EBITDA</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700, color: '#10b981' }}>{fmt(model.ttmEbitdaAnalysis)}</div>
+                    {ebitdaMarginPct !== null && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{ebitdaMarginPct.toFixed(1)}% margin</div>}
+                  </div>
+                  <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>Total Adjustments</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700, color: model.qoeTotalAdjustments < 0 ? '#ef4444' : '#10b981' }}>
+                      {model.qoeTotalAdjustments >= 0 ? '+' : '−'}{fmt(Math.abs(model.qoeTotalAdjustments))}
+                    </div>
+                    {adjustmentPctOfEbitda !== null && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{adjustmentPctOfEbitda >= 0 ? '+' : ''}{adjustmentPctOfEbitda.toFixed(1)}% of EBITDA</div>}
+                  </div>
+                  <div style={{ background: '#ecfdf5', borderRadius: '8px', padding: '12px', border: '1px solid #86efac' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#14532d' }}>Adjusted EBITDA</div>
+                    <div style={{ fontSize: '22px', fontWeight: 800, color: '#14532d' }}>{fmt(model.qualityOfEarnings)}</div>
+                    {adjustedEbitdaMarginPct !== null && <div style={{ fontSize: '12px', color: '#166534', marginTop: '2px' }}>{adjustedEbitdaMarginPct.toFixed(1)}% margin</div>}
+                  </div>
+                </div>
+              ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
                 <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px' }}>
                   <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
@@ -464,6 +528,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                   <div style={{ fontSize: '22px', fontWeight: 800, color: '#14532d' }}>{model.sdeMultiplier.toFixed(1)}x</div>
                 </div>
               </div>
+              )}
               {sdeExecutiveFinancialSummaryApi?.scorecard && sdeExecutiveFinancialSummaryApi.scorecard.length > 0 && (
                 <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '8px' }}>
                   {sdeExecutiveFinancialSummaryApi.scorecard.map((row) => (
@@ -503,11 +568,18 @@ export default function ValuationSdeSection5Preview(props: Props) {
 
         {selections.sde_ebitdaAdjustments && (
           <div className="valuation-print-category">
-            {sectionTitle('EBITDA Adjustments')}
+            {sectionTitle(isQoe ? 'Quality of Earnings' : 'EBITDA Adjustments')}
             <ExecutiveSummary>
-              Quality of earnings is {fmt(model.qualityOfEarnings)} after {fmt(model.qoeTotalAdjustments)} of owner compensation, discretionary, non-recurring, and one-time revenue adjustments. These normalization items explain the difference from trailing 12-month EBITDA of {fmt(model.ttmEbitdaAnalysis)}. {adjustmentValuationImpactSummary ? `At the ${model.sdeMultiplier.toFixed(1)}x SDE multiple, ${adjustmentValuationImpactSummary}.` : 'No material normalization adjustments were recorded, so there is no direct valuation impact from these categories.'}
+              Quality of earnings is {fmt(model.qualityOfEarnings)} after {fmt(model.qoeTotalAdjustments)} of owner compensation, discretionary, non-recurring, and one-time revenue adjustments. These normalization items explain the difference from trailing 12-month EBITDA of {fmt(model.ttmEbitdaAnalysis)}.{' '}
+              {isQoe
+                ? adjustmentEarningsImpactSummary
+                  ? `${adjustmentEarningsImpactSummary}.`
+                  : 'No material normalization adjustments were recorded.'
+                : adjustmentValuationImpactSummary
+                  ? `At the ${model.sdeMultiplier.toFixed(1)}x SDE multiple, ${adjustmentValuationImpactSummary}.`
+                  : 'No material normalization adjustments were recorded, so there is no direct valuation impact from these categories.'}
             </ExecutiveSummary>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>SDE Analysis</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>{isQoe ? 'EBITDA Normalization' : 'SDE Analysis'}</div>
             <div className="sde-ebitda-adjustment-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
               <div className="sde-ebitda-adjustment-card" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '8px' }}>EBITDA, Trailing 12 Months</div>
@@ -628,7 +700,9 @@ export default function ValuationSdeSection5Preview(props: Props) {
             <ExecutiveSummary>
               Revenue quality is assessed through cash conversion, collection trends, concentration proxy, and receivables growth. The latest DSO is {model.revenueQualityInsights.currentDso.toFixed(1)} days and the average 12-month revenue-to-cash gap is {model.revenueQualityInsights.avgGap12.toFixed(1)}%, highlighting principal reliability signals.
             </ExecutiveSummary>
-            <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '10px' }}>Buyer-focused revenue reliability checks (same signals as SDE module).</p>
+            <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '10px' }}>
+              {isQoe ? 'Buyer-focused revenue reliability checks.' : 'Buyer-focused revenue reliability checks (same signals as SDE module).'}
+            </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>Top Revenue Bucket % (proxy)</div>
@@ -820,52 +894,11 @@ export default function ValuationSdeSection5Preview(props: Props) {
           </div>
         )}
 
-        {selections.sde_workingCapital && (
-          <div className="valuation-print-category">
-            {sectionTitle('Working Capital')}
-            <ExecutiveSummary>
-              Current operating working capital is {fmt(model.workingCapitalInsights.currentWc)} versus a normalized target of {fmt(model.workingCapitalInsights.normalizedTarget)}, producing a {fmt(model.workingCapitalInsights.wcAdjustment)} transaction adjustment. The latest cash conversion cycle is {model.workingCapitalInsights.currentCcc.toFixed(1)} days; review the flags for potential closing and liquidity implications.
-            </ExecutiveSummary>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>Normalized WC target</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{fmt(model.workingCapitalInsights.normalizedTarget)}</div>
-              </div>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>Current operating WC</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{fmt(model.workingCapitalInsights.currentWc)}</div>
-              </div>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>WC adjustment</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{fmt(model.workingCapitalInsights.wcAdjustment)}</div>
-              </div>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>CCC (latest)</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{model.workingCapitalInsights.currentCcc.toFixed(1)} days</div>
-              </div>
-            </div>
-            <p style={{ fontSize: '12px', color: '#475569', lineHeight: 1.55, marginBottom: '10px' }}>{model.workingCapitalInsights.cccInterpretation}</p>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>Working Capital Flags</div>
-            <div style={{ display: 'grid', gap: '8px', marginBottom: '10px' }}>
-              {model.workingCapitalInsights.flags.map((flag) => (
-                <div key={flag.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
-                  </div>
-                  {flagBadge(flag.triggered, flag.severity)}
-                </div>
-              ))}
-            </div>
-            <LineChart title="Cash Conversion Cycle (Last 12 Months)" data={model.workingCapitalInsights.cccMiniSeries} color="#0ea5e9" compact formatter={(v) => `${v.toFixed(1)} days`} />
-          </div>
-        )}
-
         {selections.sde_cashFlowQuality && (
           <div className="valuation-print-category">
             {sectionTitle('Cash Flow Quality')}
             <ExecutiveSummary>
-              The business converts {model.cashFlowQualityInsights.cashConversionPct.toFixed(1)}% of earnings to cash and free-cash-flow durability is {model.cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}% of EBITDA. Maintenance CapEx is estimated at {fmt(model.cashFlowQualityInsights.maintenanceCapexEstimate)}, so the CapEx gap and flagged items should be considered when assessing sustainable SDE.
+              The business converts {model.cashFlowQualityInsights.cashConversionPct.toFixed(1)}% of earnings to cash and free-cash-flow durability is {model.cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}% of EBITDA. Maintenance CapEx is estimated at {fmt(model.cashFlowQualityInsights.maintenanceCapexEstimate)}, so the CapEx gap and flagged items should be considered when assessing sustainable {isQoe ? 'Adjusted EBITDA' : 'SDE'}.
             </ExecutiveSummary>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
@@ -916,6 +949,65 @@ export default function ValuationSdeSection5Preview(props: Props) {
           </div>
         )}
 
+        {selections.sde_workingCapital && (() => {
+          const wc = model.workingCapitalInsights;
+          const latestWc = model.workingCapitalSeries[model.workingCapitalSeries.length - 1];
+          const subheading = (text: string) => (
+            <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>{text}</div>
+          );
+          const statCard = (label: string, value: string, color = '#1e293b') => (
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>{label}</div>
+              <div style={{ fontSize: '18px', fontWeight: 700, color }}>{value}</div>
+            </div>
+          );
+          return (
+            <div className="valuation-print-category">
+              {sectionTitle('Working Capital')}
+              <ExecutiveSummary>
+                Current operating working capital is {fmt(wc.currentWc)}, averaging {wc.avgWcIntensity12.toFixed(1)}% of revenue over the last 12 months. The latest cash conversion cycle is {wc.currentCcc.toFixed(1)} days versus {wc.priorCcc.toFixed(1)} days a year ago; review the flags for liquidity implications.
+              </ExecutiveSummary>
+              {subheading('Working Capital Position')}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
+                {statCard('Latest AR', fmt(latestWc?.ar || 0))}
+                {statCard('Latest Inventory', fmt(latestWc?.inventory || 0))}
+                {statCard('Latest AP', fmt(latestWc?.ap || 0))}
+                {statCard('Current operating WC', fmt(wc.currentWc))}
+              </div>
+              {subheading('Cash Conversion')}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
+                {statCard('Current CCC', `${wc.currentCcc.toFixed(1)} days`)}
+                {statCard('Prior 12M CCC', `${wc.priorCcc.toFixed(1)} days`)}
+                {statCard('CCC trend (12M)', `${wc.cccTrend12 >= 0 ? '+' : ''}${wc.cccTrend12.toFixed(1)} days`, wc.cccTrend12 > 0 ? '#ef4444' : '#1e293b')}
+                {statCard('Avg WC intensity (12M)', `${wc.avgWcIntensity12.toFixed(1)}%`)}
+              </div>
+              <p style={{ fontSize: '12px', color: '#475569', lineHeight: 1.55, marginBottom: '10px' }}>{wc.cccInterpretation}</p>
+              {subheading('Working Capital Flags')}
+              <div style={{ display: 'grid', gap: '8px', marginBottom: '10px' }}>
+                {wc.flags.map((flag) => (
+                  <div key={flag.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
+                    </div>
+                    {flagBadge(flag.triggered, flag.severity)}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <LineChart
+                  title="Operating Working Capital Trend (Last 24 Months)"
+                  data={model.workingCapitalSeries.slice(-24).map((r) => ({ month: r.month, value: r.operatingWc }))}
+                  color="#1d76c3"
+                  compact
+                  formatter={(v) => compact(v)}
+                />
+                <LineChart title="Cash Conversion Cycle Trend (Last 12 Months)" data={wc.cccMiniSeries} color="#0ea5e9" compact formatter={(v) => `${v.toFixed(1)} days`} />
+              </div>
+            </div>
+          );
+        })()}
+
         {selections.sde_balanceSheetQuality && (
           <ValuationBalanceSheetQualityPreview
             monthly={monthly}
@@ -925,7 +1017,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
               const currentAssets = Number(latest?.tca ?? 0);
               const currentLiabilities = Number(latest?.tcl ?? 0);
               return currentLiabilities > 0 ? `${(currentAssets / currentLiabilities).toFixed(2)}x` : 'not available';
-            })()} and the balance sheet should be reviewed for leverage, equity cushion, and any integrity gap before finalizing the SDE conclusion.`}
+            })()} and the balance sheet should be reviewed for leverage, equity cushion, and any integrity gap before finalizing the ${isQoe ? 'quality of earnings' : 'SDE'} conclusion.`}
           />
         )}
       </div>

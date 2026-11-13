@@ -48,7 +48,7 @@ export function viewToTrafficSection(view: string): TrafficSectionKey | null {
   if (view === 'ai-analysis') return 'ask-corelytics';
   if (view === 'fs-score' || view === 'fs-insights') return 'corelytics-score';
   if (view.startsWith('pa-')) return 'expert-analysis';
-  if (view === 'valuation' || view === 'valuation-reports') return 'valuation';
+  if (view === 'valuation' || view === 'valuation-reports' || view === 'qoe-report') return 'valuation';
   if (view === 'dataroom') return 'data-room';
   if (view === 'custom-reports') return 'custom-reports';
   if (view === 'custom-print') return 'report-packages';

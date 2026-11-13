@@ -6,11 +6,14 @@ import { formatEstDateTime } from '@/lib/time/eastern';
 import { viewToTrafficSection } from '@/lib/traffic/sections';
 import { useSectionTracking } from '@/lib/traffic/useSectionTracking';
 import {
+  elementToWordSection,
   exportElementToWord,
   exportHtmlToWord,
+  exportWordSections,
   safeWordFileName,
   waitForChartsToRender,
   type WordPageOrientation,
+  type WordSection,
 } from '@/lib/valuation/exportValuationWord';
 import {
   canSwitchCompanies,
@@ -56,7 +59,18 @@ const VALUATION_TABS = [
   { id: 'dcf', label: 'DCF ANALYSIS' },
   { id: 'business-overview', label: 'BUSINESS OVERVIEW / MARKET POSITION' },
   { id: 'valuation-reports', label: 'VALUATION REPORTS' },
+  { id: 'qoe-report', label: 'QOE REPORT' },
 ] as const;
+const VALUATION_REPORT_VIEWS = ['valuation-reports', 'qoe-report'] as const;
+const isValuationReportView = (view: string) => (VALUATION_REPORT_VIEWS as readonly string[]).includes(view);
+const QOE_REPORT_TITLE = 'Corelytics QoE Report';
+/** Report sections that fetch their own data mark themselves with `data-report-loading` until ready. */
+const waitForReportContentReady = async (root: HTMLElement, timeoutMs = 45000): Promise<void> => {
+  const started = Date.now();
+  while (root.querySelector('[data-report-loading]') && Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+};
 const FINANCIAL_REPORTING_TABS = [
   { id: 'dashboard', label: "KPI's" },
   { id: 'kpis', label: 'Ratios' },
@@ -163,7 +177,12 @@ const PerformanceAnalyticsOverview = dynamic(() => import('./components/performa
 const TrendExplorer = dynamic(() => import('./components/performance-analytics/TrendExplorer'), { ssr: false });
 const AnomalyInbox = dynamic(() => import('./components/performance-analytics/AnomalyInbox'), { ssr: false });
 const OpportunityWorkspace = dynamic(() => import('./components/performance-analytics/OpportunityWorkspace'), { ssr: false });
-const ValuationSdeSection5Preview = dynamic(() => import('./components/valuation/ValuationSdeSection5Preview'), { ssr: false });
+// Report sections that load on demand must show the loading marker until their
+// code arrives, or print/Word export captures them empty.
+function ReportChunkLoading() {
+  return <div data-report-loading="true" style={{ fontSize: '13px', color: '#64748b', padding: '12px 0' }}>Loading…</div>;
+}
+const ValuationSdeSection5Preview = dynamic(() => import('./components/valuation/ValuationSdeSection5Preview'), { ssr: false, loading: ReportChunkLoading });
 const EbitdaAdjustmentsProvider = dynamic(
   () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaAdjustmentsProvider),
   { ssr: false },
@@ -190,9 +209,10 @@ const EbitdaAccountList = dynamic(
 );
 const SdeAdjustedIncomeStatement = dynamic(
   () => import('./components/valuation/SdeAdjustedIncomeStatement'),
-  { ssr: false },
+  { ssr: false, loading: ReportChunkLoading },
 );
-const ValuationWorkingCapitalSection4Preview = dynamic(() => import('./components/valuation/ValuationWorkingCapitalSection4Preview'), { ssr: false });
+const CashProofWorkspace = dynamic(() => import('./components/valuation/CashProofWorkspace'), { ssr: false });
+const CashProofReportSection = dynamic(() => import('./components/valuation/CashProofReportSection'), { ssr: false, loading: ReportChunkLoading });
 const ValuationEbitdaSection6Preview = dynamic(() => import('./components/valuation/ValuationEbitdaSection6Preview'), { ssr: false });
 const ValuationDcfSection7Preview = dynamic(() => import('./components/valuation/ValuationDcfSection7Preview'), { ssr: false });
 const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
@@ -361,6 +381,7 @@ const NAVIGABLE_VIEWS = new Set([
   'projections',
   'working-capital',
   'valuation-reports',
+  'qoe-report',
   'valuation',
   'cash-flow',
   'financial-statements',
@@ -1752,7 +1773,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'qoe-report' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
   const [valuationBuilderSelections, setValuationBuilderSelections] = useState<Record<string, boolean>>({
     es_enterpriseValueRange: true,
     es_primaryValuationMethod: true,
@@ -1775,9 +1796,6 @@ function FinancialScorePage() {
     qoe_revenueQuality: true,
     qoe_costStructure: true,
     qoe_score: true,
-    wc_normalizedWorkingCapital: true,
-    wc_arapAnalysis: true,
-    wc_cashConversion: true,
     sde_executiveSummary: true,
     sde_ebitdaAdjustments: true,
     sde_revenueQuality: true,
@@ -1785,6 +1803,20 @@ function FinancialScorePage() {
     sde_workingCapital: true,
     sde_cashFlowQuality: true,
     sde_balanceSheetQuality: true,
+    qoeSummary_executiveSummary: true,
+    qoeSummary_qualityOfEarnings: true,
+    qoeSummary_revenueQuality: true,
+    qoeSummary_customerQuality: true,
+    qoeSummary_cashFlowQuality: true,
+    qoeSummary_workingCapital: true,
+    qoeSummary_balanceSheetQuality: true,
+    qoeIncome_trailing12Months: true,
+    qoeIncome_monthly: true,
+    qoeCash_summary: true,
+    qoeCash_tieOutDetail: true,
+    qoeCash_exceptions: true,
+    qoeCash_depositsToRevenue: true,
+    qoeCash_methodology: true,
     ebitda_revenueQuality: true,
     ebitda_customerMixConcentration: true,
     ebitda_cashFlowQuality: true,
@@ -1805,6 +1837,8 @@ function FinancialScorePage() {
   const [valuationSectionPreview, setValuationSectionPreview] = useState<{ id: string; title: string; content: string } | null>(null);
   const [pendingRichValuationPrint, setPendingRichValuationPrint] = useState(false);
   const [pendingRichValuationWordExport, setPendingRichValuationWordExport] = useState(false);
+  const [qoeDownloadAllIndex, setQoeDownloadAllIndex] = useState<number | null>(null);
+  const qoeDownloadAllSectionsRef = useRef<WordSection[]>([]);
   const [valuationWordExportingId, setValuationWordExportingId] = useState<string | null>(null);
   const [valuationDataRoomFolders, setValuationDataRoomFolders] = useState<
     Array<{ id: string; key?: string | null; name: string; order?: number; documents: Array<{ id: string; originalFileName: string; createdAt?: string | null }> }>
@@ -1817,7 +1851,6 @@ function FinancialScorePage() {
     '1': false,
     '2': false,
     '3': false,
-    '4': false,
     '5': false,
     '6': false,
     '7': false,
@@ -1889,12 +1922,20 @@ function FinancialScorePage() {
 
   useEffect(() => {
     if (!pendingRichValuationPrint || !valuationSectionPreview) return;
-    if (!['4', '5', '6', '7'].includes(valuationSectionPreview.id)) return;
+    if (!['5', '6', '7'].includes(valuationSectionPreview.id) && !valuationSectionPreview.id.startsWith('qoe-')) return;
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      window.print();
-      setPendingRichValuationPrint(false);
+      const card = document.querySelector<HTMLElement>('.valuation-rich-print-card');
+      void (card ? waitForReportContentReady(card) : Promise.resolve()).then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingRichValuationPrint(false);
+      });
     }, 120);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [pendingRichValuationPrint, valuationSectionPreview]);
 
   useEffect(() => {
@@ -2093,7 +2134,7 @@ function FinancialScorePage() {
     if (view === 'working-capital') return 'financial-reports';
     if (view === 'financial-statements') return 'financial-reports';
     if (view === 'custom-print') return 'standard-reports';
-    if (view === 'valuation-reports') return 'valuation-reports';
+    if (isValuationReportView(view)) return 'valuation-reports';
     if (view === 'valuation') return 'valuation';
     if (view.startsWith('pa-')) return 'expert-analysis';
     if (view === 'dataroom') return 'dataroom';
@@ -2116,7 +2157,7 @@ function FinancialScorePage() {
   };
 
   useEffect(() => {
-    if (currentView === 'valuation' || currentView === 'valuation-reports') {
+    if (currentView === 'valuation' || isValuationReportView(currentView)) {
       setIsValuationExpanded(true);
     }
   }, [currentView]);
@@ -2558,11 +2599,11 @@ function FinancialScorePage() {
       return;
     }
 
-    if (view === 'valuation-reports' && !selectedCompanyId) {
+    if (isValuationReportView(view) && !selectedCompanyId) {
       alert('Please select a company first.');
       return;
     }
-    if ((view === 'valuation' || view === 'valuation-reports') && !isValuationReportsEnabledByAdmin) {
+    if ((view === 'valuation' || isValuationReportView(view)) && !isValuationReportsEnabledByAdmin) {
       alert('Valuation is disabled for this company.');
       return;
     }
@@ -3810,7 +3851,7 @@ function FinancialScorePage() {
   const [competitorSearchScopes, setCompetitorSearchScopes] = useState<CompetitorSearchScope[]>(DEFAULT_COMPETITOR_SEARCH_SCOPES);
   const [researchSourcesText, setResearchSourcesText] = useState('');
   const [businessContextLastUpdatedAt, setBusinessContextLastUpdatedAt] = useState<string | null>(null);
-  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
+  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'cash-proof' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
   const [sdeIncomeStatementRefreshKey, setSdeIncomeStatementRefreshKey] = useState(0);
   const [ebitdaAnalysisTab, setEbitdaAnalysisTab] = useState<'revenue-quality' | 'customer-mix' | 'cash-flow-quality' | 'balance-sheet-quality'>('revenue-quality');
   const [dcfAnalysisTab, setDcfAnalysisTab] = useState<'working-capital' | 'cash-flow-quality' | 'revenue-durability' | 'balance-sheet-quality'>('working-capital');
@@ -3830,14 +3871,11 @@ function FinancialScorePage() {
     hhi: false,
     customerCount: false
   });
-  const [customerQualityFlagGraphOpen, setCustomerQualityFlagGraphOpen] = useState<null | 'top1' | 'top5' | 'hhi' | 'customer-count'>(null);
-  const [workingCapitalCardInfoOpen, setWorkingCapitalCardInfoOpen] = useState<Record<'normalizedTarget' | 'currentWc' | 'wcAdjustment' | 'cccTrend', boolean>>({
-    normalizedTarget: false,
+  const [workingCapitalCardInfoOpen, setWorkingCapitalCardInfoOpen] = useState<Record<'currentWc' | 'cccTrend', boolean>>({
     currentWc: false,
-    wcAdjustment: false,
     cccTrend: false
   });
-  const [workingCapitalFlagGraphOpen, setWorkingCapitalFlagGraphOpen] = useState<null | 'wc-deficit' | 'ccc-deterioration' | 'wc-intensity' | 'ccc-level'>(null);
+  const [workingCapitalFlagGraphOpen, setWorkingCapitalFlagGraphOpen] = useState<null | 'operating-wc' | 'ccc-deterioration' | 'wc-intensity' | 'ccc-level'>(null);
   const [workingCapitalCccGuideOpen, setWorkingCapitalCccGuideOpen] = useState(false);
   const [workingCapitalCashImpactOpen, setWorkingCapitalCashImpactOpen] = useState(false);
   const [cashFlowQualityCardInfoOpen, setCashFlowQualityCardInfoOpen] = useState<Record<'cashConversion' | 'maintenanceCapex' | 'capexGap' | 'fcfDurability', boolean>>({
@@ -5269,7 +5307,7 @@ function FinancialScorePage() {
   // Load customer-level operational sales for Customer Quality tab and valuation report previews
   useEffect(() => {
     const shouldLoadCustomerQuality =
-      currentView === 'valuation-reports' ||
+      isValuationReportView(currentView) ||
       (currentView === 'valuation' &&
         valuationMethodTab === 'sde' &&
         sdeModuleTab === 'customer-quality');
@@ -5302,7 +5340,7 @@ function FinancialScorePage() {
       endDate: endDate.toISOString(),
     });
     if (
-      currentView === 'valuation-reports' ||
+      isValuationReportView(currentView) ||
       (currentView === 'valuation' && valuationMethodTab === 'sde' && sdeModuleTab === 'customer-quality')
     ) {
       customerQualityParams.set('refreshConcentration', '1');
@@ -12106,7 +12144,7 @@ function FinancialScorePage() {
     businessOverviewCustomerConcentration,
   ]);
   useEffect(() => {
-    if (!selectedCompanyId || currentView !== 'valuation-reports') return;
+    if (!selectedCompanyId || !isValuationReportView(currentView)) return;
     let cancelled = false;
     fetch(`/api/sde/ebitda-adjustments?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
@@ -12184,30 +12222,21 @@ function FinancialScorePage() {
       ],
     },
     {
-      id: '4',
-      title: '4. Working Capital Analysis',
-      rows: [
-        { key: 'wc_normalizedWorkingCapital', label: 'Normalized Working Capital' },
-        { key: 'wc_arapAnalysis', label: 'AR/AP Analysis' },
-        { key: 'wc_cashConversion', label: 'Cash Conversion' },
-      ],
-    },
-    {
       id: '5',
-      title: '5. SDE Valuation',
+      title: '4. SDE Valuation',
       rows: [
         { key: 'sde_executiveSummary', label: 'Executive Summary' },
         { key: 'sde_ebitdaAdjustments', label: 'Quality of Earnings' },
         { key: 'sde_revenueQuality', label: 'Revenue Quality' },
         { key: 'sde_customerQuality', label: 'Customer Quality' },
-        { key: 'sde_workingCapital', label: 'Working Capital' },
         { key: 'sde_cashFlowQuality', label: 'Cash Flow Quality' },
+        { key: 'sde_workingCapital', label: 'Working Capital' },
         { key: 'sde_balanceSheetQuality', label: 'Balance Sheet Quality' },
       ],
     },
     {
       id: '6',
-      title: '6. EBITDA Valuation',
+      title: '5. EBITDA Valuation',
       rows: [
         { key: 'ebitda_revenueQuality', label: 'Revenue Quality' },
         { key: 'ebitda_customerMixConcentration', label: 'Customer Mix / Concentration' },
@@ -12217,7 +12246,7 @@ function FinancialScorePage() {
     },
     {
       id: '7',
-      title: '7. DCF Valuation',
+      title: '6. DCF Valuation',
       rows: [
         { key: 'dcf_workingCapital', label: 'Working Capital' },
         { key: 'dcf_cashFlowQuality', label: 'Cash Flow Quality' },
@@ -12227,15 +12256,15 @@ function FinancialScorePage() {
     },
     {
       id: '10',
-      title: '8. Market, Competitor, and Opportunity Scan',
+      title: '7. Market and Competitors',
       rows: [
-        { key: 'ra_keyRisks', label: 'Market, Competitor, and Opportunity Scan' },
+        { key: 'ra_keyRisks', label: 'Market and Competitors' },
         { key: 'ra_mitigation', label: 'Economic Signals' },
       ],
     },
     {
       id: '11',
-      title: '9. Growth Opportunities',
+      title: '8. Growth Opportunities',
       rows: [
         { key: 'go_expansionOpportunities', label: 'Expansion Opportunities' },
         { key: 'go_operationalImprovements', label: 'Operational Improvements' },
@@ -12243,10 +12272,72 @@ function FinancialScorePage() {
     },
     {
       id: '12',
-      title: '10. Data Room & Supporting Documents',
+      title: '9. Data Room & Supporting Documents',
       rows: [{ key: 'dr_documentsByCategory', label: 'Documents by Category' }],
     },
   ]), []);
+  const qoeReportSectionDefinitions = useMemo(() => {
+    const sharedRows = (valuationSectionId: string) =>
+      valuationSectionDefinitions.find((section) => section.id === valuationSectionId)?.rows ?? [];
+    return [
+      {
+        id: 'qoe-1',
+        title: '1. QoE Summary',
+        rows: [
+          { key: 'qoeSummary_executiveSummary', label: 'Executive Summary' },
+          { key: 'qoeSummary_qualityOfEarnings', label: 'Quality of Earnings' },
+          { key: 'qoeSummary_revenueQuality', label: 'Revenue Quality' },
+          { key: 'qoeSummary_customerQuality', label: 'Customer Quality' },
+          { key: 'qoeSummary_cashFlowQuality', label: 'Cash Flow Quality' },
+          { key: 'qoeSummary_workingCapital', label: 'Working Capital' },
+          { key: 'qoeSummary_balanceSheetQuality', label: 'Balance Sheet Quality' },
+        ],
+      },
+      { id: 'qoe-2', title: '2. Business Overview', rows: sharedRows('2') },
+      { id: 'qoe-3', title: '3. Historical Financial Review', rows: sharedRows('3') },
+      {
+        id: 'qoe-4',
+        title: '4. Income Statements',
+        rows: [
+          { key: 'qoeIncome_trailing12Months', label: 'Trailing 12 Months' },
+          { key: 'qoeIncome_monthly', label: 'Monthly' },
+        ],
+      },
+      {
+        id: 'qoe-cash-proof',
+        title: '5. Cash Proof',
+        rows: [
+          { key: 'qoeCash_summary', label: 'Summary' },
+          { key: 'qoeCash_tieOutDetail', label: 'Tie-Out Detail' },
+          { key: 'qoeCash_exceptions', label: 'Exceptions' },
+          { key: 'qoeCash_depositsToRevenue', label: 'Deposits to Revenue' },
+          { key: 'qoeCash_methodology', label: 'Methodology' },
+        ],
+      },
+      { id: 'qoe-6', title: '6. Market and Competitors', rows: sharedRows('10') },
+      { id: 'qoe-7', title: '7. Data Room & Supporting Documents', rows: sharedRows('12') },
+    ];
+  }, [valuationSectionDefinitions]);
+  const qoeSummarySelections = useMemo(
+    () => ({
+      sde_executiveSummary: !!valuationBuilderSelections.qoeSummary_executiveSummary,
+      sde_ebitdaAdjustments: !!valuationBuilderSelections.qoeSummary_qualityOfEarnings,
+      sde_revenueQuality: !!valuationBuilderSelections.qoeSummary_revenueQuality,
+      sde_customerQuality: !!valuationBuilderSelections.qoeSummary_customerQuality,
+      sde_workingCapital: !!valuationBuilderSelections.qoeSummary_workingCapital,
+      sde_cashFlowQuality: !!valuationBuilderSelections.qoeSummary_cashFlowQuality,
+      sde_balanceSheetQuality: !!valuationBuilderSelections.qoeSummary_balanceSheetQuality,
+    }),
+    [valuationBuilderSelections],
+  );
+  const qoeIncomeStatementViews = useMemo(
+    () =>
+      [
+        valuationBuilderSelections.qoeIncome_trailing12Months ? 'ttm' : null,
+        valuationBuilderSelections.qoeIncome_monthly ? 'monthly' : null,
+      ].filter((view): view is 'ttm' | 'monthly' => view !== null),
+    [valuationBuilderSelections],
+  );
   const buildBusinessOverviewReportText = useCallback((): string => {
     const businessRows = [
       { key: 'bo_companyBackgroundHistory', label: 'Company Background & History' },
@@ -12331,7 +12422,7 @@ function FinancialScorePage() {
     businessOverviewRevenueMix,
     businessOverviewCustomerConcentration,
   ]);
-  const buildBusinessOverviewReportHtml = useCallback((): string => {
+  const buildBusinessOverviewReportHtml = useCallback((reportTitle: string = 'Corelytics Valuation Report'): string => {
     const esc = (value: string) =>
       String(value || '')
         .replace(/&/g, '&amp;')
@@ -12477,7 +12568,7 @@ function FinancialScorePage() {
     return `
       <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #fff;">
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
-          <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
+          <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">${esc(reportTitle)}</div>
           <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">Business Overview</div>
           <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))} | Currency: ${esc(companyDisplayCurrency)}</div>
         </div>
@@ -12506,7 +12597,7 @@ function FinancialScorePage() {
     businessOverviewRevenueMix,
     businessOverviewCustomerConcentration,
   ]);
-  const buildDataRoomReportHtml = useCallback((): string => {
+  const buildDataRoomReportHtml = useCallback((reportTitle: string = 'Corelytics Valuation Report'): string => {
     const esc = (value: string) =>
       String(value || '')
         .replace(/&/g, '&amp;')
@@ -12521,7 +12612,7 @@ function FinancialScorePage() {
     const sectionTitle = valuationReportSectionDisplayTitle('10. Data Room & Supporting Documents');
     const headerHtml = `
       <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
-        <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
+        <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">${esc(reportTitle)}</div>
         <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">${esc(sectionTitle)}</div>
         <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))} | Currency: ${esc(companyDisplayCurrency)}</div>
       </div>`;
@@ -12908,7 +12999,10 @@ function FinancialScorePage() {
     }
     return lines.join('\n');
   }, [valuationBuilderSelections, historicalFinancialSummaryData, valuationReportSectionDisplayTitle]);
-  const buildHistoricalFinancialSummaryReportHtml = useCallback((): string => {
+  const buildHistoricalFinancialSummaryReportHtml = useCallback((
+    reportTitle: string = 'Corelytics Valuation Report',
+    sectionHeading: string = 'Historical Financial Summary',
+  ): string => {
     const esc = (value: string) =>
       String(value || '')
         .replace(/&/g, '&amp;')
@@ -13134,8 +13228,8 @@ function FinancialScorePage() {
     return `
       <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #fff;">
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
-          <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
-          <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">Historical Financial Summary</div>
+          <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">${esc(reportTitle)}</div>
+          <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">${esc(sectionHeading)}</div>
           <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))} | Currency: ${esc(companyDisplayCurrency)}</div>
         </div>
         <div style="padding: 16px 18px;">
@@ -13170,47 +13264,6 @@ function FinancialScorePage() {
       return idx >= 0 ? `${indexToLetterLabel(idx)} ${fallback}` : fallback;
     };
 
-    if (sectionId === '4') {
-      const recent12 = monthly.slice(-12);
-      const avg = (arr: number[]) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
-      const hasWcData = recent12.length > 0;
-      const avgAr = hasWcData ? avg(recent12.map((m: any) => Number(m?.ar) || 0)) : Number.NaN;
-      const avgInventory = hasWcData ? avg(recent12.map((m: any) => Number(m?.inventory) || 0)) : Number.NaN;
-      const avgAp = hasWcData ? avg(recent12.map((m: any) => Number(m?.ap) || 0)) : Number.NaN;
-      const normalizedWorkingCapital = hasWcData ? (avgAr + avgInventory - avgAp) : Number.NaN;
-      const latest = recent12.at(-1) as any;
-      const currentWorkingCapital = hasWcData
-        ? (Number(latest?.ar) || 0) + (Number(latest?.inventory) || 0) - (Number(latest?.ap) || 0)
-        : Number.NaN;
-      const wcAdjustment = Number.isFinite(currentWorkingCapital) && Number.isFinite(normalizedWorkingCapital)
-        ? currentWorkingCapital - normalizedWorkingCapital
-        : Number.NaN;
-      const latestTrend = trendData.at(-1);
-      const ccc = latestTrend
-        ? (Number(latestTrend.daysInv) || 0) + (Number(latestTrend.daysAR) || 0) - (Number(latestTrend.daysAP) || 0)
-        : Number.NaN;
-      if (valuationBuilderSelections.wc_normalizedWorkingCapital) {
-        lines.push(`${rowLabel('wc_normalizedWorkingCapital', 'Normalized Working Capital')}:`);
-        lines.push(`- 12-month normalized operating working capital: ${money(normalizedWorkingCapital)}.`);
-        lines.push(`- Current operating working capital: ${money(currentWorkingCapital)}.`);
-        lines.push(`- Purchase-price style adjustment vs normalized target: ${Number.isFinite(wcAdjustment) && wcAdjustment >= 0 ? '+' : ''}${money(wcAdjustment)}.`);
-        lines.push('');
-      }
-      if (valuationBuilderSelections.wc_arapAnalysis) {
-        lines.push(`${rowLabel('wc_arapAnalysis', 'AR/AP Analysis')}:`);
-        lines.push(`- 12-month average AR: ${money(avgAr)}.`);
-        lines.push(`- 12-month average Inventory: ${money(avgInventory)}.`);
-        lines.push(`- 12-month average AP: ${money(avgAp)}.`);
-        lines.push('');
-      }
-      if (valuationBuilderSelections.wc_cashConversion) {
-        lines.push(`${rowLabel('wc_cashConversion', 'Cash Conversion')}:`);
-        lines.push(`- Estimated cash conversion cycle (DSO + DIO - DPO): ${Number.isFinite(ccc) ? `${Number(ccc).toFixed(1)} days` : 'N/A'}.`);
-        lines.push(`- TTM free cash flow reference: ${money(valuationExecutiveOverview.ttmFreeCashFlow)}.`);
-      }
-      return lines.join('\n');
-    }
-
     if (sectionId === '5') {
       const VALUATION_PAGE_BREAK = '__VALUATION_PAGE_BREAK__';
       const sensitivity = (base: number) => ({
@@ -13224,15 +13277,10 @@ function FinancialScorePage() {
       const avgAr = hasWcData ? avg(recent12.map((m: any) => Number(m?.ar) || 0)) : Number.NaN;
       const avgInventory = hasWcData ? avg(recent12.map((m: any) => Number(m?.inventory) || 0)) : Number.NaN;
       const avgAp = hasWcData ? avg(recent12.map((m: any) => Number(m?.ap) || 0)) : Number.NaN;
-      const normalizedWorkingCapital = hasWcData ? avgAr + avgInventory - avgAp : Number.NaN;
       const latestMo = recent12.at(-1) as any;
       const currentWorkingCapital = hasWcData
         ? (Number(latestMo?.ar) || 0) + (Number(latestMo?.inventory) || 0) - (Number(latestMo?.ap) || 0)
         : Number.NaN;
-      const wcAdjustment =
-        Number.isFinite(currentWorkingCapital) && Number.isFinite(normalizedWorkingCapital)
-          ? currentWorkingCapital - normalizedWorkingCapital
-          : Number.NaN;
       const latestTrend = trendData.at(-1);
       const ccc = latestTrend
         ? (Number(latestTrend.daysInv) || 0) + (Number(latestTrend.daysAR) || 0) - (Number(latestTrend.daysAP) || 0)
@@ -13306,25 +13354,22 @@ function FinancialScorePage() {
         }
         categoryChunks.push(c.join('\n'));
       }
-      if (valuationBuilderSelections.sde_workingCapital) {
-        const c: string[] = [];
-        c.push(`${rowLabel('sde_workingCapital', 'Working Capital')}:`);
-        c.push(`- 12-month normalized operating working capital: ${money(normalizedWorkingCapital)}.`);
-        c.push(`- Current operating working capital: ${money(currentWorkingCapital)}.`);
-        c.push(
-          `- Adjustment vs normalized target: ${Number.isFinite(wcAdjustment) && wcAdjustment >= 0 ? '+' : ''}${money(wcAdjustment)}.`
-        );
-        c.push(
-          `- Cash conversion cycle (DSO + DIO - DPO): ${Number.isFinite(ccc) ? `${Number(ccc).toFixed(1)} days` : 'N/A'}.`
-        );
-        categoryChunks.push(c.join('\n'));
-      }
       if (valuationBuilderSelections.sde_cashFlowQuality) {
         const c: string[] = [];
         c.push(`${rowLabel('sde_cashFlowQuality', 'Cash Flow Quality')}:`);
         c.push(`- TTM free cash flow: ${money(valuationExecutiveOverview.ttmFreeCashFlow)}.`);
         c.push(`- FCF as % of TTM revenue: ${Number.isFinite(fcfMargin) ? pct(fcfMargin) : 'N/A'}.`);
         c.push(`- FCF / EBITDA (cash conversion of earnings): ${Number.isFinite(fcfToEbitda) ? pct(fcfToEbitda) : 'N/A'}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.sde_workingCapital) {
+        const c: string[] = [];
+        c.push(`${rowLabel('sde_workingCapital', 'Working Capital')}:`);
+        c.push(`- Current operating working capital: ${money(currentWorkingCapital)}.`);
+        c.push(`- 12-month average AR: ${money(avgAr)}; Inventory: ${money(avgInventory)}; AP: ${money(avgAp)}.`);
+        c.push(
+          `- Cash conversion cycle (DSO + DIO - DPO): ${Number.isFinite(ccc) ? `${Number(ccc).toFixed(1)} days` : 'N/A'}.`
+        );
         categoryChunks.push(c.join('\n'));
       }
       if (valuationBuilderSelections.sde_balanceSheetQuality) {
@@ -13437,20 +13482,11 @@ function FinancialScorePage() {
       });
       const dcfRange = sensitivity(valuationExecutiveOverview.dcfEstimatedValue);
       const recent12 = monthly.slice(-12);
-      const avg = (arr: number[]) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
       const hasWcData = recent12.length > 0;
-      const avgAr = hasWcData ? avg(recent12.map((m: any) => Number(m?.ar) || 0)) : Number.NaN;
-      const avgInventory = hasWcData ? avg(recent12.map((m: any) => Number(m?.inventory) || 0)) : Number.NaN;
-      const avgAp = hasWcData ? avg(recent12.map((m: any) => Number(m?.ap) || 0)) : Number.NaN;
-      const normalizedWorkingCapital = hasWcData ? avgAr + avgInventory - avgAp : Number.NaN;
       const latestMo = recent12.at(-1) as any;
       const currentWorkingCapital = hasWcData
         ? (Number(latestMo?.ar) || 0) + (Number(latestMo?.inventory) || 0) - (Number(latestMo?.ap) || 0)
         : Number.NaN;
-      const wcAdjustment =
-        Number.isFinite(currentWorkingCapital) && Number.isFinite(normalizedWorkingCapital)
-          ? currentWorkingCapital - normalizedWorkingCapital
-          : Number.NaN;
       const latestTrend = trendData.at(-1);
       const ccc = latestTrend
         ? (Number(latestTrend.daysInv) || 0) + (Number(latestTrend.daysAR) || 0) - (Number(latestTrend.daysAP) || 0)
@@ -13475,11 +13511,7 @@ function FinancialScorePage() {
       if (valuationBuilderSelections.dcf_workingCapital) {
         const c: string[] = [];
         c.push(`${rowLabel('dcf_workingCapital', 'Working Capital')}:`);
-        c.push(`- 12-month normalized operating working capital: ${money(normalizedWorkingCapital)}.`);
         c.push(`- Current operating working capital: ${money(currentWorkingCapital)}.`);
-        c.push(
-          `- Adjustment vs normalized target: ${Number.isFinite(wcAdjustment) && wcAdjustment >= 0 ? '+' : ''}${money(wcAdjustment)}.`
-        );
         c.push(`- Cash conversion cycle (DSO + DIO - DPO): ${Number.isFinite(ccc) ? `${Number(ccc).toFixed(1)} days` : 'N/A'}.`);
         categoryChunks.push(c.join('\n'));
       }
@@ -13662,7 +13694,7 @@ function FinancialScorePage() {
           if (cleanLine) current.items.push(cleanLine);
         }
         pushCurrent();
-        sections.forEach((section) => {
+        sections.filter((section) => !/opportunit/i.test(section.heading || '')).forEach((section) => {
           if (section.heading) lines.push(`${section.heading}:`);
           section.items.forEach((item) => lines.push(`- ${item}`));
         });
@@ -13680,7 +13712,7 @@ function FinancialScorePage() {
       const marketSignals = Array.isArray(valuationIndustryBrief?.marketSignals) ? valuationIndustryBrief.marketSignals : [];
       const unavailableLine = '- Daily Industry Brief Industry Outlook is not available yet for this company. Generate the Daily Industry Brief before finalizing this valuation section.';
       if (valuationBuilderSelections.ra_keyRisks) {
-        lines.push(`${rowLabel('ra_keyRisks', 'Market, Competitor, and Opportunity Scan')}:`);
+        lines.push(`${rowLabel('ra_keyRisks', 'Market and Competitors')}:`);
         if (marketScanItems.length === 0 && marketSignals.length === 0) {
           lines.push(unavailableLine);
         } else {
@@ -13875,15 +13907,15 @@ function FinancialScorePage() {
     `;
   }, [companyName, companyDisplayCurrency]);
 
-  const buildMarketOpportunityScanReportHtml = useCallback((): string => {
+  const buildMarketCompetitorsReportHtml = useCallback((reportTitle: string = 'Corelytics Valuation Report'): string => {
     const escapeHtml = (value: string) =>
       String(value || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-    const content = buildValuationSectionReportText('10', '8. Market, Competitor, and Opportunity Scan');
+    const content = buildValuationSectionReportText('10', '7. Market and Competitors');
     const lines = content.split(/\r?\n/).map((line) => line.trim());
-    const title = (lines.find(Boolean) || 'Market, Competitor, and Opportunity Scan').replace(/^\d+\.\s*/, '');
+    const title = (lines.find(Boolean) || 'Market and Competitors').replace(/^\d+\.\s*/, '');
     type ScanLine = { type: 'subheading' | 'bullet' | 'paragraph'; text: string };
     type ScanCard = { title: string; lines: ScanLine[] };
     const cards: ScanCard[] = [];
@@ -13954,12 +13986,12 @@ function FinancialScorePage() {
             </div>`;
           })
           .join('')
-      : `<div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #fff; font-size: 13px; color: #64748b;">No Market, Competitor, and Opportunity Scan content is available.</div>`;
+      : `<div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #fff; font-size: 13px; color: #64748b;">No Market and Competitors content is available.</div>`;
 
     return `
       <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #fff;">
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
-          <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">Corelytics Valuation Report</div>
+          <div style="font-size: 20px; color: #0f172a; font-weight: 800; letter-spacing: -0.02em;">${escapeHtml(reportTitle)}</div>
           <div style="font-size: 18px; color: #1e293b; font-weight: 800; margin-top: 6px;">${escapeHtml(title)}</div>
           <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))} | Currency: ${escapeHtml(companyDisplayCurrency)}</div>
         </div>
@@ -14097,7 +14129,7 @@ function FinancialScorePage() {
         : sectionId === '2'
           ? buildBusinessOverviewReportHtml()
           : sectionId === '10'
-            ? buildMarketOpportunityScanReportHtml()
+            ? buildMarketCompetitorsReportHtml()
             : sectionId === '12'
               ? buildDataRoomReportHtml()
               : content.includes(VALUATION_PAGE_BREAK_MARKER)
@@ -14106,7 +14138,7 @@ function FinancialScorePage() {
     [
       buildHistoricalFinancialSummaryReportHtml,
       buildBusinessOverviewReportHtml,
-      buildMarketOpportunityScanReportHtml,
+      buildMarketCompetitorsReportHtml,
       buildDataRoomReportHtml,
       buildStyledValuationReportPaginatedHtml,
       buildStyledValuationReportHtml,
@@ -14114,7 +14146,7 @@ function FinancialScorePage() {
   );
   const handleValuationSectionPrint = useCallback(
     (sectionId: string, sectionTitle: string) => {
-      if (['4', '5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
+      if (['5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
         const content = buildValuationSectionReportText(sectionId, sectionTitle);
         setValuationSectionPreview({ id: sectionId, title: sectionTitle, content });
         setPendingRichValuationPrint(true);
@@ -14146,25 +14178,40 @@ function FinancialScorePage() {
       buildStyledValuationReportPaginatedHtml,
       buildHistoricalFinancialSummaryReportHtml,
       buildBusinessOverviewReportHtml,
-      buildMarketOpportunityScanReportHtml,
+      buildMarketCompetitorsReportHtml,
       buildDataRoomReportHtml,
       sdeValuationReportPreviewModel,
     ]
   );
   const valuationWordExportOptions = useCallback(
-    (sectionId: string, sectionTitle: string) => ({
-      title: `${sectionTitle} - ${companyName || 'Company'}`,
-      fileName: safeWordFileName(`${sectionTitle} - ${companyName || 'Company'}`),
-      orientation: (['3', '4', '12'].includes(sectionId) ? 'landscape' : 'portrait') as WordPageOrientation,
-    }),
+    (sectionId: string, sectionTitle: string) => {
+      const reportPrefix = sectionId.startsWith('qoe-') ? 'QoE Report - ' : '';
+      return {
+        title: `${reportPrefix}${sectionTitle} - ${companyName || 'Company'}`,
+        fileName: safeWordFileName(`${reportPrefix}${sectionTitle} - ${companyName || 'Company'}`),
+        orientation: (['3', '12', 'qoe-3', 'qoe-4', 'qoe-cash-proof', 'qoe-7'].includes(sectionId) ? 'landscape' : 'portrait') as WordPageOrientation,
+      };
+    },
     [companyName]
+  );
+  const openQoeReportSection = useCallback(
+    (sectionId: string, sectionTitle: string, mode: 'view' | 'print' | 'download') => {
+      if (mode === 'download') {
+        if (valuationWordExportingId) return;
+        setValuationWordExportingId(sectionId);
+      }
+      setValuationSectionPreview({ id: sectionId, title: sectionTitle, content: '' });
+      if (mode === 'print') setPendingRichValuationPrint(true);
+      if (mode === 'download') setPendingRichValuationWordExport(true);
+    },
+    [valuationWordExportingId]
   );
   const handleValuationSectionDownload = useCallback(
     async (sectionId: string, sectionTitle: string) => {
       if (valuationWordExportingId) return;
       const content = buildValuationSectionReportText(sectionId, sectionTitle);
       setValuationWordExportingId(sectionId);
-      if (['4', '5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
+      if (['5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
         setValuationSectionPreview({ id: sectionId, title: sectionTitle, content });
         setPendingRichValuationWordExport(true);
         return;
@@ -14197,6 +14244,7 @@ function FinancialScorePage() {
       try {
         const card = document.querySelector<HTMLElement>('.valuation-rich-print-card');
         if (!card) throw new Error('Valuation preview did not render');
+        await waitForReportContentReady(card);
         await waitForChartsToRender(card);
         if (cancelled) return;
         await exportElementToWord(card, valuationWordExportOptions(id, title));
@@ -14215,6 +14263,60 @@ function FinancialScorePage() {
       setValuationWordExportingId(null);
     };
   }, [pendingRichValuationWordExport, valuationSectionPreview, valuationWordExportOptions]);
+  const startQoeDownloadAll = useCallback(() => {
+    if (valuationWordExportingId || qoeReportSectionDefinitions.length === 0) return;
+    const first = qoeReportSectionDefinitions[0];
+    qoeDownloadAllSectionsRef.current = [];
+    setValuationWordExportingId('qoe-all');
+    setQoeDownloadAllIndex(0);
+    setValuationSectionPreview({ id: first.id, title: first.title, content: '' });
+  }, [valuationWordExportingId, qoeReportSectionDefinitions]);
+  useEffect(() => {
+    if (qoeDownloadAllIndex === null) return;
+    const section = qoeReportSectionDefinitions[qoeDownloadAllIndex];
+    const finish = () => {
+      qoeDownloadAllSectionsRef.current = [];
+      setQoeDownloadAllIndex(null);
+      setValuationWordExportingId(null);
+      setValuationSectionPreview(null);
+    };
+    if (!section || !valuationSectionPreview) {
+      finish();
+      return;
+    }
+    if (valuationSectionPreview.id !== section.id) return;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const card = document.querySelector<HTMLElement>('.valuation-rich-print-card');
+        if (!card) throw new Error('QoE preview did not render');
+        await waitForReportContentReady(card);
+        await waitForChartsToRender(card);
+        if (cancelled) return;
+        const { orientation } = valuationWordExportOptions(section.id, section.title);
+        qoeDownloadAllSectionsRef.current.push(await elementToWordSection(card, orientation));
+        if (cancelled) return;
+        const next = qoeReportSectionDefinitions[qoeDownloadAllIndex + 1];
+        if (next) {
+          setValuationSectionPreview({ id: next.id, title: next.title, content: '' });
+          setQoeDownloadAllIndex(qoeDownloadAllIndex + 1);
+          return;
+        }
+        const title = `${QOE_REPORT_TITLE} - ${companyName || 'Company'}`;
+        await exportWordSections(qoeDownloadAllSectionsRef.current, { title, fileName: safeWordFileName(title) });
+        finish();
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to export the QoE report to Word:', error);
+        alert('Unable to export the QoE report to Word. Please try again.');
+        finish();
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [qoeDownloadAllIndex, valuationSectionPreview, qoeReportSectionDefinitions, valuationWordExportOptions, companyName]);
   const handleSaveValuationSelections = useCallback(() => {
     if (!selectedCompanyId) {
       alert('Please select a company first.');
@@ -15171,7 +15273,7 @@ function FinancialScorePage() {
                   style={{
                     fontSize: '14px',
                     fontWeight: '700',
-                    color: currentView === 'valuation' || currentView === 'valuation-reports' ? '#1F70C1' : '#334155',
+                    color: currentView === 'valuation' || isValuationReportView(currentView) ? '#1F70C1' : '#334155',
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px',
                     padding: '1px 32px',
@@ -15180,7 +15282,7 @@ function FinancialScorePage() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {(currentView === 'valuation' || currentView === 'valuation-reports') && '› '}VALUATION
+                  {(currentView === 'valuation' || isValuationReportView(currentView)) && '› '}VALUATION
                 </h3>
               )}
 
@@ -21612,25 +21714,25 @@ function FinancialScorePage() {
         />
       )}
 
-      {(currentView === 'valuation' || currentView === 'valuation-reports') && selectedCompanyId && hasCompanySectionAccess('valuation') && (
+      {(currentView === 'valuation' || isValuationReportView(currentView)) && selectedCompanyId && hasCompanySectionAccess('valuation') && (
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
           <nav
             aria-label="Valuation"
             style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', borderBottom: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
           >
             {VALUATION_TABS
-              .filter((tab) => tab.id !== 'valuation-reports' || (hasCompanySectionAccess('valuation-reports') && isValuationReportsEnabledByAdmin))
+              .filter((tab) => !isValuationReportView(tab.id) || (hasCompanySectionAccess('valuation-reports') && isValuationReportsEnabledByAdmin))
               .map((tab) => {
-                const active = tab.id === 'valuation-reports'
-                  ? currentView === 'valuation-reports'
+                const active = isValuationReportView(tab.id)
+                  ? currentView === tab.id
                   : currentView === 'valuation' && valuationMethodTab === tab.id;
                 return (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => {
-                      if (tab.id === 'valuation-reports') {
-                        handleNavigation('valuation-reports');
+                      if (tab.id === 'valuation-reports' || tab.id === 'qoe-report') {
+                        handleNavigation(tab.id);
                       } else {
                         setValuationMethodTab(tab.id);
                         handleNavigation('valuation');
@@ -21860,6 +21962,163 @@ function FinancialScorePage() {
         </div>
       )}
 
+      {currentView === 'qoe-report' && selectedCompanyId && (
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '24px 20px 36px 20px' }}>
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
+            <div style={{ padding: '26px 28px', background: 'linear-gradient(135deg, #0f4c81 0%, #1f70c1 55%, #63a8e8 100%)' }}>
+              <h1 style={{ fontSize: '34px', fontWeight: '800', color: '#ffffff', margin: '0 0 6px 0', letterSpacing: '-0.3px' }}>
+                {QOE_REPORT_TITLE}
+              </h1>
+              <p style={{ margin: 0, fontSize: '20px', color: 'rgba(255,255,255,0.92)' }}>
+                Prepared for: <strong>{companyName || 'Selected Company'}</strong>
+                {companyDisplayCurrency ? ` · Currency: ${companyDisplayCurrency}` : ''}
+              </p>
+            </div>
+
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', color: '#334155', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span>
+                This page defines the report sections and required content for build-out. It is structured to be viewable and print-ready.
+              </span>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleSaveValuationSelections}
+                disabled={valuationSelectionSaveStatus === 'saving'}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: valuationSelectionSaveStatus === 'saved'
+                    ? '1px solid #86efac'
+                    : valuationSelectionSaveStatus === 'error'
+                      ? '1px solid #fecaca'
+                      : '1px solid #1f70c1',
+                  background: valuationSelectionSaveStatus === 'saved'
+                    ? '#ecfdf5'
+                    : valuationSelectionSaveStatus === 'error'
+                      ? '#fef2f2'
+                      : '#1f70c1',
+                  color: valuationSelectionSaveStatus === 'saved'
+                    ? '#166534'
+                    : valuationSelectionSaveStatus === 'error'
+                      ? '#991b1b'
+                      : '#ffffff',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: valuationSelectionSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                  opacity: valuationSelectionSaveStatus === 'saving' ? 0.75 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {valuationSelectionSaveStatus === 'saving'
+                  ? 'Saving...'
+                  : valuationSelectionSaveStatus === 'saved'
+                    ? 'Saved'
+                    : valuationSelectionSaveStatus === 'error'
+                      ? 'Retry Save'
+                      : 'Save Selections'}
+              </button>
+              <button
+                onClick={startQoeDownloadAll}
+                disabled={!!valuationWordExportingId}
+                title="Download every section as one Word document, each section starting on a new page"
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #1f70c1',
+                  background: '#eff6ff',
+                  color: '#1f70c1',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: valuationWordExportingId ? 'not-allowed' : 'pointer',
+                  opacity: valuationWordExportingId && valuationWordExportingId !== 'qoe-all' ? 0.6 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {qoeDownloadAllIndex !== null
+                  ? `Downloading ${qoeDownloadAllIndex + 1} of ${qoeReportSectionDefinitions.length}...`
+                  : 'Download All'}
+              </button>
+              </div>
+            </div>
+
+            <div style={{ padding: '20px', display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+              {qoeReportSectionDefinitions.map((section) => (
+                <div
+                  key={section.id}
+                  style={{
+                    border: '1px solid #dbe5ef',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    background: '#ffffff',
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.05)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#1e293b' }}>{section.title}</div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => setValuationSectionExpanded((prev) => ({ ...prev, [section.id]: !prev[section.id] }))}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        {valuationSectionExpanded[section.id] ? 'Collapse' : 'Expand'}
+                      </button>
+                      <button
+                        onClick={() => openQoeReportSection(section.id, section.title, 'view')}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => openQoeReportSection(section.id, section.title, 'print')}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Print
+                      </button>
+                      <button
+                        onClick={() => openQoeReportSection(section.id, section.title, 'download')}
+                        disabled={!!valuationWordExportingId}
+                        title="Download as a Word document with charts and tables"
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #1f70c1', background: '#eff6ff', color: '#1f70c1', fontSize: '12px', fontWeight: 700, cursor: valuationWordExportingId ? 'not-allowed' : 'pointer', opacity: valuationWordExportingId && valuationWordExportingId !== section.id ? 0.6 : 1 }}
+                      >
+                        {valuationWordExportingId === section.id ? 'Preparing...' : 'Download'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {valuationSectionExpanded[section.id] && (
+                    <div style={{ marginTop: '10px', display: 'grid', gap: '10px' }}>
+                      <div style={{ fontSize: '13px', color: '#64748b' }}>
+                        Select Reports
+                      </div>
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        {section.rows.map((row, rowIdx) => (
+                          <label key={row.key} style={{ display: 'grid', gridTemplateColumns: '26px 1fr', gap: '10px', alignItems: 'start', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!valuationBuilderSelections[row.key]}
+                              onChange={(e) => setValuationBuilderSelections((prev) => ({ ...prev, [row.key]: e.target.checked }))}
+                              style={{ marginTop: '3px' }}
+                            />
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{indexToLetterLabel(rowIdx)} {row.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {currentView === 'qoe-report' && !selectedCompanyId && (
+        <div style={{ maxWidth: '900px', margin: '0 auto', padding: '24px 20px' }}>
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', color: '#334155' }}>
+            Please select a company first to access the QoE Report.
+          </div>
+        </div>
+      )}
+
       {valuationSectionPreview && (
         <div
           className="valuation-rich-print-modal"
@@ -21938,17 +22197,55 @@ function FinancialScorePage() {
                 Close
               </button>
             </div>
-            {valuationSectionPreview.id === '4' && sdeValuationReportPreviewModel ? (
-              <ValuationWorkingCapitalSection4Preview
-                model={sdeValuationReportPreviewModel}
-                selections={valuationBuilderSelections}
-                companyName={companyName || ''}
-                latestFinancialSource={latestFinancialSource}
+            {valuationSectionPreview.id === 'qoe-1' ? (
+              sdeValuationReportPreviewModel ? (
+                <ValuationSdeSection5Preview
+                  variant="qoe"
+                  model={sdeValuationReportPreviewModel}
+                  monthly={monthly as MonthlyDataRow[]}
+                  selections={qoeSummarySelections}
+                  companyName={companyName || ''}
+                  latestFinancialSource={latestFinancialSource}
+                  sdeExecutiveSummaryApi={sdeExecutiveSummaryApi}
+                  sdeExecutiveFinancialSummaryApi={sdeExecutiveFinancialSummaryApi}
+                  sdeRecommendationsApi={sdeRecommendationsApi}
+                  currency={companyDisplayCurrency}
+                  locale={selectedCompany?.locale}
+                />
+              ) : (
+                <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
+                  QoE Summary preview needs at least one month of financial data for this company.
+                </div>
+              )
+            ) : valuationSectionPreview.id === 'qoe-2' ? (
+              <div style={{ marginTop: '10px' }} dangerouslySetInnerHTML={{ __html: buildBusinessOverviewReportHtml(QOE_REPORT_TITLE) }} />
+            ) : valuationSectionPreview.id === 'qoe-3' ? (
+              <div style={{ marginTop: '10px' }} dangerouslySetInnerHTML={{ __html: buildHistoricalFinancialSummaryReportHtml(QOE_REPORT_TITLE, 'Historical Financial Review') }} />
+            ) : valuationSectionPreview.id === 'qoe-4' ? (
+              <SdeAdjustedIncomeStatement
+                companyId={selectedCompanyId}
+                monthly={monthly}
+                refreshKey={sdeIncomeStatementRefreshKey}
+                reportViews={qoeIncomeStatementViews}
+                reportTitle={QOE_REPORT_TITLE}
               />
-            ) : valuationSectionPreview.id === '4' && !sdeValuationReportPreviewModel ? (
-              <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
-                Working Capital preview needs at least one month of financial data for this company.
-              </div>
+            ) : valuationSectionPreview.id === 'qoe-cash-proof' ? (
+              <CashProofReportSection
+                companyId={selectedCompanyId}
+                companyName={companyName || ''}
+                reportTitle={QOE_REPORT_TITLE}
+                selections={{
+                  summary: !!valuationBuilderSelections.qoeCash_summary,
+                  tieOutDetail: !!valuationBuilderSelections.qoeCash_tieOutDetail,
+                  exceptions: !!valuationBuilderSelections.qoeCash_exceptions,
+                  depositsToRevenue: valuationBuilderSelections.qoeCash_depositsToRevenue !== false,
+                  methodology: !!valuationBuilderSelections.qoeCash_methodology,
+                }}
+              />
+            ) : valuationSectionPreview.id === 'qoe-6' ? (
+              <div style={{ marginTop: '10px' }} dangerouslySetInnerHTML={{ __html: buildMarketCompetitorsReportHtml(QOE_REPORT_TITLE) }} />
+            ) : valuationSectionPreview.id === 'qoe-7' ? (
+              <div style={{ marginTop: '10px' }} dangerouslySetInnerHTML={{ __html: buildDataRoomReportHtml(QOE_REPORT_TITLE) }} />
             ) : valuationSectionPreview.id === '5' && sdeValuationReportPreviewModel ? (
               <ValuationSdeSection5Preview
                 model={sdeValuationReportPreviewModel}
@@ -22194,7 +22491,7 @@ function FinancialScorePage() {
             ) : valuationSectionPreview.id === '10' ? (
               <div
                 style={{ marginTop: '10px' }}
-                dangerouslySetInnerHTML={{ __html: buildMarketOpportunityScanReportHtml() }}
+                dangerouslySetInnerHTML={{ __html: buildMarketCompetitorsReportHtml() }}
               />
             ) : valuationSectionPreview.id === '12' ? (
               <div
@@ -23318,9 +23615,7 @@ function FinancialScorePage() {
               const latest = workingCapitalSeries[workingCapitalSeries.length - 1];
               const month12Ago = workingCapitalSeries.length >= 13 ? workingCapitalSeries[workingCapitalSeries.length - 13] : null;
 
-              const normalizedTarget = safeAvg(last12.map((r) => r.operatingWc));
               const currentWc = latest ? latest.operatingWc : 0;
-              const wcAdjustment = currentWc - normalizedTarget;
               const avgWcIntensity12 = safeAvg(last12.map((r) => r.wcIntensityPct));
               const currentCcc = latest ? latest.ccc : 0;
               const priorCcc = month12Ago ? month12Ago.ccc : 0;
@@ -23357,18 +23652,9 @@ function FinancialScorePage() {
               const wcLeverageRatio = annualRevenue !== 0 ? (operatingWcFromCcc / annualRevenue) * 100 : 0;
               const wcRecent12 = workingCapitalSeries.slice(-12);
               const currentWcSeries = wcRecent12.map((r) => ({ month: r.month, value: r.operatingWc }));
-              const normalizedTargetSeries = wcRecent12.map((r) => ({ month: r.month, value: normalizedTarget }));
-              const wcAdjustmentSeries = wcRecent12.map((r) => ({ month: r.month, value: r.operatingWc - normalizedTarget }));
               const cccMiniSeries = wcRecent12.map((r) => ({ month: r.month, value: r.ccc }));
 
               const flags = [
-                {
-                  id: 'wc-deficit',
-                  title: 'WC below normalized target',
-                  triggered: wcAdjustment < 0,
-                  detail: `Current vs target: ${formatDollar(currentWc)} vs ${formatDollar(normalizedTarget)}`,
-                  severity: wcAdjustment < -Math.abs(normalizedTarget) * 0.2 ? 'high' : 'medium'
-                },
                 {
                   id: 'ccc-deterioration',
                   title: cccTrendTitle,
@@ -23393,9 +23679,7 @@ function FinancialScorePage() {
               ];
 
               return {
-                normalizedTarget,
                 currentWc,
-                wcAdjustment,
                 avgWcIntensity12,
                 currentCcc,
                 priorCcc,
@@ -23414,8 +23698,6 @@ function FinancialScorePage() {
                 cashNeededForGrowth,
                 wcLeverageRatio,
                 currentWcSeries,
-                normalizedTargetSeries,
-                wcAdjustmentSeries,
                 cccMiniSeries,
                 flags
               };
@@ -23668,15 +23950,6 @@ function FinancialScorePage() {
                   'Higher HHI means more concentration and greater dependency risk.',
                 ],
               },
-              'wc-deficit': {
-                title: 'WC Adjustment vs Target',
-                formula: 'Adjustment = Current Operating WC - Normalized WC Target (12M average)',
-                plain: [`Current adjustment is ${workingCapitalInsights.wcAdjustment >= 0 ? '+' : ''}${formatDollar(workingCapitalInsights.wcAdjustment)}.`],
-                why: [
-                  'Negative adjustments can reduce seller proceeds in closing true-up mechanics.',
-                  'Positive adjustments indicate more cash tied in working capital than baseline.',
-                ],
-              },
               'ccc-deterioration': {
                 title: 'CCC Trend',
                 formula: 'CCC = DSO + DIO - DPO',
@@ -23765,6 +24038,7 @@ function FinancialScorePage() {
                     {[
                       { id: 'recommendations' as const, label: 'Executive Summary' },
                       { id: 'ebitda-adjustments' as const, label: 'Quality of Earnings' },
+                      { id: 'cash-proof' as const, label: 'Cash Proof' },
                       { id: 'income-statement' as const, label: 'Income Statement' },
                       { id: 'revenue-quality' as const, label: 'Revenue Quality' },
                       { id: 'customer-quality' as const, label: 'Customer Quality' },
@@ -24349,6 +24623,9 @@ function FinancialScorePage() {
                 </div>
                 </EbitdaAdjustmentsProvider>
                 </>
+                )}
+                {sdeModuleTab === 'cash-proof' && (
+                  <CashProofWorkspace key={selectedCompanyId || 'none'} companyId={selectedCompanyId || null} />
                 )}
                 {sdeModuleTab === 'income-statement' && (
                   <SdeAdjustedIncomeStatement
@@ -24976,12 +25253,6 @@ function FinancialScorePage() {
                         <div style={{ fontSize: '18px', fontWeight: 700, color: customerQualityInsights.top1Pct > sdeSectorBenchmarks.customerQuality.top1Warn ? '#ef4444' : '#1e293b' }}>
                           {customerQualityInsights.top1Pct.toFixed(1)}%
                         </div>
-                        <button
-                          onClick={() => setCustomerQualityFlagGraphOpen('top1')}
-                          style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                        >
-                          View Trend
-                        </button>
                         {customerQualityCardInfoOpen.top1 && (
                           <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
                             <strong>Description:</strong> Share of trailing 12-month revenue represented by the single largest customer.<br />
@@ -25002,12 +25273,6 @@ function FinancialScorePage() {
                         <div style={{ fontSize: '18px', fontWeight: 700, color: customerQualityInsights.top5Pct > sdeSectorBenchmarks.customerQuality.top5Warn ? '#ef4444' : '#1e293b' }}>
                           {customerQualityInsights.top5Pct.toFixed(1)}%
                         </div>
-                        <button
-                          onClick={() => setCustomerQualityFlagGraphOpen('top5')}
-                          style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                        >
-                          View Trend
-                        </button>
                         {customerQualityCardInfoOpen.top5 && (
                           <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
                             <strong>Description:</strong> Combined share of trailing 12-month revenue represented by the top five customers.<br />
@@ -25028,12 +25293,6 @@ function FinancialScorePage() {
                         <div style={{ fontSize: '18px', fontWeight: 700, color: customerQualityInsights.hhi > sdeSectorBenchmarks.customerQuality.hhiWarn ? '#ef4444' : '#1e293b' }}>
                           {Math.round(customerQualityInsights.hhi).toLocaleString()}
                         </div>
-                        <button
-                          onClick={() => setCustomerQualityFlagGraphOpen('hhi')}
-                          style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                        >
-                          View Trend
-                        </button>
                         {customerQualityCardInfoOpen.hhi && (
                           <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
                             <strong>Description:</strong> Herfindahl-Hirschman Index on trailing 12-month customer revenue shares (0-10,000 scale).<br />
@@ -25054,12 +25313,6 @@ function FinancialScorePage() {
                         <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>
                           {customerQualityInsights.customerCount.toLocaleString()}
                         </div>
-                        <button
-                          onClick={() => setCustomerQualityFlagGraphOpen('customer-count')}
-                          style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                        >
-                          View Trend
-                        </button>
                         {customerQualityCardInfoOpen.customerCount && (
                           <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
                             <strong>Description:</strong> Distinct customers contributing revenue over the trailing 12-month period.<br />
@@ -25074,175 +25327,120 @@ function FinancialScorePage() {
                 {!customerQualityLoading && !customerQualityError && customerQualityInsights.hasData && (
                   <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}>Customer Quality Flags</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                      {customerQualityInsights.flags.map((flag) => (
-                        <div key={flag.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
-                            <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
-                            <button
-                              onClick={() => setCustomerQualityFlagGraphOpen(flag.id)}
-                              style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                            >
-                              View Trend
-                            </button>
-                            <button
-                              onClick={() => setSdeExplanationOpen(String(flag.id))}
-                              style={{ marginTop: '4px', marginLeft: '12px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                            >
-                              Explain
-                            </button>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', alignItems: 'start' }}>
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        {customerQualityInsights.flags.map((flag) => (
+                          <div key={flag.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', columnGap: '10px' }}>
+                                <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
+                                <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
+                              </div>
+                              {sdeExplanationContent[flag.id]?.formula && (
+                                <div style={{ marginTop: '4px', fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                                  <strong>Formula:</strong> {sdeExplanationContent[flag.id].formula}
+                                </div>
+                              )}
+                              {sdeExplanationContent[flag.id]?.why?.length > 0 && (
+                                <div style={{ marginTop: '4px', fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                                  <strong>Why it matters:</strong> {sdeExplanationContent[flag.id].why.join(' ')}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              color: flag.triggered ? 'white' : '#334155',
+                              background: flag.triggered ? (flag.severity === 'high' ? '#ef4444' : '#f59e0b') : '#e2e8f0',
+                              borderRadius: '999px',
+                              padding: '5px 10px',
+                              minWidth: '72px',
+                              textAlign: 'center'
+                            }}>
+                              {flag.triggered ? `Flagged (${flag.severity})` : 'Normal'}
+                            </div>
                           </div>
-                          <div style={{
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            color: flag.triggered ? 'white' : '#334155',
-                            background: flag.triggered ? (flag.severity === 'high' ? '#ef4444' : '#f59e0b') : '#e2e8f0',
-                            borderRadius: '999px',
-                            padding: '5px 10px',
-                            minWidth: '72px',
-                            textAlign: 'center'
-                          }}>
-                            {flag.triggered ? `Flagged (${flag.severity})` : 'Normal'}
-                          </div>
+                        ))}
+                      </div>
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}>
+                          Sector Benchmark Comparison ({sdeSectorBenchmarks.sectorLabel})
                         </div>
-                      ))}
+                        <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                            <thead>
+                              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                <th style={{ textAlign: 'left', padding: '8px 10px', color: '#334155' }}>Metric</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Company</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Sector Warn</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Variance</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '8px 10px', color: '#475569' }}>Top 1 customer %</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{customerQualityInsights.top1Pct.toFixed(1)}%</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.top1Warn.toFixed(1)}%</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn) > 0 ? '#ef4444' : '#10b981' }}>
+                                  {(customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn) >= 0 ? '+' : ''}
+                                  {(customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn).toFixed(1)}%
+                                </td>
+                              </tr>
+                              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '8px 10px', color: '#475569' }}>Top 5 customers %</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{customerQualityInsights.top5Pct.toFixed(1)}%</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.top5Warn.toFixed(1)}%</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn) > 0 ? '#ef4444' : '#10b981' }}>
+                                  {(customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn) >= 0 ? '+' : ''}
+                                  {(customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn).toFixed(1)}%
+                                </td>
+                              </tr>
+                              <tr>
+                                <td style={{ padding: '8px 10px', color: '#475569' }}>HHI</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{Math.round(customerQualityInsights.hhi).toLocaleString()}</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.hhiWarn.toLocaleString()}</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn) > 0 ? '#ef4444' : '#10b981' }}>
+                                  {(customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn) >= 0 ? '+' : ''}
+                                  {Math.round(customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn).toLocaleString()}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#334155' }}>
+                          <strong>Valuation narrative:</strong>{' '}
+                          {customerQualityInsights.top1Pct > sdeSectorBenchmarks.customerQuality.top1High || customerQualityInsights.top5Pct > sdeSectorBenchmarks.customerQuality.top5High
+                            ? 'Customer concentration is materially above sector norms and may pressure risk-adjusted valuation multiples unless diversification actions are underway.'
+                            : 'Customer concentration is within an acceptable range versus sector norms and supports revenue durability in valuation discussions.'}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {!customerQualityLoading && !customerQualityError && customerQualityInsights.hasData && (
-                  <div style={{ background: 'white', borderRadius: '10px', padding: '10px 16px 14px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px 0' }}>
-                      Sector Benchmark Comparison ({sdeSectorBenchmarks.sectorLabel})
-                    </h3>
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                        <thead>
-                          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                            <th style={{ textAlign: 'left', padding: '8px 10px', color: '#334155' }}>Metric</th>
-                            <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Company</th>
-                            <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Sector Warn</th>
-                            <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Variance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '8px 10px', color: '#475569' }}>Top 1 customer %</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{customerQualityInsights.top1Pct.toFixed(1)}%</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.top1Warn.toFixed(1)}%</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn) > 0 ? '#ef4444' : '#10b981' }}>
-                              {(customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn) >= 0 ? '+' : ''}
-                              {(customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn).toFixed(1)}%
-                            </td>
-                          </tr>
-                          <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '8px 10px', color: '#475569' }}>Top 5 customers %</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{customerQualityInsights.top5Pct.toFixed(1)}%</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.top5Warn.toFixed(1)}%</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn) > 0 ? '#ef4444' : '#10b981' }}>
-                              {(customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn) >= 0 ? '+' : ''}
-                              {(customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn).toFixed(1)}%
-                            </td>
-                          </tr>
-                          <tr>
-                            <td style={{ padding: '8px 10px', color: '#475569' }}>HHI</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{Math.round(customerQualityInsights.hhi).toLocaleString()}</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.hhiWarn.toLocaleString()}</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn) > 0 ? '#ef4444' : '#10b981' }}>
-                              {(customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn) >= 0 ? '+' : ''}
-                              {Math.round(customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn).toLocaleString()}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#334155' }}>
-                      <strong>Valuation narrative:</strong>{' '}
-                      {customerQualityInsights.top1Pct > sdeSectorBenchmarks.customerQuality.top1High || customerQualityInsights.top5Pct > sdeSectorBenchmarks.customerQuality.top5High
-                        ? 'Customer concentration is materially above sector norms and may pressure risk-adjusted valuation multiples unless diversification actions are underway.'
-                        : 'Customer concentration is within an acceptable range versus sector norms and supports revenue durability in valuation discussions.'}
-                    </div>
-                  </div>
-                )}
-
-                {customerQualityFlagGraphOpen && customerQualityInsights.hasData && (
-                  <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(15,23,42,0.5)',
-                      zIndex: 3000,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
-                    onClick={() => setCustomerQualityFlagGraphOpen(null)}
-                  >
-                    <div
-                      style={{
-                        background: 'white',
-                        borderRadius: '12px',
-                        boxShadow: '0 8px 28px rgba(0,0,0,0.2)',
-                        width: '100%',
-                        maxWidth: '980px',
-                        padding: '16px'
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
-                          {customerQualityFlagGraphOpen === 'top1' && 'Top 1 Customer Concentration (Rolling TTM)'}
-                          {customerQualityFlagGraphOpen === 'top5' && 'Top 5 Customer Concentration (Rolling TTM)'}
-                          {customerQualityFlagGraphOpen === 'hhi' && 'Customer HHI Concentration (Rolling TTM)'}
-                          {customerQualityFlagGraphOpen === 'customer-count' && 'Active Customer Count (Rolling TTM)'}
-                        </h3>
-                        <button
-                          onClick={() => setCustomerQualityFlagGraphOpen(null)}
-                          style={{ background: 'transparent', border: 'none', color: '#334155', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}
-                          title="Close"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      {customerQualityFlagGraphOpen === 'top1' && (
-                        <LineChart
-                          title="Top 1 Customer % (Last 36 Months)"
-                          data={customerQualityInsights.top1Series}
-                          color="#f59e0b"
-                          compact
-                          formatter={(v) => `${v.toFixed(1)}%`}
-                        />
-                      )}
-                      {customerQualityFlagGraphOpen === 'top5' && (
-                        <LineChart
-                          title="Top 5 Customers % (Last 36 Months)"
-                          data={customerQualityInsights.top5Series}
-                          color="#ef4444"
-                          compact
-                          formatter={(v) => `${v.toFixed(1)}%`}
-                        />
-                      )}
-                      {customerQualityFlagGraphOpen === 'hhi' && (
-                        <LineChart
-                          title="Customer HHI (Last 36 Months)"
-                          data={customerQualityInsights.hhiSeries}
-                          color="#6366f1"
-                          compact
-                          formatter={(v) => Math.round(v).toLocaleString()}
-                        />
-                      )}
-                      {customerQualityFlagGraphOpen === 'customer-count' && (
-                        <LineChart
-                          title="Active Customers (Last 36 Months)"
-                          data={customerQualityInsights.customerCountSeries}
-                          color="#1d76c3"
-                          compact
-                          formatter={(v) => Math.round(v).toLocaleString()}
-                        />
-                      )}
-                    </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', marginBottom: '12px' }}>
+                    <LineChart
+                      title="Top 1 Customer % (Last 36 Months)"
+                      data={customerQualityInsights.top1Series.slice(-36)}
+                      color="#f59e0b"
+                      compact
+                      formatter={(v) => `${v.toFixed(1)}%`}
+                    />
+                    <LineChart
+                      title="Top 5 Customers % (Last 36 Months)"
+                      data={customerQualityInsights.top5Series.slice(-36)}
+                      color="#ef4444"
+                      compact
+                      formatter={(v) => `${v.toFixed(1)}%`}
+                    />
+                    <LineChart
+                      title="Customer HHI (Last 36 Months)"
+                      data={customerQualityInsights.hhiSeries.slice(-36)}
+                      color="#6366f1"
+                      compact
+                      formatter={(v) => Math.round(v).toLocaleString()}
+                    />
                   </div>
                 )}
                 </>
@@ -25252,8 +25450,9 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '10px', padding: '6px 12px 12px 12px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>SDE Module: Working Capital</h2>
                   <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5, marginBottom: '8px' }}>
-                    Buyer-oriented working capital view showing normalized target, current position, and likely purchase price adjustment implications.
+                    Buyer-oriented working capital view showing current position, cash conversion cycle, and cash tied up in operations.
                   </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', alignItems: 'start' }}>
                   {(() => {
                     const latestWcRow = workingCapitalSeries[workingCapitalSeries.length - 1];
                     const dsoCurrent = latestWcRow ? latestWcRow.dso : revenueQualityInsights.currentDso;
@@ -25304,7 +25503,7 @@ function FinancialScorePage() {
                       formatMoney: formatDollar,
                     });
                     return (
-                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', marginBottom: '8px' }}>
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
                         <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Sector/Contract Opportunity Framing</div>
                         <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.55 }}>
                           <div><strong>Primary driver:</strong> {primaryWcDriver.label}</div>
@@ -25316,38 +25515,6 @@ function FinancialScorePage() {
                       </div>
                     );
                   })()}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
-                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>Normalized WC Target (12M)</div>
-                        <button
-                          onClick={() => setWorkingCapitalCardInfoOpen((prev) => ({ ...prev, normalizedTarget: !prev.normalizedTarget }))}
-                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                        >
-                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
-                        </button>
-                      </div>
-                      <div style={{ fontSize: '17px', fontWeight: 700, color: '#1e293b' }}>
-                        {formatDollar(workingCapitalInsights.normalizedTarget)}
-                      </div>
-                      <button
-                        onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
-                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                      >
-                        View Trend
-                      </button>
-                      {workingCapitalCardInfoOpen.normalizedTarget && (
-                        <div style={{ marginTop: '6px', padding: '6px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
-                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
-                            <strong>Description:</strong> 12-month average operating working capital (AR + Inventory - AP - accrued operating liabilities).
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
-                            <strong>Why it matters:</strong> Buyers use this as the baseline target at close for purchase-price adjustment mechanics.
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
                     <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
                         <div style={{ fontSize: '12px', color: '#64748b' }}>Current Operating WC</div>
@@ -25362,7 +25529,7 @@ function FinancialScorePage() {
                         {formatDollar(workingCapitalInsights.currentWc)}
                       </div>
                       <button
-                        onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
+                        onClick={() => setWorkingCapitalFlagGraphOpen('operating-wc')}
                         style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
                       >
                         View Trend
@@ -25374,37 +25541,6 @@ function FinancialScorePage() {
                           </div>
                           <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
                             <strong>Why it matters:</strong> Indicates whether current operations are consuming or releasing net operating cash.
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>WC Adjustment vs Target</div>
-                        <button
-                          onClick={() => setWorkingCapitalCardInfoOpen((prev) => ({ ...prev, wcAdjustment: !prev.wcAdjustment }))}
-                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                        >
-                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
-                        </button>
-                      </div>
-                      <div style={{ fontSize: '17px', fontWeight: 700, color: workingCapitalInsights.wcAdjustment < 0 ? '#ef4444' : '#10b981' }}>
-                        {workingCapitalInsights.wcAdjustment >= 0 ? '+' : ''}{formatDollar(workingCapitalInsights.wcAdjustment)}
-                      </div>
-                      <button
-                        onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
-                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                      >
-                        View Trend
-                      </button>
-                      {workingCapitalCardInfoOpen.wcAdjustment && (
-                        <div style={{ marginTop: '6px', padding: '6px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
-                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
-                            <strong>Description:</strong> Difference between current operating WC and normalized target (Current - Target).
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
-                            <strong>Why it matters:</strong> Negative adjustments typically reduce proceeds at close in working-capital true-up clauses.
                           </div>
                         </div>
                       )}
@@ -25452,7 +25588,7 @@ function FinancialScorePage() {
                           <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
                           <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
                           <button
-                            onClick={() => setWorkingCapitalFlagGraphOpen(flag.id as 'wc-deficit' | 'ccc-deterioration' | 'wc-intensity' | 'ccc-level')}
+                            onClick={() => setWorkingCapitalFlagGraphOpen(flag.id as 'ccc-deterioration' | 'wc-intensity' | 'ccc-level')}
                             style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
                           >
                             View Trend
@@ -25688,7 +25824,7 @@ function FinancialScorePage() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                         <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
-                          {workingCapitalFlagGraphOpen === 'wc-deficit' && 'Operating WC vs Normalized Target'}
+                          {workingCapitalFlagGraphOpen === 'operating-wc' && 'Operating Working Capital Trend'}
                           {workingCapitalFlagGraphOpen === 'ccc-deterioration' && 'Cash Conversion Cycle Trend'}
                           {workingCapitalFlagGraphOpen === 'wc-intensity' && 'Working Capital Intensity % Trend'}
                           {workingCapitalFlagGraphOpen === 'ccc-level' && 'Cash Conversion Cycle Level'}
@@ -25700,7 +25836,7 @@ function FinancialScorePage() {
                           ×
                         </button>
                       </div>
-                      {workingCapitalFlagGraphOpen === 'wc-deficit' && (
+                      {workingCapitalFlagGraphOpen === 'operating-wc' && (
                         <LineChart
                           title="Operating WC (Last 36 Months)"
                           data={workingCapitalSeries.map((r) => ({ month: r.month, value: r.operatingWc }))}
@@ -26390,7 +26526,6 @@ function FinancialScorePage() {
                     const revenueCurrentTtm = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0);
                     const revenuePriorTtm = monthly.slice(-24, -12).reduce((sum, m) => sum + (m.revenue || 0), 0);
                     const inventoryBuild = Math.max(0, inventoryCurrent - inventoryYearAgo);
-                    const workingCapitalGrowth = Math.max(0, workingCapitalInsights.currentWc - workingCapitalInsights.normalizedTarget);
                     const capexLeakage = Math.max(0, cashFlowQualityInsights.capexGap);
                     const expenseNormalization = Math.max(0, ebitdaAdjustments);
                     const pricingImprovement = sdeRecommendationsApi
@@ -27531,14 +27666,6 @@ function FinancialScorePage() {
                           compact
                           labelFormat="m-yy-adaptive"
                           formatter={(v) => `${v.toFixed(1)} days`}
-                        />
-                        <LineChart
-                          title="Working Capital Adjustment vs Normalized Target ($)"
-                          data={workingCapitalInsights.wcAdjustmentSeries}
-                          color="#ef4444"
-                          compact
-                          labelFormat="m-yy-adaptive"
-                          formatter={(v) => `${v < 0 ? '-' : ''}${formatDollar(Math.abs(v))}`}
                         />
                         <LineChart
                           title="Operating Working Capital ($)"

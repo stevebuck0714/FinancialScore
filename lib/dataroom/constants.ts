@@ -46,5 +46,8 @@ export const DATAROOM_DEFAULT_FOLDERS: DataRoomFolder[] = [
   { id: 'tax', key: 'tax', name: 'Tax', order: 11 },
   { id: 'misc-strategic', key: 'misc_strategic', name: 'Miscellaneous / Strategic', order: 12 },
   { id: 'loans-leases', key: 'loans_leases', name: 'Loans & Leases', order: 13 },
+  { id: 'bank-statements', key: 'bank_statements', name: 'Bank Statements', order: 14 },
 ];
+
+export const DATAROOM_BANK_STATEMENTS_FOLDER_ID = 'bank-statements';
 

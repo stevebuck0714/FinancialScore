@@ -118,20 +118,20 @@ export default function ValuationDcfSection7Preview(props: Props) {
             {sectionTitle('Working Capital')}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>Normalized WC target</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{fmt(model.workingCapitalInsights.normalizedTarget)}</div>
-              </div>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>Current operating WC</div>
                 <div style={{ fontSize: '18px', fontWeight: 700 }}>{fmt(model.workingCapitalInsights.currentWc)}</div>
               </div>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>WC adjustment</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{fmt(model.workingCapitalInsights.wcAdjustment)}</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>Avg WC intensity (12M)</div>
+                <div style={{ fontSize: '18px', fontWeight: 700 }}>{model.workingCapitalInsights.avgWcIntensity12.toFixed(1)}%</div>
               </div>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>CCC (latest)</div>
                 <div style={{ fontSize: '18px', fontWeight: 700 }}>{model.workingCapitalInsights.currentCcc.toFixed(1)} days</div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>CCC trend (12M)</div>
+                <div style={{ fontSize: '18px', fontWeight: 700 }}>{model.workingCapitalInsights.cccTrend12 >= 0 ? '+' : ''}{model.workingCapitalInsights.cccTrend12.toFixed(1)} days</div>
               </div>
             </div>
             <p style={{ fontSize: '12px', color: '#475569', lineHeight: 1.55, marginBottom: '10px' }}>{model.workingCapitalInsights.cccInterpretation}</p>

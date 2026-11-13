@@ -178,6 +178,7 @@ model Company {
   userAccess                      UserCompanyAccess[]
   documents                       CompanyDocument[]
   dataRoomDocuments               DataRoomDocument[]
+  cashProofEngagements            CashProofEngagement[]
   documentChunks                  CompanyDocumentChunk[]
   loans                           Loan[]
   xeroTransactions                XeroTransaction[]
@@ -494,6 +495,139 @@ model DataRoomDocument {
   @@index([uploadedByUserId])
   @@index([category])
   @@index([createdAt])
+}
+
+// SBA cash proof: book cash per account per month, tied to bank statements
+// for a sampled set of months.
+model CashProofEngagement {
+  id                 String    @id @default(cuid())
+  companyId          String
+  periodStartMonth   String // YYYY-MM
+  periodEndMonth     String // YYYY-MM
+  fiscalYearEndMonth Int       @default(12)
+  sampleSeed         String?
+  sampledAt          DateTime?
+  balanceTolerance   Float     @default(1)
+  revenueTolerancePct Float    @default(2)
+  revenuePeriodNotes Json? // { [periodKey]: explanation for a deposits-to-revenue variance }
+  statementScan      Json? // last Read Statements run: { scannedAt, results[] }
+  status             String    @default("DRAFT") // DRAFT | SAMPLED | LOCKED
+  lockedAt           DateTime?
+  lockedByUserId     String?
+  createdByUserId    String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankAccounts       CashProofBankAccount[]
+  samples            CashProofSample[]
+  revenueAdjustments CashProofRevenueAdjustment[]
+
+  @@index([companyId, createdAt])
+}
+
+model CashProofBankAccount {
+  id               String  @id @default(cuid())
+  engagementId     String
+  accountMappingId String?
+  sourceAccountId  String?
+  accountName      String
+  bankName         String?
+  accountLast4     String?
+  accountType      String?
+  included         Boolean @default(true)
+  exclusionReason  String?
+  isManual         Boolean @default(false)
+  depositsCategory String? // set when every deposit is non-revenue (e.g. CUSTOMER_FUNDS for payroll clearing)
+  sortOrder        Int     @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  engagement         CashProofEngagement          @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  bookBalances       CashProofBookBalance[]
+  samples            CashProofSample[]
+  deposits           CashProofDeposit[]
+  revenueAdjustments CashProofRevenueAdjustment[]
+
+  @@index([engagementId])
+}
+
+// Total statement deposits for months outside the balance sample. Sampled
+// months keep their deposits on CashProofSample.
+model CashProofDeposit {
+  id              String    @id @default(cuid())
+  bankAccountId   String
+  month           String // YYYY-MM
+  totalDeposits   Float
+  dataRoomDocumentId String?
+  enteredByUserId String?
+  enteredAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  bankAccount CashProofBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([bankAccountId, month])
+}
+
+model CashProofRevenueAdjustment {
+  id              String   @id @default(cuid())
+  engagementId    String
+  bankAccountId   String?
+  month           String // YYYY-MM
+  category        String // see REVENUE_ADJUSTMENT_CATEGORIES
+  amount          Float // always positive; the category decides the sign
+  description     String?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  engagement  CashProofEngagement   @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  bankAccount CashProofBankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+
+  @@index([engagementId, month])
+}
+
+model CashProofBookBalance {
+  id            String   @id @default(cuid())
+  bankAccountId String
+  month         String // YYYY-MM
+  endingBalance Float
+  source        String // qbo_reports | gl_anchor | trial_balance | manual
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  bankAccount CashProofBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([bankAccountId, month])
+}
+
+model CashProofSample {
+  id                    String    @id @default(cuid())
+  engagementId          String
+  bankAccountId         String
+  month                 String // YYYY-MM
+  selectionReason       String // RANDOM | LATEST | FISCAL_YEAR_END | UNUSUAL_ACTIVITY | EXPANSION | MANUAL
+  status                String    @default("REQUESTED") // REQUESTED | RECEIVED | TIED | EXCEPTION | CLEARED
+  dataRoomDocumentId    String?
+  statementBeginning    Float?
+  statementDeposits     Float?
+  statementWithdrawals  Float?
+  statementEnding       Float?
+  reconcilingItems      Float?
+  enteredByUserId       String?
+  enteredAt             DateTime?
+  exceptionNote         String?
+  resolutionNote        String?
+  resolvedByUserId      String?
+  resolvedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  engagement  CashProofEngagement  @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  bankAccount CashProofBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([engagementId, bankAccountId, month])
+  @@index([bankAccountId])
 }
 
 model CompanyDocumentChunk {

@@ -431,11 +431,11 @@ Assessment features include welcome screens, scoring guides, score summaries, re
 
 ### 17. Valuation, SDE, and Quality of Earnings
 
-The Valuation section has five tabs: SDE, EBITDA Analysis, DCF Analysis, Business Overview / Market Position, and Valuation Reports. A site admin enables Valuation per company.
+The Valuation section has six tabs: SDE, EBITDA Analysis, DCF Analysis, Business Overview / Market Position, Valuation Reports, and QoE Report. A site admin enables Valuation per company.
 
 #### SDE and Quality of Earnings
 
-The SDE module uses sector benchmarks, deterministic scoring, and recommendations, with guardrails around AI-assisted narrative. Its tabs are Executive Summary, Income Statement, Quality of Earnings, Revenue Quality, Customer Quality, Working Capital, Cash Flow Quality, and Balance Sheet Quality.
+The SDE module uses sector benchmarks, deterministic scoring, and recommendations, with guardrails around AI-assisted narrative. Its tabs are Executive Summary, Quality of Earnings, Cash Proof, Income Statement, Revenue Quality, Customer Quality, Working Capital, Cash Flow Quality, and Balance Sheet Quality.
 
 On the Quality of Earnings tab, users:
 
@@ -453,9 +453,53 @@ The QoE adjusted income statement has two views:
 
 Both views end at Adjusted EBITDA and support print and export. Saved QoE adjustments feed SDE and EBITDA normalization, including the QoE waterfall in the SDE valuation report.
 
+#### Cash Proof
+
+The Cash Proof tab (Valuation › SDE › Cash Proof) is the SBA cash verification. It shows a lender that the cash and the revenue in the company's books are backed by bank records, using two tests on the same set of bank statements:
+
+- **Balance tie-out (sampled months):** for a sample of months, each bank account's month-end book balance is agreed to the bank statement. This proves the cash balances are real.
+- **Deposits to revenue (every month):** total deposits from every statement in the review period are reduced by deposits that are not customer payments, adjusted for the change in receivables, and compared with revenue in the books. This proves the revenue was collected. A matching balance alone does not, because fake revenue offset by a fake expense or balance sheet entry still leaves cash tied.
+
+Consultants and site admins can start, edit, and lock a cash proof. Client users can view it. A Word user guide is in `docs/Corelytics_Cash_Proof_User_Guide.docx`, and the client-facing request is `docs/Corelytics_Cash_Proof_Client_Data_Request.docx`.
+
+**Before starting:** accounting data is synced, the bank accounts are mapped to Cash in Account Mapping, and the client has uploaded monthly PDF statements for every business bank account and every month in the review period to the DataRoom **Bank Statements** folder.
+
+**Page layout, top to bottom:**
+
+| Area | Purpose |
+|---|---|
+| Header buttons | Refresh Book Balances, Read Statements, Generate Sample / Expand Sample, Download Request List, Lock Cash Proof |
+| Summary cards | Review Period, Bank Accounts, Sampled Months, Tied / Cleared, Exceptions, Outstanding, Deposits to Revenue |
+| Statement Reading | Results of the last Read Statements run, one row per file |
+| Month-End Book Cash by Account | Book balance per account and month, account setup, sampled months, and the completeness check |
+| Statement Deposits by Account | Total deposits per account and month, how each account's deposits are treated, and monthly revenue lines |
+| Non-Revenue Deposits and Adjustments | Deposits that are not customer payments, entered one at a time |
+| Reconciliation by Fiscal Year | The deposits-to-revenue result per fiscal year, with explanations for variances |
+
+**How to use it:**
+
+1. **Start the cash proof.** Pick the fiscal year-end month and click Start Cash Proof. The review period is the trailing 24 months, widened to include the two most recent complete fiscal years. Every account mapped to Cash is added and month-end book balances are pulled from the accounting system (QuickBooks Online reports, ERP balance anchors with General Ledger rollback, or the trial balance for CSV, Xero, and Sage). QuickBooks Desktop companies need an uploaded trial balance or hand entry.
+2. **Set up the accounts.** In Month-End Book Cash by Account, enter each account's **Bank** and **Last 4** (the last four digits of the bank account number, which is how statements are matched to accounts). Untick **Include** to leave an account out, with a reason that prints in the report. **Add Account** adds a bank account that is not in the books. Double-click a cell to enter a book balance by hand (shown in italics). The Total Book Cash, Balance Sheet Cash, and Difference rows are the completeness check; a red difference usually means an account is missing, excluded, or mis-mapped.
+3. **Generate the sample.** Generate Sample selects the latest month, each fiscal year-end, any month with an unusual balance swing (more than two standard deviations from the account's average monthly change), and four random months. The draw is seeded and reproducible. Add to Sample adds a specific month; Expand Sample adds three more random months when differences cannot be explained. Download Request List exports every statement needed, by account and month, with its purpose and status.
+4. **Read the statements.** Read Statements reads every file in the Bank Statements folder, finds the account's last four digits, the statement month (the month holding most of the statement period), and the beginning balance, deposits, withdrawals, and ending balance. For a sampled month it fills in the statement, links the PDF, and calculates the tie-out; for any other month it enters total deposits. Figures are used only when they foot, and figures already entered are never overwritten. The Statement Reading card shows one result per file: Filled In, Matches, Conflict, Needs Review, No Match (usually Last 4 not set), Scanned Image (no readable text), Failed, or Awaiting Virus Scan.
+5. **Tie out the sampled months.** Click a blue cell to open the statement panel and confirm or enter Beginning Balance, Deposits, Withdrawals, Ending Balance, and Reconciling Items (outstanding checks negative, deposits in transit positive). The panel checks the difference against book within the $1.00 tolerance, that the statement foots, and continuity with the prior month when both are sampled. A passing month is **Tied**; otherwise it is an **Exception**. Explain exceptions in the Exception note, then add a Resolution note and click Clear Exception to mark it **Cleared**.
+6. **Check the deposits.** Statement Deposits by Account shows total deposits for every account and month. Sampled months come from the sampled statement; other months are filled by Read Statements or entered by double-clicking. The dropdown under each account sets how its deposits are treated:
+   - **Deposits: customer receipts and other** (default): deposits may be customer payments; non-revenue items are removed in the adjustments list.
+   - **All non-revenue: [category]**: every deposit is removed automatically under that category. Use only for accounts that never receive customer payments, such as payroll clearing, trust, or escrow accounts (Customer funds held) or savings funded only from operating (Transfers between company accounts). Do not also enter adjustment rows for those accounts.
+7. **Record non-revenue deposits.** In Non-Revenue Deposits and Adjustments, enter the month, account, category, positive amount, and description. Subtracted categories: transfers between company accounts, loan and line of credit proceeds, owner contributions, customer funds held, sales tax collected, interest and other non-operating income, asset sale proceeds, vendor refunds/rebates/insurance proceeds, and other non-revenue deposits. Added categories: card processor fees and chargebacks netted from deposits, and customer receipts outside the tested accounts.
+8. **Review the reconciliation by fiscal year.** For each fiscal year (a partial final year is labeled YTD) and the review period total: Total Bank Deposits − Non-Revenue Deposits + Fees Netted and Outside Receipts = Customer Receipts; + Change in Receivables (and contract assets / deferred revenue where present) = Implied Revenue, compared with Reported Revenue. A year within 2% of reported revenue is **Reconciled**; a larger variance is **Variance** until a written explanation is saved, then **Explained**. Explanations print in the report.
+9. **Lock the cash proof.** Lock Cash Proof requires every sampled statement Tied or Cleared, deposits entered for every statement, and every fiscal year Reconciled or Explained. Locked cash proofs cannot be edited until unlocked.
+10. **Produce the report.** The QoE Report's section 5, Cash Proof, has Summary, Tie-Out Detail, Exceptions, Deposits to Revenue, and Methodology parts.
+
+**Current limits:** there is no direct bank connection (statements come only from DataRoom uploads), scanned image PDFs are not read automatically, non-revenue deposits are entered by hand rather than proposed from the General Ledger, and withdrawals are not yet reconciled to expenses or deposits to tax-return revenue.
+
 #### Valuation Reports
 
-Valuation Reports lets users choose and save report sections, including Executive Summary, Quality of Earnings, Revenue, Customer, Working Capital, Cash Flow, and Balance Sheet Quality, EBITDA, DCF, and a Market, Competitor, and Opportunity Scan. The market scan draws on market signals and a daily AI-generated industry brief that uses FRED, Bureau of Labor Statistics, and web research sources. Reports have a full print layout.
+Valuation Reports lets users choose and save report sections, including Executive Summary, Quality of Earnings, Revenue, Customer, Working Capital, Cash Flow, and Balance Sheet Quality, EBITDA, DCF, and Market and Competitors. That section draws on market signals and a daily AI-generated industry brief that uses FRED, Bureau of Labor Statistics, and web research sources. Reports have a full print layout.
+
+#### QoE Report
+
+The QoE Report tab builds the Corelytics QoE Report from seven sections, each with selectable parts: QoE Summary, Business Overview, Historical Financial Review, Income Statements (trailing 12 months and monthly), Cash Proof, Market and Competitors, and Data Room & Supporting Documents. The QoE Summary covers Executive Summary, Quality of Earnings, Revenue Quality, Customer Quality, Cash Flow Quality, Working Capital, and Balance Sheet Quality, one page each. Working Capital is part of the QoE Summary and the Valuation Reports SDE Valuation section (after Cash Flow Quality) rather than a separate section; its page covers working capital position (AR, inventory, AP, current operating working capital), cash conversion cycle, working capital intensity, flags, and trend charts. There is no normalized working capital target or purchase-price adjustment. Each section can be printed or downloaded to Word on its own. Download All produces one Word file containing every section, each starting on a new page.
 
 The valuation area helps users prepare for transaction discussions, understand value drivers, and organize financial adjustments that may be relevant for owners, consultants, lenders, or buyers.
 
@@ -465,7 +509,7 @@ Corelytics DataRoom is a secure diligence workspace for company documents. It is
 
 DataRoom capabilities include:
 
-- Folder and category organization.
+- Folder and category organization, including a Bank Statements folder that feeds the Cash Proof.
 - Company-level enablement.
 - Pricing and entitlement checks.
 - View, download, upload, share, and manage permissions.
@@ -604,6 +648,7 @@ The project includes a broad Prisma data model covering:
 - Forecast settings, loan instruments, amortization schedules, loans, and covenants.
 - Cap table holders, securities, and financing events.
 - Custom reports and saved report definitions.
+- Cash proof engagements, bank accounts, month-end book balances, sampled statements, statement deposits, non-revenue deposit adjustments, and statement reading results.
 - Ask Corelytics threads, messages, shares, and emails.
 - AI usage records by company and feature.
 - Subscriptions, payment transactions, revenue records, consultant payables, referral partners, affiliates, and affiliate codes.

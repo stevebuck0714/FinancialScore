@@ -2070,6 +2070,16 @@ function deriveArBucketsFromRow(
   };
 }
 
+type ArAgingBucketKey = 'current' | 'days1to30' | 'days31to60' | 'days61to90' | 'days90plus';
+
+function arAgingBucketKey(buckets: ReturnType<typeof deriveArBucketsFromRow>): ArAgingBucketKey {
+  if (buckets.current > 0) return 'current';
+  if (buckets.days1to30 > 0) return 'days1to30';
+  if (buckets.days31to60 > 0) return 'days31to60';
+  if (buckets.days61to90 > 0) return 'days61to90';
+  return 'days90plus';
+}
+
 function isClosedArStatus(status: string | null | undefined): boolean {
   const token = String(status || '').trim().toLowerCase();
   if (!token) return false;
@@ -6316,9 +6326,11 @@ export async function GET(request: NextRequest) {
         let unpaidInvoices: Array<{
           customerName: string;
           customerNumber: string;
+          invoiceNo?: string;
           invoiceDate: string | null;
           dueDate: string | null;
           amountDue: number;
+          agingBucket?: ArAgingBucketKey;
         }> = [];
         let customerInvoices: Array<{
           customerId?: string | null;
@@ -6641,9 +6653,11 @@ export async function GET(request: NextRequest) {
               unpaidInvoices = openInvoiceRows.slice(0, 250).map((row: any) => ({
                 customerName: normalizeCustomerName(row.customerName, row.customerId),
                 customerNumber: row.customerId || '-',
+                invoiceNo: row.invoiceNo || '-',
                 invoiceDate: row.invoiceDate ? new Date(row.invoiceDate).toISOString().slice(0, 10) : null,
                 dueDate: row.dueDate ? new Date(row.dueDate).toISOString().slice(0, 10) : null,
                 amountDue: Number(row.amountDueHome || 0),
+                agingBucket: arAgingBucketKey(deriveArBucketsFromRow(row, latestOpenSnapshot.snapshotDate)),
               }));
               customerInvoices = openInvoiceRows.slice(0, 500).map((row: any) => ({
                 customerId: row.customerId ? String(row.customerId) : null,
@@ -6924,9 +6938,20 @@ export async function GET(request: NextRequest) {
             .map((row: any) => ({
               customerName: normalizeCustomerName(row.customerName, row.customerId),
               customerNumber: row.customerId || '-',
+              invoiceNo: row.invoiceId || '-',
               invoiceDate: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
               dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
               amountDue: Number(row.amountDue || 0),
+              agingBucket: arAgingBucketKey(
+                deriveArBucketsFromRow(
+                  {
+                    amountDueHome: Number(row.amountDue || 0),
+                    dueDate: null,
+                    invoiceDate: row.invoiceDate ? new Date(row.invoiceDate) : null,
+                  },
+                  latestArInvoiceSnapshotDate
+                )
+              ),
             }));
           customerInvoices = invoiceRowsOpenDeduped.slice(0, 500).map((row: any) => ({
             customerId: row.customerId ? String(row.customerId) : null,
@@ -7464,9 +7489,11 @@ export async function GET(request: NextRequest) {
             .map((row: any) => ({
               customerName: normalizeCustomerName(row.customerName, row.customerId),
               customerNumber: row.customerId || '-',
+              invoiceNo: row.invoiceNo || '-',
               invoiceDate: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
               dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
               amountDue: Number(row.amountDueHome || 0),
+              agingBucket: arAgingBucketKey(deriveArBucketsFromRow(row, latestOpenSnapshotDate || endDate)),
             }));
 
             customerInvoices = openRowsEligible.slice(0, 500).map((row: any) => ({

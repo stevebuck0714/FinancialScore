@@ -681,9 +681,7 @@ function buildWorkingCapitalInsights(
   const latest = workingCapitalSeries[workingCapitalSeries.length - 1];
   const month12Ago = workingCapitalSeries.length >= 13 ? workingCapitalSeries[workingCapitalSeries.length - 13] : null;
 
-  const normalizedTarget = safeAvg(last12.map((r) => r.operatingWc));
   const currentWc = latest ? latest.operatingWc : 0;
-  const wcAdjustment = currentWc - normalizedTarget;
   const avgWcIntensity12 = safeAvg(last12.map((r) => r.wcIntensityPct));
   const currentCcc = latest ? latest.ccc : 0;
   const priorCcc = month12Ago ? month12Ago.ccc : 0;
@@ -707,13 +705,6 @@ function buildWorkingCapitalInsights(
   const cccMiniSeries = wcRecent12.map((r) => ({ month: r.month, value: r.ccc }));
 
   const flags = [
-    {
-      id: 'wc-deficit',
-      title: 'WC below normalized target',
-      triggered: wcAdjustment < 0,
-      detail: `Current vs target: $${Math.round(currentWc).toLocaleString()} vs $${Math.round(normalizedTarget).toLocaleString()}`,
-      severity: wcAdjustment < -Math.abs(normalizedTarget) * 0.2 ? ('high' as const) : ('medium' as const),
-    },
     {
       id: 'ccc-deterioration',
       title: cccTrendTitle,
@@ -740,9 +731,7 @@ function buildWorkingCapitalInsights(
   ];
 
   return {
-    normalizedTarget,
     currentWc,
-    wcAdjustment,
     avgWcIntensity12,
     currentCcc,
     priorCcc,

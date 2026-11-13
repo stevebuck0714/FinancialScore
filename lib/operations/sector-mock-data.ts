@@ -1595,13 +1595,30 @@ export function getSectorArApFallbacks(sectorCategory?: string | null) {
     return { vendorName: name, current, days1to30, days31to60, days61to90, days90plus };
   });
 
-  const unpaidInvoices = unpaidByCustomer.slice(0, 10).map((row, i) => ({
-    customerName: row.customerName,
-    customerNumber: `C-${1000 + i}`,
-    invoiceDate: `2026-01-${String((i % 20) + 1).padStart(2, '0')}`,
-    dueDate: `2026-02-${String((i % 20) + 1).padStart(2, '0')}`,
-    amountDue: row.current + row.days1to30,
-  }));
+  const invoiceBucketDueDates = [
+    { key: 'current', dueDate: '2026-02-20' },
+    { key: 'days1to30', dueDate: '2026-01-25' },
+    { key: 'days31to60', dueDate: '2025-12-20' },
+    { key: 'days61to90', dueDate: '2025-11-20' },
+    { key: 'days90plus', dueDate: '2025-09-30' },
+  ] as const;
+  const unpaidInvoices = unpaidByCustomer.slice(0, 10).flatMap((row, i) =>
+    invoiceBucketDueDates
+      .filter((bucket) => row[bucket.key] > 0)
+      .map((bucket, j) => {
+        const due = new Date(`${bucket.dueDate}T00:00:00Z`);
+        const invoiceDate = new Date(due.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+        return {
+          customerName: row.customerName,
+          customerNumber: `C-${1000 + i}`,
+          invoiceNo: `INV-${3000 + i * 10 + j}`,
+          invoiceDate,
+          dueDate: bucket.dueDate,
+          amountDue: row[bucket.key],
+          agingBucket: bucket.key,
+        };
+      })
+  );
 
   const unpaidBills = unpaidByVendor.slice(0, 10).map((row, i) => ({
     vendorName: row.vendorName,
@@ -1627,7 +1644,7 @@ export function getSectorArApFallbacks(sectorCategory?: string | null) {
 
   const customerInvoices = unpaidInvoices.map((row, i) => ({
     customerName: row.customerName,
-    invoiceNo: `INV-${3000 + i}`,
+    invoiceNo: row.invoiceNo,
     date: row.invoiceDate,
     dueDate: row.dueDate,
     amountCurrency: row.amountDue,

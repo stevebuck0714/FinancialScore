@@ -11,7 +11,13 @@ import {
   isValidLineItem,
   type SdeBucket,
 } from '@/lib/sde/adjustment-line-items';
-import { loadQbdGlMonthlyByAccount, loadQboReportMonthlyByAccount } from '@/lib/sde/account-monthly-sources';
+import {
+  loadAnchoredBsBalances,
+  loadCsvMonthlyByAccount,
+  loadQbdGlMonthlyByAccount,
+  loadQboReportMonthlyByAccount,
+  nameLookupKeys,
+} from '@/lib/sde/account-monthly-sources';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -203,92 +209,6 @@ async function resolveAsOfMonth(companyId: string, requested: string | null): Pr
 }
 
 // Returns a Map of `accountId` (or `accountCode`) -> Map<monthKey, signedAmount>
-// For ERP-shaped companies, return the as-of-month closing balance for every
-// anchored balance-sheet account. The pattern mirrors the daily balance
-// sheet logic and the account-review "latest values" route:
-//   value = openingBalance + SUM(GLTransactionFact.signedAmount)
-//           where transDate > anchorDate AND transDate <= monthEnd
-// Every value is registered under the case-preserved accountId, the
-// accountCode (when present), and a normalized lowercased name so a
-// mapping can find it via any of those keys.
-async function loadAnchoredBsBalances(
-  companyId: string,
-  monthEnd: Date,
-): Promise<Map<string, number>> {
-  const result = new Map<string, number>();
-  if (!monthEnd) return result;
-
-  const anchorDateRows = await withPrismaReconnectRetry(
-    () => prisma.$queryRaw<Array<{ anchorDate: Date }>>`
-      SELECT "anchorDate"
-      FROM "BalanceSheetAccountAnchor"
-      WHERE "companyId" = ${companyId}
-        AND "anchorDate" <= ${monthEnd}
-      ORDER BY "anchorDate" DESC
-      LIMIT 1
-    `,
-    'sde-ebitda-adjustments.loadAnchoredBsBalances.anchorDate',
-  );
-  const anchorDate = anchorDateRows[0]?.anchorDate ?? null;
-  if (!anchorDate) return result;
-
-  const rows = await withPrismaReconnectRetry(
-    () => prisma.$queryRaw<Array<{
-      accountId: string;
-      accountName: string | null;
-      accountCode: string | null;
-      openingBalance: number;
-      delta: number | null;
-    }>>`
-      WITH anchors AS (
-        SELECT
-          TRIM("accountId") AS "accountId",
-          NULLIF(TRIM(COALESCE("accountName", '')), '') AS "accountName",
-          NULLIF(TRIM(COALESCE("accountCode", '')), '') AS "accountCode",
-          "openingBalance"::double precision AS "openingBalance"
-        FROM "BalanceSheetAccountAnchor"
-        WHERE "companyId" = ${companyId}
-          AND "anchorDate" = ${anchorDate}
-      ),
-      deltas AS (
-        SELECT
-          TRIM(g."accountId") AS "accountId",
-          SUM(g."signedAmount")::double precision AS "delta"
-        FROM "GLTransactionFact" g
-        WHERE g."companyId" = ${companyId}
-          AND g."transDate" > ${anchorDate}
-          AND g."transDate" <= ${monthEnd}
-          AND TRIM(g."accountId") IN (SELECT "accountId" FROM anchors)
-        GROUP BY 1
-      )
-      SELECT
-        a."accountId",
-        a."accountName",
-        a."accountCode",
-        a."openingBalance",
-        d."delta"
-      FROM anchors a
-      LEFT JOIN deltas d ON d."accountId" = a."accountId"
-    `,
-    'sde-ebitda-adjustments.loadAnchoredBsBalances.compute',
-  );
-
-  for (const row of rows || []) {
-    const acct = String(row.accountId || '').trim();
-    if (!acct) continue;
-    const opening = normalizeNumber(row.openingBalance);
-    const delta = normalizeNumber(row.delta);
-    const value = opening + delta;
-    result.set(acct, value);
-    const code = String(row.accountCode || '').trim();
-    if (code && !result.has(code)) result.set(code, value);
-    for (const k of nameLookupKeys(String(row.accountName || ''))) {
-      if (!result.has(k)) result.set(k, value);
-    }
-  }
-  return result;
-}
-
 async function loadGlMonthlyByAccount(
   companyId: string,
   start: Date,
@@ -315,113 +235,6 @@ async function loadGlMonthlyByAccount(
     if (!result.has(acct)) result.set(acct, new Map());
     result.get(acct)!.set(row.ym, normalizeNumber(row.total));
   }
-  return result;
-}
-
-// Normalize a name/description for fuzzy matching across CSV / QuickBooks /
-// Xero / Sage trial-balance exports. Lowercases, collapses whitespace,
-// removes leading "N-" / "NN-" account-class prefixes (e.g. "1-1005 Foo" ->
-// "1005 foo"), and produces a description-only variant ("Foo") for cases
-// where the chart-of-accounts numbering differs between the saved mappings
-// and the current rawData but the description text is identical.
-// Returns multiple candidate keys; the caller probes each in order.
-function nameLookupKeys(raw: string): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const push = (v: string) => {
-    const norm = v.trim().toLowerCase().replace(/\s+/g, ' ');
-    if (norm && !seen.has(norm)) {
-      seen.add(norm);
-      out.push(norm);
-    }
-  };
-  const trimmed = String(raw || '').trim();
-  if (!trimmed) return out;
-  push(trimmed);
-  // Strip leading "N-" or "NN-" prefix (account class indicator)
-  const classStripped = trimmed.replace(/^\d+-/, '').trim();
-  if (classStripped !== trimmed) push(classStripped);
-  // Pull out the numeric account code on its own
-  const numMatch = trimmed.match(/^\d+-(\d+)/) || trimmed.match(/^(\d+)/);
-  if (numMatch) push(numMatch[1]);
-  // Description-only: drop ANY leading "N-NNNN" / "NNNN" / "N-" tokens
-  // (separated by whitespace) so "1-1100 Accounts Receivable" and
-  // "11000 Accounts Receivable" both reduce to "accounts receivable".
-  // This is the last-resort fallback — only used when nothing more
-  // specific matches.
-  const descOnly = trimmed.replace(/^(?:\d+(?:-\d+)?\s+)+/, '').trim();
-  if (descOnly && descOnly !== trimmed && descOnly !== classStripped) push(descOnly);
-  return out;
-}
-
-// Fallback: parse FinancialRecord.rawData (CSV trial balance shape) for
-// QuickBooks/CSV/Xero/Sage companies with no GLTransactionFact data.
-// rawData shape: { accounts: [{ acctId, acctType, description, values: { 'YYYY-MM-DD' | 'M/D/YY': number, ... } }, ...] }
-//
-// For matching, every per-account monthly map is registered under MULTIPLE
-// keys: the explicit acctId/accountId (when present) AND a normalized form
-// of the description text (full, prefix-stripped, and numeric-only). This
-// is required for QuickBooks-shaped exports where acctId is empty and the
-// only thing tying a mapping to a row is the human-readable name.
-async function loadCsvMonthlyByAccount(
-  companyId: string,
-  ltmMonths: string[],
-): Promise<Map<string, Map<string, number>>> {
-  const result = new Map<string, Map<string, number>>();
-  const record = await withPrismaReconnectRetry(
-    () =>
-      prisma.financialRecord.findFirst({
-        where: { companyId },
-        orderBy: { createdAt: 'desc' },
-        select: { rawData: true },
-      }),
-    'sde-ebitda-adjustments.loadCsvMonthlyByAccount',
-  );
-  const raw = record?.rawData as unknown;
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
-  const accounts = (raw as Record<string, unknown>).accounts;
-  if (!Array.isArray(accounts)) return result;
-
-  const monthSet = new Set(ltmMonths);
-
-  for (const acct of accounts) {
-    if (!acct || typeof acct !== 'object') continue;
-    const a = acct as Record<string, unknown>;
-    const acctId = String(a.acctId || a.accountId || '').trim();
-    const description = String(a.description || a.name || '').trim();
-    const values = a.values && typeof a.values === 'object' && !Array.isArray(a.values)
-      ? (a.values as Record<string, unknown>)
-      : null;
-    if (!values) continue;
-    const monthMap = new Map<string, number>();
-    for (const [dateKey, amountRaw] of Object.entries(values)) {
-      const monthKey = (() => {
-        const trimmed = String(dateKey).trim();
-        const iso = trimmed.match(/^(\d{4})-(\d{2})/);
-        if (iso) return `${iso[1]}-${iso[2]}`;
-        const parsed = new Date(trimmed);
-        if (!Number.isNaN(parsed.getTime())) {
-          return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
-        }
-        return null;
-      })();
-      if (!monthKey || !monthSet.has(monthKey)) continue;
-      const amount = normalizeNumber(amountRaw);
-      monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + amount);
-    }
-    if (monthMap.size === 0) continue;
-    // Register under all candidate lookup keys so the mapping side can hit
-    // by accountId, accountCode, accountName (full), accountName (prefix-
-    // stripped), or numeric-only code — whichever it has.
-    const keys = new Set<string>();
-    if (acctId) keys.add(acctId);
-    for (const k of nameLookupKeys(description)) keys.add(k);
-    for (const k of keys) {
-      // First-write-wins: don't clobber an existing more-specific match.
-      if (!result.has(k)) result.set(k, monthMap);
-    }
-  }
-
   return result;
 }
 

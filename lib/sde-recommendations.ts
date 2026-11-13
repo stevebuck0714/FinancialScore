@@ -251,19 +251,11 @@ export function computeSdeRecommendationsFromMonthly(
   const wcLast12 = wcSeries.slice(-12);
   const wcLatest = wcSeries[wcSeries.length - 1];
   const wc12Ago = wcSeries.length >= 13 ? wcSeries[wcSeries.length - 13] : null;
-  const normalizedTarget = avg(wcLast12.map((row) => row.operatingWc));
-  const currentWc = wcLatest ? wcLatest.operatingWc : 0;
-  const wcAdjustment = currentWc - normalizedTarget;
   const avgWcIntensity12 = avg(wcLast12.map((row) => row.wcIntensityPct));
   const currentCcc = wcLatest ? wcLatest.ccc : 0;
   const cccTrend12 = wcLatest && wc12Ago ? wcLatest.ccc - wc12Ago.ccc : 0;
 
   const workingCapitalFlags: SignalFlag[] = [
-    {
-      id: 'wc-deficit',
-      triggered: wcAdjustment < 0,
-      severity: wcAdjustment < -Math.abs(normalizedTarget) * 0.2 ? 'high' : 'medium'
-    },
     { id: 'ccc-deterioration', triggered: cccTrend12 > sectorBenchmarks.workingCapital.cccTrendWarn, severity: cccTrend12 > sectorBenchmarks.workingCapital.cccTrendHigh ? 'high' : 'medium' },
     { id: 'wc-intensity', triggered: avgWcIntensity12 > sectorBenchmarks.workingCapital.wcIntensityWarn, severity: avgWcIntensity12 > sectorBenchmarks.workingCapital.wcIntensityHigh ? 'high' : 'medium' },
     { id: 'ccc-level', triggered: currentCcc > sectorBenchmarks.workingCapital.cccWarn, severity: currentCcc > sectorBenchmarks.workingCapital.cccHigh ? 'high' : 'medium' },
@@ -394,7 +386,6 @@ export function computeSdeRecommendationsFromMonthly(
         'ar-vs-revenue': `AR growth spread elevated (${arRevenueSpread.toFixed(1)} points above revenue growth).`,
         'cash-gap': `Revenue-to-cash gap is elevated (${avgGap12.toFixed(1)}% average over 12 months).`,
         'revenue-volatility': `Revenue volatility is elevated (CV ${revenueCv.toFixed(2)}).`,
-        'wc-deficit': `Current working capital is below normalized target by $${Math.round(Math.abs(wcAdjustment)).toLocaleString()}.`,
         'ccc-deterioration': `Cash conversion cycle deteriorated by ${cccTrend12.toFixed(1)} days.`,
         'wc-intensity': `Working capital intensity is elevated at ${avgWcIntensity12.toFixed(1)}%.`,
         'ccc-level': `Cash conversion cycle level is high at ${currentCcc.toFixed(1)} days.`,

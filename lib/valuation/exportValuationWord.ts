@@ -678,12 +678,13 @@ async function walkElement(el: Element, ctx: Ctx): Promise<Block[]> {
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-async function buildDocument(root: HTMLElement, options: { title: string; orientation: WordPageOrientation }): Promise<Blob> {
+/** One converted report section; each becomes its own Word section starting on a new page. */
+export type WordSection = { blocks: Block[]; orientation: WordPageOrientation };
+
+async function buildDocument(sections: WordSection[], options: { title: string }): Promise<Blob> {
   const D = await import('docx');
-  const pageContentWidthPx = contentWidthPx(options.orientation);
-  const ctx: Ctx = { D, maxWidthPx: pageContentWidthPx, pageContentWidthPx };
-  const blocks = await walkChildren(root, ctx);
-  if (!blocks.length) throw new Error('The report had no content to export yet.');
+  const filled = sections.filter((s) => s.blocks.length);
+  if (!filled.length) throw new Error('The report had no content to export yet.');
   const margin = Math.round(PAGE_MARGIN_INCHES * 1440);
   const doc = new D.Document({
     creator: 'Corelytics',
@@ -704,31 +705,30 @@ async function buildDocument(root: HTMLElement, options: { title: string; orient
         },
       },
     },
-    sections: [
-      {
-        properties: {
-          page: {
-            size: {
-              width: 12240,
-              height: 15840,
-              orientation: options.orientation === 'landscape' ? D.PageOrientation.LANDSCAPE : D.PageOrientation.PORTRAIT,
-            },
-            margin: { top: margin, right: margin, bottom: margin, left: margin, header: 360, footer: 360 },
+    sections: filled.map((section) => ({
+      properties: {
+        type: D.SectionType.NEXT_PAGE,
+        page: {
+          size: {
+            width: 12240,
+            height: 15840,
+            orientation: section.orientation === 'landscape' ? D.PageOrientation.LANDSCAPE : D.PageOrientation.PORTRAIT,
           },
+          margin: { top: margin, right: margin, bottom: margin, left: margin, header: 360, footer: 360 },
         },
-        footers: {
-          default: new D.Footer({
-            children: [
-              new D.Paragraph({
-                alignment: D.AlignmentType.RIGHT,
-                children: [new D.TextRun({ children: ['Page ', D.PageNumber.CURRENT], size: 16, color: '64748B' })],
-              }),
-            ],
-          }),
-        },
-        children: blocks,
       },
-    ],
+      footers: {
+        default: new D.Footer({
+          children: [
+            new D.Paragraph({
+              alignment: D.AlignmentType.RIGHT,
+              children: [new D.TextRun({ children: ['Page ', D.PageNumber.CURRENT], size: 16, color: '64748B' })],
+            }),
+          ],
+        }),
+      },
+      children: section.blocks,
+    })),
   });
   return D.Packer.toBlob(doc);
 }
@@ -763,26 +763,39 @@ export function safeWordFileName(title: string): string {
   return `${safe || 'Valuation Section'}.docx`;
 }
 
-/** Lays `root` out at Word page width, converts it to an editable .docx, and downloads it. */
-export async function exportElementToWord(
-  root: HTMLElement,
-  options: { title: string; fileName: string; orientation: WordPageOrientation }
-): Promise<void> {
+/** Lays `root` out at Word page width and converts it to Word content for one section. */
+export async function elementToWordSection(root: HTMLElement, orientation: WordPageOrientation): Promise<WordSection> {
   const previous = { width: root.style.width, maxWidth: root.style.maxWidth, maxHeight: root.style.maxHeight, overflow: root.style.overflowY };
-  root.style.width = `${contentWidthPx(options.orientation)}px`;
+  root.style.width = `${contentWidthPx(orientation)}px`;
   root.style.maxWidth = 'none';
   root.style.maxHeight = 'none';
   root.style.overflowY = 'visible';
   try {
     await nextFrame();
     await nextFrame();
-    triggerDownload(await buildDocument(root, options), options.fileName);
+    const D = await import('docx');
+    const pageContentWidthPx = contentWidthPx(orientation);
+    const blocks = await walkChildren(root, { D, maxWidthPx: pageContentWidthPx, pageContentWidthPx });
+    return { blocks, orientation };
   } finally {
     root.style.width = previous.width;
     root.style.maxWidth = previous.maxWidth;
     root.style.maxHeight = previous.maxHeight;
     root.style.overflowY = previous.overflow;
   }
+}
+
+/** Combines converted sections into one .docx and downloads it. */
+export async function exportWordSections(sections: WordSection[], options: { title: string; fileName: string }): Promise<void> {
+  triggerDownload(await buildDocument(sections, options), options.fileName);
+}
+
+/** Lays `root` out at Word page width, converts it to an editable .docx, and downloads it. */
+export async function exportElementToWord(
+  root: HTMLElement,
+  options: { title: string; fileName: string; orientation: WordPageOrientation }
+): Promise<void> {
+  await exportWordSections([await elementToWordSection(root, options.orientation)], options);
 }
 
 /** Renders an HTML string off-screen at page width so charts get real layout, then exports it to Word. */

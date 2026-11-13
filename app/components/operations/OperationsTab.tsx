@@ -994,6 +994,7 @@ export default function OperationsTab({
   const [dailyFinancialWindowStart, setDailyFinancialWindowStart] = useState(0);
   const [arSummaryPage, setArSummaryPage] = useState(1);
   const [arAgingPage, setArAgingPage] = useState(1);
+  const [arAgingExpanded, setArAgingExpanded] = useState<Record<string, boolean>>({});
   const [unpaidInvoicesPage, setUnpaidInvoicesPage] = useState(1);
   const [unpaidInvoicesSortKey, setUnpaidInvoicesSortKey] = useState<'customerName' | 'invoiceDate' | 'daysOutstanding' | 'amountDue'>('invoiceDate');
   const [unpaidInvoicesSortDir, setUnpaidInvoicesSortDir] = useState<'asc' | 'desc'>('desc');
@@ -7366,7 +7367,10 @@ export default function OperationsTab({
     const invoices = (summary?.unpaidInvoices || []).map((row: any) => ({
       customerName: row.customerName || row.customer,
       customerNumber: row.customerNumber || row.customerId || row.customerNo || '-',
+      invoiceNo: row.invoiceNo || row.invoiceNumber || '-',
       invoiceDate: row.invoiceDate || row.date,
+      dueDate: row.dueDate || null,
+      agingBucket: row.agingBucket || null,
       amountDue: row.amountDue || row.balance || 0,
       daysOutstanding: (() => {
         const invoiceDate = row.invoiceDate || row.date;
@@ -7496,6 +7500,49 @@ export default function OperationsTab({
         b.ar90plus + b.ar61to90 + b.ar31to60 + b.ar1to30 -
           (a.ar90plus + a.ar61to90 + a.ar31to60 + a.ar1to30)
     );
+    const arAgingBucketKeys = ['current', 'days1to30', 'days31to60', 'days61to90', 'days90plus'] as const;
+    const arAgingRowKey = (row: any) => `${row.customerId}|${row.customerName}`;
+    const invoiceAgingBucket = (inv: any): (typeof arAgingBucketKeys)[number] => {
+      if (inv.agingBucket && (arAgingBucketKeys as readonly string[]).includes(inv.agingBucket)) return inv.agingBucket;
+      const anchor = parseDateValue(inv.dueDate || inv.invoiceDate);
+      if (!anchor) return 'days90plus';
+      const now = new Date();
+      const daysPastDue = Math.floor(
+        (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
+          Date.UTC(anchor.getFullYear(), anchor.getMonth(), anchor.getDate())) /
+          86400000
+      );
+      if (daysPastDue < 0) return 'current';
+      if (daysPastDue <= 30) return 'days1to30';
+      if (daysPastDue <= 60) return 'days31to60';
+      if (daysPastDue <= 90) return 'days61to90';
+      return 'days90plus';
+    };
+    const arAgingInvoicesFor = (row: any) => {
+      const hasId = row.customerId && row.customerId !== '-';
+      const matched = invoices
+        .filter((inv: any) =>
+          hasId && inv.customerNumber && inv.customerNumber !== '-'
+            ? String(inv.customerNumber) === String(row.customerId)
+            : inv.customerName === row.customerName
+        )
+        .map((inv: any) => ({ ...inv, bucket: invoiceAgingBucket(inv) }))
+        .sort((a: any, b: any) => (b.daysOutstanding ?? -1) - (a.daysOutstanding ?? -1));
+      const itemized = { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+      matched.forEach((inv: any) => {
+        itemized[inv.bucket] += Number(inv.amountDue || 0);
+      });
+      const unlisted = {
+        current: row.arCurrent - itemized.current,
+        days1to30: row.ar1to30 - itemized.days1to30,
+        days31to60: row.ar31to60 - itemized.days31to60,
+        days61to90: row.ar61to90 - itemized.days61to90,
+        days90plus: row.ar90plus - itemized.days90plus,
+      };
+      const unlistedTotal = Object.values(unlisted).reduce((sum, value) => sum + value, 0);
+      const hasUnlisted = Object.values(unlisted).some((value) => Math.abs(value) >= 1);
+      return { invoices: matched, unlisted, unlistedTotal, hasUnlisted };
+    };
     const customerOptions = Array.from(new Set(customerInvoiceRows.map((row) => row.customerName))).sort();
     const filteredCustomerInvoices =
       selectedInvoiceCustomer === 'All'
@@ -8211,6 +8258,7 @@ export default function OperationsTab({
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                    <th style={{ width: '36px', padding: '6px 6px' }} />
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cust ID</th>
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Open AR</th>
@@ -8224,18 +8272,82 @@ export default function OperationsTab({
                 <tbody>
                   {arAgingRows
                     .slice((arAgingPage - 1) * 8, arAgingPage * 8)
-                    .map((row) => (
-                      <tr key={`aging-${row.customerId}-${row.customerName}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500' }}>{row.customerId}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>{formatCurrency(row.arOutstanding)}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(row.arCurrent)}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#eab308', textAlign: 'right' }}>{formatCurrency(row.ar1to30)}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#f97316', textAlign: 'right' }}>{formatCurrency(row.ar31to60)}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>{formatCurrency(row.ar61to90)}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar90plus)}</td>
-                      </tr>
-                    ))}
+                    .map((row) => {
+                      const rowKey = arAgingRowKey(row);
+                      const isExpanded = arAgingExpanded[rowKey] === true;
+                      const detail = isExpanded ? arAgingInvoicesFor(row) : null;
+                      const bucketColors = {
+                        current: '#16a34a',
+                        days1to30: '#eab308',
+                        days31to60: '#f97316',
+                        days61to90: '#ef4444',
+                        days90plus: '#991b1b',
+                      };
+                      return (
+                        <React.Fragment key={`aging-${rowKey}`}>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '6px 6px', textAlign: 'center' }}>
+                              <button
+                                onClick={() => setArAgingExpanded((prev) => ({ ...prev, [rowKey]: !prev[rowKey] }))}
+                                style={{
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '6px',
+                                  background: 'white',
+                                  width: '24px',
+                                  height: '24px',
+                                  cursor: 'pointer',
+                                  color: '#334155',
+                                  fontWeight: 700,
+                                  lineHeight: 1,
+                                }}
+                                aria-label={isExpanded ? 'Collapse aging invoices' : 'Expand aging invoices'}
+                                title={isExpanded ? 'Collapse' : 'Expand'}
+                              >
+                                {isExpanded ? '-' : '+'}
+                              </button>
+                            </td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500' }}>{row.customerId}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>{formatCurrency(row.arOutstanding)}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(row.arCurrent)}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', color: '#eab308', textAlign: 'right' }}>{formatCurrency(row.ar1to30)}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', color: '#f97316', textAlign: 'right' }}>{formatCurrency(row.ar31to60)}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>{formatCurrency(row.ar61to90)}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar90plus)}</td>
+                          </tr>
+                          {detail && detail.invoices.map((inv: any, invIndex: number) => (
+                            <tr key={`aging-${rowKey}-inv-${inv.invoiceNo}-${invIndex}`} style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                              <td />
+                              <td style={{ padding: '4px 10px', fontSize: '12px', color: '#475569' }}>{inv.invoiceNo}</td>
+                              <td style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b' }}>
+                                {inv.invoiceDate ? formatDateInputLabel(inv.invoiceDate) : 'Old outstanding'}
+                                {inv.dueDate ? ` · due ${formatDateInputLabel(inv.dueDate)}` : ''}
+                              </td>
+                              <td style={{ padding: '4px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(inv.amountDue)}</td>
+                              {arAgingBucketKeys.map((bucket) => (
+                                <td key={bucket} style={{ padding: '4px 10px', fontSize: '12px', color: bucketColors[bucket], textAlign: 'right' }}>
+                                  {inv.bucket === bucket ? formatCurrency(inv.amountDue) : ''}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                          {detail && detail.hasUnlisted && (
+                            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                              <td />
+                              <td colSpan={2} style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                                {detail.invoices.length > 0 ? 'Other open AR not itemized' : 'No invoice-level detail available'}
+                              </td>
+                              <td style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right', fontStyle: 'italic' }}>{formatCurrency(detail.unlistedTotal)}</td>
+                              {arAgingBucketKeys.map((bucket) => (
+                                <td key={bucket} style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right', fontStyle: 'italic' }}>
+                                  {Math.abs(detail.unlisted[bucket]) >= 1 ? formatCurrency(detail.unlisted[bucket]) : ''}
+                                </td>
+                              ))}
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>

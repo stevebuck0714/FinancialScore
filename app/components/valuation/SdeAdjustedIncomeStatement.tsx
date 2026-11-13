@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
 import type { SdeBucket } from '@/lib/sde/adjustment-line-items';
 import { formatMonthShort, reportingMonthKeyUtc } from '@/lib/date-utils';
+import { APP_TIME_ZONE } from '@/lib/time/eastern';
 
 type MonthlyRow = Record<string, unknown>;
 
@@ -170,14 +171,21 @@ function adjustmentLines(
   return lines;
 }
 
+type StatementView = 'ttm' | 'monthly';
+
 export default function SdeAdjustedIncomeStatement({
   companyId,
   monthly,
   refreshKey,
+  reportViews,
+  reportTitle,
 }: {
   companyId: string | null | undefined;
   monthly: MonthlyRow[];
   refreshKey: number;
+  /** Renders a static report section with these views stacked, without the toggle, CSV, or Print controls. */
+  reportViews?: StatementView[];
+  reportTitle?: string;
 }) {
   const money = useCompanyMoneyFormatter(companyId);
   const reportRef = useRef<HTMLDivElement>(null);
@@ -301,7 +309,7 @@ export default function SdeAdjustedIncomeStatement({
     };
   }, [adjustments?.buckets, adjustments?.ltmWindow?.months, monthly, settings?.sdeAnalysisTotals, settings?.sdeManualInputs]);
 
-  const [view, setView] = useState<'ttm' | 'monthly'>('ttm');
+  const [view, setView] = useState<StatementView>('ttm');
   const fmt = (value: number) => money.fmt(value, 0);
   const signed = (value: number) => `${value >= 0 ? '+' : '−'}${fmt(Math.abs(value))}`;
   const totalOf = (lines: AdjustmentLine[]) => lines.reduce((total, line) => total + line.amount, 0);
@@ -487,63 +495,14 @@ export default function SdeAdjustedIncomeStatement({
     printWindow.print();
   };
 
-  return (
-    <div ref={reportRef} className="sde-adjusted-income-statement" style={{ background: 'white', borderRadius: '10px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          .sde-adjusted-income-statement { box-shadow: none !important; border-radius: 0 !important; padding: 0 !important; }
-          .sde-adjusted-income-statement * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-      `}</style>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '18px', borderBottom: '2px solid #1e3a8a', paddingBottom: '14px' }}>
-        <div>
-          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>SDE Valuation</div>
-          <h2 style={{ margin: '4px 0 0', fontSize: '24px', color: '#0f172a' }}>{companyName}</h2>
-          <div style={{ marginTop: '3px', fontSize: '16px', fontWeight: 600, color: '#334155' }}>
-            QoE Adjusted Income Statement{view === 'monthly' ? ' — Monthly' : ''}
-          </div>
-        </div>
-        <div className="no-print" style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-          <button type="button" onClick={downloadCsv} style={{ padding: '8px 12px', border: '1px solid #94a3b8', borderRadius: '6px', color: '#334155', background: 'white', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Download CSV</button>
-          <button type="button" onClick={printReport} style={{ padding: '8px 12px', border: '1px solid #1d4ed8', borderRadius: '6px', color: 'white', background: '#1d4ed8', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Print</button>
-        </div>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '14px', flexWrap: 'wrap' }}>
-        <div style={{ fontSize: '12px', color: '#64748b' }}>
-          {view === 'monthly'
-            ? `Monthly (${periodLabel}). Account adjustments follow each account's monthly activity; manual entries post to the month chosen on the Quality of Earnings tab; other saved adjustments are spread evenly.`
-            : `Trailing 12 months (${periodLabel}). Adjustments reflect saved Quality of Earnings inputs only.`}
-        </div>
-        <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {([
-            { id: 'ttm', label: 'Trailing 12 Months' },
-            { id: 'monthly', label: 'Monthly' },
-          ] as const).map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => setView(option.id)}
-              style={{
-                border: '1px solid #cbd5e1',
-                background: view === option.id ? '#dbeafe' : '#f8fafc',
-                color: view === option.id ? '#1d4ed8' : '#334155',
-                borderRadius: '8px',
-                padding: '8px 12px',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      {error && <div style={{ marginBottom: '12px', color: '#b91c1c', fontSize: '13px' }}>{error}</div>}
-      {view === 'monthly' ? (
+  const viewDescription = (statementView: StatementView) =>
+    statementView === 'monthly'
+      ? `Monthly (${periodLabel}). Account adjustments follow each account's monthly activity; manual entries post to the month chosen on the Quality of Earnings tab; other saved adjustments are spread evenly.`
+      : `Trailing 12 months (${periodLabel}). Adjustments reflect saved Quality of Earnings inputs only.`;
+
+  const renderMonthlyTable = (inReport: boolean) => (
         <div className="sde-monthly-scroll" style={{ overflowX: 'auto' }}>
-          <table className="sde-monthly-table" style={{ borderCollapse: 'collapse', minWidth: '1500px', width: '100%', fontSize: '12px' }}>
+          <table className="sde-monthly-table" style={{ borderCollapse: 'collapse', minWidth: inReport ? 0 : '1500px', width: '100%', fontSize: '12px' }}>
             <thead>
               <tr style={{ background: '#f8fafc', color: '#475569' }}>
                 <th style={{ position: 'sticky', left: 0, zIndex: 1, background: '#f8fafc', textAlign: 'left', padding: '8px 10px', minWidth: '240px' }}>Line item</th>
@@ -577,7 +536,9 @@ export default function SdeAdjustedIncomeStatement({
             </tbody>
           </table>
         </div>
-      ) : (
+  );
+
+  const renderTtmTable = () => (
         <div style={{ overflowX: 'auto', minWidth: '720px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(210px, 1fr) 150px 150px 170px', gap: '12px', padding: '8px 10px', background: '#f8fafc', color: '#475569', fontSize: '12px', fontWeight: 700 }}>
             <span>Line item</span><span style={{ textAlign: 'right' }}>Trailing 12 Months</span><span style={{ textAlign: 'right' }}>QoE adjustment</span><span style={{ textAlign: 'right' }}>Adjusted TTM</span>
@@ -601,7 +562,106 @@ export default function SdeAdjustedIncomeStatement({
           {row('Add back: Depreciation & amortization', model.depreciation)}
           {row('EBITDA', model.ebitda, model.adjustmentTotal, model.adjustedEbitda, true)}
         </div>
-      )}
+  );
+
+  if (reportViews) {
+    const isLoading = !error && (!adjustments || !settings);
+    return (
+      <div className="sde-income-statement-report" style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
+        <style>{`
+          .sde-income-statement-report .sde-monthly-table th,
+          .sde-income-statement-report .sde-monthly-table td { font-size: 10px !important; padding: 4px 5px !important; }
+          .sde-income-statement-report .sde-monthly-table td:first-child { padding-left: 8px !important; }
+          @media print {
+            @page { size: letter landscape; margin: 0.4in; }
+            .sde-income-statement-report { border: none !important; border-radius: 0 !important; }
+            .sde-income-statement-report * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .sde-income-statement-report .sde-monthly-scroll { overflow: visible !important; }
+            .sde-income-statement-report .sde-monthly-table th,
+            .sde-income-statement-report .sde-monthly-table td { font-size: 8px !important; padding: 3px 4px !important; position: static !important; }
+            .sde-income-statement-report .sde-statement-view + .sde-statement-view { break-before: page; page-break-before: always; }
+          }
+        `}</style>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>{reportTitle || 'Corelytics Valuation Report'}</div>
+          <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800, marginTop: '6px' }}>Income Statements</div>
+          <div style={{ fontSize: '16px', color: '#475569', marginTop: '4px', lineHeight: 1.45 }}>
+            Prepared for: <strong>{companyName}</strong> | Generated: {new Date().toLocaleDateString('en-US', { timeZone: APP_TIME_ZONE })}
+          </div>
+        </div>
+        <div style={{ padding: '16px 18px', display: 'grid', gap: '20px' }}>
+          {error && <div style={{ color: '#b91c1c', fontSize: '13px' }}>{error}</div>}
+          {isLoading ? (
+            <div data-report-loading="true" style={{ fontSize: '13px', color: '#64748b' }}>Loading saved Quality of Earnings adjustments…</div>
+          ) : reportViews.length === 0 ? (
+            <div style={{ fontSize: '13px', color: '#64748b' }}>No income statements selected for this section.</div>
+          ) : (
+            reportViews.map((statementView) => (
+              <div key={statementView} className="sde-statement-view">
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', margin: '0 0 6px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
+                  QoE Adjusted Income Statement — {statementView === 'monthly' ? 'Monthly' : 'Trailing 12 Months'}
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>{viewDescription(statementView)}</div>
+                {statementView === 'monthly' ? renderMonthlyTable(true) : renderTtmTable()}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={reportRef} className="sde-adjusted-income-statement" style={{ background: 'white', borderRadius: '10px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .sde-adjusted-income-statement { box-shadow: none !important; border-radius: 0 !important; padding: 0 !important; }
+          .sde-adjusted-income-statement * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+      `}</style>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '18px', borderBottom: '2px solid #1e3a8a', paddingBottom: '14px' }}>
+        <div>
+          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>SDE Valuation</div>
+          <h2 style={{ margin: '4px 0 0', fontSize: '24px', color: '#0f172a' }}>{companyName}</h2>
+          <div style={{ marginTop: '3px', fontSize: '16px', fontWeight: 600, color: '#334155' }}>
+            QoE Adjusted Income Statement{view === 'monthly' ? ' — Monthly' : ''}
+          </div>
+        </div>
+        <div className="no-print" style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+          <button type="button" onClick={downloadCsv} style={{ padding: '8px 12px', border: '1px solid #94a3b8', borderRadius: '6px', color: '#334155', background: 'white', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Download CSV</button>
+          <button type="button" onClick={printReport} style={{ padding: '8px 12px', border: '1px solid #1d4ed8', borderRadius: '6px', color: 'white', background: '#1d4ed8', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Print</button>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '14px', flexWrap: 'wrap' }}>
+        <div style={{ fontSize: '12px', color: '#64748b' }}>{viewDescription(view)}</div>
+        <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {([
+            { id: 'ttm', label: 'Trailing 12 Months' },
+            { id: 'monthly', label: 'Monthly' },
+          ] as const).map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setView(option.id)}
+              style={{
+                border: '1px solid #cbd5e1',
+                background: view === option.id ? '#dbeafe' : '#f8fafc',
+                color: view === option.id ? '#1d4ed8' : '#334155',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {error && <div style={{ marginBottom: '12px', color: '#b91c1c', fontSize: '13px' }}>{error}</div>}
+      {view === 'monthly' ? renderMonthlyTable(false) : renderTtmTable()}
     </div>
   );
 }
