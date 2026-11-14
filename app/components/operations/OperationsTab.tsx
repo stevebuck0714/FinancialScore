@@ -15505,7 +15505,7 @@ export default function OperationsTab({
               const lotCount = group.lots.filter((lot: any) => String(lot.lot || '').trim()).length;
               return {
                 ...group,
-                isFinishedGoods: Boolean(String(group.sku || '').trim()),
+                isFinishedGoods: group.lots.some((lot: any) => lot.lotSource === 'finished_goods'),
                 avgCost: group.qtyOnHand > 0 ? group.assetValue / group.qtyOnHand : 0,
                 lot: lotCount ? `${lotCount} lot${lotCount === 1 ? '' : 's'}` : '',
                 expirationDate: expirations[0] || null,
@@ -15518,16 +15518,16 @@ export default function OperationsTab({
             .sort(compareInventoryRows);
         })()
       : [];
-    // Products with an Item ID are finished goods and get their own table.
+    // Products with lots made by a production batch are finished goods and get their own table.
     const inventoryTableSections = showInventoryLotDates
       ? [
           { key: 'finished', title: 'Finished Goods', groups: inventoryProductGroups.filter((group: any) => group.isFinishedGoods) },
-          { key: 'materials', title: 'Raw Materials & Packaging', groups: inventoryProductGroups.filter((group: any) => !group.isFinishedGoods) },
+          { key: 'materials', title: 'Raw Materials, Packaging & WIP', groups: inventoryProductGroups.filter((group: any) => !group.isFinishedGoods) },
         ]
       : [{ key: 'all', title: '', groups: inventoryProductGroups }];
     const inventoryTypeTotals = latestRecords.reduce(
       (totals: { finished: { value: number; products: Set<string> }; raw: { value: number; products: Set<string> } }, row: any) => {
-        const bucket = String(row?.sku || '').trim() ? totals.finished : totals.raw;
+        const bucket = row?.lotSource === 'finished_goods' ? totals.finished : totals.raw;
         bucket.value += Number(row?.assetValue || 0);
         bucket.products.add(String(row?.itemId || row?.sku || row?.itemName || '').trim().toUpperCase());
         return totals;
@@ -16039,7 +16039,7 @@ export default function OperationsTab({
                 </div>
               </div>
               <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Raw Materials &amp; Packaging Value</div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Raw Materials, Packaging &amp; WIP Value</div>
                 <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
                   {formatCurrency(inventoryTypeTotals.raw.value)}
                 </div>

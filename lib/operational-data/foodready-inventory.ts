@@ -448,17 +448,28 @@ function estDateOnly(raw: unknown): string | null {
   return Number.isNaN(parsed.getTime()) ? null : formatEstDate(parsed);
 }
 
+export type FoodReadyLotSource = 'finished_goods' | 'purchased' | 'wip';
+
+/** Finished-goods lots are created by production batches; purchased lots arrive on purchase orders. */
+const LOT_SOURCE_BY_ENDPOINT: Record<string, FoodReadyLotSource> = {
+  [FINISHED_GOODS_LOTS_ENDPOINT]: 'finished_goods',
+  [FOODREADY_PURCHASED_LOTS_ENDPOINT]: 'purchased',
+  [WIP_LOTS_ENDPOINT]: 'wip',
+};
+
 /**
  * Inventory report rows for a FoodReady company: each lot stays its own row and carries its
- * expiration and received dates from the synced FoodReady lot records.
+ * expiration and received dates and its origin from the synced FoodReady lot records.
  */
 export async function foodReadyInventoryLotRecords<T extends { itemId?: string | null; lot?: string | null; qtyOnHand?: number | null }>(
   companyId: string,
   snapshotRows: T[],
-): Promise<Array<T & { expirationDate: string | null; receivedDate: string | null; enteredUnitCost: number | null }>> {
+): Promise<
+  Array<T & { expirationDate: string | null; receivedDate: string | null; enteredUnitCost: number | null; lotSource: FoodReadyLotSource | null }>
+> {
   const enteredLotCosts = await loadFoodReadyLotCosts(companyId);
   const lotCodes = [...new Set(snapshotRows.map((row) => String(row.lot || '').trim()).filter(Boolean))];
-  type LotDates = { quantity: number; expirationDate: string | null; receivedDate: string | null };
+  type LotDates = { quantity: number; expirationDate: string | null; receivedDate: string | null; source: FoodReadyLotSource | null };
   const lotDates = new Map<string, LotDates[]>();
   if (lotCodes.length) {
     const records = await prisma.operationalRecord.findMany({
@@ -481,6 +492,7 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
           quantity: Number((record.measures as Record<string, unknown>)?.quantityInHand || 0),
           expirationDate: estDateOnly(dims.expirationDate),
           receivedDate: estDateOnly(dims.receivedOn ?? dims.receivedDate ?? dims.createdAt),
+          source: LOT_SOURCE_BY_ENDPOINT[String(dims.sourceObject || '')] ?? null,
         },
       ]);
     }
@@ -493,6 +505,7 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
       expirationDate: match?.expirationDate ?? null,
       receivedDate: match?.receivedDate ?? null,
       enteredUnitCost: enteredLotCosts.get(lotCostKey(row.itemId, row.lot)) ?? null,
+      lotSource: match?.source ?? null,
     };
   });
 }
