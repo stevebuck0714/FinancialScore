@@ -87,21 +87,49 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
   }
 
   const items = new Map(itemRows.map((row) => [text(row.dimensions, 'id'), row]));
-  const supplierItemToItem = new Map(
-    (bySource.get(SUPPLIER_ITEMS_ENDPOINT) || []).map((row) => [text(row.dimensions, 'id'), foodReadyRef(row.dimensions, 'item')]),
-  );
-  const packagingToItem = new Map(
-    (bySource.get(ITEM_PACKAGING_ENDPOINT) || []).map((row) => [text(row.dimensions, 'id'), foodReadyRef(row.dimensions, 'inventoryItem')]),
-  );
-  const poLines = new Map(
-    (await loadPurchaseOrderLines(companyId)).map((line) => [
-      line.externalId,
-      {
-        itemId: supplierItemToItem.get(String((line.dimensions as Record<string, unknown>)?.supplierItem || '')) || '',
-        unitCost: Number((line.measures as Record<string, unknown>)?.unitCost || 0) || 0,
-      },
+  const supplierItems = new Map(
+    (bySource.get(SUPPLIER_ITEMS_ENDPOINT) || []).map((row) => [
+      text(row.dimensions, 'id'),
+      { itemId: foodReadyRef(row.dimensions, 'item'), unitCost: amount(row.measures, 'unitCost') },
     ]),
   );
+  const packaging = new Map(
+    (bySource.get(ITEM_PACKAGING_ENDPOINT) || []).map((row) => [
+      text(row.dimensions, 'id'),
+      { itemId: foodReadyRef(row.dimensions, 'inventoryItem'), unitCost: amount(row.measures, 'unitCost') },
+    ]),
+  );
+  const packagingCostByItem = new Map<string, number>();
+  for (const pack of packaging.values()) {
+    if (pack.itemId && pack.unitCost > 0 && !packagingCostByItem.has(pack.itemId)) packagingCostByItem.set(pack.itemId, pack.unitCost);
+  }
+  const costUnitTypes = new Set<string>();
+  const poLines = new Map(
+    (await loadPurchaseOrderLines(companyId)).map((line) => {
+      const dims = (line.dimensions || {}) as Record<string, unknown>;
+      const measures = (line.measures || {}) as Record<string, unknown>;
+      const supplierItem = supplierItems.get(String(dims.supplierItem || ''));
+      const costSkuType = String(dims.costSkuType || '').trim();
+      if (costSkuType) costUnitTypes.add(costSkuType);
+      const unitSize = Number(measures.unitSize || 0);
+      const perPack = /sku|case|pack|outer|box/i.test(costSkuType) && unitSize > 0;
+      const lineCost = Number(measures.unitCost || 0) || Number(measures.displayUnitCost || 0);
+      return [
+        line.externalId,
+        {
+          itemId: supplierItem?.itemId || '',
+          lineCost: lineCost > 0 ? (perPack ? lineCost / unitSize : lineCost) : 0,
+          supplierItemCost: supplierItem?.unitCost || 0,
+        },
+      ];
+    }),
+  );
+  const costSources = { purchaseOrderLine: 0, supplierItem: 0, packaging: 0, batchOutput: 0, none: 0 };
+  const pickCost = (candidates: Array<[keyof typeof costSources, number]>): number => {
+    const found = candidates.find(([, cost]) => cost > 0);
+    costSources[found ? found[0] : 'none'] += 1;
+    return found ? found[1] : 0;
+  };
 
   // Inventory reports end no later than yesterday (EST), so the pull is stored as yesterday's closing stock.
   const snapshotDate = new Date(`${previousEstCalendarDate()}T00:00:00Z`);
@@ -133,17 +161,36 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
   let unlinkedPurchasedLots = 0;
   for (const row of bySource.get(FOODREADY_PURCHASED_LOTS_ENDPOINT) || []) {
     const line = poLines.get(foodReadyRef(row.dimensions, 'poItem'));
-    if (line?.itemId && pushLot(line.itemId, '', '', row, line.unitCost)) lotCounts.purchased += 1;
-    else if (!line?.itemId) unlinkedPurchasedLots += 1;
+    if (!line?.itemId) {
+      unlinkedPurchasedLots += 1;
+      continue;
+    }
+    if (amount(row.measures, 'quantityInHand') === 0) continue;
+    const cost = pickCost([
+      ['purchaseOrderLine', line.lineCost],
+      ['supplierItem', line.supplierItemCost],
+      ['packaging', packagingCostByItem.get(line.itemId) || 0],
+    ]);
+    if (pushLot(line.itemId, '', '', row, cost)) lotCounts.purchased += 1;
   }
   for (const row of bySource.get(WIP_LOTS_ENDPOINT) || []) {
-    if (pushLot(foodReadyRef(row.dimensions, 'item'), text(row.dimensions, 'itemName'), text(row.dimensions, 'itemCode'), row, amount(row.measures, 'unitCost'))) {
-      lotCounts.wip += 1;
-    }
+    const itemId = foodReadyRef(row.dimensions, 'item');
+    if (amount(row.measures, 'quantityInHand') === 0) continue;
+    const cost = pickCost([
+      ['batchOutput', amount(row.measures, 'unitCost')],
+      ['packaging', packagingCostByItem.get(itemId) || 0],
+    ]);
+    if (pushLot(itemId, text(row.dimensions, 'itemName'), text(row.dimensions, 'itemCode'), row, cost)) lotCounts.wip += 1;
   }
   for (const row of bySource.get(FINISHED_GOODS_LOTS_ENDPOINT) || []) {
-    const itemId = packagingToItem.get(foodReadyRef(row.dimensions, 'itemPackaging')) || '';
-    if (itemId && pushLot(itemId, '', '', row, amount(row.measures, 'unitCost'))) lotCounts.finished += 1;
+    const pack = packaging.get(foodReadyRef(row.dimensions, 'itemPackaging'));
+    if (!pack?.itemId || amount(row.measures, 'quantityInHand') === 0) continue;
+    const cost = pickCost([
+      ['batchOutput', amount(row.measures, 'unitCost')],
+      ['packaging', pack.unitCost],
+      ['packaging', packagingCostByItem.get(pack.itemId) || 0],
+    ]);
+    if (pushLot(pack.itemId, '', '', row, cost)) lotCounts.finished += 1;
   }
 
   const lotRowCount = data.length;
@@ -151,6 +198,7 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     const qtyOnHand = amount(row.measures, 'onHandQuantity');
     const itemName = text(row.dimensions, 'itemName');
     if (itemsWithLots.has(itemId) || !itemName || qtyOnHand === 0) continue;
+    const cost = pickCost([['packaging', packagingCostByItem.get(itemId) || 0]]);
     data.push({
       companyId,
       snapshotDate,
@@ -161,8 +209,8 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
       warehouse: null,
       lot: null,
       qtyOnHand,
-      assetValue: 0,
-      avgCost: null,
+      assetValue: cost > 0 ? qtyOnHand * cost : 0,
+      avgCost: cost > 0 ? cost : null,
     });
   }
 
@@ -175,6 +223,8 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     `${lotCounts.purchased} purchased, ${lotCounts.wip} WIP and ${lotCounts.finished} finished-goods lot(s)`,
     `${data.length - lotRowCount} item(s) without a linked lot`,
     ...(unlinkedPurchasedLots ? [`${unlinkedPurchasedLots} purchased lot(s) waiting on purchase-order line lookups`] : []),
+    `costs from purchase-order lines ${costSources.purchaseOrderLine}, supplier items ${costSources.supplierItem}, packaging ${costSources.packaging}, batch output ${costSources.batchOutput}, no cost ${costSources.none}`,
+    ...(costUnitTypes.size ? [`purchase-order cost units: ${[...costUnitTypes].slice(0, 6).join(', ')}`] : []),
   ].join('; ');
 }
 

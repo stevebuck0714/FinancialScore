@@ -47,10 +47,11 @@ const PURCHASE_ORDER_LINES_SCHEMA: OperationalDatasetSchema = {
   label: 'FoodReady Purchase Order Lines',
   description: 'FoodReady purchase-order lines behind purchased lots: the supplier item ordered and its unit cost. Each line is looked up once and kept.',
   grain: 'point_in_time',
-  dimensions: [{ name: 'po' }, { name: 'supplierItem' }, { name: 'status' }, { name: 'uom' }],
+  dimensions: [{ name: 'po' }, { name: 'supplierItem' }, { name: 'status' }, { name: 'uom' }, { name: 'costSkuType' }, { name: 'skuType' }, { name: 'unitType' }],
   measures: [
     { name: 'recordCount', description: 'Always 1; sum to count records.' },
     { name: 'unitCost' },
+    { name: 'displayUnitCost' },
     { name: 'unitSize' },
     { name: 'noOfUnits' },
     { name: 'totalOrderQuantity' },
@@ -179,14 +180,29 @@ function purchaseOrderLineRow(id: string, line: FlatRecord, today: string): Oper
   return {
     date: today,
     externalId: id,
-    dimensions: { po: text('po') ?? text('poId'), supplierItem: text('supplierItem') ?? text('supplierItemId'), status: text('status'), uom: text('uom') ?? text('uomCode') },
-    measures: { recordCount: 1, unitCost: number('unitCost'), unitSize: number('unitSize'), noOfUnits: number('noOfUnits'), totalOrderQuantity: number('totalOrderQuantity') },
+    dimensions: {
+      po: text('po') ?? text('poId'),
+      supplierItem: text('supplierItem') ?? text('supplierItemId'),
+      status: text('status'),
+      uom: text('uom') ?? text('uomCode'),
+      costSkuType: text('costSkuType'),
+      skuType: text('skuType'),
+      unitType: text('unitType'),
+    },
+    measures: {
+      recordCount: 1,
+      unitCost: number('unitCost'),
+      displayUnitCost: number('displayUnitCost'),
+      unitSize: number('unitSize'),
+      noOfUnits: number('noOfUnits'),
+      totalOrderQuantity: number('totalOrderQuantity'),
+    },
   };
 }
 
 /**
- * Purchase-order lines behind purchased lots. All lines come from one paged search; if that
- * endpoint fails, lines not seen before are looked up one at a time until the time budget runs out.
+ * Purchase-order lines behind purchased lots. All lines come from one paged search; lines it does
+ * not return (or every line, if it fails) are looked up one at a time until the time budget runs out.
  */
 async function fetchPurchaseOrderLines(
   credentials: FoodReadyCredentials,
@@ -195,18 +211,18 @@ async function fetchPurchaseOrderLines(
   today: string,
   syncStartedAt: number,
 ): Promise<OperationalRecordInput[]> {
+  const rows: OperationalRecordInput[] = [];
   try {
     const lines = (await fetchAllFoodReadyRecords(credentials, PURCHASE_ORDER_LINES_ENDPOINT)).map(flattenRecord);
-    const rows = lines.filter((line) => typeof line.id === 'string' && line.id).map((line) => purchaseOrderLineRow(String(line.id), line, today));
-    if (rows.length) return rows;
+    rows.push(...lines.filter((line) => typeof line.id === 'string' && line.id).map((line) => purchaseOrderLineRow(String(line.id), line, today)));
   } catch {
-    // Fall back to single-line lookups below.
+    // Single-line lookups below cover every line.
   }
 
   const known = await listFoodReadyPurchaseOrderLineIds(companyId);
+  rows.forEach((row) => known.add(row.externalId));
   const queue = [...new Set(poItemIds)].filter((id) => id && !known.has(id));
   const deadline = Math.min(Date.now() + PO_LINE_LOOKUP_BUDGET_MS, syncStartedAt + PO_LINE_LOOKUP_CUTOFF_MS);
-  const rows: OperationalRecordInput[] = [];
   let rateLimited = false;
   const worker = async () => {
     while (queue.length && !rateLimited && Date.now() < deadline) {
