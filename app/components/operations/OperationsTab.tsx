@@ -7518,6 +7518,10 @@ export default function OperationsTab({
       if (daysPastDue <= 90) return 'days61to90';
       return 'days90plus';
     };
+    const unpaidInvoicesAsOfDate: string | null = summary?.unpaidInvoicesAsOfDate || null;
+    const customerAgingAsOfDate: string | null = summary?.customerAgingAsOfDate || null;
+    const arAgingInvoiceDetailStale =
+      !!unpaidInvoicesAsOfDate && !!customerAgingAsOfDate && unpaidInvoicesAsOfDate !== customerAgingAsOfDate;
     const arAgingInvoicesFor = (row: any) => {
       const hasId = row.customerId && row.customerId !== '-';
       const matched = invoices
@@ -8260,6 +8264,7 @@ export default function OperationsTab({
                   <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
                     <th style={{ width: '36px', padding: '6px 6px' }} />
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cust ID</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Inv #</th>
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Open AR</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
@@ -8307,6 +8312,7 @@ export default function OperationsTab({
                               </button>
                             </td>
                             <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500' }}>{row.customerId}</td>
+                            <td />
                             <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
                             <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>{formatCurrency(row.arOutstanding)}</td>
                             <td style={{ padding: '6px 10px', fontSize: '12px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(row.arCurrent)}</td>
@@ -8315,10 +8321,19 @@ export default function OperationsTab({
                             <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>{formatCurrency(row.ar61to90)}</td>
                             <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar90plus)}</td>
                           </tr>
-                          {detail && detail.invoices.map((inv: any, invIndex: number) => (
+                          {isExpanded && arAgingInvoiceDetailStale && (
+                            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                              <td />
+                              <td colSpan={9} style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                                Invoice detail as of {formatDateInputLabel(unpaidInvoicesAsOfDate)} does not match the aging report date ({formatDateInputLabel(customerAgingAsOfDate)}), so invoices are not listed.
+                              </td>
+                            </tr>
+                          )}
+                          {detail && !arAgingInvoiceDetailStale && detail.invoices.map((inv: any, invIndex: number) => (
                             <tr key={`aging-${rowKey}-inv-${inv.invoiceNo}-${invIndex}`} style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                               <td />
-                              <td style={{ padding: '4px 10px', fontSize: '12px', color: '#475569' }}>{inv.invoiceNo}</td>
+                              <td />
+                              <td style={{ padding: '4px 10px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>{inv.invoiceNo}</td>
                               <td style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b' }}>
                                 {inv.invoiceDate ? formatDateInputLabel(inv.invoiceDate) : 'Old outstanding'}
                                 {inv.dueDate ? ` · due ${formatDateInputLabel(inv.dueDate)}` : ''}
@@ -8331,10 +8346,10 @@ export default function OperationsTab({
                               ))}
                             </tr>
                           ))}
-                          {detail && detail.hasUnlisted && (
+                          {detail && !arAgingInvoiceDetailStale && detail.hasUnlisted && (
                             <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                               <td />
-                              <td colSpan={2} style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                              <td colSpan={3} style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
                                 {detail.invoices.length > 0 ? 'Other open AR not itemized' : 'No invoice-level detail available'}
                               </td>
                               <td style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right', fontStyle: 'italic' }}>{formatCurrency(detail.unlistedTotal)}</td>

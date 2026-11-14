@@ -6332,6 +6332,7 @@ export async function GET(request: NextRequest) {
           amountDue: number;
           agingBucket?: ArAgingBucketKey;
         }> = [];
+        let unpaidInvoicesAsOfDate: Date | null = null;
         let customerInvoices: Array<{
           customerId?: string | null;
           customerName: string;
@@ -6650,6 +6651,7 @@ export async function GET(request: NextRequest) {
                   .filter((row: any) => row.totalDue > 0)
                   .sort((a: any, b: any) => b.totalDue - a.totalDue) as typeof unpaidByCustomer;
               }
+              unpaidInvoicesAsOfDate = latestOpenSnapshot.snapshotDate;
               unpaidInvoices = openInvoiceRows.slice(0, 250).map((row: any) => ({
                 customerName: normalizeCustomerName(row.customerName, row.customerId),
                 customerNumber: row.customerId || '-',
@@ -6924,6 +6926,7 @@ export async function GET(request: NextRequest) {
           unpaidByCustomer = Object.values(customerAging)
             .sort((a: any, b: any) => b.totalDue - a.totalDue)
             .slice(0, 500) as any[];
+          unpaidInvoicesAsOfDate = latestArInvoiceSnapshotDate;
           unpaidInvoices = invoiceRowsOpenDeduped
             .sort((a: any, b: any) => {
               const aDue = a.dueDate ? new Date(a.dueDate).getTime() : -Infinity;
@@ -7475,6 +7478,7 @@ export async function GET(request: NextRequest) {
             .slice(0, 500) as any[];
 
           const openRowsWithBalance = openRowsEligible;
+          unpaidInvoicesAsOfDate = latestOpenSnapshotDate || endDate;
           unpaidInvoices = openRowsWithBalance
             .sort((a: any, b: any) => {
               const aDue = a.dueDate ? new Date(a.dueDate).getTime() : -Infinity;
@@ -8250,6 +8254,8 @@ export async function GET(request: NextRequest) {
             breakdown: unpaidByCustomer,
             unpaidByCustomer,
             unpaidInvoices,
+            unpaidInvoicesAsOfDate: unpaidInvoicesAsOfDate ? unpaidInvoicesAsOfDate.toISOString().slice(0, 10) : null,
+            customerAgingAsOfDate: arAsOfReferenceDate ? arAsOfReferenceDate.toISOString().slice(0, 10) : null,
             paidInvoices,
             customerInvoices,
           },
