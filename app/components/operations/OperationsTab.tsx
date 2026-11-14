@@ -671,7 +671,7 @@ const operationalDataInflightStore = new Map<string, Promise<any>>();
 const wholesaleProductsReportCacheStore = new Map<string, { fetchedAt: number; data: any }>();
 const wholesaleProductsReportInflightStore = new Map<string, Promise<any>>();
 const productTransformCacheStore = new Map<string, { deps: any[]; value: any }>();
-/** Unit cost box for one inventory lot; saves on Enter or when focus leaves, if the value changed. */
+/** Unit cost box for one inventory lot with a Save button; Enter also saves. An empty box clears the entered cost. */
 function InventoryLotCostInput({
   value,
   entered,
@@ -681,10 +681,12 @@ function InventoryLotCostInput({
   entered: boolean;
   onSave: (unitCost: number | null) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState(value == null ? '' : String(value));
-  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const initial = value == null ? '' : String(value);
+  const [draft, setDraft] = useState(initial);
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState('');
-  const commit = async () => {
+  const changed = draft.trim() !== initial;
+  const save = async () => {
     const trimmed = draft.trim();
     const next = trimmed === '' ? null : Number(trimmed);
     if (next != null && (!Number.isFinite(next) || next < 0)) {
@@ -692,44 +694,69 @@ function InventoryLotCostInput({
       setError('Enter a cost of 0 or more.');
       return;
     }
-    if (next === value || (next == null && value == null)) return;
     setStatus('saving');
+    setError('');
     try {
       await onSave(next);
-      setStatus('idle');
-      setError('');
+      setStatus('saved');
     } catch (saveError: any) {
       setStatus('error');
       setError(saveError?.message || 'Saving the lot cost failed.');
     }
   };
   return (
-    <input
-      type="number"
-      min={0}
-      step="0.0001"
-      inputMode="decimal"
-      value={draft}
-      placeholder="0.00"
-      disabled={status === 'saving'}
-      title={status === 'error' ? error : entered ? 'Unit cost entered for this lot' : 'Enter this lot’s unit cost'}
-      aria-label="Lot unit cost"
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => void commit()}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
-      }}
-      style={{
-        width: '96px',
-        padding: '4px 6px',
-        fontSize: '13px',
-        textAlign: 'right',
-        border: `1px solid ${status === 'error' ? '#dc2626' : entered ? '#16a34a' : '#cbd5e1'}`,
-        borderRadius: '6px',
-        background: status === 'saving' ? '#f1f5f9' : '#fff',
-        color: '#1e293b',
-      }}
-    />
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+        <input
+          type="number"
+          min={0}
+          step="0.0001"
+          inputMode="decimal"
+          value={draft}
+          placeholder="0.00"
+          disabled={status === 'saving'}
+          title={entered ? 'Unit cost entered for this lot' : 'Enter this lot’s unit cost'}
+          aria-label="Lot unit cost"
+          onChange={(event) => {
+            setDraft(event.target.value);
+            if (status !== 'saving') setStatus('idle');
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && changed) void save();
+          }}
+          style={{
+            width: '96px',
+            padding: '4px 6px',
+            fontSize: '13px',
+            textAlign: 'right',
+            border: `1px solid ${status === 'error' ? '#dc2626' : entered ? '#16a34a' : '#cbd5e1'}`,
+            borderRadius: '6px',
+            background: status === 'saving' ? '#f1f5f9' : '#fff',
+            color: '#1e293b',
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={!changed || status === 'saving'}
+          style={{
+            border: '1px solid #cbd5e1',
+            borderRadius: '8px',
+            padding: '4px 8px',
+            background: '#fff',
+            color: '#334155',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: !changed || status === 'saving' ? 'not-allowed' : 'pointer',
+            opacity: !changed || status === 'saving' ? 0.5 : 1,
+          }}
+        >
+          {status === 'saving' ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+      {status === 'saved' && !changed && <span style={{ fontSize: '11px', color: '#16a34a' }}>Saved</span>}
+      {status === 'error' && <span style={{ fontSize: '11px', color: '#dc2626' }}>{error}</span>}
+    </div>
   );
 }
 
@@ -15478,6 +15505,7 @@ export default function OperationsTab({
               const lotCount = group.lots.filter((lot: any) => String(lot.lot || '').trim()).length;
               return {
                 ...group,
+                isFinishedGoods: Boolean(String(group.sku || '').trim()),
                 avgCost: group.qtyOnHand > 0 ? group.assetValue / group.qtyOnHand : 0,
                 lot: lotCount ? `${lotCount} lot${lotCount === 1 ? '' : 's'}` : '',
                 expirationDate: expirations[0] || null,
@@ -15490,6 +15518,22 @@ export default function OperationsTab({
             .sort(compareInventoryRows);
         })()
       : [];
+    // Products with an Item ID are finished goods and get their own table.
+    const inventoryTableSections = showInventoryLotDates
+      ? [
+          { key: 'finished', title: 'Finished Goods', groups: inventoryProductGroups.filter((group: any) => group.isFinishedGoods) },
+          { key: 'materials', title: 'Raw Materials & Packaging', groups: inventoryProductGroups.filter((group: any) => !group.isFinishedGoods) },
+        ]
+      : [{ key: 'all', title: '', groups: inventoryProductGroups }];
+    const inventoryTypeTotals = latestRecords.reduce(
+      (totals: { finished: { value: number; products: Set<string> }; raw: { value: number; products: Set<string> } }, row: any) => {
+        const bucket = String(row?.sku || '').trim() ? totals.finished : totals.raw;
+        bucket.value += Number(row?.assetValue || 0);
+        bucket.products.add(String(row?.itemId || row?.sku || row?.itemName || '').trim().toUpperCase());
+        return totals;
+      },
+      { finished: { value: 0, products: new Set<string>() }, raw: { value: 0, products: new Set<string>() } },
+    );
     const handleInventorySort = (
       key: 'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'expirationDate' | 'receivedDate' | 'qtyOnHand' | 'avgCost' | 'assetValue'
     ) => {
@@ -15983,6 +16027,28 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          {showInventoryLotDates && (
+            <>
+              <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Finished Goods Value</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
+                  {formatCurrency(inventoryTypeTotals.finished.value)}
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                  {inventoryTypeTotals.finished.products.size.toLocaleString()} product{inventoryTypeTotals.finished.products.size === 1 ? '' : 's'}
+                </div>
+              </div>
+              <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Raw Materials &amp; Packaging Value</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
+                  {formatCurrency(inventoryTypeTotals.raw.value)}
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                  {inventoryTypeTotals.raw.products.size.toLocaleString()} product{inventoryTypeTotals.raw.products.size === 1 ? '' : 's'}
+                </div>
+              </div>
+            </>
+          )}
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Value of Top 5 Inventory Items</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#0f766e' }}>
@@ -16491,6 +16557,17 @@ export default function OperationsTab({
               />
             </div>
           </div>
+          {inventoryTableSections.map((section, sectionIndex) => (
+          <div key={`inventory-section-${section.key}`} style={{ marginTop: sectionIndex > 0 ? '24px' : 0 }}>
+          {section.title && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', marginBottom: '8px' }}>
+              <h4 style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b', margin: 0 }}>{section.title}</h4>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                {section.groups.length.toLocaleString()} product{section.groups.length === 1 ? '' : 's'} ·{' '}
+                {formatCurrency(section.groups.reduce((sum: number, group: any) => sum + Number(group.assetValue || 0), 0))}
+              </span>
+            </div>
+          )}
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -16518,7 +16595,7 @@ export default function OperationsTab({
               </thead>
               {inventoryTableExpanded && (
                 <tbody>
-                  {showInventoryLotDates && inventoryProductGroups.map((group: any) => {
+                  {showInventoryLotDates && section.groups.map((group: any) => {
                     const isExpanded = inventoryProductExpanded[group.key] === true;
                     return (
                       <React.Fragment key={`inventory-product-${group.key}`}>
@@ -16587,8 +16664,8 @@ export default function OperationsTab({
                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#1e293b' }}>{String(lot.lot || '').trim() || 'N/A'}</td>
                             <td style={{ padding: '6px 12px', textAlign: 'right' }}>
                               <InventoryLotCostInput
-                                key={`${lot.itemId}|${lot.lot}|${lot.avgCost}`}
-                                value={Number(lot.avgCost || 0) > 0 ? Number(lot.avgCost) : null}
+                                key={`${lot.itemId}|${lot.lot}|${lot.avgCost}|${lot.enteredUnitCost}`}
+                                value={lot.enteredUnitCost != null ? Number(lot.enteredUnitCost) : Number(lot.avgCost || 0) > 0 ? Number(lot.avgCost) : null}
                                 entered={lot.enteredUnitCost != null}
                                 onSave={(unitCost) => saveInventoryLotCost(lot, unitCost)}
                               />
@@ -16644,10 +16721,10 @@ export default function OperationsTab({
                       </td>
                     </tr>
                   ))}
-                  {sortedInventoryRecords.length === 0 && (
+                  {(showInventoryLotDates ? section.groups.length === 0 : sortedInventoryRecords.length === 0) && (
                     <tr>
                       <td colSpan={showInventoryLotDates ? 12 : 9} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-                        No inventory rows match your search.
+                        {section.title ? `No ${section.title.toLowerCase()} match your search.` : 'No inventory rows match your search.'}
                       </td>
                     </tr>
                   )}
@@ -16655,6 +16732,8 @@ export default function OperationsTab({
               )}
             </table>
           </div>
+          </div>
+          ))}
             </div>
           </OperationalReportPanel>
         )}

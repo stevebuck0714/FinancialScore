@@ -58,8 +58,8 @@ export async function loadFoodReadyLotCosts(companyId: string): Promise<Map<stri
   });
   return new Map(
     records
-      .map((record) => [record.externalId, Number((record.measures as Record<string, unknown>)?.unitCost || 0)] as const)
-      .filter(([, cost]) => cost > 0),
+      .map((record) => [record.externalId, Number((record.measures as Record<string, unknown>)?.unitCost)] as const)
+      .filter(([, cost]) => Number.isFinite(cost) && cost >= 0),
   );
 }
 
@@ -99,7 +99,7 @@ export async function saveFoodReadyLotCost(params: {
     select: { id: true },
   });
 
-  const unitCost = params.unitCost != null && Number.isFinite(params.unitCost) && params.unitCost > 0 ? params.unitCost : null;
+  const unitCost = params.unitCost != null && Number.isFinite(params.unitCost) && params.unitCost >= 0 ? params.unitCost : null;
   if (unitCost == null) {
     await prisma.operationalRecord.deleteMany({ where: { datasetId: dataset.id, externalId } });
   } else {
@@ -270,11 +270,12 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
   const bakersProductCost = (keys: string[]) => keys.map((key) => bakersCogs.productCost.get(key) || 0).find((cost) => cost > 0) || 0;
   const bakersMaterialCost = (keys: string[]) => keys.map((key) => bakersCogs.materialCost.get(key) || 0).find((cost) => cost > 0) || 0;
   const enteredLotCosts = await loadFoodReadyLotCosts(companyId);
+  // -1 when no cost was entered; an entered 0 is kept so a user can zero out a lot.
   const enteredCost = (itemId: string, row?: OperationalRecordInput) =>
-    enteredLotCosts.get(lotCostKey(itemId, row ? text(row.dimensions, 'lotCode') || null : null)) || 0;
+    enteredLotCosts.get(lotCostKey(itemId, row ? text(row.dimensions, 'lotCode') || null : null)) ?? -1;
   const costSources = { entered: 0, purchaseOrderLine: 0, supplierItem: 0, packaging: 0, batchOutput: 0, bakersCogsProduct: 0, bakersCogsMaterial: 0, none: 0 };
   const pickCost = (candidates: Array<[keyof typeof costSources, number]>): number => {
-    const found = candidates.find(([, cost]) => cost > 0);
+    const found = candidates.find(([source, cost]) => (source === 'entered' ? cost >= 0 : cost > 0));
     costSources[found ? found[0] : 'none'] += 1;
     return found ? found[1] : 0;
   };
@@ -387,7 +388,7 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     `costs entered in the Inventory report ${costSources.entered}, from purchase-order lines ${costSources.purchaseOrderLine}, supplier items ${costSources.supplierItem}, packaging ${costSources.packaging}, batch output ${costSources.batchOutput}, Bakers COGS products ${costSources.bakersCogsProduct}, Bakers COGS ingredients/packaging ${costSources.bakersCogsMaterial}, no cost ${costSources.none}`,
     `Bakers COGS has ${bakersCogs.productCost.size} product and ${bakersCogs.materialCost.size} ingredient/packaging cost key(s)`,
     ...(costUnitTypes.size ? [`purchase-order cost units: ${[...costUnitTypes].slice(0, 6).join(', ')}`] : []),
-    lotUsageSummary(output, bySource),
+    lotUsageSummary(companyId, output, bySource),
   ].join('; ');
 }
 
@@ -395,10 +396,19 @@ function formatQty(value: number): string {
   return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
+/** Why the last lot usage pull for a company failed; read by the snapshot note in the same sync run. */
+const lotUsageFailures = new Map<string, string>();
+
+export function setFoodReadyLotUsageFailure(companyId: string, reason: string) {
+  lotUsageFailures.set(companyId, reason);
+}
+
 /** What FoodReady reports as used from each lot (production inputs and sales order lines), against the lots in hand. */
-function lotUsageSummary(output: OperationalSourceOutput, bySource: Map<string, OperationalRecordInput[]>): string {
+function lotUsageSummary(companyId: string, output: OperationalSourceOutput, bySource: Map<string, OperationalRecordInput[]>): string {
+  const failure = lotUsageFailures.get(companyId);
+  lotUsageFailures.delete(companyId);
   const usage = output[FOODREADY_LOT_USAGE_KEY]?.rows;
-  if (!usage) return 'lot usage not pulled this sync (only syncs that include today pull it; otherwise it ran out of time or FoodReady refused the request)';
+  if (!usage) return failure ? `lot usage not pulled: ${failure}` : 'lot usage not pulled (only syncs that include today pull it)';
   const totals = { production: { entries: 0, qty: 0 }, sales: { entries: 0, qty: 0 } };
   const usedByLot = new Map<string, number>();
   let salesWithCost = 0;

@@ -18,6 +18,7 @@ import {
   FOODREADY_PURCHASED_LOTS_ENDPOINT,
   foodReadyRef,
   listFoodReadyPurchaseOrderLineIds,
+  setFoodReadyLotUsageFailure,
   writeFoodReadyInventorySnapshot,
 } from '../foodready-inventory';
 
@@ -200,7 +201,7 @@ async function fetchAllFoodReadyRecords(
   const all: Record<string, unknown>[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {
     if (page > 0) await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
-    if (Date.now() > deadline) throw new Error(`${path} was not fully pulled before the sync time limit.`);
+    if (Date.now() > deadline) throw new Error(`${path} hit the sync time limit after ${all.length} record(s).`);
     const rows = rowsFromPayload(await foodReadyApiRequest<unknown>(credentials, path, { ...query, from: page * PAGE_SIZE, size: PAGE_SIZE }));
     all.push(...rows);
     if (rows.length < PAGE_SIZE) return all;
@@ -221,10 +222,17 @@ function refId(value: unknown): string | undefined {
  * One row per lot allocation on production batch inputs and sales order lines: the lot drawn from
  * and the quantity used. Pulled in full (all dates) so each lot's total usage is complete.
  */
-async function fetchLotUsage(credentials: FoodReadyCredentials, today: string, deadline: number): Promise<OperationalRecordInput[]> {
+async function fetchLotUsage(
+  credentials: FoodReadyCredentials,
+  today: string,
+  deadline: number,
+  pulled: Record<string, number>,
+): Promise<OperationalRecordInput[]> {
   const rows: OperationalRecordInput[] = [];
   for (const [usageType, endpoint] of LOT_USAGE_ENDPOINTS) {
-    for (const record of await fetchAllFoodReadyRecords(credentials, endpoint, {}, deadline)) {
+    const records = await fetchAllFoodReadyRecords(credentials, endpoint, {}, deadline);
+    pulled[endpoint] = records.length;
+    for (const record of records) {
       const recordId = refId(record._id ?? record.id);
       if (!recordId) continue;
       const allocations = Array.isArray(record.allocatedQty) ? record.allocatedQty : [];
@@ -377,11 +385,17 @@ export async function syncFoodReady(
   }
 
   if (window.endDate >= today) {
+    const startedAfter = Math.round((Date.now() - syncStartedAt) / 1000);
+    const pulled: Record<string, number> = {};
     try {
-      const usage = await fetchLotUsage(credentials, today, syncStartedAt + LOT_USAGE_CUTOFF_MS);
+      const usage = await fetchLotUsage(credentials, today, syncStartedAt + LOT_USAGE_CUTOFF_MS, pulled);
       output[FOODREADY_LOT_USAGE_KEY] = { schema: LOT_USAGE_SCHEMA, rows: usage, replaceWindow: true, window: FULL_WINDOW };
     } catch (error) {
-      console.warn('[foodready] lot usage not pulled:', error instanceof Error ? error.message : error);
+      const finished = Object.entries(pulled).map(([endpoint, count]) => `${endpoint} ${count} record(s)`).join(', ') || 'none';
+      setFoodReadyLotUsageFailure(
+        companyId,
+        `started ${startedAfter}s into the sync, stopped at ${Math.round((Date.now() - syncStartedAt) / 1000)}s; finished endpoints: ${finished}; error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
