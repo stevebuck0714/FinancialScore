@@ -394,7 +394,7 @@ async function buildOperationalDataVersion(
     // Bump when the shape of FoodReady inventory rows changes so cached payloads are rebuilt.
     Promise.resolve(
       includeAll || type === 'inventory'
-        ? { label: 'FoodReadyInventoryRowShape', version: 3 }
+        ? { label: 'FoodReadyInventoryRowShape', version: 4 }
         : { label: 'FoodReadyInventoryRowShape', skipped: true }
     ),
     (includeAll || type === 'cash')

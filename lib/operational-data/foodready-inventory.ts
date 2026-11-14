@@ -7,6 +7,8 @@ import type { OperationalRecordInput, OperationalSourceOutput } from './types';
 export const FOODREADY_PURCHASE_ORDER_LINES_KEY = 'foodready.purchase_order_lines';
 export const FOODREADY_LOT_COSTS_KEY = 'foodready.lot_costs';
 export const FOODREADY_LOT_USAGE_KEY = 'foodready.lot_usage';
+export const FOODREADY_RECIPE_INPUTS_KEY = 'foodready.recipe_inputs';
+export const FOODREADY_RECIPE_INPUTS_ENDPOINT = '/api/bomInput/search';
 export const FOODREADY_PURCHASED_LOTS_ENDPOINT = '/api/purchaseOrdersItemLots/search';
 const WIP_LOTS_ENDPOINT = '/api/wipItemLots/search';
 const FINISHED_GOODS_LOTS_ENDPOINT = '/api/moBatchOutput/search';
@@ -388,6 +390,9 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     `costs entered in the Inventory report ${costSources.entered}, from purchase-order lines ${costSources.purchaseOrderLine}, supplier items ${costSources.supplierItem}, packaging ${costSources.packaging}, batch output ${costSources.batchOutput}, Bakers COGS products ${costSources.bakersCogsProduct}, Bakers COGS ingredients/packaging ${costSources.bakersCogsMaterial}, no cost ${costSources.none}`,
     `Bakers COGS has ${bakersCogs.productCost.size} product and ${bakersCogs.materialCost.size} ingredient/packaging cost key(s)`,
     ...(costUnitTypes.size ? [`purchase-order cost units: ${[...costUnitTypes].slice(0, 6).join(', ')}`] : []),
+    output[FOODREADY_RECIPE_INPUTS_KEY]
+      ? `${output[FOODREADY_RECIPE_INPUTS_KEY].rows.length} recipe input(s) (ingredients made in production are kept out of Finished Goods)`
+      : 'recipe inputs not pulled this sync',
     lotUsageSummary(companyId, output, bySource),
   ].join('; ');
 }
@@ -478,7 +483,9 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
       companyId,
       dataMode: 'LIVE',
       dataset: { sourceCode: FOODREADY_SOURCE_CODE },
-      OR: [...LOT_ENDPOINTS, ITEM_PACKAGING_ENDPOINT].map((endpoint) => ({ dimensions: { path: ['sourceObject'], equals: endpoint } })),
+      OR: [...LOT_ENDPOINTS, ITEM_PACKAGING_ENDPOINT, FOODREADY_RECIPE_INPUTS_ENDPOINT].map((endpoint) => ({
+        dimensions: { path: ['sourceObject'], equals: endpoint },
+      })),
     },
     select: { dimensions: true, measures: true },
   });
@@ -487,11 +494,19 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
     const dims = (record.dimensions || {}) as Dimensions;
     if (text(dims, 'sourceObject') === ITEM_PACKAGING_ENDPOINT) packagingItem.set(text(dims, 'id'), foodReadyRef(dims, 'inventoryItem'));
   }
+  // Produced items that go into another recipe (e.g. sugar mixes) are ingredients, not finished goods.
+  const recipeIngredients = new Set<string>();
+  for (const record of records) {
+    const dims = (record.dimensions || {}) as Dimensions;
+    if (text(dims, 'sourceObject') !== FOODREADY_RECIPE_INPUTS_ENDPOINT) continue;
+    const itemId = foodReadyRef(dims, 'inventoryItem') || packagingItem.get(foodReadyRef(dims, 'itemPackaging')) || '';
+    if (itemId) recipeIngredients.add(itemId);
+  }
   for (const record of records) {
     const dims = (record.dimensions || {}) as Dimensions;
     if (text(dims, 'sourceObject') !== FINISHED_GOODS_LOTS_ENDPOINT) continue;
     const itemId = packagingItem.get(foodReadyRef(dims, 'itemPackaging'));
-    if (itemId) finishedGoodsItems.add(itemId);
+    if (itemId && !recipeIngredients.has(itemId)) finishedGoodsItems.add(itemId);
   }
   if (lotCodes.length) {
     const wanted = new Set(lotCodes);
@@ -519,7 +534,11 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
       expirationDate: match?.expirationDate ?? null,
       receivedDate: match?.receivedDate ?? null,
       enteredUnitCost: enteredLotCosts.get(lotCostKey(row.itemId, row.lot)) ?? null,
-      lotSource: finishedGoodsItems.has(String(row.itemId || '').trim()) ? 'finished_goods' : (match?.source ?? null),
+      lotSource: finishedGoodsItems.has(String(row.itemId || '').trim())
+        ? 'finished_goods'
+        : match?.source === 'finished_goods' && recipeIngredients.has(String(row.itemId || '').trim())
+          ? 'wip'
+          : (match?.source ?? null),
     };
   });
 }

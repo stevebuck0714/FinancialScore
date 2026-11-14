@@ -15,6 +15,8 @@ import { FULL_WINDOW, asRecord, readConnectionMetadata } from './common';
 import {
   FOODREADY_LOT_USAGE_KEY,
   FOODREADY_PURCHASE_ORDER_LINES_KEY,
+  FOODREADY_RECIPE_INPUTS_ENDPOINT,
+  FOODREADY_RECIPE_INPUTS_KEY,
   FOODREADY_PURCHASED_LOTS_ENDPOINT,
   foodReadyRef,
   listFoodReadyPurchaseOrderLineIds,
@@ -49,6 +51,15 @@ const LOT_USAGE_ENDPOINTS = [
   ['production', '/api/moBatchInput/search'],
   ['sales', '/api/salesOrderItems'],
 ] as const;
+
+const RECIPE_INPUTS_SCHEMA: OperationalDatasetSchema = {
+  key: FOODREADY_RECIPE_INPUTS_KEY,
+  label: 'FoodReady Recipe Inputs',
+  description: 'Ingredients and packaging on each FoodReady recipe (bill of materials). Current state, refreshed whenever a sync includes today.',
+  grain: 'point_in_time',
+  dimensions: [{ name: 'sourceObject' }, { name: 'bom' }, { name: 'inventoryItem' }, { name: 'itemPackaging' }, { name: 'supplierItem' }],
+  measures: [{ name: 'recordCount', description: 'Always 1; sum to count records.' }, { name: 'inputQuantity' }],
+};
 
 const LOT_USAGE_SCHEMA: OperationalDatasetSchema = {
   key: FOODREADY_LOT_USAGE_KEY,
@@ -382,6 +393,33 @@ export async function syncFoodReady(
         return { date, externalId: `${domain.sourceObject}|${identity}`, dimensions, measures };
       }),
     };
+  }
+
+  if (window.endDate >= today) {
+    try {
+      const inputs = (await fetchAllFoodReadyRecords(credentials, FOODREADY_RECIPE_INPUTS_ENDPOINT, {}, syncStartedAt + LOT_USAGE_CUTOFF_MS))
+        .filter((raw) => raw.deleted !== true && !raw.deletedAt)
+        .map(flattenRecord);
+      output[FOODREADY_RECIPE_INPUTS_KEY] = {
+        schema: RECIPE_INPUTS_SCHEMA,
+        replaceWindow: true,
+        window: FULL_WINDOW,
+        rows: inputs.map((record, index) => ({
+          date: today,
+          externalId: String(record.id ?? index),
+          dimensions: {
+            sourceObject: FOODREADY_RECIPE_INPUTS_ENDPOINT,
+            bom: String(record.bom ?? record.bomId ?? '') || undefined,
+            inventoryItem: String(record.inventoryItem ?? record.inventoryItemId ?? '') || undefined,
+            itemPackaging: String(record.itemPackaging ?? record.itemPackagingId ?? '') || undefined,
+            supplierItem: String(record.supplierItem ?? record.supplierItemId ?? '') || undefined,
+          },
+          measures: { recordCount: 1, ...(typeof record.inputQuantity === 'number' ? { inputQuantity: record.inputQuantity } : {}) },
+        })),
+      };
+    } catch (error) {
+      console.warn('[foodready] recipe inputs not pulled:', error instanceof Error ? error.message : error);
+    }
   }
 
   if (window.endDate >= today) {
