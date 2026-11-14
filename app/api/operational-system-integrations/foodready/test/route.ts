@@ -38,14 +38,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'probe') {
-      const results = await Promise.all(domains.map(async (domain) => {
+      const results = [];
+      for (const domain of domains) {
         try {
           const record = firstRecord(await foodReadyApiRequest<unknown>(credentials, domain.sourceObject, { from: 0, size: 1 }));
-          return { dataDomain: domain.dataDomain, endpoint: domain.sourceObject, ok: true, fieldCount: record ? Object.keys(record).length : 0 };
+          results.push({ dataDomain: domain.dataDomain, endpoint: domain.sourceObject, ok: true, fieldCount: record ? Object.keys(record).length : 0 });
         } catch (error: any) {
-          return { dataDomain: domain.dataDomain, endpoint: domain.sourceObject, ok: false, error: error?.message || 'Request failed' };
+          results.push({ dataDomain: domain.dataDomain, endpoint: domain.sourceObject, ok: false, error: error?.message || 'Request failed' });
         }
-      }));
+      }
       return NextResponse.json({ ok: true, results });
     }
 

@@ -17,6 +17,8 @@ const SENSITIVE_FIELD = /(address|contact|email|phone|password|secret|token|ssn|
 const SAFE_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,62}$/;
 const PAGE_SIZE = 200;
 const MAX_PAGES = 100;
+/** Pause between page requests so a full pull stays under FoodReady's rate limit. */
+const PAGE_DELAY_MS = 250;
 
 /**
  * The business date each record describes, first match wins. Endpoints with no date fields are
@@ -85,6 +87,7 @@ function schemaFor(domain: DataDomain, records: Record<string, unknown>[]): Oper
 async function fetchAllFoodReadyRecords(credentials: FoodReadyCredentials, path: string): Promise<Record<string, unknown>[]> {
   const all: Record<string, unknown>[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {
+    if (page > 0) await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
     const rows = rowsFromPayload(await foodReadyApiRequest<unknown>(credentials, path, { from: page * PAGE_SIZE, size: PAGE_SIZE }));
     all.push(...rows);
     if (rows.length < PAGE_SIZE) break;

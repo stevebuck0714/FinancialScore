@@ -60,6 +60,22 @@ export function foodReadyCredentialsFromConnection(
   return apiKey ? { baseUrl, apiKey, organizationId } : null;
 }
 
+const MAX_RATE_LIMIT_RETRIES = 6;
+const MAX_RETRY_WAIT_MS = 30_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Wait requested by a 429/503 Retry-After header (seconds or HTTP date), else exponential backoff. */
+function retryDelayMs(response: Response, attempt: number): number {
+  const header = response.headers.get('retry-after');
+  const seconds = header ? Number(header) : NaN;
+  const fromHeader = Number.isFinite(seconds)
+    ? seconds * 1000
+    : header && !Number.isNaN(Date.parse(header)) ? Date.parse(header) - Date.now() : NaN;
+  const delay = Number.isFinite(fromHeader) && fromHeader > 0 ? fromHeader : 1000 * 2 ** attempt;
+  return Math.min(MAX_RETRY_WAIT_MS, delay);
+}
+
 export async function foodReadyApiRequest<T>(
   credentials: FoodReadyCredentials,
   path: string,
@@ -71,8 +87,15 @@ export async function foodReadyApiRequest<T>(
   if (url.origin !== baseUrl.origin) throw new Error('FoodReady endpoint must be relative to the configured API Base URL.');
   if (credentials.organizationId) url.searchParams.set('organizationId', credentials.organizationId);
   Object.entries(query).forEach(([key, value]) => url.searchParams.set(key, String(value)));
-  const response = await fetch(url, { headers: { Accept: 'application/json', 'x-api-key': credentials.apiKey }, cache: 'no-store' });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`FoodReady API returned HTTP ${response.status} for ${path}.`);
-  return (text ? JSON.parse(text) : {}) as T;
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(url, { headers: { Accept: 'application/json', 'x-api-key': credentials.apiKey }, cache: 'no-store' });
+    const text = await response.text();
+    if ((response.status === 429 || response.status === 503) && attempt < MAX_RATE_LIMIT_RETRIES) {
+      await sleep(retryDelayMs(response, attempt));
+      continue;
+    }
+    if (response.status === 429) throw new Error(`FoodReady API rate limit (HTTP 429) persisted for ${path} after ${MAX_RATE_LIMIT_RETRIES} retries.`);
+    if (!response.ok) throw new Error(`FoodReady API returned HTTP ${response.status} for ${path}.`);
+    return (text ? JSON.parse(text) : {}) as T;
+  }
 }
