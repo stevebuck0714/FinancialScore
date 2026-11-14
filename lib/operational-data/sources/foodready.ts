@@ -5,6 +5,7 @@ import {
   foodReadyApiRequest,
   foodReadyCredentialsFromConnection,
   foodReadyEndpointForDomain,
+  FoodReadyRateLimitError,
   withDefaultFoodReadyDomains,
   type FoodReadyCredentials,
 } from '@/lib/foodready';
@@ -36,7 +37,9 @@ const MAX_PAGES = 100;
 const PAGE_DELAY_MS = 250;
 /** Purchase-order line lookups per sync stop after this long; the rest are looked up on the next sync. */
 const PO_LINE_LOOKUP_BUDGET_MS = 90_000;
-const PO_LINE_LOOKUP_CONCURRENCY = 3;
+/** Lookups also stop this long after the sync started, leaving room to store the run within the 300s function limit. */
+const PO_LINE_LOOKUP_CUTOFF_MS = 200_000;
+const PO_LINE_LOOKUP_CONCURRENCY = 2;
 
 const PURCHASE_ORDER_LINES_SCHEMA: OperationalDatasetSchema = {
   key: FOODREADY_PURCHASE_ORDER_LINES_KEY,
@@ -175,19 +178,22 @@ async function fetchNewPurchaseOrderLines(
   companyId: string,
   poItemIds: string[],
   today: string,
+  syncStartedAt: number,
 ): Promise<OperationalRecordInput[]> {
   const known = await listFoodReadyPurchaseOrderLineIds(companyId);
   const queue = [...new Set(poItemIds)].filter((id) => id && !known.has(id));
-  const deadline = Date.now() + PO_LINE_LOOKUP_BUDGET_MS;
+  const deadline = Math.min(Date.now() + PO_LINE_LOOKUP_BUDGET_MS, syncStartedAt + PO_LINE_LOOKUP_CUTOFF_MS);
   const rows: OperationalRecordInput[] = [];
+  let rateLimited = false;
   const worker = async () => {
-    while (queue.length && Date.now() < deadline) {
+    while (queue.length && !rateLimited && Date.now() < deadline) {
       const id = queue.shift()!;
       let line: FlatRecord;
       try {
-        const payload = asRecord(await foodReadyApiRequest<unknown>(credentials, `/api/purchaseOrdersItems/${encodeURIComponent(id)}`));
+        const payload = asRecord(await foodReadyApiRequest<unknown>(credentials, `/api/purchaseOrdersItems/${encodeURIComponent(id)}`, {}, { maxRetries: 1 }));
         line = flattenRecord(payload.data && typeof payload.data === 'object' ? asRecord(payload.data) : payload);
-      } catch {
+      } catch (error) {
+        if (error instanceof FoodReadyRateLimitError) rateLimited = true;
         continue;
       }
       const number = (key: string) => (typeof line[key] === 'number' ? (line[key] as number) : undefined);
@@ -218,6 +224,7 @@ export async function syncFoodReady(
   { companyId, window }: { companyId: string; window: OperationalSyncWindow },
   options: { resolvePurchaseOrderLines?: boolean } = {},
 ): Promise<OperationalSourceOutput> {
+  const syncStartedAt = Date.now();
   const { connection, metadata } = await readConnectionMetadata(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
   const credentials = connection?.status === 'ACTIVE' ? foodReadyCredentialsFromConnection(connection) : null;
   if (!credentials) throw new Error('FoodReady is not connected for this company.');
@@ -255,7 +262,7 @@ export async function syncFoodReady(
     .filter((row) => row.dimensions?.sourceObject === FOODREADY_PURCHASED_LOTS_ENDPOINT)
     .map((row) => foodReadyRef(row.dimensions, 'poItem'));
   if (options.resolvePurchaseOrderLines !== false && purchasedLotIds.length) {
-    const lines = await fetchNewPurchaseOrderLines(credentials, companyId, purchasedLotIds, today);
+    const lines = await fetchNewPurchaseOrderLines(credentials, companyId, purchasedLotIds, today, syncStartedAt);
     if (lines.length) output[FOODREADY_PURCHASE_ORDER_LINES_KEY] = { schema: PURCHASE_ORDER_LINES_SCHEMA, rows: lines };
   }
   return output;

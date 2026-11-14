@@ -181,7 +181,7 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, sourceCode: SOURCE_CODE, action: 'run_live' }),
       });
-      const result = await response.json();
+      const result = await response.json().catch(() => ({ error: `FoodReady sync stopped before finishing (HTTP ${response.status}); nothing from this run was stored.` }));
       if (!response.ok || !result.ok) throw new Error(result.error || result.skipped || 'FoodReady sync failed.');
       const rows = Array.isArray(result.datasets) ? result.datasets.reduce((total: number, dataset: { written?: number }) => total + Number(dataset.written || 0), 0) : 0;
       setSyncMessage(`Synced ${rows.toLocaleString('en-US')} row(s).${result.note ? ` ${result.note}.` : ''}`);

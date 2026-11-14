@@ -95,11 +95,15 @@ function retryDelayMs(response: Response, attempt: number): number {
   return Math.min(MAX_RETRY_WAIT_MS, delay);
 }
 
+export class FoodReadyRateLimitError extends Error {}
+
 export async function foodReadyApiRequest<T>(
   credentials: FoodReadyCredentials,
   path: string,
-  query: Record<string, string | number | boolean> = {}
+  query: Record<string, string | number | boolean> = {},
+  options: { maxRetries?: number } = {},
 ): Promise<T> {
+  const maxRetries = options.maxRetries ?? MAX_RATE_LIMIT_RETRIES;
   const baseUrl = new URL(credentials.baseUrl);
   if (baseUrl.protocol !== 'https:') throw new Error('FoodReady API Base URL must use HTTPS.');
   const url = new URL(path, baseUrl);
@@ -109,11 +113,11 @@ export async function foodReadyApiRequest<T>(
   for (let attempt = 0; ; attempt += 1) {
     const response = await fetch(url, { headers: { Accept: 'application/json', 'x-api-key': credentials.apiKey }, cache: 'no-store' });
     const text = await response.text();
-    if ((response.status === 429 || response.status === 503) && attempt < MAX_RATE_LIMIT_RETRIES) {
+    if ((response.status === 429 || response.status === 503) && attempt < maxRetries) {
       await sleep(retryDelayMs(response, attempt));
       continue;
     }
-    if (response.status === 429) throw new Error(`FoodReady API rate limit (HTTP 429) persisted for ${path} after ${MAX_RATE_LIMIT_RETRIES} retries.`);
+    if (response.status === 429) throw new FoodReadyRateLimitError(`FoodReady API rate limit (HTTP 429) persisted for ${path} after ${maxRetries} retries.`);
     if (!response.ok) throw new Error(`FoodReady API returned HTTP ${response.status} for ${path}.`);
     return (text ? JSON.parse(text) : {}) as T;
   }
