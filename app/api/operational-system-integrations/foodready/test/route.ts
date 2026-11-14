@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const overlapDays = normalizeFoodReadyOverlapDays(asRecord(metadata.foodReadySettings).overlapDays);
     const endDate = formatEstDate();
     const window = { startDate: addEstCalendarDays(endDate, -overlapDays), endDate };
-    const output = await syncFoodReady({ companyId, window });
+    const output = await syncFoodReady({ companyId, window }, { resolvePurchaseOrderLines: false });
     const datasets = Object.values(output).map((dataset) => ({ label: dataset.schema?.label || '', rows: dataset.rows.length }));
     return NextResponse.json({ ok: true, window, datasets });
   } catch (error: any) {

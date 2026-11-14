@@ -9,8 +9,15 @@ import {
   type FoodReadyCredentials,
 } from '@/lib/foodready';
 import { formatEstDate } from '@/lib/time/eastern';
-import type { OperationalDatasetSchema, OperationalSourceAdapter, OperationalSourceOutput, OperationalSyncWindow } from '../types';
+import type { OperationalDatasetSchema, OperationalRecordInput, OperationalSourceAdapter, OperationalSourceOutput, OperationalSyncWindow } from '../types';
 import { FULL_WINDOW, asRecord, readConnectionMetadata } from './common';
+import {
+  FOODREADY_PURCHASE_ORDER_LINES_KEY,
+  FOODREADY_PURCHASED_LOTS_ENDPOINT,
+  foodReadyRef,
+  listFoodReadyPurchaseOrderLineIds,
+  writeFoodReadyInventorySnapshot,
+} from '../foodready-inventory';
 
 type DataDomain = { dataDomain: string; sourceObject: string; enabled: boolean };
 type FlatRecord = Record<string, string | number | boolean>;
@@ -27,6 +34,24 @@ const PAGE_SIZE = 200;
 const MAX_PAGES = 100;
 /** Pause between page requests so a full pull stays under FoodReady's rate limit. */
 const PAGE_DELAY_MS = 250;
+/** Purchase-order line lookups per sync stop after this long; the rest are looked up on the next sync. */
+const PO_LINE_LOOKUP_BUDGET_MS = 90_000;
+const PO_LINE_LOOKUP_CONCURRENCY = 3;
+
+const PURCHASE_ORDER_LINES_SCHEMA: OperationalDatasetSchema = {
+  key: FOODREADY_PURCHASE_ORDER_LINES_KEY,
+  label: 'FoodReady Purchase Order Lines',
+  description: 'FoodReady purchase-order lines behind purchased lots: the supplier item ordered and its unit cost. Each line is looked up once and kept.',
+  grain: 'point_in_time',
+  dimensions: [{ name: 'po' }, { name: 'supplierItem' }, { name: 'status' }, { name: 'uom' }],
+  measures: [
+    { name: 'recordCount', description: 'Always 1; sum to count records.' },
+    { name: 'unitCost' },
+    { name: 'unitSize' },
+    { name: 'noOfUnits' },
+    { name: 'totalOrderQuantity' },
+  ],
+};
 
 /**
  * Current-state endpoints: the full list as of the sync date, not history. Lot endpoints only
@@ -142,6 +167,42 @@ async function fetchAllFoodReadyRecords(
   return all;
 }
 
+/** Look up purchase-order lines not seen before, a few at a time, until the time budget runs out. */
+async function fetchNewPurchaseOrderLines(
+  credentials: FoodReadyCredentials,
+  companyId: string,
+  poItemIds: string[],
+  today: string,
+): Promise<OperationalRecordInput[]> {
+  const known = await listFoodReadyPurchaseOrderLineIds(companyId);
+  const queue = [...new Set(poItemIds)].filter((id) => id && !known.has(id));
+  const deadline = Date.now() + PO_LINE_LOOKUP_BUDGET_MS;
+  const rows: OperationalRecordInput[] = [];
+  const worker = async () => {
+    while (queue.length && Date.now() < deadline) {
+      const id = queue.shift()!;
+      let line: FlatRecord;
+      try {
+        const payload = asRecord(await foodReadyApiRequest<unknown>(credentials, `/api/purchaseOrdersItems/${encodeURIComponent(id)}`));
+        line = flattenRecord(payload.data && typeof payload.data === 'object' ? asRecord(payload.data) : payload);
+      } catch {
+        continue;
+      }
+      const number = (key: string) => (typeof line[key] === 'number' ? (line[key] as number) : undefined);
+      const text = (key: string) => (typeof line[key] === 'string' ? (line[key] as string) : undefined);
+      rows.push({
+        date: today,
+        externalId: id,
+        dimensions: { po: text('po'), supplierItem: text('supplierItem') ?? text('supplierItemId'), status: text('status'), uom: text('uom') ?? text('uomCode') },
+        measures: { recordCount: 1, unitCost: number('unitCost'), unitSize: number('unitSize'), noOfUnits: number('noOfUnits'), totalOrderQuantity: number('totalOrderQuantity') },
+      });
+      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+    }
+  };
+  await Promise.all(Array.from({ length: PO_LINE_LOOKUP_CONCURRENCY }, worker));
+  return rows;
+}
+
 function recordDate(endpoint: string, record: FlatRecord, today: string): string {
   for (const field of DATE_FIELDS_BY_ENDPOINT[endpoint] ?? DEFAULT_DATE_FIELDS) {
     const value = record[field];
@@ -151,7 +212,10 @@ function recordDate(endpoint: string, record: FlatRecord, today: string): string
   return today;
 }
 
-export async function syncFoodReady({ companyId, window }: { companyId: string; window: OperationalSyncWindow }): Promise<OperationalSourceOutput> {
+export async function syncFoodReady(
+  { companyId, window }: { companyId: string; window: OperationalSyncWindow },
+  options: { resolvePurchaseOrderLines?: boolean } = {},
+): Promise<OperationalSourceOutput> {
   const { connection, metadata } = await readConnectionMetadata(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
   const credentials = connection?.status === 'ACTIVE' ? foodReadyCredentialsFromConnection(connection) : null;
   if (!credentials) throw new Error('FoodReady is not connected for this company.');
@@ -183,6 +247,15 @@ export async function syncFoodReady({ companyId, window }: { companyId: string; 
       }),
     };
   }
+
+  const purchasedLotIds = Object.values(output)
+    .flatMap((dataset) => dataset.rows)
+    .filter((row) => row.dimensions?.sourceObject === FOODREADY_PURCHASED_LOTS_ENDPOINT)
+    .map((row) => foodReadyRef(row.dimensions, 'poItem'));
+  if (options.resolvePurchaseOrderLines !== false && purchasedLotIds.length) {
+    const lines = await fetchNewPurchaseOrderLines(credentials, companyId, purchasedLotIds, today);
+    if (lines.length) output[FOODREADY_PURCHASE_ORDER_LINES_KEY] = { schema: PURCHASE_ORDER_LINES_SCHEMA, rows: lines };
+  }
   return output;
 }
 
@@ -196,5 +269,8 @@ export const FOODREADY_ADAPTER: OperationalSourceAdapter = {
   defaultHistoryDays: 365,
   dynamicDatasets: true,
   datasets: [],
-  sync: syncFoodReady,
+  sync: (context) => syncFoodReady(context),
+  afterLiveWrite: async (companyId, output) => {
+    await writeFoodReadyInventorySnapshot(companyId, output);
+  },
 };

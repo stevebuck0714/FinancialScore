@@ -1061,7 +1061,7 @@ export default function OperationsTab({
   const [expandedInventoryMovementDepartments, setExpandedInventoryMovementDepartments] = useState<Record<string, boolean>>({});
   const [hiddenInventoryTrendSeries, setHiddenInventoryTrendSeries] = useState<Record<string, boolean>>({});
   const [inventorySortKey, setInventorySortKey] = useState<
-    'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'qtyOnHand' | 'avgCost' | 'assetValue'
+    'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'expirationDate' | 'receivedDate' | 'qtyOnHand' | 'avgCost' | 'assetValue'
   >('assetValue');
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
   const [inventoryCostTrendModalOpen, setInventoryCostTrendModalOpen] = useState(false);
@@ -15341,12 +15341,13 @@ export default function OperationsTab({
       const base = Array.isArray(records) ? records : [];
       const bySku = new Map<string, any>();
       for (const row of base) {
-        const key =
-          String(row?.sku || row?.itemId || row?.itemName || '')
-            .trim()
-            .replace(/\s+/g, '')
-            .toUpperCase();
-        if (!key) continue;
+        const skuKey = String(row?.sku || row?.itemId || row?.itemName || '')
+          .trim()
+          .replace(/\s+/g, '')
+          .toUpperCase();
+        if (!skuKey) continue;
+        // Lot-level sources (FoodReady) return one row per lot; keep each lot on its own row.
+        const key = row && 'expirationDate' in row ? `${skuKey}|${String(row.lot || '').trim()}|${row.id || ''}` : skuKey;
         if (!bySku.has(key)) {
           bySku.set(key, {
             ...row,
@@ -15391,15 +15392,20 @@ export default function OperationsTab({
       const bText = String(b?.[inventorySortKey] || '').toLowerCase();
       return aText.localeCompare(bText) * dir;
     });
+    const showInventoryLotDates = latestRecords.some((item: any) => item?.expirationDate || item?.receivedDate);
     const handleInventorySort = (
-      key: 'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'qtyOnHand' | 'avgCost' | 'assetValue'
+      key: 'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'expirationDate' | 'receivedDate' | 'qtyOnHand' | 'avgCost' | 'assetValue'
     ) => {
       if (inventorySortKey === key) {
         setInventorySortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
         return;
       }
       setInventorySortKey(key);
-      setInventorySortDir(key === 'itemName' || key === 'sku' || key === 'warehouse' || key === 'bin' || key === 'lot' ? 'asc' : 'desc');
+      setInventorySortDir(
+        key === 'itemName' || key === 'sku' || key === 'warehouse' || key === 'bin' || key === 'lot' || key === 'expirationDate' || key === 'receivedDate'
+          ? 'asc'
+          : 'desc'
+      );
     };
     const inventorySortLabel = (key: string) =>
       inventorySortKey === key ? (inventorySortDir === 'asc' ? ' ▲' : ' ▼') : '';
@@ -16386,6 +16392,12 @@ export default function OperationsTab({
                   <th onClick={() => handleInventorySort('warehouse')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Warehouse{inventorySortLabel('warehouse')}</th>
                   <th onClick={() => handleInventorySort('bin')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Bin{inventorySortLabel('bin')}</th>
                   <th onClick={() => handleInventorySort('lot')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Lot{inventorySortLabel('lot')}</th>
+                  {showInventoryLotDates && (
+                    <>
+                      <th onClick={() => handleInventorySort('expirationDate')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Expiration{inventorySortLabel('expirationDate')}</th>
+                      <th onClick={() => handleInventorySort('receivedDate')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Received{inventorySortLabel('receivedDate')}</th>
+                    </>
+                  )}
                   <th onClick={() => handleInventorySort('qtyOnHand')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Qty on Hand{inventorySortLabel('qtyOnHand')}</th>
                   <th onClick={() => handleInventorySort('avgCost')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Avg Cost{inventorySortLabel('avgCost')}</th>
                   <th onClick={() => handleInventorySort('assetValue')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Asset Value{inventorySortLabel('assetValue')}</th>
@@ -16401,6 +16413,12 @@ export default function OperationsTab({
                       <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.warehouse || '').trim() || 'N/A'}</td>
                       <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.bin || '').trim() || 'N/A'}</td>
                       <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.lot || '').trim() || 'N/A'}</td>
+                      {showInventoryLotDates && (
+                        <>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{item.expirationDate ? formatDateUtcMinus4(item.expirationDate) : 'N/A'}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{item.receivedDate ? formatDateUtcMinus4(item.receivedDate) : 'N/A'}</td>
+                        </>
+                      )}
                       <td style={{ padding: '12px', fontSize: '14px', color: '#2563eb', textAlign: 'right', fontWeight: '600' }}>
                         {item.qtyOnHand.toLocaleString()}
                       </td>
@@ -16431,7 +16449,7 @@ export default function OperationsTab({
                   ))}
                   {sortedInventoryRecords.length === 0 && (
                     <tr>
-                      <td colSpan={9} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                      <td colSpan={showInventoryLotDates ? 11 : 9} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
                         No inventory rows match your search.
                       </td>
                     </tr>

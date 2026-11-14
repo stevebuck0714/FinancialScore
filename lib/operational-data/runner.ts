@@ -148,6 +148,7 @@ async function persistOutput(params: {
     let mockRowsRemoved: number | undefined;
     if (mode === 'LIVE' && !state.liveSince) mockRowsRemoved = await removeSourceMockData(companyId, adapter.sourceCode);
     const datasets = await writeOperationalSourceOutput({ companyId, adapter, output, mode, window, runId: randomUUID() });
+    if (mode === 'LIVE') await adapter.afterLiveWrite?.(companyId, output);
     const written = datasets.reduce((sum, dataset) => sum + dataset.written, 0);
     const now = new Date();
     await prisma.operationalSourceState.update({

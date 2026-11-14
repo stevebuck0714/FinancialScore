@@ -13,6 +13,7 @@ import {
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { getValidQuickBooksToken } from '@/lib/quickbooks-online/token-manager';
+import { isFoodReadyInventorySource } from '@/lib/operational-data/foodready-inventory';
 import {
   syncQuickBooksDailyFinancialsFromGL,
   type QboDailyFinancialsSyncResult,
@@ -1636,34 +1637,38 @@ export class QuickBooksAdapter implements AccountingAdapter {
       }
       
       // 6. Sync Inventory
-      try {
-        const inventory = await this.getInventory();
-        await prisma.inventorySnapshot.deleteMany({
-          where: {
-            companyId: this.config.companyId,
-            frequency,
-            snapshotDate: asOfDate,
-          },
-        });
-        if (inventory.length) {
-          await prisma.inventorySnapshot.createMany({
-            data: inventory.map((item) => ({
+      if (await isFoodReadyInventorySource(this.config.companyId)) {
+        console.log('Skipping inventory sync: FoodReady supplies inventory for this company.');
+      } else {
+        try {
+          const inventory = await this.getInventory();
+          await prisma.inventorySnapshot.deleteMany({
+            where: {
               companyId: this.config.companyId,
-              snapshotDate: asOfDate,
               frequency,
-              itemId: item.itemId,
-              itemName: item.itemName,
-              sku: item.sku,
-              qtyOnHand: item.qtyOnHand,
-              assetValue: item.assetValue,
-              avgCost: item.avgCost,
-            })),
+              snapshotDate: asOfDate,
+            },
           });
-          recordsCreated += inventory.length;
-          moduleCounts.inventory += inventory.length;
+          if (inventory.length) {
+            await prisma.inventorySnapshot.createMany({
+              data: inventory.map((item) => ({
+                companyId: this.config.companyId,
+                snapshotDate: asOfDate,
+                frequency,
+                itemId: item.itemId,
+                itemName: item.itemName,
+                sku: item.sku,
+                qtyOnHand: item.qtyOnHand,
+                assetValue: item.assetValue,
+                avgCost: item.avgCost,
+              })),
+            });
+            recordsCreated += inventory.length;
+            moduleCounts.inventory += inventory.length;
+          }
+        } catch (error: unknown) {
+          errors.push(`Inventory sync failed: ${this.errorMessage(error)}`);
         }
-      } catch (error: unknown) {
-        errors.push(`Inventory sync failed: ${this.errorMessage(error)}`);
       }
 
       if (isMonthly) {

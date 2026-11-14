@@ -35,6 +35,7 @@ import {
 import { BAMBOOHR_SOURCE_CODE } from '@/lib/bamboohr';
 import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
 import { readCogentRateCard } from '@/lib/operational/cogent-rate-card';
+import { foodReadyInventoryLotRecords, isFoodReadyInventorySource } from '@/lib/operational-data/foodready-inventory';
 import { buildCustomersSitesFromSales, emptyCustomersSitesPayload } from '@/lib/operations/customers-sites-reports';
 import {
   buildIsolvedPayrollEmptyPayload,
@@ -11657,8 +11658,15 @@ export async function GET(request: NextRequest) {
           });
         }
 
+        const inventoryRecords = (await isFoodReadyInventorySource(companyId))
+          ? await foodReadyInventoryLotRecords(
+              companyId,
+              [...latestInventoryEffective].sort((a, b) => Number(b.assetValue || 0) - Number(a.assetValue || 0)),
+            )
+          : latestInventoryBySku;
+
         return cacheOperationalPayload({
-          records: latestInventoryBySku,
+          records: inventoryRecords,
           trend: inventoryTrendDaily,
           unitCostHistory,
           agingReport,

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import prisma from "@/lib/prisma";
+import { isFoodReadyInventorySource } from "@/lib/operational-data/foodready-inventory";
 
 type Frequency = "daily" | "weekly" | "monthly";
 
@@ -1137,12 +1138,14 @@ export async function syncQuickBooksDesktopOperationalPayload(
     );
   }
   try {
-    recordsCreated += await saveInventory(
-      companyId,
-      snapshotDate,
-      frequency,
-      Array.isArray(payload.inventory) ? payload.inventory : [],
-    );
+    if (!(await isFoodReadyInventorySource(companyId))) {
+      recordsCreated += await saveInventory(
+        companyId,
+        snapshotDate,
+        frequency,
+        Array.isArray(payload.inventory) ? payload.inventory : [],
+      );
+    }
   } catch (error) {
     errors.push(
       `inventory: ${error instanceof Error ? error.message : "failed to persist"}`,
