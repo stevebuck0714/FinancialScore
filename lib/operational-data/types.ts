@@ -99,8 +99,8 @@ export type OperationalSourceAdapter = {
   /** Days of history to generate on each mock refresh (default 400). */
   defaultMockLookbackDays?: number;
   sync?: (context: OperationalSourceContext) => Promise<OperationalSourceOutput>;
-  /** Runs after a LIVE run's rows are stored (e.g. to feed a report's own snapshot table). */
-  afterLiveWrite?: (companyId: string, output: OperationalSourceOutput) => Promise<void>;
+  /** Runs after a LIVE run's rows are stored (e.g. to feed a report's own snapshot table); the returned note is shown with the run result. */
+  afterLiveWrite?: (companyId: string, output: OperationalSourceOutput) => Promise<string | void>;
   mock?: (context: OperationalSourceContext) => Promise<OperationalSourceOutput>;
   /** Mock data is only stored while this returns true (e.g. company is in demo mode). */
   mockEligible?: (companyId: string) => Promise<boolean>;

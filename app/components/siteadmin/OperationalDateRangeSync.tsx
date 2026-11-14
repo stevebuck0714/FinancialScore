@@ -81,7 +81,7 @@ export default function OperationalDateRangeSync({
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body?.ok) throw new Error(body?.error || body?.skipped || 'Date range sync failed');
       const written = (body.datasets || []).reduce((sum: number, dataset: { written?: number }) => sum + Number(dataset.written || 0), 0);
-      setResult(`Stored ${written.toLocaleString('en-US')} row(s) for ${startDate} – ${endDate}.`);
+      setResult(`Stored ${written.toLocaleString('en-US')} row(s) for ${startDate} – ${endDate}.${body.note ? ` ${body.note}.` : ''}`);
       setInfo(await load());
       onSynced?.();
     } catch (syncError) {

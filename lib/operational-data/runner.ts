@@ -22,6 +22,7 @@ export type OperationalRunResult = {
   mockRowsRemoved?: number;
   skipped?: string;
   error?: string;
+  note?: string;
 };
 
 /**
@@ -148,20 +149,20 @@ async function persistOutput(params: {
     let mockRowsRemoved: number | undefined;
     if (mode === 'LIVE' && !state.liveSince) mockRowsRemoved = await removeSourceMockData(companyId, adapter.sourceCode);
     const datasets = await writeOperationalSourceOutput({ companyId, adapter, output, mode, window, runId: randomUUID() });
-    if (mode === 'LIVE') await adapter.afterLiveWrite?.(companyId, output);
+    const note = mode === 'LIVE' ? (await adapter.afterLiveWrite?.(companyId, output)) || undefined : undefined;
     const written = datasets.reduce((sum, dataset) => sum + dataset.written, 0);
     const now = new Date();
     await prisma.operationalSourceState.update({
       where: { id: state.id },
       data: {
         lastRunStatus: 'OK',
-        lastRunMessage: `${mode} run wrote ${written} row(s) across ${datasets.length} dataset(s)`,
+        lastRunMessage: `${mode} run wrote ${written} row(s) across ${datasets.length} dataset(s)${note ? `. ${note}` : ''}`.slice(0, 900),
         ...(mode === 'LIVE'
           ? { lastLiveRunAt: now, ...(state.liveSince ? {} : { liveSince: now, mockEnabled: false }) }
           : { lastMockRunAt: now }),
       },
     });
-    return { ...base, ok: true, datasets, mockRowsRemoved };
+    return { ...base, ok: true, datasets, mockRowsRemoved, note };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await prisma.operationalSourceState.update({

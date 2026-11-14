@@ -126,6 +126,8 @@ function flattenRecord(record: Record<string, unknown>): FlatRecord {
     const stored = storableValue(key, value);
     if (stored !== null) flat[key] = stored;
   }
+  const recordId = storableValue('id', record._id);
+  if (recordId !== null && !('id' in flat)) flat.id = recordId;
   for (const [key, value] of Object.entries(record)) {
     if (!storableKey(key) || !value || typeof value !== 'object' || Array.isArray(value)) continue;
     for (const subfield of REFERENCE_SUBFIELDS) {
@@ -270,7 +272,5 @@ export const FOODREADY_ADAPTER: OperationalSourceAdapter = {
   dynamicDatasets: true,
   datasets: [],
   sync: (context) => syncFoodReady(context),
-  afterLiveWrite: async (companyId, output) => {
-    await writeFoodReadyInventorySnapshot(companyId, output);
-  },
+  afterLiveWrite: (companyId, output) => writeFoodReadyInventorySnapshot(companyId, output),
 };

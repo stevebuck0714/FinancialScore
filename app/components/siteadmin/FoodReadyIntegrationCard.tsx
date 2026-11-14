@@ -184,7 +184,7 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || result.skipped || 'FoodReady sync failed.');
       const rows = Array.isArray(result.datasets) ? result.datasets.reduce((total: number, dataset: { written?: number }) => total + Number(dataset.written || 0), 0) : 0;
-      setSyncMessage(`Synced ${rows.toLocaleString('en-US')} row(s).`);
+      setSyncMessage(`Synced ${rows.toLocaleString('en-US')} row(s).${result.note ? ` ${result.note}.` : ''}`);
       await load();
     } catch (syncError: any) {
       setError(syncError?.message || 'FoodReady sync failed.');

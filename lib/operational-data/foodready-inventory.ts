@@ -73,7 +73,7 @@ type SnapshotRow = {
  * (purchased, WIP and finished goods), valued at the lot's purchase-order line cost when FoodReady
  * has one. Items with stock but no lot that can be tied back to them keep a single item-level row.
  */
-export async function writeFoodReadyInventorySnapshot(companyId: string, output: OperationalSourceOutput): Promise<number> {
+export async function writeFoodReadyInventorySnapshot(companyId: string, output: OperationalSourceOutput): Promise<string> {
   const bySource = new Map<string, OperationalRecordInput[]>();
   for (const row of Object.values(output).flatMap((dataset) => dataset.rows)) {
     const source = text(row.dimensions, 'sourceObject');
@@ -81,7 +81,10 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     bySource.set(source, [...(bySource.get(source) || []), row]);
   }
   const itemRows = bySource.get(INVENTORY_ITEMS_ENDPOINT) || [];
-  if (!itemRows.length) return 0;
+  if (!itemRows.length) {
+    const seen = [...bySource.entries()].map(([source, rows]) => `${source} (${rows.length})`).join(', ') || 'none';
+    return `Inventory snapshot not written: this sync returned no ${INVENTORY_ITEMS_ENDPOINT} rows. Endpoints returned: ${seen}`;
+  }
 
   const items = new Map(itemRows.map((row) => [text(row.dimensions, 'id'), row]));
   const supplierItemToItem = new Map(
@@ -104,6 +107,7 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
   const snapshotDate = new Date(`${previousEstCalendarDate()}T00:00:00Z`);
   const data: SnapshotRow[] = [];
   const itemsWithLots = new Set<string>();
+  const lotCounts = { purchased: 0, wip: 0, finished: 0 };
   const pushLot = (itemId: string, fallbackName: string, fallbackCode: string, row: OperationalRecordInput, unitCost: number) => {
     const qtyOnHand = amount(row.measures, 'quantityInHand');
     const item = items.get(itemId);
@@ -129,20 +133,20 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
   let unlinkedPurchasedLots = 0;
   for (const row of bySource.get(FOODREADY_PURCHASED_LOTS_ENDPOINT) || []) {
     const line = poLines.get(foodReadyRef(row.dimensions, 'poItem'));
-    if (line?.itemId) pushLot(line.itemId, '', '', row, line.unitCost);
-    else unlinkedPurchasedLots += 1;
-  }
-  if (unlinkedPurchasedLots) {
-    console.log(`[foodready-inventory] ${unlinkedPurchasedLots} purchased lot(s) not yet linked to an item for ${companyId}; later syncs look up the remaining purchase-order lines.`);
+    if (line?.itemId && pushLot(line.itemId, '', '', row, line.unitCost)) lotCounts.purchased += 1;
+    else if (!line?.itemId) unlinkedPurchasedLots += 1;
   }
   for (const row of bySource.get(WIP_LOTS_ENDPOINT) || []) {
-    pushLot(foodReadyRef(row.dimensions, 'item'), text(row.dimensions, 'itemName'), text(row.dimensions, 'itemCode'), row, amount(row.measures, 'unitCost'));
+    if (pushLot(foodReadyRef(row.dimensions, 'item'), text(row.dimensions, 'itemName'), text(row.dimensions, 'itemCode'), row, amount(row.measures, 'unitCost'))) {
+      lotCounts.wip += 1;
+    }
   }
   for (const row of bySource.get(FINISHED_GOODS_LOTS_ENDPOINT) || []) {
     const itemId = packagingToItem.get(foodReadyRef(row.dimensions, 'itemPackaging')) || '';
-    if (itemId) pushLot(itemId, '', '', row, amount(row.measures, 'unitCost'));
+    if (itemId && pushLot(itemId, '', '', row, amount(row.measures, 'unitCost'))) lotCounts.finished += 1;
   }
 
+  const lotRowCount = data.length;
   for (const [itemId, row] of items) {
     const qtyOnHand = amount(row.measures, 'onHandQuantity');
     const itemName = text(row.dimensions, 'itemName');
@@ -166,7 +170,12 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     prisma.inventorySnapshot.deleteMany({ where: { companyId, frequency: 'daily', snapshotDate } }),
     prisma.inventorySnapshot.createMany({ data }),
   ]);
-  return data.length;
+  return [
+    `Inventory snapshot for ${previousEstCalendarDate()}: ${data.length} row(s)`,
+    `${lotCounts.purchased} purchased, ${lotCounts.wip} WIP and ${lotCounts.finished} finished-goods lot(s)`,
+    `${data.length - lotRowCount} item(s) without a linked lot`,
+    ...(unlinkedPurchasedLots ? [`${unlinkedPurchasedLots} purchased lot(s) waiting on purchase-order line lookups`] : []),
+  ].join('; ');
 }
 
 function estDateOnly(raw: unknown): string | null {
