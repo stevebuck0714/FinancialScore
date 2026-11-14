@@ -12,7 +12,7 @@ import { HIGHLEVEL_SOURCE_CODE } from '@/lib/highlevel';
 import { DEFAULT_HIGHLEVEL_DATA_DOMAINS } from '@/lib/crm/highlevel-sales';
 import { DEFAULT_JOBBOSS_DATA_DOMAINS, JOBBOSS_SOURCE_CODE } from '@/lib/jobboss';
 import { DEFAULT_PROSHOP_DATA_DOMAINS, PROSHOP_SOURCE_CODE } from '@/lib/proshop';
-import { DEFAULT_FOODREADY_DATA_DOMAINS, FOODREADY_SOURCE_CODE, foodReadyEndpointForDomain } from '@/lib/foodready';
+import { DEFAULT_FOODREADY_DATA_DOMAINS, FOODREADY_SOURCE_CODE, foodReadyEndpointForDomain, withDefaultFoodReadyDomains } from '@/lib/foodready';
 import { DEFAULT_REALPAGE_ONESITE_DATA_DOMAINS, REALPAGE_ONESITE_SOURCE_CODE } from '@/lib/operational/realpage-onesite';
 
 export const dynamic = 'force-dynamic';
@@ -141,14 +141,7 @@ function sanitizeDataDomains(value: unknown, sourceCode: string): EditableDataDo
     ];
   }
 
-  if (sourceCode === FOODREADY_SOURCE_CODE) {
-    const configuredDomains = new Set(rows.map((row) => row.dataDomain));
-    const configuredEndpoints = new Set(rows.map((row) => row.sourceObject));
-    return [
-      ...rows,
-      ...fallback.filter((row) => !configuredDomains.has(row.dataDomain) && !configuredEndpoints.has(row.sourceObject)),
-    ];
-  }
+  if (sourceCode === FOODREADY_SOURCE_CODE) return withDefaultFoodReadyDomains(rows);
 
   return rows.length > 0 ? rows : [{ dataDomain: '', sourceObject: '', enabled: true }];
 }

@@ -5,9 +5,11 @@ export const FOODREADY_API_BASE_URL = 'https://api.foodready.ai';
 /** Endpoints from FoodReady's public OpenAPI spec (https://api.foodready.ai/api/openapi.json). */
 export const DEFAULT_FOODREADY_DATA_DOMAINS = [
   { dataDomain: 'Inventory On Hand', sourceObject: '/api/inventoryItems/search', enabled: true },
-  { dataDomain: 'Lots, Expiration & Traceability', sourceObject: '/api/purchaseOrders/lots/search', enabled: true },
+  { dataDomain: 'Lots, Expiration & Traceability', sourceObject: '/api/purchaseOrdersItemLots/search', enabled: true },
   { dataDomain: 'Inventory Movements', sourceObject: '/api/purchaseOrderReceiving/search', enabled: true },
   { dataDomain: 'WIP Item Lots', sourceObject: '/api/wipItemLots/search', enabled: true },
+  { dataDomain: 'Finished Goods Lots', sourceObject: '/api/moBatchOutput/search', enabled: true },
+  { dataDomain: 'Supplier Items', sourceObject: '/api/supplierItems/search', enabled: true },
   { dataDomain: 'Items, Ingredients & Units', sourceObject: '/api/itemPackaging/search', enabled: true },
   { dataDomain: 'Recipes (BOMs)', sourceObject: '/api/bom/search', enabled: true },
   { dataDomain: 'Manufacturing Orders', sourceObject: '/api/mo/search', enabled: true },
@@ -22,12 +24,29 @@ const LEGACY_DOMAIN_ENDPOINTS: Record<string, string> = {
   'Recipes & Production Batches': '/api/bom/search',
 };
 
+/** Saved endpoints that returned the wrong records (purchase-order headers instead of lots). */
+const REPLACED_ENDPOINTS: Record<string, string> = {
+  '/api/purchaseOrders/lots/search': '/api/purchaseOrdersItemLots/search',
+};
+
 export function foodReadyEndpointForDomain(dataDomain: string, sourceObject: string): string | null {
   const trimmed = sourceObject.trim();
-  if (trimmed.startsWith('/')) return trimmed;
+  if (trimmed.startsWith('/')) return REPLACED_ENDPOINTS[trimmed] || trimmed;
   return DEFAULT_FOODREADY_DATA_DOMAINS.find((row) => row.dataDomain === dataDomain)?.sourceObject
     || LEGACY_DOMAIN_ENDPOINTS[dataDomain]
     || null;
+}
+
+type FoodReadyDomainRow = { dataDomain: string; sourceObject: string; enabled: boolean };
+
+/** Saved domains plus any default domain added since they were saved (matched by name or endpoint). */
+export function withDefaultFoodReadyDomains<T extends FoodReadyDomainRow>(rows: T[]): FoodReadyDomainRow[] {
+  const names = new Set(rows.map((row) => row.dataDomain));
+  const endpoints = new Set(rows.map((row) => row.sourceObject));
+  return [
+    ...rows,
+    ...DEFAULT_FOODREADY_DATA_DOMAINS.filter((row) => !names.has(row.dataDomain) && !endpoints.has(row.sourceObject)),
+  ];
 }
 
 export const DEFAULT_FOODREADY_OVERLAP_DAYS = 7;
