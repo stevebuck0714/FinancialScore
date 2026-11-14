@@ -1635,6 +1635,22 @@ export function getSectorArApFallbacks(sectorCategory?: string | null) {
     last12Months: metric(14500, i + 1, scale),
   }));
 
+  const now = new Date();
+  const paymentDateForMonthsAgo = (monthsAgo: number) =>
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsAgo, 1)).toISOString().slice(0, 10);
+  const paidPayments = paidInvoices.flatMap((row, i) => {
+    const earlierMonthAmount = Math.max(0, (row.last12Months - row.currentMonth - row.lastMonth) / 10);
+    return Array.from({ length: 12 }, (_, monthsAgo) => ({
+      customerId: '-',
+      customerName: row.customerName,
+      paymentDate: paymentDateForMonthsAgo(monthsAgo),
+      invoiceNo: `INV-${2000 + i * 20 + monthsAgo}`,
+      amount: monthsAgo === 0 ? row.currentMonth : monthsAgo === 1 ? row.lastMonth : earlierMonthAmount,
+      inCurrentMonth: monthsAgo === 0,
+      inLastMonth: monthsAgo === 1,
+    }));
+  });
+
   const paidBills = unpaidByVendor.slice(0, 10).map((row, i) => ({
     vendorName: row.vendorName,
     currentMonth: metric(980, i + 1, scale),
@@ -1666,6 +1682,7 @@ export function getSectorArApFallbacks(sectorCategory?: string | null) {
     unpaidByCustomer,
     unpaidInvoices,
     paidInvoices,
+    paidPayments,
     customerInvoices,
     unpaidByVendor,
     unpaidBills,
@@ -1881,6 +1898,7 @@ function buildArResponse(req: MockRequest, profile: SectorProfile) {
       unpaidByCustomer: detail.unpaidByCustomer,
       unpaidInvoices: detail.unpaidInvoices,
       paidInvoices: detail.paidInvoices,
+      paidPayments: detail.paidPayments,
       customerInvoices: detail.customerInvoices,
       topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
     },

@@ -126,6 +126,17 @@ const NON_REORDERABLE_OPERATIONAL_SECTION_KEY =
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
 // Daily trend bars are 1-2px wide, so muted tones wash out against white.
+const DONUT_CHART_HEIGHT = 260;
+const DONUT_INNER_RADIUS = 45;
+const DONUT_OUTER_RADIUS = 110;
+const DONUT_PANEL_STYLE: React.CSSProperties = {
+  background: 'white',
+  padding: '8px 24px 24px',
+  borderRadius: '12px',
+  border: '1px solid #e2e8f0',
+  minHeight: '350px',
+  boxSizing: 'border-box',
+};
 const AR_TREND_COLORS = ['#1d4ed8', '#0f766e', '#ca8a04', '#c2410c', '#7e22ce'];
 const AGING_UNAVAILABLE_COLOR = '#475569';
 // A nightly feed normally trails the ledger by a day; flagging that as an
@@ -995,6 +1006,8 @@ export default function OperationsTab({
   const [arSummaryPage, setArSummaryPage] = useState(1);
   const [arAgingPage, setArAgingPage] = useState(1);
   const [arAgingExpanded, setArAgingExpanded] = useState<Record<string, boolean>>({});
+  const [paidByCustomerPage, setPaidByCustomerPage] = useState(1);
+  const [paidByCustomerExpanded, setPaidByCustomerExpanded] = useState<Record<string, boolean>>({});
   const [unpaidInvoicesPage, setUnpaidInvoicesPage] = useState(1);
   const [unpaidInvoicesSortKey, setUnpaidInvoicesSortKey] = useState<'customerName' | 'invoiceDate' | 'daysOutstanding' | 'amountDue'>('invoiceDate');
   const [unpaidInvoicesSortDir, setUnpaidInvoicesSortDir] = useState<'asc' | 'desc'>('desc');
@@ -7420,10 +7433,14 @@ export default function OperationsTab({
         currentMonth: row.currentMonth || 0,
         lastMonth: row.lastMonth || 0,
         last12Months: row.last12Months || 0,
-        cashCollectedToDate: row.cashCollectedToDate || row.last12Months || 0,
+        cashCollectedToDate: row.cashCollectedToDate || 0,
         lastPaymentDate: row.lastPaymentDate || null,
       }))
       .sort((a: any, b: any) => b.last12Months - a.last12Months);
+    const paidPaymentsFor = (customerName: string) =>
+      (summary?.paidPayments || [])
+        .filter((payment: any) => payment.customerName === customerName)
+        .sort((a: any, b: any) => String(b.paymentDate).localeCompare(String(a.paymentDate)));
     const paidByCustomer = paidByCustomerAll.slice(0, 10);
     const paidTotal = paidByCustomerAll.reduce((sum: number, item: any) => sum + item.last12Months, 0);
     const customerInvoiceRows = (summary?.customerInvoices || []).map((row: any) => ({
@@ -7459,6 +7476,9 @@ export default function OperationsTab({
               ? 'Ledger detail; Books AR unavailable for this date'
               : 'Ledger detail; not reconciled to Books AR';
     const paidByCustomerMap = new Map(paidByCustomerAll.map((row: any) => [row.customerName, row]));
+    const hasContractData = arCustomers.some(
+      (row: any) => Number(row.contractValueTotal || 0) > 0 || Number(row.remainingToInvoice || 0) > 0
+    );
     const contractAndCashFlowRows = arCustomers
       .map((row: any) => {
         const paid = paidByCustomerMap.get(row.customerName);
@@ -7973,32 +7993,32 @@ export default function OperationsTab({
           onMove={moveStandardReport}
           style={getReportPanelStyle('arUnpaidByCustomer', {})}
         >
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>
+        <div style={{ ...DONUT_PANEL_STYLE, marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
             Unpaid Invoices Amount by Customer (Top 10)
           </h3>
-          <div style={{ marginTop: '-14px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
+          <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
             {arDetailLabel}: {formatCurrency(detailAr)}
           </div>
           {unpaidByCustomer.length === 0 ? (
-            <div style={{ height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+            <div style={{ height: `${DONUT_CHART_HEIGHT}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
               No unpaid invoice detail available for this period.
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1, minWidth: 280, display: 'flex', gap: '16px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                 <div style={{ flex: 1 }}>
-                  <ResponsiveContainer width="100%" height={260}>
+                  <ResponsiveContainer width="100%" height={DONUT_CHART_HEIGHT}>
                     <PieChart>
                       <Pie
                         data={unpaidByCustomer}
                         cx="50%"
                         cy="50%"
-                        innerRadius={45}
-                        outerRadius={110}
+                        innerRadius={DONUT_INNER_RADIUS}
+                        outerRadius={DONUT_OUTER_RADIUS}
                         dataKey="totalDue"
                         nameKey="customerName"
                         labelLine={false}
+                        label={renderDonutLabel}
                       >
                         {unpaidByCustomer.map((entry, index) => (
                           <Cell key={`cell-${entry.customerName}-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -8016,14 +8036,13 @@ export default function OperationsTab({
                     </div>
                   ))}
                 </div>
-              </div>
             </div>
           )}
         </div>
         </OperationalReportPanel>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '24px' }}>
           {/* Customer Contract and Cash Flow Summary */}
           {isSectionEnabled('arContractCashFlowSummary') && (
           <OperationalReportPanel
@@ -8031,12 +8050,15 @@ export default function OperationsTab({
             canReorder={canManageReportLayout}
             isSaving={savingReportLayout}
             onMove={moveStandardReport}
-            style={getReportPanelStyle('arContractCashFlowSummary', { gridColumn: '1 / -1', minWidth: 0 })}
+            style={getReportPanelStyle('arContractCashFlowSummary', { minWidth: 0 })}
           >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Customer Contract and Cash Flow Summary
             </h3>
+            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
+              Cash collected: {arCoverageLabel}
+            </div>
             {contractAndCashFlowRows.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -8044,15 +8066,22 @@ export default function OperationsTab({
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cust ID</th>
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Contract Total</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Remaining to Invoice</th>
+                      {hasContractData && (
+                        <>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Contract Total</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Remaining to Invoice</th>
+                        </>
+                      )}
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Invoiced</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Open AR</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cash Collected (Period)</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cash Collected</th>
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last Payment</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Total Billed</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Total Exposure</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Billing %</th>
+                      {hasContractData && (
+                        <>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Total Exposure</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Billing %</th>
+                        </>
+                      )}
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Collection Ratio</th>
                     </tr>
                   </thead>
@@ -8061,17 +8090,24 @@ export default function OperationsTab({
                       .slice((arSummaryPage - 1) * 8, arSummaryPage * 8)
                       .map((row) => (
                         <tr key={`${row.customerId}-${row.customerName}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500' }}>{row.customerId}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{formatCurrency(row.contractValueTotal)}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{formatCurrency(row.remainingToInvoice)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500', whiteSpace: 'nowrap' }}>{row.customerId}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500', whiteSpace: 'nowrap' }}>{row.customerName}</td>
+                          {hasContractData && (
+                            <>
+                              <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{formatCurrency(row.contractValueTotal)}</td>
+                              <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{formatCurrency(row.remainingToInvoice)}</td>
+                            </>
+                          )}
                           <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.invoicedRevenue)}</td>
                           <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>{formatCurrency(row.arOutstanding)}</td>
                           <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.cashCollectedToDate)}</td>
                           <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b' }}>{row.lastPaymentDate}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.totalBilledRevenue)}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>{formatCurrency(row.totalExposure)}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{row.billingProgressPct.toFixed(1)}%</td>
+                          {hasContractData && (
+                            <>
+                              <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>{formatCurrency(row.totalExposure)}</td>
+                              <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{row.billingProgressPct.toFixed(1)}%</td>
+                            </>
+                          )}
                           <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{row.collectionRatio.toFixed(2)}</td>
                         </tr>
                       ))}
@@ -8250,7 +8286,7 @@ export default function OperationsTab({
             onMove={moveStandardReport}
             style={getReportPanelStyle('arAgingByCustomerTable', {})}
           >
-          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', height: '100%', boxSizing: 'border-box' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               AR Aging by Customer
             </h3>
@@ -8428,15 +8464,19 @@ export default function OperationsTab({
           {/* Paid Invoices by Customer */}
           {isSectionEnabled('arPaidInvoicesByCustomer') && (
           <OperationalReportPanel reportKey="arPaidInvoicesByCustomer" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arPaidInvoicesByCustomer', {})}>
-          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', height: '100%', boxSizing: 'border-box' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Paid Invoices by Customer
             </h3>
-            {paidByCustomer.length > 0 ? (
+            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
+              Payments received, last 12 months: {formatCurrency(paidTotal)}
+            </div>
+            {paidByCustomerAll.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th style={{ width: '36px', padding: '6px 6px' }} />
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current Month</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last Month</th>
@@ -8444,26 +8484,116 @@ export default function OperationsTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {paidByCustomer.map((row: any) => (
-                      <tr key={row.customerName} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
-                          {formatCurrency(row.currentMonth)}
-                        </td>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
-                          {formatCurrency(row.lastMonth)}
-                        </td>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
-                          {formatCurrency(row.last12Months)}
-                        </td>
-                      </tr>
-                    ))}
+                    {paidByCustomerAll
+                      .slice((paidByCustomerPage - 1) * 8, paidByCustomerPage * 8)
+                      .map((row: any) => {
+                        const isExpanded = paidByCustomerExpanded[row.customerName] === true;
+                        const payments = isExpanded ? paidPaymentsFor(row.customerName) : [];
+                        return (
+                          <React.Fragment key={`paid-${row.customerName}`}>
+                            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '6px 6px', textAlign: 'center' }}>
+                                <button
+                                  onClick={() => setPaidByCustomerExpanded((prev) => ({ ...prev, [row.customerName]: !prev[row.customerName] }))}
+                                  style={{
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '6px',
+                                    background: 'white',
+                                    width: '24px',
+                                    height: '24px',
+                                    cursor: 'pointer',
+                                    color: '#334155',
+                                    fontWeight: 700,
+                                    lineHeight: 1,
+                                  }}
+                                  aria-label={isExpanded ? 'Collapse payments' : 'Expand payments'}
+                                  title={isExpanded ? 'Collapse' : 'Expand'}
+                                >
+                                  {isExpanded ? '-' : '+'}
+                                </button>
+                              </td>
+                              <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500', whiteSpace: 'nowrap' }}>{row.customerName}</td>
+                              <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                                {formatCurrency(row.currentMonth)}
+                              </td>
+                              <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                                {formatCurrency(row.lastMonth)}
+                              </td>
+                              <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                                {formatCurrency(row.last12Months)}
+                              </td>
+                            </tr>
+                            {isExpanded && payments.map((payment: any, paymentIndex: number) => (
+                              <tr key={`paid-${row.customerName}-${payment.paymentDate}-${paymentIndex}`} style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                <td />
+                                <td style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                                  {formatDateInputLabel(payment.paymentDate)}
+                                  {payment.invoiceNo && payment.invoiceNo !== '-' ? ` · Inv ${payment.invoiceNo}` : ''}
+                                </td>
+                                <td style={{ padding: '4px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                                  {payment.inCurrentMonth ? formatCurrency(payment.amount) : ''}
+                                </td>
+                                <td style={{ padding: '4px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                                  {payment.inLastMonth ? formatCurrency(payment.amount) : ''}
+                                </td>
+                                <td style={{ padding: '4px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
+                                  {formatCurrency(payment.amount)}
+                                </td>
+                              </tr>
+                            ))}
+                            {isExpanded && payments.length === 0 && (
+                              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                <td />
+                                <td colSpan={4} style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                                  No payment-level detail available
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
             ) : (
               <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
                 No paid invoices available for this period.
+              </div>
+            )}
+            {paidByCustomerAll.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
+                <span>
+                  {Math.min((paidByCustomerPage - 1) * 8 + 1, paidByCustomerAll.length)}-
+                  {Math.min(paidByCustomerPage * 8, paidByCustomerAll.length)} of {paidByCustomerAll.length}
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => setPaidByCustomerPage((page) => Math.max(1, page - 1))}
+                    disabled={paidByCustomerPage === 1}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: paidByCustomerPage === 1 ? '#f1f5f9' : 'white',
+                      cursor: paidByCustomerPage === 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setPaidByCustomerPage((page) => Math.min(Math.ceil(paidByCustomerAll.length / 8), page + 1))}
+                    disabled={paidByCustomerPage >= Math.ceil(paidByCustomerAll.length / 8)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: paidByCustomerPage >= Math.ceil(paidByCustomerAll.length / 8) ? '#f1f5f9' : 'white',
+                      cursor: paidByCustomerPage >= Math.ceil(paidByCustomerAll.length / 8) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -8473,21 +8603,24 @@ export default function OperationsTab({
           {/* Last 12 Month Paid Invoices Amount */}
           {isSectionEnabled('arPaidInvoicesLast12Months') && (
           <OperationalReportPanel reportKey="arPaidInvoicesLast12Months" canReorder={canManageReportLayout} isSaving={savingReportLayout} onMove={moveStandardReport} style={getReportPanelStyle('arPaidInvoicesLast12Months', {})}>
-          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <div style={DONUT_PANEL_STYLE}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Last 12 Month Paid Invoices Amount
             </h3>
+            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
+              Top 10 customers by payments received: {formatCurrency(paidByCustomer.reduce((sum: number, row: any) => sum + Number(row.last12Months || 0), 0))}
+            </div>
             {paidByCustomer.length > 0 ? (
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                 <div style={{ flex: 1 }}>
-                  <ResponsiveContainer width="100%" height={240}>
+                  <ResponsiveContainer width="100%" height={DONUT_CHART_HEIGHT}>
                     <PieChart>
                       <Pie
                         data={paidByCustomer}
                         cx="50%"
                         cy="50%"
-                        innerRadius={40}
-                        outerRadius={100}
+                        innerRadius={DONUT_INNER_RADIUS}
+                        outerRadius={DONUT_OUTER_RADIUS}
                         dataKey="last12Months"
                         nameKey="customerName"
                         labelLine={false}
@@ -8511,7 +8644,7 @@ export default function OperationsTab({
                 </div>
               </div>
             ) : (
-              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+              <div style={{ height: `${DONUT_CHART_HEIGHT}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
                 No paid invoices available for this period.
               </div>
             )}
@@ -8564,13 +8697,10 @@ export default function OperationsTab({
                   <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
                   <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
                   <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
-                    Amount in currency
+                    Amount
                   </th>
                   <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
-                    Amount in home currency
-                  </th>
-                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
-                    Amount Due in home currency
+                    Amount Due
                   </th>
                 </tr>
               </thead>
@@ -8584,9 +8714,6 @@ export default function OperationsTab({
                     <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
                       {formatCurrencyWithCents(row.amountCurrency)}
                     </td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
-                      {formatCurrencyWithCents(row.amountHome)}
-                    </td>
                     <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
                       {formatCurrencyWithCents(row.amountDueHome)}
                     </td>
@@ -8598,9 +8725,6 @@ export default function OperationsTab({
                   </td>
                   <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
                     {formatCurrencyWithCents(invoiceTotals.amountCurrency)}
-                  </td>
-                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
-                    {formatCurrencyWithCents(invoiceTotals.amountHome)}
                   </td>
                   <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
                     {formatCurrencyWithCents(invoiceTotals.amountDueHome)}
@@ -9598,21 +9722,21 @@ export default function OperationsTab({
             onMove={moveStandardReport}
             style={getReportPanelStyle('apPaidLast12Months', { minWidth: 0 })}
           >
-          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <div style={DONUT_PANEL_STYLE}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Last 12 Month Bills Paid
             </h3>
             {paidBills.length > 0 ? (
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                 <div style={{ flex: 1 }}>
-                  <ResponsiveContainer width="100%" height={240}>
+                  <ResponsiveContainer width="100%" height={DONUT_CHART_HEIGHT}>
                     <PieChart>
                       <Pie
                         data={paidBills}
                         cx="50%"
                         cy="50%"
-                        innerRadius={40}
-                        outerRadius={100}
+                        innerRadius={DONUT_INNER_RADIUS}
+                        outerRadius={DONUT_OUTER_RADIUS}
                         dataKey="last12Months"
                         nameKey="vendorName"
                         labelLine={false}

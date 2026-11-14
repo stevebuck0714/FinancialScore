@@ -6333,6 +6333,16 @@ export async function GET(request: NextRequest) {
           agingBucket?: ArAgingBucketKey;
         }> = [];
         let unpaidInvoicesAsOfDate: Date | null = null;
+        let paidCustomersAll: any[] = [];
+        let paidPayments: Array<{
+          customerId: string;
+          customerName: string;
+          paymentDate: string;
+          invoiceNo: string;
+          amount: number;
+          inCurrentMonth: boolean;
+          inLastMonth: boolean;
+        }> = [];
         let customerInvoices: Array<{
           customerId?: string | null;
           customerName: string;
@@ -7578,9 +7588,34 @@ export async function GET(request: NextRequest) {
             }
             return acc;
           }, {});
-          paidInvoices = Object.values(grouped)
-            .sort((a: any, b: any) => b.last12Months - a.last12Months)
-            .slice(0, 25) as any[];
+          paidCustomersAll = (Object.values(grouped) as any[]).sort((a: any, b: any) => b.last12Months - a.last12Months);
+          paidInvoices = paidCustomersAll.slice(0, 25);
+          const listedPaidCustomerKeys = new Set(
+            paidInvoices.map((row: any) => buildCustomerGroupKey(row.customerId, row.customerName))
+          );
+          paidPayments = (paymentRows as any[])
+            .filter((row: any) => {
+              const dt = new Date(row.paymentDate);
+              if (!(dt >= trailing12Start && dt <= endDate)) return false;
+              const customerId = row.customerId ? String(row.customerId) : null;
+              return listedPaidCustomerKeys.has(
+                buildCustomerGroupKey(customerId, normalizeCustomerName(row.customerName, customerId))
+              );
+            })
+            .slice(0, 3000)
+            .map((row: any) => {
+              const dt = new Date(row.paymentDate);
+              const customerId = row.customerId ? String(row.customerId) : null;
+              return {
+                customerId: customerId || '-',
+                customerName: normalizeCustomerName(row.customerName, customerId),
+                paymentDate: dt.toISOString().slice(0, 10),
+                invoiceNo: row.invoiceNo || '-',
+                amount: Number(row.paidAmountHome || 0),
+                inCurrentMonth: dt >= monthStart && dt <= endDate,
+                inLastMonth: dt >= lastMonthStart && dt < monthStart,
+              };
+            });
         }
 
         const contractStatusDelegate = (prisma as any).customerContractStatus;
@@ -7659,11 +7694,12 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        const paidCustomersForLookup = paidCustomersAll.length > 0 ? paidCustomersAll : paidInvoices;
         const paidByCustomerName = new Map(
-          paidInvoices.map((row) => [row.customerName, row])
+          paidCustomersForLookup.map((row) => [row.customerName, row])
         );
         const paidByCustomerId = new Map(
-          paidInvoices
+          paidCustomersForLookup
             .filter((row) => String(row.customerId || '').trim().length > 0 && String(row.customerId || '').trim() !== '-')
             .map((row) => [String(row.customerId).trim(), row])
         );
@@ -7756,8 +7792,11 @@ export async function GET(request: NextRequest) {
         for (const row of Array.from(contractStatusByCustomer.values())) {
           rememberCanonicalCustomerName(row.customerId, row.customerName);
         }
-        for (const row of paidInvoices) {
+        for (const row of paidCustomersForLookup) {
           rememberCanonicalCustomerName(row.customerId, row.customerName);
+        }
+        for (const row of unpaidInvoices) {
+          rememberCanonicalCustomerName(row.customerNumber, row.customerName);
         }
         const salesInvoiceHeaderDelegate = (prisma as any).salesInvoiceHeaderSnapshot;
         if (salesInvoiceHeaderDelegate?.findFirst && salesInvoiceHeaderDelegate?.findMany) {
@@ -7795,6 +7834,24 @@ export async function GET(request: NextRequest) {
           if (cid && canonicalCustomerNameById.has(cid)) return canonicalCustomerNameById.get(cid)!;
           return normalizeCustomerName(customerName, cid);
         };
+        // Reports such as the QBD Aging Summary carry only names; recover the ID
+        // when exactly one known customer ID uses that name.
+        const customerIdsByName = new Map<string, Set<string>>();
+        canonicalCustomerNameById.forEach((name, cid) => {
+          const key = normalizeText(name);
+          if (!customerIdsByName.has(key)) customerIdsByName.set(key, new Set());
+          customerIdsByName.get(key)!.add(cid);
+        });
+        const customerIdForName = (customerName: unknown): string | null => {
+          const ids = customerIdsByName.get(normalizeText(customerName));
+          return ids && ids.size === 1 ? Array.from(ids)[0] : null;
+        };
+        unpaidByCustomer = unpaidByCustomer.map((row) => {
+          const cid = String(row.customerId || '').trim();
+          if (cid && cid !== '-') return row;
+          const recovered = customerIdForName(row.customerName);
+          return recovered ? { ...row, customerId: recovered } : row;
+        });
 
         unpaidByCustomer = unpaidByCustomer.map((row) => {
           const contract =
@@ -7840,6 +7897,10 @@ export async function GET(request: NextRequest) {
           customerName: resolvedCustomerName(row.customerId, row.customerName),
         }));
         paidInvoices = paidInvoices.map((row) => ({
+          ...row,
+          customerName: resolvedCustomerName(row.customerId, row.customerName),
+        }));
+        paidPayments = paidPayments.map((row) => ({
           ...row,
           customerName: resolvedCustomerName(row.customerId, row.customerName),
         }));
@@ -8257,6 +8318,7 @@ export async function GET(request: NextRequest) {
             unpaidInvoicesAsOfDate: unpaidInvoicesAsOfDate ? unpaidInvoicesAsOfDate.toISOString().slice(0, 10) : null,
             customerAgingAsOfDate: arAsOfReferenceDate ? arAsOfReferenceDate.toISOString().slice(0, 10) : null,
             paidInvoices,
+            paidPayments,
             customerInvoices,
           },
         });
