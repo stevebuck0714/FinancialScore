@@ -1,6 +1,6 @@
 import prisma from '@/lib/prisma';
 import { FOODREADY_SOURCE_CODE } from '@/lib/foodready';
-import { formatEstDate } from '@/lib/time/eastern';
+import { formatEstDate, previousEstCalendarDate } from '@/lib/time/eastern';
 import type { OperationalRecordInput, OperationalSourceOutput } from './types';
 
 export const FOODREADY_PURCHASE_ORDER_LINES_KEY = 'foodready.purchase_order_lines';
@@ -69,7 +69,7 @@ type SnapshotRow = {
 };
 
 /**
- * Replace today's daily InventorySnapshot with FoodReady inventory: one row per lot in hand
+ * Replace yesterday's daily InventorySnapshot with FoodReady inventory: one row per lot in hand
  * (purchased, WIP and finished goods), valued at the lot's purchase-order line cost when FoodReady
  * has one. Items with stock but no lot that can be tied back to them keep a single item-level row.
  */
@@ -100,7 +100,8 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     ]),
   );
 
-  const snapshotDate = new Date(`${formatEstDate()}T00:00:00Z`);
+  // Inventory reports end no later than yesterday (EST), so the pull is stored as yesterday's closing stock.
+  const snapshotDate = new Date(`${previousEstCalendarDate()}T00:00:00Z`);
   const data: SnapshotRow[] = [];
   const itemsWithLots = new Set<string>();
   const pushLot = (itemId: string, fallbackName: string, fallbackCode: string, row: OperationalRecordInput, unitCost: number) => {
