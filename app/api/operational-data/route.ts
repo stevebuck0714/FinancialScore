@@ -381,6 +381,16 @@ async function buildOperationalDataVersion(
           endDate
         )
       : Promise.resolve({ label: 'InventorySnapshot', skipped: true }),
+    (includeAll || type === 'inventory')
+      ? safeOperationalVersionPart(
+          'FoodReadyLotCosts',
+          `SELECT COUNT(*)::text AS count, MAX(r."updatedAt") AS "maxUpdatedAt"
+           FROM "OperationalRecord" r
+           JOIN "OperationalDataset" d ON d."id" = r."datasetId"
+           WHERE r."companyId" = $1 AND d."datasetKey" = 'foodready.lot_costs'`,
+          companyId
+        )
+      : Promise.resolve({ label: 'FoodReadyLotCosts', skipped: true }),
     (includeAll || type === 'cash')
       ? safeOperationalVersionPart(
           'CashSnapshot',

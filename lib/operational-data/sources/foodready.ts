@@ -13,6 +13,7 @@ import { formatEstDate } from '@/lib/time/eastern';
 import type { OperationalDatasetSchema, OperationalRecordInput, OperationalSourceAdapter, OperationalSourceOutput, OperationalSyncWindow } from '../types';
 import { FULL_WINDOW, asRecord, readConnectionMetadata } from './common';
 import {
+  FOODREADY_LOT_USAGE_KEY,
   FOODREADY_PURCHASE_ORDER_LINES_KEY,
   FOODREADY_PURCHASED_LOTS_ENDPOINT,
   foodReadyRef,
@@ -41,6 +42,37 @@ const PO_LINE_LOOKUP_BUDGET_MS = 90_000;
 const PO_LINE_LOOKUP_CUTOFF_MS = 200_000;
 const PO_LINE_LOOKUP_CONCURRENCY = 2;
 const PURCHASE_ORDER_LINES_ENDPOINT = '/api/purchaseOrdersItems/search';
+/** The lot usage pull is skipped if it is still running this long after the sync started. */
+const LOT_USAGE_CUTOFF_MS = 170_000;
+const LOT_USAGE_ENDPOINTS = [
+  ['production', '/api/moBatchInput/search'],
+  ['sales', '/api/salesOrderItems'],
+] as const;
+
+const LOT_USAGE_SCHEMA: OperationalDatasetSchema = {
+  key: FOODREADY_LOT_USAGE_KEY,
+  label: 'FoodReady Lot Usage',
+  description: 'Quantity used from each FoodReady lot: production batch inputs and sales order line allocations, all dates. Refreshed in full whenever a sync includes today.',
+  grain: 'point_in_time',
+  dimensions: [
+    { name: 'usageType', description: 'production or sales' },
+    { name: 'recordId' },
+    { name: 'purchaseOrderItemLot' },
+    { name: 'moBatchOutput' },
+    { name: 'supplierItem' },
+    { name: 'itemPackaging' },
+    { name: 'uom' },
+    { name: 'mo' },
+    { name: 'moBatch' },
+    { name: 'so' },
+    { name: 'inventoryItem' },
+  ],
+  measures: [
+    { name: 'recordCount', description: 'Always 1; sum to count records.' },
+    { name: 'qtyUsed' },
+    { name: 'unitCost' },
+  ],
+};
 
 const PURCHASE_ORDER_LINES_SCHEMA: OperationalDatasetSchema = {
   key: FOODREADY_PURCHASE_ORDER_LINES_KEY,
@@ -163,15 +195,70 @@ async function fetchAllFoodReadyRecords(
   credentials: FoodReadyCredentials,
   path: string,
   query: Record<string, boolean> = {},
+  deadline = Number.POSITIVE_INFINITY,
 ): Promise<Record<string, unknown>[]> {
   const all: Record<string, unknown>[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {
     if (page > 0) await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+    if (Date.now() > deadline) throw new Error(`${path} was not fully pulled before the sync time limit.`);
     const rows = rowsFromPayload(await foodReadyApiRequest<unknown>(credentials, path, { ...query, from: page * PAGE_SIZE, size: PAGE_SIZE }));
     all.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
+    if (rows.length < PAGE_SIZE) return all;
   }
+  if (deadline !== Number.POSITIVE_INFINITY) throw new Error(`${path} has more than ${MAX_PAGES * PAGE_SIZE} records.`);
   return all;
+}
+
+/** An ID whether FoodReady sends the reference as a string or as the populated object. */
+function refId(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  const record = asRecord(value);
+  const id = record._id ?? record.id;
+  return typeof id === 'string' && id.trim() ? id.trim() : undefined;
+}
+
+/**
+ * One row per lot allocation on production batch inputs and sales order lines: the lot drawn from
+ * and the quantity used. Pulled in full (all dates) so each lot's total usage is complete.
+ */
+async function fetchLotUsage(credentials: FoodReadyCredentials, today: string, deadline: number): Promise<OperationalRecordInput[]> {
+  const rows: OperationalRecordInput[] = [];
+  for (const [usageType, endpoint] of LOT_USAGE_ENDPOINTS) {
+    for (const record of await fetchAllFoodReadyRecords(credentials, endpoint, {}, deadline)) {
+      const recordId = refId(record._id ?? record.id);
+      if (!recordId) continue;
+      const allocations = Array.isArray(record.allocatedQty) ? record.allocatedQty : [];
+      allocations.forEach((value, index) => {
+        const allocation = asRecord(value);
+        if (allocation.deleted === true || allocation.deletedAt) return;
+        const qtyUsed = Number(allocation.qtyUsed);
+        const createdAt = new Date(String(allocation.createdAt ?? record.createdAt ?? ''));
+        rows.push({
+          date: Number.isNaN(createdAt.getTime()) ? today : formatEstDate(createdAt),
+          externalId: `${usageType}|${recordId}|${refId(allocation._id) ?? index}`,
+          dimensions: {
+            usageType,
+            recordId,
+            purchaseOrderItemLot: refId(allocation.purchaseOrderItemLot),
+            moBatchOutput: refId(allocation.moBatchOutput),
+            supplierItem: refId(allocation.supplierItem),
+            itemPackaging: refId(allocation.itemPackaging),
+            uom: refId(allocation.uom),
+            mo: refId(record.mo),
+            moBatch: refId(record.moBatch),
+            so: refId(record.so),
+            inventoryItem: refId(record.inventoryItem),
+          },
+          measures: {
+            recordCount: 1,
+            qtyUsed: Number.isFinite(qtyUsed) ? qtyUsed : 0,
+            ...(typeof allocation.unitCost === 'number' && Number.isFinite(allocation.unitCost) ? { unitCost: allocation.unitCost } : {}),
+          },
+        });
+      });
+    }
+  }
+  return rows;
 }
 
 function purchaseOrderLineRow(id: string, line: FlatRecord, today: string): OperationalRecordInput {
@@ -289,6 +376,15 @@ export async function syncFoodReady(
     };
   }
 
+  if (window.endDate >= today) {
+    try {
+      const usage = await fetchLotUsage(credentials, today, syncStartedAt + LOT_USAGE_CUTOFF_MS);
+      output[FOODREADY_LOT_USAGE_KEY] = { schema: LOT_USAGE_SCHEMA, rows: usage, replaceWindow: true, window: FULL_WINDOW };
+    } catch (error) {
+      console.warn('[foodready] lot usage not pulled:', error instanceof Error ? error.message : error);
+    }
+  }
+
   const purchasedLotIds = Object.values(output)
     .flatMap((dataset) => dataset.rows)
     .filter((row) => row.dimensions?.sourceObject === FOODREADY_PURCHASED_LOTS_ENDPOINT)
@@ -306,7 +402,7 @@ export const FOODREADY_ADAPTER: OperationalSourceAdapter = {
   label: FOODREADY_LABEL,
   datasetPrefix: 'foodready',
   history: 'range',
-  historyNote: 'Each FoodReady sync stores the records dated inside the sync window (scheduled syncs re-pull the Overlap Days). Inventory on hand, lots in hand, items, recipes, suppliers and supplier items are current-state lists, refreshed whenever a sync includes today.',
+  historyNote: 'Each FoodReady sync stores the records dated inside the sync window (scheduled syncs re-pull the Overlap Days). Inventory on hand, lots in hand, items, recipes, suppliers and supplier items are current-state lists, refreshed whenever a sync includes today. Lot usage (production inputs and sales order allocations) is pulled for all dates on those syncs.',
   defaultHistoryDays: 365,
   dynamicDatasets: true,
   datasets: [],

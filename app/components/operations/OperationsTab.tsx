@@ -671,6 +671,68 @@ const operationalDataInflightStore = new Map<string, Promise<any>>();
 const wholesaleProductsReportCacheStore = new Map<string, { fetchedAt: number; data: any }>();
 const wholesaleProductsReportInflightStore = new Map<string, Promise<any>>();
 const productTransformCacheStore = new Map<string, { deps: any[]; value: any }>();
+/** Unit cost box for one inventory lot; saves on Enter or when focus leaves, if the value changed. */
+function InventoryLotCostInput({
+  value,
+  entered,
+  onSave,
+}: {
+  value: number | null;
+  entered: boolean;
+  onSave: (unitCost: number | null) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value == null ? '' : String(value));
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const [error, setError] = useState('');
+  const commit = async () => {
+    const trimmed = draft.trim();
+    const next = trimmed === '' ? null : Number(trimmed);
+    if (next != null && (!Number.isFinite(next) || next < 0)) {
+      setStatus('error');
+      setError('Enter a cost of 0 or more.');
+      return;
+    }
+    if (next === value || (next == null && value == null)) return;
+    setStatus('saving');
+    try {
+      await onSave(next);
+      setStatus('idle');
+      setError('');
+    } catch (saveError: any) {
+      setStatus('error');
+      setError(saveError?.message || 'Saving the lot cost failed.');
+    }
+  };
+  return (
+    <input
+      type="number"
+      min={0}
+      step="0.0001"
+      inputMode="decimal"
+      value={draft}
+      placeholder="0.00"
+      disabled={status === 'saving'}
+      title={status === 'error' ? error : entered ? 'Unit cost entered for this lot' : 'Enter this lot’s unit cost'}
+      aria-label="Lot unit cost"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => void commit()}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+      }}
+      style={{
+        width: '96px',
+        padding: '4px 6px',
+        fontSize: '13px',
+        textAlign: 'right',
+        border: `1px solid ${status === 'error' ? '#dc2626' : entered ? '#16a34a' : '#cbd5e1'}`,
+        borderRadius: '6px',
+        background: status === 'saving' ? '#f1f5f9' : '#fff',
+        color: '#1e293b',
+      }}
+    />
+  );
+}
+
 const WHOLESALE_PRODUCTS_REPORT_SESSION_CACHE_PREFIX = 'wholesale-products-report-cache:';
 
 function readWholesaleProductsReportSessionCache(key: string): { fetchedAt: number; data: any } | null {
@@ -1064,6 +1126,7 @@ export default function OperationsTab({
     'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'expirationDate' | 'receivedDate' | 'qtyOnHand' | 'avgCost' | 'assetValue'
   >('assetValue');
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
+  const [inventoryProductExpanded, setInventoryProductExpanded] = useState<Record<string, boolean>>({});
   const [inventoryCostTrendModalOpen, setInventoryCostTrendModalOpen] = useState(false);
   const [inventoryInfoKey, setInventoryInfoKey] = useState<string | null>(null);
   // Info modal for the six bottom Products charts. A single string identifies
@@ -15379,9 +15442,10 @@ export default function OperationsTab({
       if (!inventorySearch) return true;
       const itemName = String(item.itemName || '').toLowerCase();
       const sku = String(item.sku || '').toLowerCase();
-      return itemName.includes(inventorySearch) || sku.includes(inventorySearch);
+      const lot = String(item.lot || '').toLowerCase();
+      return itemName.includes(inventorySearch) || sku.includes(inventorySearch) || lot.includes(inventorySearch);
     });
-    const sortedInventoryRecords = [...filteredInventoryRecords].sort((a: any, b: any) => {
+    const compareInventoryRows = (a: any, b: any) => {
       const dir = inventorySortDir === 'asc' ? 1 : -1;
       if (inventorySortKey === 'qtyOnHand' || inventorySortKey === 'avgCost' || inventorySortKey === 'assetValue') {
         const aValue = Number(a?.[inventorySortKey] || 0);
@@ -15391,8 +15455,41 @@ export default function OperationsTab({
       const aText = String(a?.[inventorySortKey] || '').toLowerCase();
       const bText = String(b?.[inventorySortKey] || '').toLowerCase();
       return aText.localeCompare(bText) * dir;
-    });
+    };
+    const sortedInventoryRecords = [...filteredInventoryRecords].sort(compareInventoryRows);
     const showInventoryLotDates = latestRecords.some((item: any) => item?.expirationDate || item?.receivedDate);
+    // Lot-level sources: one product row (totals, earliest expiration) that expands to its lots, earliest expiring first.
+    const inventoryProductGroups = showInventoryLotDates
+      ? (() => {
+          const groups = new Map<string, any>();
+          for (const row of filteredInventoryRecords) {
+            const key = String(row?.itemId || row?.sku || row?.itemName || '').trim().toUpperCase();
+            if (!key) continue;
+            const group = groups.get(key) || { key, itemId: row.itemId, sku: row.sku, itemName: row.itemName, qtyOnHand: 0, assetValue: 0, lots: [] as any[] };
+            group.qtyOnHand += Number(row.qtyOnHand || 0);
+            group.assetValue += Number(row.assetValue || 0);
+            group.lots.push(row);
+            groups.set(key, group);
+          }
+          return [...groups.values()]
+            .map((group) => {
+              const expirations = group.lots.map((lot: any) => String(lot.expirationDate || '')).filter(Boolean).sort();
+              const receipts = group.lots.map((lot: any) => String(lot.receivedDate || '')).filter(Boolean).sort();
+              const lotCount = group.lots.filter((lot: any) => String(lot.lot || '').trim()).length;
+              return {
+                ...group,
+                avgCost: group.qtyOnHand > 0 ? group.assetValue / group.qtyOnHand : 0,
+                lot: lotCount ? `${lotCount} lot${lotCount === 1 ? '' : 's'}` : '',
+                expirationDate: expirations[0] || null,
+                receivedDate: receipts[receipts.length - 1] || null,
+                lots: [...group.lots].sort((a: any, b: any) =>
+                  String(a.expirationDate || '9999').localeCompare(String(b.expirationDate || '9999'))
+                ),
+              };
+            })
+            .sort(compareInventoryRows);
+        })()
+      : [];
     const handleInventorySort = (
       key: 'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'expirationDate' | 'receivedDate' | 'qtyOnHand' | 'avgCost' | 'assetValue'
     ) => {
@@ -15409,6 +15506,17 @@ export default function OperationsTab({
     };
     const inventorySortLabel = (key: string) =>
       inventorySortKey === key ? (inventorySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const saveInventoryLotCost = async (lot: any, unitCost: number | null) => {
+      const response = await fetch('/api/operational-data/foodready-lot-costs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId, itemId: lot.itemId, lot: lot.lot, unitCost }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || 'Saving the lot cost failed.');
+      const fresh = await fetchOperationalTypeWithCache('inventory', { forceRefresh: true });
+      if (fresh) applyOperationalTypeData('inventory', fresh);
+    };
     const openInventoryCostTrend = async (row: any) => {
       const skuCandidate = String(row?.sku || row?.itemId || '').trim();
       setInventoryCostTrendSku(skuCandidate);
@@ -16387,6 +16495,7 @@ export default function OperationsTab({
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                  {showInventoryLotDates && <th style={{ width: '36px', padding: '12px 6px' }} />}
                   <th onClick={() => handleInventorySort('sku')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Item ID{inventorySortLabel('sku')}</th>
                   <th onClick={() => handleInventorySort('itemName')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Item Name{inventorySortLabel('itemName')}</th>
                   <th onClick={() => handleInventorySort('warehouse')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Warehouse{inventorySortLabel('warehouse')}</th>
@@ -16394,19 +16503,107 @@ export default function OperationsTab({
                   <th onClick={() => handleInventorySort('lot')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Lot{inventorySortLabel('lot')}</th>
                   {showInventoryLotDates && (
                     <>
+                      <th onClick={() => handleInventorySort('avgCost')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Unit Cost{inventorySortLabel('avgCost')}</th>
                       <th onClick={() => handleInventorySort('expirationDate')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Expiration{inventorySortLabel('expirationDate')}</th>
                       <th onClick={() => handleInventorySort('receivedDate')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Received{inventorySortLabel('receivedDate')}</th>
                     </>
                   )}
                   <th onClick={() => handleInventorySort('qtyOnHand')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Qty on Hand{inventorySortLabel('qtyOnHand')}</th>
-                  <th onClick={() => handleInventorySort('avgCost')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Avg Cost{inventorySortLabel('avgCost')}</th>
+                  {!showInventoryLotDates && (
+                    <th onClick={() => handleInventorySort('avgCost')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Avg Cost{inventorySortLabel('avgCost')}</th>
+                  )}
                   <th onClick={() => handleInventorySort('assetValue')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Asset Value{inventorySortLabel('assetValue')}</th>
                   <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Trend</th>
                 </tr>
               </thead>
               {inventoryTableExpanded && (
                 <tbody>
-                  {sortedInventoryRecords.map((item: any, index: number) => (
+                  {showInventoryLotDates && inventoryProductGroups.map((group: any) => {
+                    const isExpanded = inventoryProductExpanded[group.key] === true;
+                    return (
+                      <React.Fragment key={`inventory-product-${group.key}`}>
+                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '12px 6px', textAlign: 'center' }}>
+                            <button
+                              onClick={() => setInventoryProductExpanded((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
+                              style={{
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                background: 'white',
+                                width: '24px',
+                                height: '24px',
+                                cursor: 'pointer',
+                                color: '#334155',
+                                fontWeight: 700,
+                                lineHeight: 1,
+                              }}
+                              aria-label={isExpanded ? `Collapse lots for ${group.itemName}` : `Expand lots for ${group.itemName}`}
+                              title={isExpanded ? 'Collapse' : 'Expand'}
+                            >
+                              {isExpanded ? '-' : '+'}
+                            </button>
+                          </td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{group.sku}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '600' }}>{group.itemName}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>N/A</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>N/A</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{group.lot || 'N/A'}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
+                            {formatUnitCost(Number(group.avgCost || 0))}
+                          </td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{group.expirationDate ? formatDateUtcMinus4(group.expirationDate) : 'N/A'}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{group.receivedDate ? formatDateUtcMinus4(group.receivedDate) : 'N/A'}</td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#2563eb', textAlign: 'right', fontWeight: '600' }}>
+                            {group.qtyOnHand.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
+                            {formatCurrency(group.assetValue)}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <button
+                              onClick={() => openInventoryCostTrend(group)}
+                              style={{
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                padding: '4px 8px',
+                                background: '#fff',
+                                color: '#334155',
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Trend
+                            </button>
+                          </td>
+                        </tr>
+                        {isExpanded && group.lots.map((lot: any, lotIndex: number) => (
+                          <tr key={`inventory-product-${group.key}-lot-${lotIndex}`} style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            <td />
+                            <td />
+                            <td />
+                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{String(lot.warehouse || '').trim() || 'N/A'}</td>
+                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{String(lot.bin || '').trim() || 'N/A'}</td>
+                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#1e293b' }}>{String(lot.lot || '').trim() || 'N/A'}</td>
+                            <td style={{ padding: '6px 12px', textAlign: 'right' }}>
+                              <InventoryLotCostInput
+                                key={`${lot.itemId}|${lot.lot}|${lot.avgCost}`}
+                                value={Number(lot.avgCost || 0) > 0 ? Number(lot.avgCost) : null}
+                                entered={lot.enteredUnitCost != null}
+                                onSave={(unitCost) => saveInventoryLotCost(lot, unitCost)}
+                              />
+                            </td>
+                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{lot.expirationDate ? formatDateUtcMinus4(lot.expirationDate) : 'N/A'}</td>
+                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{lot.receivedDate ? formatDateUtcMinus4(lot.receivedDate) : 'N/A'}</td>
+                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#2563eb', textAlign: 'right' }}>{Number(lot.qtyOnHand || 0).toLocaleString()}</td>
+                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(lot.assetValue)}</td>
+                            <td />
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
+                  {!showInventoryLotDates && sortedInventoryRecords.map((item: any, index: number) => (
                     <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
                       <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{item.sku}</td>
                       <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{item.itemName}</td>
@@ -16449,7 +16646,7 @@ export default function OperationsTab({
                   ))}
                   {sortedInventoryRecords.length === 0 && (
                     <tr>
-                      <td colSpan={showInventoryLotDates ? 11 : 9} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                      <td colSpan={showInventoryLotDates ? 12 : 9} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
                         No inventory rows match your search.
                       </td>
                     </tr>
