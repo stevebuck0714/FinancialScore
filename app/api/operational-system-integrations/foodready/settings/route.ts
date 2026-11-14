@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { getOperationalSystemConnection, saveOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
-import { FOODREADY_API_BASE_URL, FOODREADY_LABEL, FOODREADY_SOURCE_CODE } from '@/lib/foodready';
+import { FOODREADY_API_BASE_URL, FOODREADY_LABEL, FOODREADY_SOURCE_CODE, normalizeFoodReadyOverlapDays } from '@/lib/foodready';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +25,7 @@ function response(connection: Awaited<ReturnType<typeof getOperationalSystemConn
     syncTime: typeof configured.syncTime === 'string' ? configured.syncTime : '08:00',
     initialSyncStartDate: typeof configured.initialSyncStartDate === 'string' ? configured.initialSyncStartDate : '',
     incrementalSync: configured.incrementalSync === 'NO' ? 'NO' : 'YES',
+    overlapDays: String(normalizeFoodReadyOverlapDays(configured.overlapDays)),
   };
 }
 
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
           syncTime,
           initialSyncStartDate: typeof body.initialSyncStartDate === 'string' ? body.initialSyncStartDate : '',
           incrementalSync: body.incrementalSync === 'NO' ? 'NO' : 'YES',
+          overlapDays: String(normalizeFoodReadyOverlapDays(body.overlapDays)),
         },
       },
       errorMessage: null,

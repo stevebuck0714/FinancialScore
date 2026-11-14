@@ -10,6 +10,10 @@ type Domain = { dataDomain: string; sourceObject: string; enabled: boolean };
 const field = { display: 'block', width: '100%', boxSizing: 'border-box' as const, border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, fontSize: 12, marginTop: 5 };
 const label = { fontSize: 12, fontWeight: 700, color: '#334155' };
 const button = (color = '#334155') => ({ padding: '7px 10px', background: color, color: 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' });
+/** Same button look as the BambooHR and HubSpot operational containers. */
+const actionButton = (background: string, disabled: boolean) => ({
+  padding: '8px 12px', background: disabled ? '#cbd5e1' : background, color: disabled ? '#334155' : 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer',
+});
 
 export default function FoodReadyIntegrationCard({ companyId }: { companyId: string }) {
   const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
@@ -21,9 +25,12 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
   const [syncTime, setSyncTime] = useState('08:00');
   const [initialSyncStartDate, setInitialSyncStartDate] = useState('');
   const [incrementalSync, setIncrementalSync] = useState<'YES' | 'NO'>('YES');
+  const [overlapDays, setOverlapDays] = useState('7');
   const [domains, setDomains] = useState<Domain[]>([]);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [checking, setChecking] = useState<'validate' | 'probe' | 'sync_test' | null>(null);
+  const busy = saving || syncing || checking !== null;
   const [syncMessage, setSyncMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -43,6 +50,7 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
     setSyncTime(settings.syncTime || '08:00');
     setInitialSyncStartDate(settings.initialSyncStartDate || '');
     setIncrementalSync(settings.incrementalSync === 'NO' ? 'NO' : 'YES');
+    setOverlapDays(String(settings.overlapDays || '7'));
     setDomains(Array.isArray(domainData.dataDomains) ? domainData.dataDomains : []);
   };
 
@@ -54,22 +62,76 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId]);
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     try {
       setSaving(true); setError('');
       const response = await fetch('/api/operational-system-integrations/foodready/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, baseUrl, organizationId, apiKey, syncFrequency, syncTime, initialSyncStartDate, incrementalSync }),
+        body: JSON.stringify({ companyId, baseUrl, organizationId, apiKey, syncFrequency, syncTime, initialSyncStartDate, incrementalSync, overlapDays }),
       });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || 'Failed to save FoodReady settings.');
       setApiKey('');
       await load();
+      return true;
     } catch (saveError: any) {
       setError(saveError?.message || 'Failed to save FoodReady settings.');
+      return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runCheck = async (action: 'validate' | 'probe' | 'sync_test') => {
+    const response = await fetch('/api/operational-system-integrations/foodready/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, action }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.ok) throw new Error(result?.error || 'FoodReady check failed.');
+    return result;
+  };
+
+  const connect = async () => {
+    if (!(await save())) return;
+    try {
+      setChecking('validate'); setError('');
+      const result = await runCheck('validate');
+      alert(`FoodReady connection OK.\n\nTested endpoint: ${result.endpoint}`);
+    } catch (checkError: any) {
+      setError(checkError?.message || 'FoodReady connection failed.');
+    } finally {
+      setChecking(null);
+    }
+  };
+
+  const runSyncTest = async () => {
+    if (status !== 'ACTIVE') { setError('Save the FoodReady Organization ID and API Key before testing.'); return; }
+    try {
+      setChecking('sync_test'); setError('');
+      const result = await runCheck('sync_test');
+      const lines = (result.datasets as { label: string; rows: number }[]).map((dataset) => `${dataset.label}: ${dataset.rows.toLocaleString('en-US')}`);
+      alert(`FoodReady sync test completed (nothing stored).\n\nWindow (EST): ${result.window.startDate} – ${result.window.endDate}\n\n${lines.join('\n') || 'No enabled domains'}`);
+    } catch (checkError: any) {
+      setError(checkError?.message || 'FoodReady sync test failed.');
+    } finally {
+      setChecking(null);
+    }
+  };
+
+  const probeDomains = async () => {
+    if (status !== 'ACTIVE') { setError('Save the FoodReady Organization ID and API Key before probing.'); return; }
+    try {
+      setChecking('probe'); setError('');
+      const result = await runCheck('probe');
+      const lines = (result.results as { dataDomain: string; endpoint: string; ok: boolean; fieldCount?: number; error?: string }[])
+        .map((row) => `${row.ok ? 'OK' : 'FAILED'} · ${row.dataDomain} (${row.endpoint})${row.ok ? ` · ${row.fieldCount} field(s)` : ` · ${row.error}`}`);
+      alert(`FoodReady domain probe:\n\n${lines.join('\n')}`);
+    } catch (checkError: any) {
+      setError(checkError?.message || 'FoodReady domain probe failed.');
+    } finally {
+      setChecking(null);
     }
   };
 
@@ -138,9 +200,12 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
     <div style={{ padding: 16, background: '#f8fafc', border: '1px solid #bae6fd', borderRadius: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
         <h4 style={{ margin: 0, color: '#0c4a6e' }}>FoodReady AI</h4>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => void save()} disabled={saving || syncing} style={button()}>{saving ? 'Saving…' : 'Save'}</button>
-          <button onClick={() => void syncNow()} disabled={saving || syncing} style={button('#0f766e')}>{syncing ? 'Syncing…' : 'Sync Now'}</button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+          <button onClick={() => void save()} disabled={busy} style={actionButton('#334155', false)}>{saving ? 'Saving…' : 'Save'}</button>
+          <button onClick={() => void connect()} disabled={busy} style={actionButton('#0ea5e9', busy)}>{checking === 'validate' ? 'Validating…' : status === 'ACTIVE' ? 'Revalidate' : 'Connect'}</button>
+          <button onClick={() => void runSyncTest()} disabled={busy} style={actionButton('#16a34a', busy)}>{checking === 'sync_test' ? 'Testing…' : 'Run Sync Test'}</button>
+          <button onClick={() => void syncNow()} disabled={busy} style={actionButton('#0f766e', busy)}>{syncing ? 'Syncing…' : 'Sync FoodReady Now'}</button>
+          <button onClick={() => void probeDomains()} disabled={busy} style={actionButton('#7c3aed', busy)}>{checking === 'probe' ? 'Probing…' : 'Probe Domains'}</button>
         </div>
       </div>
       <div style={{ marginBottom: 10 }}><OperationalDateRangeSync companyId={companyId} sourceCode={SOURCE_CODE} compact /></div>
@@ -157,6 +222,7 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
         <label style={label}>Sync Time (EST)<input type="time" value={syncTime} onChange={(event) => setSyncTime(event.target.value)} style={field} /></label>
         <label style={label}>Initial Sync Start Date<input type="date" value={initialSyncStartDate} onChange={(event) => setInitialSyncStartDate(event.target.value)} style={field} /></label>
         <label style={label}>Incremental Sync *<select value={incrementalSync} onChange={(event) => setIncrementalSync(event.target.value as 'YES' | 'NO')} style={field}><option value="YES">Yes</option><option value="NO">No</option></select></label>
+        <label style={label}>Overlap Days<input type="number" min={1} max={31} step={1} value={overlapDays} onChange={(event) => setOverlapDays(event.target.value)} title="Calendar days re-pulled on each scheduled sync, ending today. Catches late FoodReady edits." style={field} /></label>
       </div>
     </div>
     <div style={{ padding: 8, background: '#f8fafc', border: '1px solid #bae6fd', borderRadius: 8 }}>
@@ -167,7 +233,7 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
           <button onClick={() => void saveDomains()} disabled={saving} style={{ ...button(), padding: '6px 10px' }}>Save</button>
         </div>
       </div>
-      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>FoodReady API endpoints used for food-manufacturing operations reporting</div>
+      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>FoodReady API endpoints used for manufacturing operations reporting</div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead><tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}><th style={{ textAlign: 'left', padding: 6, color: '#475569' }}>Data Domain</th><th style={{ textAlign: 'left', padding: 6, color: '#475569' }}>FoodReady Endpoint</th><th style={{ textAlign: 'left', padding: 6, color: '#475569', width: 80 }}>Enabled</th><th style={{ textAlign: 'left', padding: 6, color: '#475569', width: 70 }}>Action</th></tr></thead>

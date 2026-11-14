@@ -30,6 +30,15 @@ export function foodReadyEndpointForDomain(dataDomain: string, sourceObject: str
     || null;
 }
 
+export const DEFAULT_FOODREADY_OVERLAP_DAYS = 7;
+export const MAX_FOODREADY_OVERLAP_DAYS = 31;
+
+export function normalizeFoodReadyOverlapDays(value: unknown): number {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_FOODREADY_OVERLAP_DAYS;
+  return Math.min(MAX_FOODREADY_OVERLAP_DAYS, Math.max(1, parsed));
+}
+
 export type FoodReadyCredentials = {
   baseUrl: string;
   apiKey: string;

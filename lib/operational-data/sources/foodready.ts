@@ -8,8 +8,8 @@ import {
   type FoodReadyCredentials,
 } from '@/lib/foodready';
 import { formatEstDate } from '@/lib/time/eastern';
-import type { OperationalDatasetSchema, OperationalSourceAdapter, OperationalSourceOutput } from '../types';
-import { FULL_WINDOW, asRecord, readConnectionMetadata } from './common';
+import type { OperationalDatasetSchema, OperationalSourceAdapter, OperationalSourceOutput, OperationalSyncWindow } from '../types';
+import { asRecord, readConnectionMetadata } from './common';
 
 type DataDomain = { dataDomain: string; sourceObject: string; enabled: boolean };
 
@@ -18,9 +18,15 @@ const SAFE_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,62}$/;
 const PAGE_SIZE = 200;
 const MAX_PAGES = 100;
 
-/** The business date each record describes, first match wins; inventory on hand is a current snapshot. */
+/**
+ * The business date each record describes, first match wins. Endpoints with no date fields are
+ * current-state lists (inventory on hand, items, recipes, suppliers) stored as of the sync date.
+ */
 const DATE_FIELDS_BY_ENDPOINT: Record<string, string[]> = {
   '/api/inventoryItems/search': [],
+  '/api/itemPackaging/search': [],
+  '/api/bom/search': [],
+  '/api/v2/suppliers/search': [],
   '/api/purchaseOrders/lots/search': ['poReceivedOn', 'expectedDeliveryDate', 'createdAt'],
   '/api/purchaseOrderReceiving/search': ['receivedOn', 'createdAt'],
   '/api/wipItemLots/search': ['receivedOn', 'createdAt'],
@@ -31,7 +37,7 @@ const DATE_FIELDS_BY_ENDPOINT: Record<string, string[]> = {
 };
 const DEFAULT_DATE_FIELDS = ['createdAt'];
 
-function configuredDomains(metadata: Record<string, unknown>): DataDomain[] {
+export function configuredFoodReadyDomains(metadata: Record<string, unknown>): DataDomain[] {
   const configured = asRecord(metadata.operationalSourceDataDomains)[FOODREADY_SOURCE_CODE];
   const rows = Array.isArray(configured) && configured.length ? configured : DEFAULT_FOODREADY_DATA_DOMAINS;
   return rows.flatMap((value) => {
@@ -95,21 +101,23 @@ function recordDate(endpoint: string, record: Record<string, unknown>, today: st
   return today;
 }
 
-async function syncFoodReady({ companyId }: { companyId: string }): Promise<OperationalSourceOutput> {
+export async function syncFoodReady({ companyId, window }: { companyId: string; window: OperationalSyncWindow }): Promise<OperationalSourceOutput> {
   const { connection, metadata } = await readConnectionMetadata(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
   const credentials = connection?.status === 'ACTIVE' ? foodReadyCredentialsFromConnection(connection) : null;
   if (!credentials) throw new Error('FoodReady is not connected for this company.');
 
   const today = formatEstDate();
   const output: OperationalSourceOutput = {};
-  for (const domain of configuredDomains(metadata)) {
-    const records = await fetchAllFoodReadyRecords(credentials, domain.sourceObject);
-    const schema = schemaFor(domain, records);
+  for (const domain of configuredFoodReadyDomains(metadata)) {
+    const records = (await fetchAllFoodReadyRecords(credentials, domain.sourceObject))
+      .map((record) => ({ record, date: recordDate(domain.sourceObject, record, today) }))
+      .filter(({ date }) => date >= window.startDate && date <= window.endDate);
+    const schema = schemaFor(domain, records.map(({ record }) => record));
     output[schema.key] = {
       schema,
       replaceWindow: true,
-      window: FULL_WINDOW,
-      rows: records.map((record, index) => {
+      window,
+      rows: records.map(({ record, date }, index) => {
         const dimensions: Record<string, string | number | boolean | null> = { sourceObject: domain.sourceObject };
         const measures: Record<string, number> = { recordCount: 1 };
         Object.entries(record).forEach(([key, value]) => {
@@ -119,7 +127,7 @@ async function syncFoodReady({ companyId }: { companyId: string }): Promise<Oper
           else dimensions[key] = parsed;
         });
         const identity = String(record._id ?? record.id ?? index);
-        return { date: recordDate(domain.sourceObject, record, today), externalId: `${domain.sourceObject}|${identity}`, dimensions, measures };
+        return { date, externalId: `${domain.sourceObject}|${identity}`, dimensions, measures };
       }),
     };
   }
@@ -131,8 +139,8 @@ export const FOODREADY_ADAPTER: OperationalSourceAdapter = {
   provider: 'FOODREADY',
   label: FOODREADY_LABEL,
   datasetPrefix: 'foodready',
-  history: 'snapshot',
-  historyNote: 'Each FoodReady sync refreshes the full set of records from the enabled endpoints. Inventory on hand is stored as of the sync date.',
+  history: 'range',
+  historyNote: 'Each FoodReady sync stores the records dated inside the sync window (scheduled syncs re-pull the Overlap Days). Inventory on hand, items, recipes and suppliers are current-state lists stored as of the sync date.',
   defaultHistoryDays: 365,
   dynamicDatasets: true,
   datasets: [],

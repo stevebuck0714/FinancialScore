@@ -48,7 +48,7 @@ const EARLIEST_HISTORY_DATE = '1990-01-01';
  * The connection's "Initial Sync Start Date", wherever its setup screen saved it: top level of
  * the connection metadata or inside a source settings object (bambooHrSettings, hubSpotSettings, ...).
  */
-async function readConfiguredHistoryStartDate(companyId: string, sourceCode: string): Promise<string | null> {
+async function readConnectionSetting(companyId: string, sourceCode: string, name: string): Promise<string[]> {
   const connection = await prisma.operationalSystemConnection.findFirst({
     where: { companyId, sourceCode },
     select: { connectionMetadata: true },
@@ -56,14 +56,24 @@ async function readConfiguredHistoryStartDate(companyId: string, sourceCode: str
   const metadata = (connection?.connectionMetadata && typeof connection.connectionMetadata === 'object'
     ? connection.connectionMetadata
     : {}) as Record<string, unknown>;
-  const candidates = [
-    metadata.initialSyncStartDate,
+  return [
+    metadata[name],
     ...Object.values(metadata).map((value) =>
-      value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>).initialSyncStartDate : undefined,
+      value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>)[name] : undefined,
     ),
-  ];
-  const found = candidates.map((value) => String(value || '').trim()).find((value) => DATE_KEY.test(value));
-  return found || null;
+  ].map((value) => String(value ?? '').trim());
+}
+
+async function readConfiguredHistoryStartDate(companyId: string, sourceCode: string): Promise<string | null> {
+  const candidates = await readConnectionSetting(companyId, sourceCode, 'initialSyncStartDate');
+  return candidates.find((value) => DATE_KEY.test(value)) || null;
+}
+
+/** The connection's "Overlap Days": calendar days each scheduled sync re-pulls, ending today. */
+async function readConfiguredOverlapDays(companyId: string, sourceCode: string): Promise<number | null> {
+  const candidates = await readConnectionSetting(companyId, sourceCode, 'overlapDays');
+  const days = candidates.map((value) => Number.parseInt(value, 10)).find((value) => Number.isFinite(value) && value > 0);
+  return days ?? null;
 }
 
 /** Validate a requested date-range sync window (EST calendar dates, not in the future). */
@@ -87,8 +97,8 @@ function defaultWindow(adapter: OperationalSourceAdapter, mode: OperationalDataM
 
 /**
  * LIVE window: an explicit date range wins; a range-capable source's first live sync backfills
- * from the connection's Initial Sync Start Date (or the adapter default); otherwise the nightly
- * incremental lookback.
+ * from the connection's Initial Sync Start Date (or the adapter default); otherwise the connection's
+ * Overlap Days, else the adapter's nightly incremental lookback.
  */
 async function liveWindow(companyId: string, adapter: OperationalSourceAdapter, window?: OperationalSyncWindow): Promise<OperationalSyncWindow> {
   if (window) return window;
@@ -101,6 +111,11 @@ async function liveWindow(companyId: string, adapter: OperationalSourceAdapter, 
     const configured = await readConfiguredHistoryStartDate(companyId, adapter.sourceCode);
     const startDate = configured && configured <= endDate ? configured : addEstCalendarDays(endDate, -(adapter.defaultHistoryDays ?? DEFAULT_HISTORY_DAYS));
     return { startDate, endDate };
+  }
+  const overlapDays = await readConfiguredOverlapDays(companyId, adapter.sourceCode);
+  if (overlapDays) {
+    const endDate = formatEstDate();
+    return { startDate: addEstCalendarDays(endDate, -overlapDays), endDate };
   }
   return defaultWindow(adapter, 'LIVE');
 }
