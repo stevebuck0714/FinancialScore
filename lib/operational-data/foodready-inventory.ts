@@ -471,19 +471,33 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
   const lotCodes = [...new Set(snapshotRows.map((row) => String(row.lot || '').trim()).filter(Boolean))];
   type LotDates = { quantity: number; expirationDate: string | null; receivedDate: string | null; source: FoodReadyLotSource | null };
   const lotDates = new Map<string, LotDates[]>();
+  // Items made by a production batch, found the same way the snapshot ties finished-goods lots to items.
+  const finishedGoodsItems = new Set<string>();
+  const records = await prisma.operationalRecord.findMany({
+    where: {
+      companyId,
+      dataMode: 'LIVE',
+      dataset: { sourceCode: FOODREADY_SOURCE_CODE },
+      OR: [...LOT_ENDPOINTS, ITEM_PACKAGING_ENDPOINT].map((endpoint) => ({ dimensions: { path: ['sourceObject'], equals: endpoint } })),
+    },
+    select: { dimensions: true, measures: true },
+  });
+  const packagingItem = new Map<string, string>();
+  for (const record of records) {
+    const dims = (record.dimensions || {}) as Dimensions;
+    if (text(dims, 'sourceObject') === ITEM_PACKAGING_ENDPOINT) packagingItem.set(text(dims, 'id'), foodReadyRef(dims, 'inventoryItem'));
+  }
+  for (const record of records) {
+    const dims = (record.dimensions || {}) as Dimensions;
+    if (text(dims, 'sourceObject') !== FINISHED_GOODS_LOTS_ENDPOINT) continue;
+    const itemId = packagingItem.get(foodReadyRef(dims, 'itemPackaging'));
+    if (itemId) finishedGoodsItems.add(itemId);
+  }
   if (lotCodes.length) {
-    const records = await prisma.operationalRecord.findMany({
-      where: {
-        companyId,
-        dataMode: 'LIVE',
-        dataset: { sourceCode: FOODREADY_SOURCE_CODE },
-        OR: LOT_ENDPOINTS.map((endpoint) => ({ dimensions: { path: ['sourceObject'], equals: endpoint } })),
-      },
-      select: { dimensions: true, measures: true },
-    });
     const wanted = new Set(lotCodes);
     for (const record of records) {
       const dims = (record.dimensions || {}) as Record<string, unknown>;
+      if (dims.sourceObject === ITEM_PACKAGING_ENDPOINT) continue;
       const lotCode = String(dims.lotCode || '').trim();
       if (!wanted.has(lotCode)) continue;
       lotDates.set(lotCode, [
@@ -505,7 +519,7 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
       expirationDate: match?.expirationDate ?? null,
       receivedDate: match?.receivedDate ?? null,
       enteredUnitCost: enteredLotCosts.get(lotCostKey(row.itemId, row.lot)) ?? null,
-      lotSource: match?.source ?? null,
+      lotSource: finishedGoodsItems.has(String(row.itemId || '').trim()) ? 'finished_goods' : (match?.source ?? null),
     };
   });
 }

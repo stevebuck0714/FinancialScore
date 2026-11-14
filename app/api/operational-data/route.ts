@@ -394,7 +394,7 @@ async function buildOperationalDataVersion(
     // Bump when the shape of FoodReady inventory rows changes so cached payloads are rebuilt.
     Promise.resolve(
       includeAll || type === 'inventory'
-        ? { label: 'FoodReadyInventoryRowShape', version: 2 }
+        ? { label: 'FoodReadyInventoryRowShape', version: 3 }
         : { label: 'FoodReadyInventoryRowShape', skipped: true }
     ),
     (includeAll || type === 'cash')
@@ -3945,7 +3945,10 @@ export async function GET(request: NextRequest) {
         // A cold page build takes 30-60s for large Infor tenants. Serve the
         // last complete payload for this exact window and rebuild it through
         // the cron warmup path, so the request must match that path's limits.
+        // `fresh=1` (sent right after a user edit) must see the edit, so it never gets the last complete payload.
+        const wantsFreshPayload = ['1', 'true', 'yes'].includes(String(searchParams.get('fresh') || '').trim().toLowerCase());
         const canRebuildPageInBackground =
+          !wantsFreshPayload &&
           !isCronOperationalCacheWarmup &&
           !isWholesaleProductsReportRequest &&
           CRON_OPERATIONAL_CACHE_WARMUP_TYPES.has(cacheType) &&

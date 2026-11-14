@@ -671,92 +671,56 @@ const operationalDataInflightStore = new Map<string, Promise<any>>();
 const wholesaleProductsReportCacheStore = new Map<string, { fetchedAt: number; data: any }>();
 const wholesaleProductsReportInflightStore = new Map<string, Promise<any>>();
 const productTransformCacheStore = new Map<string, { deps: any[]; value: any }>();
-/** Unit cost box for one inventory lot with a Save button; Enter also saves. An empty box clears the entered cost. */
+/** Saved cost shown in a lot's cost box, rounded so long averages stay readable. */
+function inventoryLotCostText(value: number | null): string {
+  return value == null ? '' : String(Number(value.toFixed(4)));
+}
+
+/** Cost box for one inventory lot. Edits stay pending until the table's Save Costs button (or Enter) saves them. */
 function InventoryLotCostInput({
   value,
+  draft,
   entered,
-  onSave,
+  failed,
+  disabled,
+  onChange,
+  onEnter,
 }: {
   value: number | null;
+  draft: string | undefined;
   entered: boolean;
-  onSave: (unitCost: number | null) => Promise<void>;
+  failed: boolean;
+  disabled: boolean;
+  onChange: (next: string) => void;
+  onEnter: () => void;
 }) {
-  const initial = value == null ? '' : String(value);
-  const [draft, setDraft] = useState(initial);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [error, setError] = useState('');
-  const changed = draft.trim() !== initial;
-  const save = async () => {
-    const trimmed = draft.trim();
-    const next = trimmed === '' ? null : Number(trimmed);
-    if (next != null && (!Number.isFinite(next) || next < 0)) {
-      setStatus('error');
-      setError('Enter a cost of 0 or more.');
-      return;
-    }
-    setStatus('saving');
-    setError('');
-    try {
-      await onSave(next);
-      setStatus('saved');
-    } catch (saveError: any) {
-      setStatus('error');
-      setError(saveError?.message || 'Saving the lot cost failed.');
-    }
-  };
+  const pending = draft !== undefined;
   return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-        <input
-          type="number"
-          min={0}
-          step="0.0001"
-          inputMode="decimal"
-          value={draft}
-          placeholder="0.00"
-          disabled={status === 'saving'}
-          title={entered ? 'Unit cost entered for this lot' : 'Enter this lot’s unit cost'}
-          aria-label="Lot unit cost"
-          onChange={(event) => {
-            setDraft(event.target.value);
-            if (status !== 'saving') setStatus('idle');
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && changed) void save();
-          }}
-          style={{
-            width: '96px',
-            padding: '4px 6px',
-            fontSize: '13px',
-            textAlign: 'right',
-            border: `1px solid ${status === 'error' ? '#dc2626' : entered ? '#16a34a' : '#cbd5e1'}`,
-            borderRadius: '6px',
-            background: status === 'saving' ? '#f1f5f9' : '#fff',
-            color: '#1e293b',
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={!changed || status === 'saving'}
-          style={{
-            border: '1px solid #cbd5e1',
-            borderRadius: '8px',
-            padding: '4px 8px',
-            background: '#fff',
-            color: '#334155',
-            fontSize: '12px',
-            fontWeight: 600,
-            cursor: !changed || status === 'saving' ? 'not-allowed' : 'pointer',
-            opacity: !changed || status === 'saving' ? 0.5 : 1,
-          }}
-        >
-          {status === 'saving' ? 'Saving…' : 'Save'}
-        </button>
-      </div>
-      {status === 'saved' && !changed && <span style={{ fontSize: '11px', color: '#16a34a' }}>Saved</span>}
-      {status === 'error' && <span style={{ fontSize: '11px', color: '#dc2626' }}>{error}</span>}
-    </div>
+    <input
+      type="number"
+      min={0}
+      step="0.0001"
+      inputMode="decimal"
+      value={pending ? draft : inventoryLotCostText(value)}
+      placeholder="0.00"
+      disabled={disabled}
+      title={failed ? 'This cost did not save' : pending ? 'Not saved yet: click Save Costs' : entered ? 'Cost entered for this lot' : 'Enter this lot’s cost'}
+      aria-label="Lot cost"
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') onEnter();
+      }}
+      style={{
+        width: '96px',
+        padding: '4px 6px',
+        fontSize: '13px',
+        textAlign: 'right',
+        border: `1px solid ${failed ? '#dc2626' : pending ? '#f59e0b' : entered ? '#16a34a' : '#cbd5e1'}`,
+        borderRadius: '6px',
+        background: disabled ? '#f1f5f9' : pending ? '#fffbeb' : '#fff',
+        color: '#1e293b',
+      }}
+    />
   );
 }
 
@@ -1154,6 +1118,10 @@ export default function OperationsTab({
   >('assetValue');
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
   const [inventoryProductExpanded, setInventoryProductExpanded] = useState<Record<string, boolean>>({});
+  const [inventoryCostDrafts, setInventoryCostDrafts] = useState<Record<string, { itemId: string; lot: string | null; value: string }>>({});
+  const [inventoryCostFailed, setInventoryCostFailed] = useState<Record<string, true>>({});
+  const [inventoryCostSaving, setInventoryCostSaving] = useState(false);
+  const [inventoryCostMessage, setInventoryCostMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [inventoryCostTrendModalOpen, setInventoryCostTrendModalOpen] = useState(false);
   const [inventoryInfoKey, setInventoryInfoKey] = useState<string | null>(null);
   // Info modal for the six bottom Products charts. A single string identifies
@@ -2500,7 +2468,7 @@ export default function OperationsTab({
     return start.toISOString().slice(0, 10);
   };
 
-  async function fetchOperationalType(type: OpsDataType, options?: { refreshConcentration?: boolean }) {
+  async function fetchOperationalType(type: OpsDataType, options?: { refreshConcentration?: boolean; fresh?: boolean }) {
     const apiType = type === 'sales' ? 'customers' : type;
     // The Performance view aggregates product rows in the browser. Asking the
     // API for every historical row lets large Infor tenants produce an
@@ -2544,6 +2512,7 @@ export default function OperationsTab({
           }
         : {}),
       ...(apiType === 'customers' && options?.refreshConcentration ? { refreshConcentration: '1' } : {}),
+      ...(options?.fresh ? { fresh: '1' } : {}),
     });
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -3034,7 +3003,7 @@ export default function OperationsTab({
 
   async function fetchOperationalTypeWithCache(
     type: OpsDataType,
-    options?: { preferCache?: boolean; forceRefresh?: boolean; refreshConcentration?: boolean }
+    options?: { preferCache?: boolean; forceRefresh?: boolean; refreshConcentration?: boolean; fresh?: boolean }
   ) {
     const preferCache = options?.preferCache === true;
     const forceRefresh = options?.forceRefresh === true;
@@ -3051,7 +3020,7 @@ export default function OperationsTab({
     if (inflight) {
       return inflight;
     }
-    const request = fetchOperationalType(type, { refreshConcentration: options?.refreshConcentration === true })
+    const request = fetchOperationalType(type, { refreshConcentration: options?.refreshConcentration === true, fresh: options?.fresh === true })
       .then((data) => {
         setCachedOperationalData(type, data);
         return data;
@@ -15550,16 +15519,70 @@ export default function OperationsTab({
     };
     const inventorySortLabel = (key: string) =>
       inventorySortKey === key ? (inventorySortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const saveInventoryLotCost = async (lot: any, unitCost: number | null) => {
-      const response = await fetch('/api/operational-data/foodready-lot-costs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId: selectedCompanyId, itemId: lot.itemId, lot: lot.lot, unitCost }),
+    const inventoryLotCostKey = (lot: any) => `${String(lot?.itemId || '').trim()}|${String(lot?.lot || '').trim()}`;
+    const pendingInventoryCostCount = Object.keys(inventoryCostDrafts).length;
+    const editInventoryLotCost = (lot: any, next: string) => {
+      const key = inventoryLotCostKey(lot);
+      const saved = inventoryLotCostText(lot.enteredUnitCost != null ? Number(lot.enteredUnitCost) : Number(lot.avgCost || 0) > 0 ? Number(lot.avgCost) : null);
+      setInventoryCostDrafts((prev) => {
+        const rest = { ...prev };
+        delete rest[key];
+        return next.trim() === saved ? rest : { ...rest, [key]: { itemId: String(lot.itemId || ''), lot: lot.lot ?? null, value: next } };
       });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.ok) throw new Error(result.error || 'Saving the lot cost failed.');
-      const fresh = await fetchOperationalTypeWithCache('inventory', { forceRefresh: true });
-      if (fresh) applyOperationalTypeData('inventory', fresh);
+      setInventoryCostFailed((prev) => {
+        if (!prev[key]) return prev;
+        const rest = { ...prev };
+        delete rest[key];
+        return rest;
+      });
+      setInventoryCostMessage(null);
+    };
+    const saveInventoryCosts = async () => {
+      const entries = Object.entries(inventoryCostDrafts);
+      if (!entries.length || inventoryCostSaving) return;
+      setInventoryCostSaving(true);
+      setInventoryCostMessage(null);
+      const failed: Record<string, true> = {};
+      const errors: string[] = [];
+      let saved = 0;
+      for (const [key, draft] of entries) {
+        const trimmed = draft.value.trim();
+        const unitCost = trimmed === '' ? null : Number(trimmed);
+        if (unitCost != null && (!Number.isFinite(unitCost) || unitCost < 0)) {
+          failed[key] = true;
+          errors.push(`lot ${draft.lot || 'N/A'}: enter a cost of 0 or more`);
+          continue;
+        }
+        try {
+          const response = await fetch('/api/operational-data/foodready-lot-costs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId: selectedCompanyId, itemId: draft.itemId, lot: draft.lot, unitCost }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result.ok) throw new Error(result.error || `HTTP ${response.status}`);
+          saved += 1;
+        } catch (saveError: any) {
+          failed[key] = true;
+          errors.push(`lot ${draft.lot || 'N/A'}: ${saveError?.message || 'save failed'}`);
+        }
+      }
+      try {
+        if (saved) {
+          const refreshed = await fetchOperationalTypeWithCache('inventory', { forceRefresh: true, fresh: true });
+          if (refreshed) applyOperationalTypeData('inventory', refreshed);
+        }
+      } catch (refreshError: any) {
+        errors.push(`costs saved, but reloading the table failed: ${refreshError?.message || 'unknown error'}`);
+      }
+      setInventoryCostDrafts((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => failed[key])));
+      setInventoryCostFailed(failed);
+      setInventoryCostMessage(
+        errors.length
+          ? { tone: 'error', text: `Saved ${saved} cost${saved === 1 ? '' : 's'}; ${errors.length} problem${errors.length === 1 ? '' : 's'}: ${errors.slice(0, 3).join('; ')}` }
+          : { tone: 'ok', text: `Saved ${saved} cost${saved === 1 ? '' : 's'}.` },
+      );
+      setInventoryCostSaving(false);
     };
     const openInventoryCostTrend = async (row: any) => {
       const skuCandidate = String(row?.sku || row?.itemId || '').trim();
@@ -16555,8 +16578,32 @@ export default function OperationsTab({
                 placeholder="Search item name or SKU"
                 style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '240px' }}
               />
+              {showInventoryLotDates && (
+                <button
+                  type="button"
+                  onClick={() => void saveInventoryCosts()}
+                  disabled={!pendingInventoryCostCount || inventoryCostSaving}
+                  style={{
+                    border: `1px solid ${pendingInventoryCostCount ? '#2563eb' : '#cbd5e1'}`,
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    background: pendingInventoryCostCount ? '#2563eb' : '#fff',
+                    color: pendingInventoryCostCount ? '#fff' : '#94a3b8',
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    cursor: !pendingInventoryCostCount || inventoryCostSaving ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {inventoryCostSaving ? 'Saving…' : pendingInventoryCostCount ? `Save Costs (${pendingInventoryCostCount})` : 'Save Costs'}
+                </button>
+              )}
             </div>
           </div>
+          {inventoryCostMessage && (
+            <div style={{ marginBottom: '12px', fontSize: '12px', color: inventoryCostMessage.tone === 'error' ? '#b91c1c' : '#15803d' }}>
+              {inventoryCostMessage.text}
+            </div>
+          )}
           {inventoryTableSections.map((section, sectionIndex) => (
           <div key={`inventory-section-${section.key}`} style={{ marginTop: sectionIndex > 0 ? '24px' : 0 }}>
           {section.title && (
@@ -16580,7 +16627,7 @@ export default function OperationsTab({
                   <th onClick={() => handleInventorySort('lot')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Lot{inventorySortLabel('lot')}</th>
                   {showInventoryLotDates && (
                     <>
-                      <th onClick={() => handleInventorySort('avgCost')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Unit Cost{inventorySortLabel('avgCost')}</th>
+                      <th onClick={() => handleInventorySort('avgCost')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Cost{inventorySortLabel('avgCost')}</th>
                       <th onClick={() => handleInventorySort('expirationDate')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Expiration{inventorySortLabel('expirationDate')}</th>
                       <th onClick={() => handleInventorySort('receivedDate')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Received{inventorySortLabel('receivedDate')}</th>
                     </>
@@ -16664,10 +16711,13 @@ export default function OperationsTab({
                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#1e293b' }}>{String(lot.lot || '').trim() || 'N/A'}</td>
                             <td style={{ padding: '6px 12px', textAlign: 'right' }}>
                               <InventoryLotCostInput
-                                key={`${lot.itemId}|${lot.lot}|${lot.avgCost}|${lot.enteredUnitCost}`}
                                 value={lot.enteredUnitCost != null ? Number(lot.enteredUnitCost) : Number(lot.avgCost || 0) > 0 ? Number(lot.avgCost) : null}
+                                draft={inventoryCostDrafts[inventoryLotCostKey(lot)]?.value}
                                 entered={lot.enteredUnitCost != null}
-                                onSave={(unitCost) => saveInventoryLotCost(lot, unitCost)}
+                                failed={inventoryCostFailed[inventoryLotCostKey(lot)] === true}
+                                disabled={inventoryCostSaving}
+                                onChange={(next) => editInventoryLotCost(lot, next)}
+                                onEnter={() => void saveInventoryCosts()}
                               />
                             </td>
                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{lot.expirationDate ? formatDateUtcMinus4(lot.expirationDate) : 'N/A'}</td>
