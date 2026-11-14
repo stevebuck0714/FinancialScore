@@ -37,7 +37,7 @@ function countApplied(records: Record<string, unknown>[]): number {
 
 async function loadQbdRecords(companyId: string, requestName: string, endDate: string): Promise<Record<string, unknown>[]> {
   const rows = await prisma.$queryRaw<Array<{ record: unknown }>>`
-    SELECT record
+    SELECT record || jsonb_build_object('__qbdFetchedAt', "createdAt") AS record
     FROM "QuickBooksDesktopBackfillPage"
     CROSS JOIN LATERAL jsonb_array_elements("payload"::jsonb) AS record
     WHERE "companyId" = ${companyId}

@@ -106,6 +106,7 @@ type QbwcDateRange = {
   startDate: string;
   endDate: string;
   requestedAt?: string;
+  filterBy?: 'modified';
 };
 
 type QbwcRequestContext = {
@@ -454,6 +455,10 @@ function buildRequestList(metadata: QbDesktopMetadata): string[] {
 
 function buildTransactionDateFilter(dateRange: QbwcDateRange): string {
   if (!dateRange.startDate || !dateRange.endDate) return '';
+  // Picks up transactions entered or edited late with an earlier TxnDate.
+  if (dateRange.filterBy === 'modified') {
+    return `<ModifiedDateRangeFilter><FromModifiedDate>${xmlEscape(dateRange.startDate)}</FromModifiedDate></ModifiedDateRangeFilter>`;
+  }
   return `<TxnDateRangeFilter><FromTxnDate>${xmlEscape(dateRange.startDate)}</FromTxnDate><ToTxnDate>${xmlEscape(dateRange.endDate)}</ToTxnDate></TxnDateRangeFilter>`;
 }
 
@@ -1533,7 +1538,10 @@ async function finalizeSession(connection: NonNullable<Awaited<ReturnType<typeof
   const companyId = connection.companyId;
   const frequency = normalizeFrequency(connection.syncFrequency);
   const financialPayload = buildQuickBooksDesktopFinancialPayload(session);
-  const operationalPayload = buildQuickBooksDesktopOperationalPayload(session);
+  const operationalPayload = {
+    ...buildQuickBooksDesktopOperationalPayload(session),
+    __qbdModifiedFilter: (session.backfillJobSequence || []).some((job) => job.dateRange?.filterBy === 'modified'),
+  };
 
   let accountMappingSeed: unknown = null;
   let operationalSync: unknown = null;

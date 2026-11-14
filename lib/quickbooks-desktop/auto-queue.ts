@@ -284,6 +284,7 @@ type AutoFinancialJobSpec = {
     startDate: string;
     endDate: string;
     requestedAt: string;
+    filterBy?: 'modified';
   };
   windowIndex: number;
 };
@@ -329,7 +330,7 @@ function buildAutoFinancialJobSpecs(
   const jobSpecs: AutoFinancialJobSpec[] = [
     ...staticRequests.map((requestName) => ({
       requestName,
-      dateRange: queuedDateRange,
+      dateRange: { ...queuedDateRange, filterBy: 'modified' as const },
       windowIndex: 0,
     })),
     ...businessDayDateRanges.flatMap((range) =>

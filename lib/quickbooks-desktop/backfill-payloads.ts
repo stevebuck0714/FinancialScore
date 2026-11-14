@@ -389,7 +389,12 @@ export async function loadQuickBooksDesktopBackfillPayloads(
   if (!session) return null;
   return {
     financialPayload: buildQuickBooksDesktopFinancialPayload(session),
-    operationalPayload: buildQuickBooksDesktopOperationalPayload(session),
+    operationalPayload: {
+      ...buildQuickBooksDesktopOperationalPayload(session),
+      __qbdModifiedFilter: getCompletedBackfillJobs(metadata).some(
+        (job) => asRecord(job.dateRange).filterBy === "modified",
+      ),
+    },
   };
 }
 

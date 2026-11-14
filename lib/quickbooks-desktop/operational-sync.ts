@@ -110,6 +110,7 @@ type APPaymentRow = {
 export type QbDesktopOperationalPayload = {
   asOfDate?: string | null;
   __qbdSourceDateRange?: Record<string, any> | null;
+  __qbdModifiedFilter?: boolean;
   __qbdInvoices?: Array<Record<string, any>>;
   __qbdBills?: Array<Record<string, any>>;
   __qbdReceivePayments?: Array<Record<string, any>>;
@@ -596,9 +597,57 @@ async function saveAPOpenBills(
   return data.length;
 }
 
+type PaymentFactDelegate = {
+  deleteMany: (args: { where: Record<string, unknown> }) => Promise<unknown>;
+};
+
+// A modified-date pull is sparse across its date span (only changed payments
+// come back), so replace by transaction instead of wiping the span.
+async function deleteReplacedPaymentFacts(
+  delegate: PaymentFactDelegate,
+  companyId: string,
+  data: Array<{ paymentDate: Date; sourceTransaction: string | null }>,
+  modifiedFilter: boolean,
+): Promise<void> {
+  const base = { companyId, sourcePlatform: "QUICKBOOKS_DESKTOP" };
+  if (!modifiedFilter) {
+    const dates = data.map((row) => row.paymentDate.getTime());
+    await delegate.deleteMany({
+      where: {
+        ...base,
+        paymentDate: {
+          gte: new Date(Math.min(...dates)),
+          lte: new Date(Math.max(...dates)),
+        },
+      },
+    });
+    return;
+  }
+  const transactions = Array.from(
+    new Set(
+      data
+        .map((row) => String(row.sourceTransaction || "").replace(/:\d+$/, ""))
+        .filter(Boolean),
+    ),
+  );
+  for (let index = 0; index < transactions.length; index += 200) {
+    const chunk = transactions.slice(index, index + 200);
+    await delegate.deleteMany({
+      where: {
+        ...base,
+        OR: chunk.flatMap((transaction) => [
+          { sourceTransaction: transaction },
+          { sourceTransaction: { startsWith: `${transaction}:` } },
+        ]),
+      },
+    });
+  }
+}
+
 async function saveARPayments(
   companyId: string,
   rows: ARPaymentRow[],
+  modifiedFilter = false,
 ): Promise<number> {
   const data = rows
     .map((row) => {
@@ -626,17 +675,7 @@ async function saveARPayments(
     );
 
   if (data.length === 0) return 0;
-  const dates = data.map((row) => row.paymentDate.getTime());
-  await prisma.aRPaymentFact.deleteMany({
-    where: {
-      companyId,
-      sourcePlatform: "QUICKBOOKS_DESKTOP",
-      paymentDate: {
-        gte: new Date(Math.min(...dates)),
-        lte: new Date(Math.max(...dates)),
-      },
-    },
-  });
+  await deleteReplacedPaymentFacts(prisma.aRPaymentFact as unknown as PaymentFactDelegate, companyId, data, modifiedFilter);
   await prisma.aRPaymentFact.createMany({ data });
   return data.length;
 }
@@ -644,6 +683,7 @@ async function saveARPayments(
 async function saveAPPayments(
   companyId: string,
   rows: APPaymentRow[],
+  modifiedFilter = false,
 ): Promise<number> {
   const data = rows
     .map((row, index) => {
@@ -678,17 +718,7 @@ async function saveAPPayments(
     );
 
   if (data.length === 0) return 0;
-  const dates = data.map((row) => row.paymentDate.getTime());
-  await prisma.aPPaymentFact.deleteMany({
-    where: {
-      companyId,
-      sourcePlatform: "QUICKBOOKS_DESKTOP",
-      paymentDate: {
-        gte: new Date(Math.min(...dates)),
-        lte: new Date(Math.max(...dates)),
-      },
-    },
-  });
+  await deleteReplacedPaymentFacts(prisma.aPPaymentFact as unknown as PaymentFactDelegate, companyId, data, modifiedFilter);
   await prisma.aPPaymentFact.createMany({ data, skipDuplicates: true });
   return data.length;
 }
@@ -980,11 +1010,11 @@ export async function saveQuickBooksDesktopDetailOpenSnapshots(
       const billNo = qbdRecordNumber(bill, "QBD-BILL", index);
       const txnId = asString(bill.TxnID);
       const matchKeys = [txnId, billNo];
-      if (
-        String(bill.IsPaid || "").toLowerCase() === "true" &&
-        !hasAppliedPayments(apPaymentIndex, matchKeys)
-      )
-        return;
+      const billIsPaid = String(bill.IsPaid || "").toLowerCase() === "true";
+      // IsPaid is only known as of when QBD returned the record.
+      const billFetchedAt = normalizeOptionalDate(bill.__qbdFetchedAt);
+      if (billIsPaid && (!billFetchedAt || billFetchedAt <= snapshotDate)) return;
+      if (billIsPaid && !hasAppliedPayments(apPaymentIndex, matchKeys)) return;
       const currentBalance = qbdRecordAmount(bill, "OpenAmount");
       const appliedTotal = totalAppliedAmount(apPaymentIndex, matchKeys);
       // QBD BillRet.AmountDue is the bill total, not the unpaid balance.
@@ -1162,6 +1192,7 @@ export async function syncQuickBooksDesktopOperationalPayload(
     recordsCreated += await saveARPayments(
       companyId,
       Array.isArray(payload.arPayments) ? payload.arPayments : [],
+      payload.__qbdModifiedFilter === true,
     );
   } catch (error) {
     errors.push(
@@ -1172,6 +1203,7 @@ export async function syncQuickBooksDesktopOperationalPayload(
     recordsCreated += await saveAPPayments(
       companyId,
       Array.isArray(payload.apPayments) ? payload.apPayments : [],
+      payload.__qbdModifiedFilter === true,
     );
   } catch (error) {
     errors.push(
