@@ -8090,7 +8090,7 @@ export default function OperationsTab({
                       .slice((arSummaryPage - 1) * 8, arSummaryPage * 8)
                       .map((row) => (
                         <tr key={`${row.customerId}-${row.customerName}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500', whiteSpace: 'nowrap' }}>{row.customerId}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500', width: '80px', maxWidth: '80px', overflowWrap: 'anywhere' }}>{row.customerId}</td>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500', whiteSpace: 'nowrap' }}>{row.customerName}</td>
                           {hasContractData && (
                             <>
@@ -8478,6 +8478,7 @@ export default function OperationsTab({
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
                       <th style={{ width: '36px', padding: '6px 6px' }} />
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Inv #</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current Month</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last Month</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last 12 Months</th>
@@ -8513,6 +8514,7 @@ export default function OperationsTab({
                                 </button>
                               </td>
                               <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500', whiteSpace: 'nowrap' }}>{row.customerName}</td>
+                              <td />
                               <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
                                 {formatCurrency(row.currentMonth)}
                               </td>
@@ -8528,7 +8530,9 @@ export default function OperationsTab({
                                 <td />
                                 <td style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
                                   {formatDateInputLabel(payment.paymentDate)}
-                                  {payment.invoiceNo && payment.invoiceNo !== '-' ? ` · Inv ${payment.invoiceNo}` : ''}
+                                </td>
+                                <td style={{ padding: '4px 10px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>
+                                  {payment.invoiceNo || '-'}
                                 </td>
                                 <td style={{ padding: '4px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
                                   {payment.inCurrentMonth ? formatCurrency(payment.amount) : ''}
@@ -8544,7 +8548,7 @@ export default function OperationsTab({
                             {isExpanded && payments.length === 0 && (
                               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                                 <td />
-                                <td colSpan={4} style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                                <td colSpan={5} style={{ padding: '4px 10px', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
                                   No payment-level detail available
                                 </td>
                               </tr>

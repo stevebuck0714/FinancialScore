@@ -195,6 +195,9 @@ const QBD_LINE_ITEM_TRANSACTION_REQUESTS = new Set([
   'DepositQuery',
   'VendorCreditQuery',
   'JournalEntryQuery',
+  'ReceivePaymentQuery',
+  'BillPaymentCheckQuery',
+  'BillPaymentCreditCardQuery',
 ]);
 
 const RET_TAG_BY_REQUEST: Record<string, string> = {
