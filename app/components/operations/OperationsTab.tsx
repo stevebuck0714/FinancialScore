@@ -9941,9 +9941,6 @@ export default function OperationsTab({
           <div style={{ marginBottom: '4px', fontSize: '11px', color: '#64748b' }}>
             As of: {formatDateUtcMinus4(latestApSnapshotDate)} | Coverage: {apCoverageLabel}
           </div>
-          <div style={{ marginBottom: '8px', fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
-            Due dates derived from termsCode cascade (voucher → vendor → N30 default). The Source column shows which tier was used for each row.
-          </div>
           {upcomingDueCalendar.length === 0 ? (
             <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
               No bills due in the next 30 days.
@@ -9955,23 +9952,17 @@ export default function OperationsTab({
                   <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb', position: 'sticky', top: 0, zIndex: 1 }}>
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Voucher</th>
-                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Invoice #</th>
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Days Until Due</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
-                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Source</th>
                   </tr>
                 </thead>
                 <tbody>
                   {upcomingDueCalendar.map((row, index) => {
-                    const source = String(row.dueDateSource || '');
-                    const isDefault = source.startsWith('default:');
-                    const sourceColor = isDefault ? '#94a3b8' : '#475569';
                     return (
                       <tr key={`${row.vendorName}-${row.billNo}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                         <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
                         <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.billNo}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.invoiceNum || '-'}</td>
                         <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{formatDateUtcMinus4(row.dueDate)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 600 }}>
                           {Number(row.daysUntil || 0)}
@@ -9979,25 +9970,18 @@ export default function OperationsTab({
                         <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 600 }}>
                           {formatCurrency(Number(row.amountDue || 0))}
                         </td>
-                        <td
-                          style={{ padding: '6px 10px', fontSize: '12px', color: sourceColor, fontStyle: isDefault ? 'italic' : 'normal' }}
-                          title={isDefault ? 'No termsCode on voucher or vendor — defaulted to N30' : 'Derived from termsCode'}
-                        >
-                          {source || '-'}
-                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: '2px solid #1d4ed8', background: '#f1f5f9' }}>
-                    <td colSpan={5} style={{ padding: '8px 10px', fontSize: '13px', color: '#1e293b', fontWeight: 700 }}>
+                    <td colSpan={4} style={{ padding: '8px 10px', fontSize: '13px', color: '#1e293b', fontWeight: 700 }}>
                       Total ({upcomingDueCalendar.length} bill{upcomingDueCalendar.length === 1 ? '' : 's'})
                     </td>
                     <td style={{ padding: '8px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 700 }}>
                       {formatCurrency(upcomingDueTotal)}
                     </td>
-                    <td />
                   </tr>
                 </tfoot>
               </table>
