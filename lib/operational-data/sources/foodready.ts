@@ -40,6 +40,7 @@ const PO_LINE_LOOKUP_BUDGET_MS = 90_000;
 /** Lookups also stop this long after the sync started, leaving room to store the run within the 300s function limit. */
 const PO_LINE_LOOKUP_CUTOFF_MS = 200_000;
 const PO_LINE_LOOKUP_CONCURRENCY = 2;
+const PURCHASE_ORDER_LINES_ENDPOINT = '/api/purchaseOrdersItems/search';
 
 const PURCHASE_ORDER_LINES_SCHEMA: OperationalDatasetSchema = {
   key: FOODREADY_PURCHASE_ORDER_LINES_KEY,
@@ -172,14 +173,36 @@ async function fetchAllFoodReadyRecords(
   return all;
 }
 
-/** Look up purchase-order lines not seen before, a few at a time, until the time budget runs out. */
-async function fetchNewPurchaseOrderLines(
+function purchaseOrderLineRow(id: string, line: FlatRecord, today: string): OperationalRecordInput {
+  const number = (key: string) => (typeof line[key] === 'number' ? (line[key] as number) : undefined);
+  const text = (key: string) => (typeof line[key] === 'string' ? (line[key] as string) : undefined);
+  return {
+    date: today,
+    externalId: id,
+    dimensions: { po: text('po') ?? text('poId'), supplierItem: text('supplierItem') ?? text('supplierItemId'), status: text('status'), uom: text('uom') ?? text('uomCode') },
+    measures: { recordCount: 1, unitCost: number('unitCost'), unitSize: number('unitSize'), noOfUnits: number('noOfUnits'), totalOrderQuantity: number('totalOrderQuantity') },
+  };
+}
+
+/**
+ * Purchase-order lines behind purchased lots. All lines come from one paged search; if that
+ * endpoint fails, lines not seen before are looked up one at a time until the time budget runs out.
+ */
+async function fetchPurchaseOrderLines(
   credentials: FoodReadyCredentials,
   companyId: string,
   poItemIds: string[],
   today: string,
   syncStartedAt: number,
 ): Promise<OperationalRecordInput[]> {
+  try {
+    const lines = (await fetchAllFoodReadyRecords(credentials, PURCHASE_ORDER_LINES_ENDPOINT)).map(flattenRecord);
+    const rows = lines.filter((line) => typeof line.id === 'string' && line.id).map((line) => purchaseOrderLineRow(String(line.id), line, today));
+    if (rows.length) return rows;
+  } catch {
+    // Fall back to single-line lookups below.
+  }
+
   const known = await listFoodReadyPurchaseOrderLineIds(companyId);
   const queue = [...new Set(poItemIds)].filter((id) => id && !known.has(id));
   const deadline = Math.min(Date.now() + PO_LINE_LOOKUP_BUDGET_MS, syncStartedAt + PO_LINE_LOOKUP_CUTOFF_MS);
@@ -196,14 +219,7 @@ async function fetchNewPurchaseOrderLines(
         if (error instanceof FoodReadyRateLimitError) rateLimited = true;
         continue;
       }
-      const number = (key: string) => (typeof line[key] === 'number' ? (line[key] as number) : undefined);
-      const text = (key: string) => (typeof line[key] === 'string' ? (line[key] as string) : undefined);
-      rows.push({
-        date: today,
-        externalId: id,
-        dimensions: { po: text('po'), supplierItem: text('supplierItem') ?? text('supplierItemId'), status: text('status'), uom: text('uom') ?? text('uomCode') },
-        measures: { recordCount: 1, unitCost: number('unitCost'), unitSize: number('unitSize'), noOfUnits: number('noOfUnits'), totalOrderQuantity: number('totalOrderQuantity') },
-      });
+      rows.push(purchaseOrderLineRow(id, line, today));
       await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
     }
   };
@@ -262,7 +278,7 @@ export async function syncFoodReady(
     .filter((row) => row.dimensions?.sourceObject === FOODREADY_PURCHASED_LOTS_ENDPOINT)
     .map((row) => foodReadyRef(row.dimensions, 'poItem'));
   if (options.resolvePurchaseOrderLines !== false && purchasedLotIds.length) {
-    const lines = await fetchNewPurchaseOrderLines(credentials, companyId, purchasedLotIds, today, syncStartedAt);
+    const lines = await fetchPurchaseOrderLines(credentials, companyId, purchasedLotIds, today, syncStartedAt);
     if (lines.length) output[FOODREADY_PURCHASE_ORDER_LINES_KEY] = { schema: PURCHASE_ORDER_LINES_SCHEMA, rows: lines };
   }
   return output;
