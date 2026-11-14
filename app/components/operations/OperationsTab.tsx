@@ -5168,12 +5168,14 @@ export default function OperationsTab({
     const renderCategorySalesHistoryTable = (
       title: string,
       section: any,
-      options: { rowHeaderLabel?: string; itemHeaderLabel?: string; countLabel?: string; showItemNameColumn?: boolean; itemColumnMinWidth?: string } = {}
+      options: { rowHeaderLabel?: string; itemHeaderLabel?: string; countLabel?: string; showItemNameColumn?: boolean; itemColumnMinWidth?: string; itemCountLabel?: string; showItemDateAmountColumns?: boolean } = {}
     ) => {
       const categoryHistory = section?.categoryHistory;
       const rowHeaderLabel = options.rowHeaderLabel || 'Category';
       const itemHeaderLabel = options.itemHeaderLabel || 'Item Name';
       const countLabel = options.countLabel || 'categories';
+      const itemCountLabel = options.itemCountLabel || 'items';
+      const showItemDateAmountColumns = options.showItemDateAmountColumns === true;
       const showItemNameColumn = options.showItemNameColumn !== false;
       const itemColumnMinWidth = options.itemColumnMinWidth || '220px';
       const parseSalesHistoryPeriodDate = (period: any): Date | null => {
@@ -5258,7 +5260,7 @@ export default function OperationsTab({
               values: itemValues,
               total: Object.values(itemValues).reduce((sum, value) => sum + Number(value || 0), 0),
             };
-          });
+          }).filter((item: any) => !showItemDateAmountColumns || item.total > 0);
           return {
             ...row,
             values,
@@ -5407,7 +5409,7 @@ export default function OperationsTab({
             </div>
           </div>
           <div hidden={isTableCollapsed} style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', paddingBottom: '8px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + months.length * 112)}px` }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: `${Math.max(showItemNameColumn ? 1120 : 900, (showItemNameColumn ? 520 : 300) + (showItemDateAmountColumns ? 220 : 0) + months.length * 112)}px` }}>
               <thead>
                 <tr>
                   <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '240px' }}>
@@ -5417,6 +5419,12 @@ export default function OperationsTab({
                     <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: itemColumnMinWidth }}>
                       {sortableHeader(itemHeaderLabel, 'itemName', 'left')}
                     </th>
+                  )}
+                  {showItemDateAmountColumns && (
+                    <>
+                      <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '96px' }}>Date</th>
+                      <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '112px' }}>Amount</th>
+                    </>
                   )}
                   {months.map((month: any) => (
                     <th key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '12px', color: '#475569', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', minWidth: '104px' }}>
@@ -5454,6 +5462,12 @@ export default function OperationsTab({
                   </td>
                   {showItemNameColumn && (
                     <td style={{ padding: '8px', fontSize: '13px', color: '#64748b', borderBottom: '1px solid #cbd5e1' }} />
+                  )}
+                  {showItemDateAmountColumns && (
+                    <>
+                      <td style={{ padding: '8px', borderBottom: '1px solid #cbd5e1' }} />
+                      <td style={{ padding: '8px', borderBottom: '1px solid #cbd5e1' }} />
+                    </>
                   )}
                   {months.map((month: any) => (
                     <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#16a34a', fontWeight: 700 }}>
@@ -5499,7 +5513,7 @@ export default function OperationsTab({
                             {categoryLabel}
                             {items.length > 0 && (
                               <span style={{ marginLeft: '8px', color: '#64748b', fontSize: '12px', fontWeight: 500 }}>
-                                {items.length.toLocaleString()} items
+                                {items.length.toLocaleString()} {itemCountLabel}
                               </span>
                             )}
                           </td>
@@ -5507,6 +5521,12 @@ export default function OperationsTab({
                             <td style={{ padding: '8px', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                               {String(row?.itemName || '')}
                             </td>
+                          )}
+                          {showItemDateAmountColumns && (
+                            <>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }} />
+                              <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }} />
+                            </>
                           )}
                           {months.map((month: any) => (
                             <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#334155', borderBottom: '1px solid #e2e8f0', fontWeight: 700 }}>
@@ -5518,8 +5538,8 @@ export default function OperationsTab({
                           </td>
                         </tr>
                         {isCategoryExpanded &&
-                          items.map((item: any) => (
-                            <tr key={`${categoryLabel}-${String(item?.label || 'item')}`}>
+                          items.map((item: any, itemIndex: number) => (
+                            <tr key={`${categoryLabel}-${String(item?.label || 'item')}-${itemIndex}`}>
                               <td style={{ padding: '8px 8px 8px 76px', fontSize: '13px', fontWeight: 500, color: '#334155', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                                 {String(item?.label || 'Unknown Item')}
                               </td>
@@ -5527,6 +5547,16 @@ export default function OperationsTab({
                                 <td style={{ padding: '8px', fontSize: '13px', fontWeight: 500, color: '#475569', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                                   {String(item?.itemName || '')}
                                 </td>
+                              )}
+                              {showItemDateAmountColumns && (
+                                <>
+                                  <td style={{ padding: '8px', fontSize: '13px', color: '#475569', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                                    {item?.date ? formatDateInputLabel(String(item.date)) : ''}
+                                  </td>
+                                  <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#475569', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                                    {formatCurrency(Number(item?.amount || 0))}
+                                  </td>
+                                </>
                               )}
                               {months.map((month: any) => (
                                 <td key={month.monthKey} style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: '#475569', borderBottom: '1px solid #f1f5f9' }}>
@@ -6186,7 +6216,7 @@ export default function OperationsTab({
                       {renderSalesReportEmptyState()}
                     </div>
                   ))}
-                  {showCustomerInvoiceVolumeHistoryTable && (renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px' }) || null)}
+                  {showCustomerInvoiceVolumeHistoryTable && (renderCategorySalesHistoryTable('Customer Invoice Volume History', { categoryHistory: customerInvoiceVolumeHistory }, { rowHeaderLabel: 'Customer Name', itemHeaderLabel: 'Customer ID', countLabel: 'customers', itemColumnMinWidth: '128px', itemCountLabel: 'invoices', showItemDateAmountColumns: true }) || null)}
                   {!isSourceSystemSalesPage && (renderWorkbookHistoryTable('Buys History', salesReportPayload.buys) || (
                     <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                       <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e293b' }}>Buys History</h3>

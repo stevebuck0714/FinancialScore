@@ -948,10 +948,8 @@ export async function saveQuickBooksDesktopDetailOpenSnapshots(
         "Subtotal",
         "Amount",
       );
-      const totalAmount = Math.max(
-        currentBalance + appliedTotal,
-        reportedTotal,
-      );
+      const totalAmount =
+        reportedTotal > 0 ? reportedTotal : currentBalance + appliedTotal;
       if (totalAmount <= 0) return;
       const paidAmount = paidThroughDate(
         arPaymentIndex,
@@ -987,19 +985,17 @@ export async function saveQuickBooksDesktopDetailOpenSnapshots(
         !hasAppliedPayments(apPaymentIndex, matchKeys)
       )
         return;
-      const currentBalance = qbdRecordAmount(bill, "AmountDue", "OpenAmount");
+      const currentBalance = qbdRecordAmount(bill, "OpenAmount");
       const appliedTotal = totalAppliedAmount(apPaymentIndex, matchKeys);
+      // QBD BillRet.AmountDue is the bill total, not the unpaid balance.
       const reportedTotal = qbdRecordAmount(
         bill,
+        "AmountDue",
         "TotalAmount",
         "Amount",
-        "OpenAmount",
-        "AmountDue",
       );
-      const totalAmount = Math.max(
-        currentBalance + appliedTotal,
-        reportedTotal,
-      );
+      const totalAmount =
+        reportedTotal > 0 ? reportedTotal : currentBalance + appliedTotal;
       if (totalAmount <= 0) return;
       const paidAmount = paidThroughDate(
         apPaymentIndex,

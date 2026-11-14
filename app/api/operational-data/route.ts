@@ -4385,6 +4385,65 @@ export async function GET(request: NextRequest) {
             sales: buildCustomerHistory(customerHistorySourceRows, 'revenue'),
             invoiceVolume: buildCustomerHistory(customerHistorySourceRows, 'invoiceCount'),
           };
+          if (isQuickBooksDesktopCompany && customerHistory.invoiceVolume.rows.length > 0) {
+            const invoiceVolumeStart = startOfMonth(startDate).toISOString().slice(0, 10);
+            const invoiceVolumeEnd = endDate.toISOString().slice(0, 10);
+            const qbdInvoiceRows = await prisma.$queryRaw<Array<{
+              txnId: string | null;
+              invoiceNo: string | null;
+              invoiceDate: string | null;
+              customerId: string | null;
+              customerName: string | null;
+              amount: string | null;
+            }>>`
+              SELECT DISTINCT ON (record->>'TxnID')
+                record->>'TxnID' AS "txnId",
+                record->>'RefNumber' AS "invoiceNo",
+                record->>'TxnDate' AS "invoiceDate",
+                record->'CustomerRef'->>'ListID' AS "customerId",
+                record->'CustomerRef'->>'FullName' AS "customerName",
+                COALESCE(NULLIF(record->>'Subtotal', ''), NULLIF(record->>'TotalAmount', '')) AS "amount"
+              FROM "QuickBooksDesktopBackfillPage"
+              CROSS JOIN LATERAL jsonb_array_elements("payload"::jsonb) AS record
+              WHERE "companyId" = ${companyId}
+                AND "requestName" = 'InvoiceQuery'
+                AND record->>'TxnDate' ~ '^\\d{4}-\\d{2}-\\d{2}$'
+                AND (record->>'TxnDate')::date BETWEEN ${invoiceVolumeStart}::date AND ${invoiceVolumeEnd}::date
+              ORDER BY record->>'TxnID', "createdAt" DESC, "pageNumber" ASC
+              LIMIT 20000
+            `.catch(() => []);
+            const invoicesByCustomer = new Map<string, any[]>();
+            for (const invoice of qbdInvoiceRows) {
+              const invoiceDate = String(invoice.invoiceDate || '');
+              const amount = Number(invoice.amount || 0);
+              const item = {
+                label: String(invoice.invoiceNo || invoice.txnId || '').trim() || '-',
+                itemName: '',
+                date: invoiceDate,
+                amount: Number.isFinite(amount) ? amount : 0,
+                values: { [invoiceDate.slice(0, 7)]: 1 },
+                total: 1,
+              };
+              const keys = [
+                invoice.customerId ? `id:${String(invoice.customerId).trim()}` : '',
+                invoice.customerName ? `name:${String(invoice.customerName).trim().toLowerCase().replace(/\s+/g, ' ')}` : '',
+              ].filter(Boolean);
+              for (const key of keys) {
+                const list = invoicesByCustomer.get(key) || [];
+                list.push(item);
+                invoicesByCustomer.set(key, list);
+              }
+            }
+            customerHistory.invoiceVolume.rows = customerHistory.invoiceVolume.rows.map((row: any) => {
+              const idKey = row.itemName ? `id:${String(row.itemName).trim()}` : '';
+              const nameKey = `name:${String(row.label || '').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+              const items = (idKey && invoicesByCustomer.get(idKey)) || invoicesByCustomer.get(nameKey) || [];
+              return {
+                ...row,
+                items: [...items].sort((a, b) => String(b.date).localeCompare(String(a.date))),
+              };
+            });
+          }
           const customerHistoryStart = new Date(Date.UTC(endDate.getUTCFullYear() - 3, 0, 1));
           const customerHistoricalStart = new Date(Math.min(startDate.getTime(), customerHistoryStart.getTime()));
           const historicalCustomerSnapshotRows = filterInactiveCustomers(await prisma.customerSalesSnapshot.findMany({
