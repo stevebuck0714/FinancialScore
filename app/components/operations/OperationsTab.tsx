@@ -1005,6 +1005,8 @@ export default function OperationsTab({
   const [dailyFinancialWindowStart, setDailyFinancialWindowStart] = useState(0);
   const [arSummaryPage, setArSummaryPage] = useState(1);
   const [arAgingPage, setArAgingPage] = useState(1);
+  const [arAgingTableExpanded, setArAgingTableExpanded] = useState(false);
+  const [arSummaryTableExpanded, setArSummaryTableExpanded] = useState(false);
   const [arAgingExpanded, setArAgingExpanded] = useState<Record<string, boolean>>({});
   const [paidByCustomerPage, setPaidByCustomerPage] = useState(1);
   const [paidByCustomerExpanded, setPaidByCustomerExpanded] = useState<Record<string, boolean>>({});
@@ -1016,6 +1018,7 @@ export default function OperationsTab({
   const [apSummaryPage, setApSummaryPage] = useState(1);
   const [unpaidBillsPage, setUnpaidBillsPage] = useState(1);
   const [unpaidBillsSort, setUnpaidBillsSort] = useState<{ key: 'vendorName' | 'date' | 'dueDate' | 'amountDue'; dir: 'asc' | 'desc' }>({ key: 'amountDue', dir: 'desc' });
+  const [apBillSummarySort, setApBillSummarySort] = useState<{ key: 'vendorName' | 'current' | 'days1to30' | 'days31to60' | 'days61to90' | 'days90plus' | 'totalDue'; dir: 'asc' | 'desc' }>({ key: 'totalDue', dir: 'desc' });
   const [demandSortKey, setDemandSortKey] = useState<'customer' | 'bookingsMtd' | 'bookingsQtd' | 'bookingsYtd' | 'backlogTotal' | 'backlog60' | 'shareBacklog' | 'trend'>('backlogTotal');
   const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
   const [customerDateRangeSaveStatus, setCustomerDateRangeSaveStatus] = useState<string | null>(null);
@@ -8083,9 +8086,21 @@ export default function OperationsTab({
             style={getReportPanelStyle('arContractCashFlowSummary', { minWidth: 0 })}
           >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-              Customer Contract and Cash Flow Summary
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                Customer Contract and Cash Flow Summary
+              </h3>
+              {contractAndCashFlowRows.length > 8 && (
+                <button
+                  type="button"
+                  onClick={() => { setArSummaryTableExpanded((prev) => !prev); setArSummaryPage(1); }}
+                  aria-expanded={arSummaryTableExpanded}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', fontWeight: 700, background: 'white', color: '#334155', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  {arSummaryTableExpanded ? 'Collapse Table' : 'Expand Table'}
+                </button>
+              )}
+            </div>
             <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
               Cash collected: {arCoverageLabel}
             </div>
@@ -8116,8 +8131,7 @@ export default function OperationsTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {contractAndCashFlowRows
-                      .slice((arSummaryPage - 1) * 8, arSummaryPage * 8)
+                    {(arSummaryTableExpanded ? contractAndCashFlowRows : contractAndCashFlowRows.slice((arSummaryPage - 1) * 8, arSummaryPage * 8))
                       .map((row) => (
                         <tr key={`${row.customerId}-${row.customerName}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                           <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500', width: '80px', maxWidth: '80px', overflowWrap: 'anywhere' }}>{row.customerId}</td>
@@ -8149,7 +8163,7 @@ export default function OperationsTab({
                 No AR summary available for this period.
               </div>
             )}
-            {contractAndCashFlowRows.length > 0 && (
+            {contractAndCashFlowRows.length > 0 && !arSummaryTableExpanded && (
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
                 <span>
                   {Math.min((arSummaryPage - 1) * 8 + 1, contractAndCashFlowRows.length)}-
@@ -8317,9 +8331,21 @@ export default function OperationsTab({
             style={getReportPanelStyle('arAgingByCustomerTable', {})}
           >
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', height: '100%', boxSizing: 'border-box' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-              AR Aging by Customer
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                AR Aging by Customer
+              </h3>
+              {arAgingRows.length > 8 && (
+                <button
+                  type="button"
+                  onClick={() => { setArAgingTableExpanded((prev) => !prev); setArAgingPage(1); }}
+                  aria-expanded={arAgingTableExpanded}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px', fontSize: '12px', fontWeight: 700, background: 'white', color: '#334155', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  {arAgingTableExpanded ? 'Collapse Table' : 'Expand Table'}
+                </button>
+              )}
+            </div>
             <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
               {arDetailLabel}: {formatCurrency(detailAr)}
             </div>
@@ -8341,8 +8367,7 @@ export default function OperationsTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {arAgingRows
-                    .slice((arAgingPage - 1) * 8, arAgingPage * 8)
+                  {(arAgingTableExpanded ? arAgingRows : arAgingRows.slice((arAgingPage - 1) * 8, arAgingPage * 8))
                     .map((row) => {
                       const rowKey = arAgingRowKey(row);
                       const isExpanded = arAgingExpanded[rowKey] === true;
@@ -8437,7 +8462,7 @@ export default function OperationsTab({
               No AR aging detail available for this period.
             </div>
           )}
-          {arAgingRows.length > 0 && (
+          {arAgingRows.length > 0 && !arAgingTableExpanded && (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
               <span>
                 {Math.min((arAgingPage - 1) * 8 + 1, arAgingRows.length)}-
@@ -9101,6 +9126,16 @@ export default function OperationsTab({
     };
     const unpaidBillsSortIndicator = (key: 'vendorName' | 'date' | 'dueDate' | 'amountDue') =>
       unpaidBillsSort.key === key ? (unpaidBillsSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    const toggleApBillSummarySort = (key: typeof apBillSummarySort.key) => {
+      setApBillSummarySort((current) =>
+        current.key === key
+          ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+          : { key, dir: key === 'vendorName' ? 'asc' : 'desc' }
+      );
+      setApSummaryPage(1);
+    };
+    const apBillSummarySortIndicator = (key: typeof apBillSummarySort.key) =>
+      apBillSummarySort.key === key ? (apBillSummarySort.dir === 'asc' ? ' ▲' : ' ▼') : '';
     const paidBills = (summary?.paidBills || [])
       .map((row: any) => ({
         vendorName: row.vendorName || row.vendor,
@@ -9485,13 +9520,24 @@ export default function OperationsTab({
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
-                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>1-30</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>90+</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                      {([
+                        ['vendorName', 'Vendor', 'left'],
+                        ['current', 'Current', 'right'],
+                        ['days1to30', '1-30', 'right'],
+                        ['days31to60', '31-60', 'right'],
+                        ['days61to90', '61-90', 'right'],
+                        ['days90plus', '90+', 'right'],
+                        ['totalDue', 'Amount Due', 'right'],
+                      ] as const).map(([key, label, align]) => (
+                        <th
+                          key={key}
+                          onClick={() => toggleApBillSummarySort(key)}
+                          aria-sort={apBillSummarySort.key === key ? (apBillSummarySort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                          style={{ textAlign: align, padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                        >
+                          {label}{apBillSummarySortIndicator(key)}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -9516,8 +9562,14 @@ export default function OperationsTab({
                         {formatCurrency(apSummaryTotals.totalDue)}
                       </td>
                     </tr>
-                    {apVendors
-                      .sort((a, b) => b.totalDue - a.totalDue)
+                    {[...apVendors]
+                      .sort((a, b) => {
+                        const factor = apBillSummarySort.dir === 'asc' ? 1 : -1;
+                        if (apBillSummarySort.key === 'vendorName') {
+                          return String(a.vendorName || '').localeCompare(String(b.vendorName || ''), undefined, { sensitivity: 'base' }) * factor;
+                        }
+                        return (Number(a[apBillSummarySort.key] || 0) - Number(b[apBillSummarySort.key] || 0)) * factor;
+                      })
                       .slice((apSummaryPage - 1) * 10, apSummaryPage * 10)
                       .map((row) => (
                         <tr key={row.vendorName} style={{ borderBottom: '1px solid #e2e8f0' }}>
