@@ -441,8 +441,10 @@ async function lotUsageSummary(companyId: string, bySource: Map<string, Operatio
   const [status] = await loadDatasetRows(companyId, FOODREADY_LOT_USAGE_STATUS_KEY);
   if (!status) return 'lot usage not pulled yet';
   const finishedAt = new Date(text(status.dimensions, 'finishedAt'));
-  const when = Number.isNaN(finishedAt.getTime()) ? '' : ` (${formatEstDateTime(finishedAt)} EST)`;
-  if (text(status.dimensions, 'status') !== 'ok') return `last lot usage pull failed${when}: ${text(status.dimensions, 'message')}`;
+  const when = Number.isNaN(finishedAt.getTime()) ? '' : ` (${formatEstDateTime(finishedAt)})`;
+  const pullStatus = text(status.dimensions, 'status');
+  if (pullStatus === 'running') return `lot usage pull in progress${when}: ${text(status.dimensions, 'message')}`;
+  if (pullStatus !== 'ok') return `last lot usage pull failed${when}: ${text(status.dimensions, 'message')}`;
   const usage = await loadDatasetRows(companyId, FOODREADY_LOT_USAGE_KEY);
   const totals = { production: { entries: 0, qty: 0 }, sales: { entries: 0, qty: 0 } };
   const usedByLot = new Map<string, number>();

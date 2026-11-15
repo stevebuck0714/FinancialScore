@@ -9,7 +9,9 @@ import {
   withDefaultFoodReadyDomains,
   type FoodReadyCredentials,
 } from '@/lib/foodready';
+import { randomUUID } from 'crypto';
 import { after } from 'next/server';
+import prisma from '@/lib/prisma';
 import { formatEstDate } from '@/lib/time/eastern';
 import { writeOperationalSourceOutput } from '../store';
 import type { OperationalDatasetSchema, OperationalRecordInput, OperationalSourceAdapter, OperationalSourceOutput, OperationalSyncWindow } from '../types';
@@ -49,7 +51,9 @@ const PO_LINE_LOOKUP_CUTOFF_MS = 200_000;
 const PO_LINE_LOOKUP_CONCURRENCY = 2;
 const PURCHASE_ORDER_LINES_ENDPOINT = '/api/purchaseOrdersItems/search';
 /** The background lot usage pull stops this long after it starts, inside its own 300s function limit. */
-const LOT_USAGE_BUDGET_MS = 250_000;
+const LOT_USAGE_BUDGET_MS = 230_000;
+/** Safety cap on chained requests for one pull. */
+const LOT_USAGE_MAX_STEPS = 25;
 export const FOODREADY_LOT_USAGE_PULL_PATH = '/api/admin/foodready-lot-usage';
 const LOT_USAGE_ENDPOINTS = [
   ['production', '/api/moBatchInput/search'],
@@ -242,55 +246,41 @@ function refId(value: unknown): string | undefined {
   return typeof id === 'string' && id.trim() ? id.trim() : undefined;
 }
 
-/**
- * One row per lot allocation on production batch inputs and sales order lines: the lot drawn from
- * and the quantity used. Pulled in full (all dates) so each lot's total usage is complete.
- */
-async function fetchLotUsage(
-  credentials: FoodReadyCredentials,
-  today: string,
-  deadline: number,
-  pulled: Record<string, number>,
-): Promise<OperationalRecordInput[]> {
-  const rows: OperationalRecordInput[] = [];
-  for (const [usageType, endpoint] of LOT_USAGE_ENDPOINTS) {
-    const records = await fetchAllFoodReadyRecords(credentials, endpoint, {}, deadline);
-    pulled[endpoint] = records.length;
-    for (const record of records) {
-      const recordId = refId(record._id ?? record.id);
-      if (!recordId) continue;
-      const allocations = Array.isArray(record.allocatedQty) ? record.allocatedQty : [];
-      allocations.forEach((value, index) => {
-        const allocation = asRecord(value);
-        if (allocation.deleted === true || allocation.deletedAt) return;
-        const qtyUsed = Number(allocation.qtyUsed);
-        const createdAt = new Date(String(allocation.createdAt ?? record.createdAt ?? ''));
-        rows.push({
-          date: Number.isNaN(createdAt.getTime()) ? today : formatEstDate(createdAt),
-          externalId: `${usageType}|${recordId}|${refId(allocation._id) ?? index}`,
-          dimensions: {
-            usageType,
-            recordId,
-            purchaseOrderItemLot: refId(allocation.purchaseOrderItemLot),
-            moBatchOutput: refId(allocation.moBatchOutput),
-            supplierItem: refId(allocation.supplierItem),
-            itemPackaging: refId(allocation.itemPackaging),
-            uom: refId(allocation.uom),
-            mo: refId(record.mo),
-            moBatch: refId(record.moBatch),
-            so: refId(record.so),
-            inventoryItem: refId(record.inventoryItem),
-          },
-          measures: {
-            recordCount: 1,
-            qtyUsed: Number.isFinite(qtyUsed) ? qtyUsed : 0,
-            ...(typeof allocation.unitCost === 'number' && Number.isFinite(allocation.unitCost) ? { unitCost: allocation.unitCost } : {}),
-          },
-        });
-      });
-    }
-  }
-  return rows;
+/** One row per lot allocation on a production batch input or sales order line: the lot drawn from and the quantity used. */
+function lotUsageRows(usageType: string, record: Record<string, unknown>, today: string): OperationalRecordInput[] {
+  const recordId = refId(record._id ?? record.id);
+  if (!recordId) return [];
+  const allocations = Array.isArray(record.allocatedQty) ? record.allocatedQty : [];
+  return allocations.flatMap((value, index) => {
+    const allocation = asRecord(value);
+    if (allocation.deleted === true || allocation.deletedAt) return [];
+    const qtyUsed = Number(allocation.qtyUsed);
+    const createdAt = new Date(String(allocation.createdAt ?? record.createdAt ?? ''));
+    return [
+      {
+        date: Number.isNaN(createdAt.getTime()) ? today : formatEstDate(createdAt),
+        externalId: `${usageType}|${recordId}|${refId(allocation._id) ?? index}`,
+        dimensions: {
+          usageType,
+          recordId,
+          purchaseOrderItemLot: refId(allocation.purchaseOrderItemLot),
+          moBatchOutput: refId(allocation.moBatchOutput),
+          supplierItem: refId(allocation.supplierItem),
+          itemPackaging: refId(allocation.itemPackaging),
+          uom: refId(allocation.uom),
+          mo: refId(record.mo),
+          moBatch: refId(record.moBatch),
+          so: refId(record.so),
+          inventoryItem: refId(record.inventoryItem),
+        },
+        measures: {
+          recordCount: 1,
+          qtyUsed: Number.isFinite(qtyUsed) ? qtyUsed : 0,
+          ...(typeof allocation.unitCost === 'number' && Number.isFinite(allocation.unitCost) ? { unitCost: allocation.unitCost } : {}),
+        },
+      },
+    ];
+  });
 }
 
 function purchaseOrderLineRow(id: string, line: FlatRecord, today: string): OperationalRecordInput {
@@ -446,48 +436,149 @@ export async function syncFoodReady(
   return output;
 }
 
+/** Where a lot usage pull resumes when it continues in a new request. */
+export type FoodReadyLotUsageCursor = {
+  runId: string;
+  endpointIndex: number;
+  from: number;
+  records: number;
+  rows: number;
+  step: number;
+  startedAt: string;
+};
+
+export type FoodReadyLotUsageResult = { ok: boolean; done: boolean; message: string; next?: FoodReadyLotUsageCursor };
+
+/** A chained pull writes a 'running' status at each hand-off; one written in the last few minutes is still going. */
+async function lotUsagePullRunning(companyId: string): Promise<boolean> {
+  const record = await prisma.operationalRecord.findFirst({
+    where: { companyId, externalId: 'latest', dataset: { companyId, datasetKey: FOODREADY_LOT_USAGE_STATUS_KEY } },
+    select: { dimensions: true, updatedAt: true },
+  });
+  const dims = asRecord(record?.dimensions);
+  return dims.status === 'running' && Boolean(record && Date.now() - record.updatedAt.getTime() < 6 * 60_000);
+}
+
+async function writeLotUsageStatus(companyId: string, status: 'ok' | 'running' | 'failed', message: string, rows: number) {
+  await writeOperationalSourceOutput({
+    companyId,
+    adapter: FOODREADY_ADAPTER,
+    mode: 'LIVE',
+    window: FULL_WINDOW,
+    output: {
+      [FOODREADY_LOT_USAGE_STATUS_KEY]: {
+        schema: LOT_USAGE_STATUS_SCHEMA,
+        replaceWindow: true,
+        window: FULL_WINDOW,
+        rows: [
+          {
+            date: formatEstDate(),
+            externalId: 'latest',
+            dimensions: { status, message: message.slice(0, 900), finishedAt: new Date().toISOString() },
+            measures: { recordCount: 1, rows },
+          },
+        ],
+      },
+    },
+  });
+}
+
 /**
- * Pull every production input and sales order lot allocation and store it as FoodReady Lot Usage.
- * Runs as its own request after a sync, because the sync itself has no time left for it.
+ * Pull production input and sales order lot allocations (all dates) into FoodReady Lot Usage. Rows
+ * are saved page by page; when this request's time runs out it returns a cursor so a new request
+ * can continue. The last step removes rows that FoodReady no longer returns.
  */
-export async function pullFoodReadyLotUsage(companyId: string): Promise<{ ok: boolean; rows: number; message: string }> {
-  const startedAt = Date.now();
+export async function pullFoodReadyLotUsage(companyId: string, cursor?: FoodReadyLotUsageCursor): Promise<FoodReadyLotUsageResult> {
+  const deadline = Date.now() + LOT_USAGE_BUDGET_MS;
   const { connection } = await readConnectionMetadata(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
   const credentials = connection?.status === 'ACTIVE' ? foodReadyCredentialsFromConnection(connection) : null;
-  if (!credentials) return { ok: false, rows: 0, message: 'FoodReady is not connected for this company.' };
+  if (!credentials) return { ok: false, done: true, message: 'FoodReady is not connected for this company.' };
 
-  const today = formatEstDate();
-  const pulled: Record<string, number> = {};
-  let result: { ok: boolean; rows: number; message: string };
-  const output: OperationalSourceOutput = {};
-  try {
-    const usage = await fetchLotUsage(credentials, today, startedAt + LOT_USAGE_BUDGET_MS, pulled);
-    output[FOODREADY_LOT_USAGE_KEY] = { schema: LOT_USAGE_SCHEMA, rows: usage, replaceWindow: true, window: FULL_WINDOW };
-    const counts = Object.entries(pulled).map(([endpoint, count]) => `${endpoint} ${count} record(s)`).join(', ');
-    result = { ok: true, rows: usage.length, message: `${usage.length} lot allocation(s) from ${counts} in ${Math.round((Date.now() - startedAt) / 1000)}s` };
-  } catch (error) {
-    const finished = Object.entries(pulled).map(([endpoint, count]) => `${endpoint} ${count} record(s)`).join(', ') || 'none';
-    result = {
-      ok: false,
-      rows: 0,
-      message: `stopped after ${Math.round((Date.now() - startedAt) / 1000)}s; finished endpoints: ${finished}; error: ${error instanceof Error ? error.message : String(error)}`,
-    };
+  if (!cursor && (await lotUsagePullRunning(companyId))) {
+    return { ok: true, done: true, message: 'a lot usage pull is already running; not starting another' };
   }
-  output[FOODREADY_LOT_USAGE_STATUS_KEY] = {
-    schema: LOT_USAGE_STATUS_SCHEMA,
-    replaceWindow: true,
-    window: FULL_WINDOW,
-    rows: [
-      {
-        date: today,
-        externalId: 'latest',
-        dimensions: { status: result.ok ? 'ok' : 'failed', message: result.message.slice(0, 900), finishedAt: new Date().toISOString() },
-        measures: { recordCount: 1, rows: result.rows },
-      },
-    ],
+  const today = formatEstDate();
+  const state: FoodReadyLotUsageCursor = cursor ?? {
+    runId: randomUUID(),
+    endpointIndex: 0,
+    from: 0,
+    records: 0,
+    rows: 0,
+    step: 1,
+    startedAt: new Date().toISOString(),
   };
-  await writeOperationalSourceOutput({ companyId, adapter: FOODREADY_ADAPTER, output, mode: 'LIVE', window: FULL_WINDOW });
-  return result;
+  if (!cursor) await writeLotUsageStatus(companyId, 'running', 'started; reading production inputs', 0);
+  if (state.step > LOT_USAGE_MAX_STEPS) {
+    const message = `stopped after ${LOT_USAGE_MAX_STEPS} requests with ${state.records} record(s) read; FoodReady has more usage than one pull can cover`;
+    await writeLotUsageStatus(companyId, 'failed', message, state.rows);
+    return { ok: false, done: true, message };
+  }
+  const save = async (rows: OperationalRecordInput[]) => {
+    if (!rows.length) return;
+    await writeOperationalSourceOutput({
+      companyId,
+      adapter: FOODREADY_ADAPTER,
+      mode: 'LIVE',
+      window: FULL_WINDOW,
+      runId: state.runId,
+      output: { [FOODREADY_LOT_USAGE_KEY]: { schema: LOT_USAGE_SCHEMA, rows } },
+    });
+  };
+
+  let pending: OperationalRecordInput[] = [];
+  try {
+    while (state.endpointIndex < LOT_USAGE_ENDPOINTS.length) {
+      if (Date.now() > deadline) {
+        state.rows += pending.length;
+        await save(pending);
+        const next = { ...state, step: state.step + 1 };
+        const message = `still running: ${state.records} record(s) read so far, continuing in request ${next.step}`;
+        await writeLotUsageStatus(companyId, 'running', message, state.rows);
+        return { ok: true, done: false, message, next };
+      }
+      const [usageType, endpoint] = LOT_USAGE_ENDPOINTS[state.endpointIndex];
+      const page = rowsFromPayload(await foodReadyApiRequest<unknown>(credentials, endpoint, { from: state.from, size: PAGE_SIZE }));
+      for (const record of page) pending.push(...lotUsageRows(usageType, record, today));
+      state.records += page.length;
+      state.from += page.length;
+      if (page.length < PAGE_SIZE) {
+        state.endpointIndex += 1;
+        state.from = 0;
+      }
+      if (pending.length >= 2000) {
+        state.rows += pending.length;
+        await save(pending);
+        pending = [];
+      }
+      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+    }
+    state.rows += pending.length;
+    await save(pending);
+  } catch (error) {
+    const message = `failed after ${state.records} record(s) on ${LOT_USAGE_ENDPOINTS[state.endpointIndex]?.[1] ?? 'unknown endpoint'} (request ${state.step}): ${error instanceof Error ? error.message : String(error)}`;
+    await writeLotUsageStatus(companyId, 'failed', message, state.rows);
+    return { ok: false, done: true, message };
+  }
+
+  const dataset = await prisma.operationalDataset.findUnique({
+    where: { companyId_datasetKey: { companyId, datasetKey: FOODREADY_LOT_USAGE_KEY } },
+    select: { id: true },
+  });
+  if (dataset) {
+    await prisma.operationalRecord.deleteMany({ where: { companyId, datasetId: dataset.id, NOT: { sourceRunId: state.runId } } });
+    await writeOperationalSourceOutput({
+      companyId,
+      adapter: FOODREADY_ADAPTER,
+      mode: 'LIVE',
+      window: FULL_WINDOW,
+      runId: state.runId,
+      output: { [FOODREADY_LOT_USAGE_KEY]: { schema: LOT_USAGE_SCHEMA, rows: [] } },
+    });
+  }
+  const minutes = Math.max(1, Math.round((Date.now() - new Date(state.startedAt).getTime()) / 60_000));
+  const message = `${state.rows} lot allocation(s) from ${state.records} production input and sales order record(s) in ${state.step} request(s), about ${minutes} min`;
+  await writeLotUsageStatus(companyId, 'ok', message, state.rows);
+  return { ok: true, done: true, message };
 }
 
 function appBaseUrl(): string {
@@ -498,10 +589,10 @@ function appBaseUrl(): string {
   return '';
 }
 
-/** Start the lot usage pull in its own function invocation once this request has responded. */
-function scheduleFoodReadyLotUsagePull(companyId: string): string {
+/** Start (or continue, with a cursor) the lot usage pull in its own function invocation once this request has responded. */
+export function scheduleFoodReadyLotUsagePull(companyId: string, cursor?: FoodReadyLotUsageCursor, originOverride?: string): string {
   const cronSecret = String(process.env.CRON_SECRET || '').trim();
-  const origin = appBaseUrl();
+  const origin = originOverride || appBaseUrl();
   if (!cronSecret || !origin) return 'lot usage pull not started (CRON_SECRET or app base URL missing)';
   try {
     after(async () => {
@@ -513,7 +604,7 @@ function scheduleFoodReadyLotUsagePull(companyId: string): string {
           cache: 'no-store',
           signal: controller.signal,
           headers: { 'content-type': 'application/json', 'x-cron-secret': cronSecret },
-          body: JSON.stringify({ companyId }),
+          body: JSON.stringify({ companyId, cursor }),
         });
       } catch (error) {
         // An abort only means this request stopped waiting; the pull keeps running in its own invocation.
