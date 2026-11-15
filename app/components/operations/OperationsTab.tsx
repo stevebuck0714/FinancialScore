@@ -15518,15 +15518,6 @@ export default function OperationsTab({
           { key: 'materials', title: 'Raw Materials, Packaging & WIP', groups: inventoryProductGroups.filter((group: any) => !group.isFinishedGoods) },
         ]
       : [{ key: 'all', title: '', groups: inventoryProductGroups }];
-    const inventoryTypeTotals = latestRecords.reduce(
-      (totals: { finished: { value: number; products: Set<string> }; raw: { value: number; products: Set<string> } }, row: any) => {
-        const bucket = row?.lotSource === 'finished_goods' ? totals.finished : totals.raw;
-        bucket.value += Number(row?.assetValue || 0);
-        bucket.products.add(String(row?.itemId || row?.sku || row?.itemName || '').trim().toUpperCase());
-        return totals;
-      },
-      { finished: { value: 0, products: new Set<string>() }, raw: { value: 0, products: new Set<string>() } },
-    );
     const handleInventorySort = (
       key: 'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'expirationDate' | 'receivedDate' | 'qtyOnHand' | 'avgCost' | 'assetValue'
     ) => {
@@ -15803,6 +15794,40 @@ export default function OperationsTab({
       (Array.isArray(rawInventoryAgingRows)
         ? rawInventoryAgingRows.reduce((sum: number, row: any) => sum + Number(row?.estimatedObsolescenceExposure || 0), 0)
         : 0);
+    // Lot-level sources show raw materials and finished goods as separate card rows with no combined totals.
+    const splitInventoryCards = showInventoryLotDates || summary?.splitByInventoryType === true;
+    const inventoryTypeCardRows = splitInventoryCards
+      ? (() => {
+          const productKey = (row: any) => String(row?.sku || row?.itemId || row?.itemName || '').trim().toUpperCase();
+          const typeByKey = new Map<string, 'finished' | 'raw'>();
+          const productValues = { finished: new Map<string, number>(), raw: new Map<string, number>() };
+          for (const row of latestRecords) {
+            const type = row?.lotSource === 'finished_goods' ? 'finished' : 'raw';
+            const key = productKey(row);
+            if (!key) continue;
+            typeByKey.set(key, type);
+            const nameKey = String(row?.itemName || '').trim().toUpperCase();
+            if (nameKey && !typeByKey.has(nameKey)) typeByKey.set(nameKey, type);
+            productValues[type].set(key, (productValues[type].get(key) || 0) + Number(row?.assetValue || 0));
+          }
+          const obsolescence = { finished: 0, raw: 0 };
+          for (const row of Array.isArray(rawInventoryAgingRows) ? rawInventoryAgingRows : []) {
+            const type = typeByKey.get(String(row?.sku || '').trim().toUpperCase()) || typeByKey.get(String(row?.itemName || '').trim().toUpperCase());
+            if (type) obsolescence[type] += Number(row?.estimatedObsolescenceExposure || 0);
+          }
+          return (['raw', 'finished'] as const).map((type) => {
+            const values = [...productValues[type].values()];
+            return {
+              type,
+              title: type === 'raw' ? 'Raw Materials, Packaging & WIP' : 'Finished Goods',
+              items: values.length,
+              value: values.reduce((sum, value) => sum + value, 0),
+              top5: values.sort((a, b) => b - a).slice(0, 5).reduce((sum, value) => sum + value, 0),
+              obsolescence: obsolescence[type],
+            };
+          });
+        })()
+      : [];
     const inventoryTurnoverRaw = Number(summary?.inventoryTurnover);
     const inventoryTurnoverLabel = Number.isFinite(inventoryTurnoverRaw) && inventoryTurnoverRaw > 0
       ? `${inventoryTurnoverRaw.toFixed(2)}x`
@@ -16056,6 +16081,30 @@ export default function OperationsTab({
         </h2>
 
         {/* KPI Cards */}
+        {splitInventoryCards && inventoryTypeCardRows.map((cardRow, rowIndex) => (
+          <div key={cardRow.type} style={{ marginBottom: rowIndex === inventoryTypeCardRows.length - 1 ? '20px' : '12px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>{cardRow.title}</div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Items</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>{cardRow.items.toLocaleString()}</div>
+              </div>
+              <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Value</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>{formatCurrency(cardRow.value)}</div>
+              </div>
+              <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Value of Top 5 Items</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#0f766e' }}>{formatCurrency(cardRow.top5)}</div>
+              </div>
+              <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Obsolescence Exposure</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#7c3aed' }}>{formatCurrency(cardRow.obsolescence)}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+        {!splitInventoryCards && (
         <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Items</div>
@@ -16074,28 +16123,6 @@ export default function OperationsTab({
               </div>
             )}
           </div>
-          {showInventoryLotDates && (
-            <>
-              <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Finished Goods Value</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
-                  {formatCurrency(inventoryTypeTotals.finished.value)}
-                </div>
-                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                  {inventoryTypeTotals.finished.products.size.toLocaleString()} product{inventoryTypeTotals.finished.products.size === 1 ? '' : 's'}
-                </div>
-              </div>
-              <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Raw Materials, Packaging &amp; WIP Value</div>
-                <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
-                  {formatCurrency(inventoryTypeTotals.raw.value)}
-                </div>
-                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                  {inventoryTypeTotals.raw.products.size.toLocaleString()} product{inventoryTypeTotals.raw.products.size === 1 ? '' : 's'}
-                </div>
-              </div>
-            </>
-          )}
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Value of Top 5 Inventory Items</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#0f766e' }}>
@@ -16120,6 +16147,7 @@ export default function OperationsTab({
             </div>
           </div>
         </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
         {/* Inventory Value Trend */}

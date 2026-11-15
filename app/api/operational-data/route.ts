@@ -394,7 +394,7 @@ async function buildOperationalDataVersion(
     // Bump when the shape of FoodReady inventory rows changes so cached payloads are rebuilt.
     Promise.resolve(
       includeAll || type === 'inventory'
-        ? { label: 'FoodReadyInventoryRowShape', version: 5 }
+        ? { label: 'FoodReadyInventoryRowShape', version: 6 }
         : { label: 'FoodReadyInventoryRowShape', skipped: true }
     ),
     (includeAll || type === 'cash')
@@ -11677,7 +11677,8 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        const inventoryRecords = (await isFoodReadyInventorySource(companyId))
+        const foodReadyInventory = await isFoodReadyInventorySource(companyId);
+        const inventoryRecords = foodReadyInventory
           ? await foodReadyInventoryLotRecords(
               companyId,
               [...latestInventoryEffective].sort((a, b) => Number(b.assetValue || 0) - Number(a.assetValue || 0)),
@@ -11689,7 +11690,7 @@ export async function GET(request: NextRequest) {
           trend: inventoryTrendDaily,
           unitCostHistory,
           agingReport,
-          summary: inventoryMetrics,
+          summary: { ...inventoryMetrics, splitByInventoryType: foodReadyInventory },
         });
 
       case 'cash': {
