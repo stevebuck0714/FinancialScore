@@ -32,6 +32,13 @@ export type InforReviewRow = {
   customers: InforReviewCustomer[];
   /** Why the row was flagged, in plain language. */
   issues: string[];
+  /** Stable codes for `issues`. A reviewed row returns only when a code it was not reviewed for appears. */
+  issueCodes: string[];
+};
+
+export type InforReviewedRow = InforReviewRow & {
+  reviewedAt: string;
+  reviewedByName: string | null;
 };
 
 export type InforReviewWarnings = {
@@ -40,4 +47,6 @@ export type InforReviewWarnings = {
   builtAt: string;
   lastInforSyncAt: string | null;
   rows: InforReviewRow[];
+  /** Rows still missing data that a user marked Reviewed. Hidden from the warning. */
+  reviewedRows: InforReviewedRow[];
 };

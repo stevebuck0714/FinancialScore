@@ -352,12 +352,13 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
     }
   };
 
-  const hasSearch = Boolean(vendorIdSearch.trim() || aprSearch.trim());
+  const defaultVendorKey = vendorOptions[0]?.key || '';
+  const hasSearch = Boolean(vendorIdSearch.trim() || aprSearch.trim() || selectedVendorKey !== defaultVendorKey);
 
   const handleReset = () => {
     setVendorIdSearch('');
     setAprSearch('');
-    setVendorFilter(vendorOptions[0]?.key || '');
+    setVendorFilter(defaultVendorKey);
   };
 
   const visibleItems = useMemo(

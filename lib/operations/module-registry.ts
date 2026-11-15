@@ -55,7 +55,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'ap', label: 'AP', dataType: 'ap-aging' },
   { key: 'payables', label: 'Payables', dataType: 'ap-aging' },
   { key: 'inventory', label: 'Inventory', dataType: 'inventory' },
-  { key: 'projections', label: 'Projections', dataType: 'products' },
+  { key: 'projections', label: 'Sales Forecast', dataType: 'products' },
   { key: 'sales', label: 'Sales', dataType: 'sales' },
   { key: 'orders_sales', label: 'Orders / Sales', dataType: 'customers' },
   { key: 'sales_transactions', label: 'Sales Transactions', dataType: 'customers' },

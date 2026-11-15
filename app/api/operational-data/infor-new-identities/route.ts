@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
-import { getInforReviewWarnings } from '@/lib/operations/infor-new-identities';
+import { getInforReviewWarnings, setInforReviewRowReviewed } from '@/lib/operations/infor-new-identities';
 import { ATLANTIC_PRECISION_COMPANY_ID } from '@/lib/operations/product-group-report-warmup';
 
 export const dynamic = 'force-dynamic';
@@ -83,6 +83,34 @@ export async function GET(request: NextRequest) {
     console.error('Infor review warnings load failed:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to load Infor review warnings' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const companyId = String(body?.companyId || '').trim();
+    const rowKey = String(body?.rowKey || '').trim();
+    if (!companyId || !rowKey) {
+      return NextResponse.json({ error: 'Company ID and row are required' }, { status: 400 });
+    }
+    const denied = await assertAccess(companyId);
+    if (denied) return denied;
+    const { userId } = await requireAuth();
+
+    const result = await setInforReviewRowReviewed({
+      companyId,
+      rowKey,
+      reviewed: body?.reviewed !== false,
+      userId,
+    });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    console.error('Infor review warnings update failed:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to update the review' },
       { status: 500 }
     );
   }

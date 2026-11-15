@@ -1398,7 +1398,7 @@ export default function OperationsTab({
       XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
     });
     const pageLabel = activeOperationalModuleKey === 'projections'
-      ? 'Projections'
+      ? 'Sales-Forecast'
       : activeOperationalModuleKey === 'products'
         ? 'Products'
         : 'Vendors';
@@ -12682,9 +12682,9 @@ export default function OperationsTab({
         wrap?: boolean;
         render: (row: any) => React.ReactNode;
       }> = [
-        { key: 'item', label: 'APR P/N', render: (row) => row.item || 'N/A' },
-        { key: 'order', label: 'Order', render: (row) => row.order || 'N/A' },
-        { key: 'line', label: 'Line', align: 'right', width: '44px', maxWidth: '52px', render: (row) => (row.line == null ? '' : row.line) },
+        { key: 'item', label: 'APR P/N', width: '20ch', maxWidth: '20ch', render: (row) => row.item || 'N/A' },
+        { key: 'order', label: 'Order', width: '10ch', maxWidth: '10ch', render: (row) => row.order || 'N/A' },
+        { key: 'line', label: 'Line', align: 'right', width: '6ch', maxWidth: '6ch', render: (row) => (row.line == null ? '' : row.line) },
         { key: 'customerName', label: 'Customer Name', width: '108px', maxWidth: '126px', render: (row) => row.customerName || 'N/A' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
@@ -13040,6 +13040,10 @@ export default function OperationsTab({
                               color: '#334155',
                               textAlign: column.align || 'left',
                               whiteSpace: 'nowrap',
+                              width: column.width,
+                              maxWidth: column.maxWidth,
+                              overflow: column.maxWidth ? 'hidden' : undefined,
+                              textOverflow: column.maxWidth ? 'ellipsis' : undefined,
                               cursor: 'pointer',
                               userSelect: 'none',
                             }}
@@ -13062,6 +13066,10 @@ export default function OperationsTab({
                                 color: '#334155',
                                 textAlign: column.align || 'left',
                                 whiteSpace: 'nowrap',
+                                width: column.width,
+                                maxWidth: column.maxWidth,
+                                overflow: column.maxWidth ? 'hidden' : undefined,
+                                textOverflow: column.maxWidth ? 'ellipsis' : undefined,
                               }}
                             >
                               {column.render(row)}

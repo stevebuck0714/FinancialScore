@@ -12,6 +12,7 @@ import { deriveShipmentType } from '@/lib/operational/sgp-freight-calc';
 import type {
   InforIdentityKind,
   InforReviewCustomer,
+  InforReviewedRow,
   InforReviewRow,
   InforReviewWarnings,
 } from '@/lib/operations/infor-new-identities-types';
@@ -19,6 +20,7 @@ import type {
 export type {
   InforIdentityKind,
   InforReviewCustomer,
+  InforReviewedRow,
   InforReviewRow,
   InforReviewSection,
   InforReviewWarnings,
@@ -26,7 +28,10 @@ export type {
 export { INFOR_IDENTITY_KINDS } from '@/lib/operations/infor-new-identities-types';
 
 // Bump when the row shape or the checks change so stored payloads are ignored.
-const REVIEW_WARNINGS_CACHE_VERSION = 'infor-review-warnings-v1';
+const REVIEW_WARNINGS_CACHE_VERSION = 'infor-review-warnings-v2';
+
+/** The cached build. Reviewed rows are split out on read so a checkbox never waits on a rebuild. */
+type BuiltReviewWarnings = Omit<InforReviewWarnings, 'reviewedRows'>;
 
 type DiscoveredIdentity = {
   kind: InforIdentityKind;
@@ -368,7 +373,15 @@ function customerLabel(customer: InforReviewCustomer): string {
   return customer.customerName || customer.customerId;
 }
 
-function emptyRow(partial: Partial<InforReviewRow> & Pick<InforReviewRow, 'key' | 'section' | 'kind' | 'issues'>): InforReviewRow {
+type Issue = { code: string; text: string };
+
+function issueFields(issues: Issue[]): Pick<InforReviewRow, 'issues' | 'issueCodes'> {
+  return { issues: issues.map((issue) => issue.text), issueCodes: issues.map((issue) => issue.code) };
+}
+
+function emptyRow(
+  partial: Partial<InforReviewRow> & Pick<InforReviewRow, 'key' | 'section' | 'kind' | 'issues' | 'issueCodes'>
+): InforReviewRow {
   return {
     itemId: null,
     itemDescription: null,
@@ -436,16 +449,19 @@ async function buildItemRows(
 
     for (const customer of customers) {
       const lines = forecastByItemCustomer.get(`${itemId}||${customer.key}`) || [];
-      const issues: string[] = [];
+      const issues: Issue[] = [];
       if (!lines.length) {
-        issues.push(`Not on ${customerLabel(customer)}'s ${year} forecast. Add APR P/N ${itemId} for this customer, enter monthly quantities, then Save page.`);
+        issues.push({
+          code: 'notOnForecast',
+          text: `Not on ${customerLabel(customer)}'s ${year} forecast. Add APR P/N ${itemId} for this customer, enter monthly quantities, then Save page.`,
+        });
       } else {
         const active = lines.filter((line) => !['LOST', 'OBS'].includes(normalizeKey(line.statusFlag)));
         if (active.length && active.every((line) => monthTotal(line.forecastQty) === 0)) {
-          issues.push(`On the ${year} forecast, but no monthly quantities are entered.`);
+          issues.push({ code: 'noQuantities', text: `On the ${year} forecast, but no monthly quantities are entered.` });
         }
         if (lines.some((line) => !cleanText(line.productionType))) {
-          issues.push('Production type (Planned or MTO) is blank.');
+          issues.push({ code: 'productionTypeBlank', text: 'Production type (Planned or MTO) is blank.' });
         }
       }
       if (!issues.length) continue;
@@ -458,20 +474,20 @@ async function buildItemRows(
         customerId: customer.customerId,
         customerName: customer.customerName || null,
         customerPartNumber: customer.customerPartNumber || null,
-        issues,
+        ...issueFields(issues),
       }));
     }
 
     const duty = dutyBySku.get(itemId);
     const freight = freightBySku.get(itemId);
     const origin = cleanText(duty?.countryOfOrigin) || cleanText(freight?.countryOfOrigin);
-    const dutyIssues: string[] = [];
+    const dutyIssues: Issue[] = [];
     if (!duty) {
-      dutyIssues.push('Not on Duties & Tariffs yet. It is added on the next Infor sync.');
+      dutyIssues.push({ code: 'notOnDuties', text: 'Not on Duties & Tariffs yet. It is added on the next Infor sync.' });
     } else {
-      if (!origin) dutyIssues.push('Country of origin is blank.');
+      if (!origin) dutyIssues.push({ code: 'originBlank', text: 'Country of origin is blank.' });
       if (!cleanText(duty.htsCode) && deriveShipmentType(null, origin) !== 'DOM') {
-        dutyIssues.push('HTS code is blank, so duty and tariff cannot be calculated.');
+        dutyIssues.push({ code: 'htsBlank', text: 'HTS code is blank, so duty and tariff cannot be calculated.' });
       }
     }
     if (dutyIssues.length) {
@@ -482,20 +498,30 @@ async function buildItemRows(
         itemId,
         itemDescription,
         customers: customerList,
-        issues: dutyIssues,
+        ...issueFields(dutyIssues),
       }));
     }
 
-    const freightIssues: string[] = [];
+    const freightIssues: Issue[] = [];
     if (!freight) {
-      freightIssues.push('Not on the Freight page. Infor has not reported this item yet.');
+      freightIssues.push({ code: 'notOnFreight', text: 'Not on the Freight page. Infor has not reported this item yet.' });
     } else if (freight.estimatedFreightCurrent == null) {
       const overseas = normalizeKey(freight.shipmentType) === 'OVERSEAS';
-      if (!cleanText(freight.shipmentType)) freightIssues.push('Shipment type is blank (DOM or OVERSEAS).');
-      if (overseas && freight.cbm == null) freightIssues.push('CBM is blank. Enter CBM or the carton height, width, and length.');
-      if (overseas && freight.cbm != null && !(Number(freight.orderMultiple) > 0)) freightIssues.push('Order multiple is blank.');
-      if (!overseas && freight.unitCost == null && freight.currentUnitCost == null) freightIssues.push('Unit cost is blank.');
-      if (!freightIssues.length) freightIssues.push('Freight per piece cannot be calculated from the current inputs.');
+      if (!cleanText(freight.shipmentType)) {
+        freightIssues.push({ code: 'shipmentTypeBlank', text: 'Shipment type is blank (DOM or OVERSEAS).' });
+      }
+      if (overseas && freight.cbm == null) {
+        freightIssues.push({ code: 'cbmBlank', text: 'CBM is blank. Enter CBM or the carton height, width, and length.' });
+      }
+      if (overseas && freight.cbm != null && !(Number(freight.orderMultiple) > 0)) {
+        freightIssues.push({ code: 'orderMultipleBlank', text: 'Order multiple is blank.' });
+      }
+      if (!overseas && freight.unitCost == null && freight.currentUnitCost == null) {
+        freightIssues.push({ code: 'unitCostBlank', text: 'Unit cost is blank.' });
+      }
+      if (!freightIssues.length) {
+        freightIssues.push({ code: 'freightNotCalculable', text: 'Freight per piece cannot be calculated from the current inputs.' });
+      }
     }
     if (freightIssues.length) {
       rows.push(emptyRow({
@@ -505,7 +531,7 @@ async function buildItemRows(
         itemId,
         itemDescription,
         customers: customerList,
-        issues: freightIssues,
+        ...issueFields(freightIssues),
       }));
     }
   }
@@ -535,7 +561,12 @@ async function buildCustomerRows(companyId: string, year: number, customers: Dis
         kind: 'customer',
         customerId: customer.identityKey,
         customerName: customer.label !== customer.identityKey ? customer.label : null,
-        issues: [`New customer with no ${year} forecast. Add its items and monthly quantities, then Save page.`],
+        ...issueFields([
+          {
+            code: 'newCustomerNoForecast',
+            text: `New customer with no ${year} forecast. Add its items and monthly quantities, then Save page.`,
+          },
+        ]),
       })
     );
 }
@@ -563,13 +594,18 @@ async function buildVendorRows(companyId: string, year: number, vendors: Discove
       kind: 'vendor',
       vendorId: vendor.identityKey,
       vendorName: vendor.label !== vendor.identityKey ? vendor.label : null,
-      issues: [`Production type (Planned or MTO) is blank on ${blank} ${year} forecast line${blank === 1 ? '' : 's'}.`],
+      ...issueFields([
+        {
+          code: 'vendorProductionTypeBlank',
+          text: `Production type (Planned or MTO) is blank on ${blank} ${year} forecast line${blank === 1 ? '' : 's'}.`,
+        },
+      ]),
     }));
   }
   return rows;
 }
 
-async function buildInforReviewWarnings(companyId: string): Promise<InforReviewWarnings> {
+async function buildInforReviewWarnings(companyId: string): Promise<BuiltReviewWarnings> {
   await ensureIdentitySeenTable();
   await syncCompanyItemDutyIdentities(companyId).catch(() => ({ discovered: 0 }));
   const year = estYear();
@@ -603,6 +639,7 @@ async function buildInforReviewWarnings(companyId: string): Promise<InforReviewW
   ]);
   const rows = [...itemRows, ...customerRows, ...vendorRows];
 
+  // Reviewed rows still count here so the identity stays open and a later, different gap can resurface it.
   const flagged = new Set<string>();
   for (const row of rows) {
     if (row.kind === 'item' && row.itemId) flagged.add(`item:${row.itemId}`);
@@ -655,17 +692,142 @@ async function buildReviewWarningsDataVersion(companyId: string): Promise<string
  * Review warnings are built after the Infor sync and after saves, then served
  * from the derived cache so opening a section never waits on the checks.
  */
-export async function getInforReviewWarnings(
-  companyId: string,
-  options: { refresh?: boolean } = {}
-): Promise<InforReviewWarnings> {
+async function getBuiltReviewWarnings(companyId: string, refresh?: boolean): Promise<BuiltReviewWarnings> {
   const { payload } = await withProductReportCache({
     namespace: 'infor-review-warnings',
     companyId,
     keyParts: [REVIEW_WARNINGS_CACHE_VERSION, estYear()],
-    refresh: options.refresh,
+    refresh,
     dataVersion: () => buildReviewWarningsDataVersion(companyId),
     build: () => buildInforReviewWarnings(companyId),
   });
   return payload;
+}
+
+let ensureReviewTableOnce: Promise<void> | null = null;
+
+async function ensureReviewedRowTable(): Promise<void> {
+  if (!ensureReviewTableOnce) {
+    ensureReviewTableOnce = (async () => {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "CompanyInforReviewedRow" (
+          "id" TEXT NOT NULL,
+          "companyId" TEXT NOT NULL,
+          "rowKey" TEXT NOT NULL,
+          "section" TEXT NOT NULL,
+          "issueCodes" JSONB NOT NULL DEFAULT '[]'::jsonb,
+          "reviewedByUserId" TEXT,
+          "reviewedByName" TEXT,
+          "reviewedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "CompanyInforReviewedRow_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS "CompanyInforReviewedRow_companyId_rowKey_key"
+          ON "CompanyInforReviewedRow"("companyId", "rowKey")
+      `);
+    })().catch((error) => {
+      ensureReviewTableOnce = null;
+      throw error;
+    });
+  }
+  await ensureReviewTableOnce;
+}
+
+type ReviewedRecord = {
+  rowKey: string;
+  issueCodes: unknown;
+  reviewedByName: string | null;
+  reviewedAt: Date;
+};
+
+async function loadReviewedRecords(companyId: string): Promise<Map<string, ReviewedRecord>> {
+  await ensureReviewedRowTable();
+  const records = await prisma.$queryRaw<ReviewedRecord[]>`
+    SELECT "rowKey", "issueCodes", "reviewedByName", "reviewedAt"
+    FROM "CompanyInforReviewedRow"
+    WHERE "companyId" = ${companyId}
+  `;
+  return new Map(records.map((record) => [record.rowKey, record]));
+}
+
+function codeList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((code) => String(code)) : [];
+}
+
+function applyReviews(built: BuiltReviewWarnings, reviewed: Map<string, ReviewedRecord>): InforReviewWarnings {
+  const rows: InforReviewRow[] = [];
+  const reviewedRows: InforReviewedRow[] = [];
+  for (const row of built.rows) {
+    const record = reviewed.get(row.key);
+    const reviewedCodes = new Set(codeList(record?.issueCodes));
+    if (record && row.issueCodes.every((code) => reviewedCodes.has(code))) {
+      reviewedRows.push({
+        ...row,
+        reviewedAt: new Date(record.reviewedAt).toISOString(),
+        reviewedByName: record.reviewedByName,
+      });
+    } else {
+      rows.push(row);
+    }
+  }
+  return { ...built, rows, reviewedRows };
+}
+
+export async function getInforReviewWarnings(
+  companyId: string,
+  options: { refresh?: boolean } = {}
+): Promise<InforReviewWarnings> {
+  const [built, reviewed] = await Promise.all([
+    getBuiltReviewWarnings(companyId, options.refresh),
+    loadReviewedRecords(companyId),
+  ]);
+  return applyReviews(built, reviewed);
+}
+
+/**
+ * Marks one warning row reviewed (hidden) or puts it back. The row is reviewed
+ * for the gaps it has now; a different gap later brings it back.
+ */
+export async function setInforReviewRowReviewed(params: {
+  companyId: string;
+  rowKey: string;
+  reviewed: boolean;
+  userId: string;
+}): Promise<InforReviewWarnings> {
+  const { companyId, rowKey, reviewed, userId } = params;
+  await ensureReviewedRowTable();
+  if (!reviewed) {
+    await prisma.$executeRaw`
+      DELETE FROM "CompanyInforReviewedRow"
+      WHERE "companyId" = ${companyId} AND "rowKey" = ${rowKey}
+    `;
+    return getInforReviewWarnings(companyId);
+  }
+
+  const built = await getBuiltReviewWarnings(companyId);
+  const row = built.rows.find((candidate) => candidate.key === rowKey);
+  if (!row) throw new Error('This row is no longer flagged. Refresh the page.');
+  const existing = (await loadReviewedRecords(companyId)).get(rowKey);
+  const codes = Array.from(new Set([...codeList(existing?.issueCodes), ...row.issueCodes]));
+  const user = await prisma.user
+    .findUnique({ where: { id: userId }, select: { name: true, email: true } })
+    .catch(() => null);
+  const reviewedByName = cleanText(user?.name) || cleanText(user?.email) || null;
+  await prisma.$executeRaw`
+    INSERT INTO "CompanyInforReviewedRow" (
+      "id", "companyId", "rowKey", "section", "issueCodes", "reviewedByUserId", "reviewedByName", "reviewedAt"
+    )
+    VALUES (
+      ${randomUUID()}, ${companyId}, ${rowKey}, ${row.section}, ${JSON.stringify(codes)}::jsonb,
+      ${userId}, ${reviewedByName}, NOW()
+    )
+    ON CONFLICT ("companyId", "rowKey")
+    DO UPDATE SET
+      "issueCodes" = EXCLUDED."issueCodes",
+      "reviewedByUserId" = EXCLUDED."reviewedByUserId",
+      "reviewedByName" = EXCLUDED."reviewedByName",
+      "reviewedAt" = NOW()
+  `;
+  return getInforReviewWarnings(companyId);
 }
