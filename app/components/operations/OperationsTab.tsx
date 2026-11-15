@@ -676,6 +676,29 @@ function inventoryLotCostText(value: number | null): string {
   return value == null ? '' : String(Number(value.toFixed(4)));
 }
 
+function InventoryQuantityWarning({ message }: { message: string }) {
+  return (
+    <span
+      title={message}
+      aria-label={message}
+      style={{
+        display: 'inline-block',
+        marginRight: '8px',
+        padding: '1px 6px',
+        borderRadius: '999px',
+        background: '#fef3c7',
+        border: '1px solid #f59e0b',
+        color: '#92400e',
+        fontSize: '11px',
+        fontWeight: 700,
+        cursor: 'help',
+      }}
+    >
+      Check qty
+    </span>
+  );
+}
+
 /** Cost box for one inventory lot. Edits stay pending until the table's Save Costs button (or Enter) saves them. */
 function InventoryLotCostInput({
   value,
@@ -15475,6 +15498,7 @@ export default function OperationsTab({
               return {
                 ...group,
                 isFinishedGoods: group.lots.some((lot: any) => lot.lotSource === 'finished_goods'),
+                quantityWarnings: group.lots.filter((lot: any) => lot.quantityWarning).length,
                 avgCost: group.qtyOnHand > 0 ? group.assetValue / group.qtyOnHand : 0,
                 lot: lotCount ? `${lotCount} lot${lotCount === 1 ? '' : 's'}` : '',
                 expirationDate: expirations[0] || null,
@@ -16678,6 +16702,11 @@ export default function OperationsTab({
                           <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{group.expirationDate ? formatDateUtcMinus4(group.expirationDate) : 'N/A'}</td>
                           <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{group.receivedDate ? formatDateUtcMinus4(group.receivedDate) : 'N/A'}</td>
                           <td style={{ padding: '12px', fontSize: '14px', color: '#2563eb', textAlign: 'right', fontWeight: '600' }}>
+                            {group.quantityWarnings > 0 && (
+                              <InventoryQuantityWarning
+                                message={`${group.quantityWarnings} lot${group.quantityWarnings === 1 ? '' : 's'} with a suspicious FoodReady quantity; expand to see which`}
+                              />
+                            )}
                             {group.qtyOnHand.toLocaleString()}
                           </td>
                           <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
@@ -16722,7 +16751,10 @@ export default function OperationsTab({
                             </td>
                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{lot.expirationDate ? formatDateUtcMinus4(lot.expirationDate) : 'N/A'}</td>
                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{lot.receivedDate ? formatDateUtcMinus4(lot.receivedDate) : 'N/A'}</td>
-                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#2563eb', textAlign: 'right' }}>{Number(lot.qtyOnHand || 0).toLocaleString()}</td>
+                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#2563eb', textAlign: 'right' }}>
+                              {lot.quantityWarning && <InventoryQuantityWarning message={lot.quantityWarning} />}
+                              {Number(lot.qtyOnHand || 0).toLocaleString()}
+                            </td>
                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(lot.assetValue)}</td>
                             <td />
                           </tr>

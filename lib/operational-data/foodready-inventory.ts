@@ -403,8 +403,17 @@ async function buildFoodReadyInventorySnapshot(companyId: string, output: Operat
     }
     shipping.unmatched += remaining;
   };
-  for (const [packId, shipped] of usage.shippedByPackaging) takeShipped(finishedLots.filter((lot) => lot.packId === packId), shipped);
-  for (const [itemId, shipped] of usage.shippedByItem) takeShipped(finishedLots.filter((lot) => lot.itemId === itemId), shipped);
+  // Accounting sales cover every shipment, including the ones on FoodReady sales orders, so a product
+  // matched there uses only its accounting quantity; FoodReady sales orders cover the rest.
+  const accounting = await loadAccountingShipments(companyId, finishedLots.map((lot) => ({ itemId: lot.itemId, keys: itemKeys(lot.itemId), lotDate: lot.lotDate })));
+  for (const [itemId, shipped] of accounting.shippedByItem) takeShipped(finishedLots.filter((lot) => lot.itemId === itemId), shipped);
+  const accountingApplied = shipping.applied;
+  const shippedFromSalesOrders = (lots: typeof finishedLots, shipped: number) => {
+    const open = lots.filter((lot) => !accounting.shippedByItem.has(lot.itemId));
+    if (open.length || !lots.length) takeShipped(open, shipped);
+  };
+  for (const [packId, shipped] of usage.shippedByPackaging) shippedFromSalesOrders(finishedLots.filter((lot) => lot.packId === packId), shipped);
+  for (const [itemId, shipped] of usage.shippedByItem) shippedFromSalesOrders(finishedLots.filter((lot) => lot.itemId === itemId), shipped);
   for (const lot of finishedLots) {
     if (lot.qty <= 0) continue;
     const cost = pickCost([
@@ -458,12 +467,83 @@ async function buildFoodReadyInventorySnapshot(companyId: string, output: Operat
     recipeInputsSummary(companyId, output),
     await lotUsageSummary(companyId, bySource, usageRows),
     usageRows.length
-      ? `quantities: ${usageAdjustments.lots} lot(s) reduced by recorded usage (−${formatQty(usageAdjustments.reduced)}); finished goods ${formatQty(shipping.produced)} produced, ${formatQty(shipping.applied)} shipped taken off oldest lots first${shipping.unmatched > 0 ? `, ${formatQty(shipping.unmatched)} shipped beyond the lots in hand` : ''}; ${usage.shippedLines} shipped sales order line(s), ${usage.openLines} not shipped, ${usage.linesWithoutOrder} without a known order; sales order statuses: ${[...usage.orderStatuses.entries()].map(([status, count]) => `${status} ${count}`).join(', ') || 'none'}`
+      ? `quantities: ${usageAdjustments.lots} lot(s) reduced by recorded usage (−${formatQty(usageAdjustments.reduced)}); finished goods ${formatQty(shipping.produced)} produced, ${formatQty(shipping.applied)} shipped taken off oldest lots first (${formatQty(accountingApplied)} from accounting sales, ${formatQty(shipping.applied - accountingApplied)} from FoodReady sales orders)${shipping.unmatched > 0 ? `, ${formatQty(shipping.unmatched)} shipped beyond the lots in hand` : ''}; FoodReady: ${usage.shippedLines} shipped sales order line(s), ${usage.openLines} not shipped, ${usage.linesWithoutOrder} without a known order; sales order statuses: ${[...usage.orderStatuses.entries()].map(([status, count]) => `${status} ${count}`).join(', ') || 'none'}`
       : 'quantities: no lot usage stored yet, so lot quantities are FoodReady’s own',
+    accounting.note,
   ].join('; ');
 }
 
 const SHIPPED_ORDER_STATUS = /ship|deliver|complete|invoic|clos|fulfil/i;
+
+/** Accounting product names are often "Category:Product"; match on the whole name and on the last part. */
+function salesProductKeys(values: Array<string | null | undefined>): string[] {
+  const keys = new Set<string>();
+  for (const raw of values.map((value) => String(value || '').trim()).filter(Boolean)) {
+    keys.add(costKey(raw));
+    const parts = raw.split(/[:|,/\\]+/).map((part) => part.trim()).filter(Boolean);
+    if (parts.length > 1) keys.add(costKey(parts[parts.length - 1]));
+  }
+  keys.delete('');
+  return [...keys];
+}
+
+/**
+ * Quantity sold per finished-goods item from the accounting system's product sales (daily when
+ * synced daily, otherwise monthly), counted from the item's oldest lot in hand. Items are matched to
+ * accounting products by item code or name, the same keys the Bakers COGS costs use.
+ */
+async function loadAccountingShipments(companyId: string, lots: Array<{ itemId: string; keys: string[]; lotDate: string }>) {
+  const firstLotDate = new Map<string, string>();
+  const itemByKey = new Map<string, string>();
+  for (const lot of lots) {
+    const current = firstLotDate.get(lot.itemId);
+    if (!current || lot.lotDate < current) firstLotDate.set(lot.itemId, lot.lotDate);
+    for (const key of lot.keys) if (!itemByKey.has(key)) itemByKey.set(key, lot.itemId);
+  }
+  const shippedByItem = new Map<string, number>();
+  const earliest = [...firstLotDate.values()].sort()[0];
+  if (!earliest || earliest === '9999-12-31') return { shippedByItem, note: 'accounting sales: no finished-goods lots to apply them to' };
+
+  const select = { snapshotDate: true, itemId: true, itemName: true, sku: true, quantitySold: true } as const;
+  let frequency: 'daily' | 'monthly' = 'daily';
+  let sales = await prisma.productSalesSnapshot.findMany({
+    where: { companyId, frequency: 'daily', snapshotDate: { gte: new Date(`${earliest}T00:00:00Z`) } },
+    select,
+  });
+  if (!sales.length) {
+    frequency = 'monthly';
+    sales = await prisma.productSalesSnapshot.findMany({
+      where: { companyId, frequency: 'monthly', snapshotDate: { gte: new Date(`${earliest.slice(0, 7)}-01T00:00:00Z`) } },
+      select,
+    });
+  }
+  if (!sales.length) return { shippedByItem, note: `accounting sales: no product sales stored since ${earliest}, so only FoodReady sales orders were subtracted` };
+
+  const unmatchedProducts = new Map<string, number>();
+  let matchedQty = 0;
+  for (const sale of sales) {
+    const saleDate = sale.snapshotDate.toISOString().slice(0, 10);
+    const itemId = salesProductKeys([sale.itemName, sale.sku, sale.itemId]).map((key) => itemByKey.get(key)).find(Boolean);
+    if (!itemId) {
+      unmatchedProducts.set(sale.itemName, (unmatchedProducts.get(sale.itemName) || 0) + sale.quantitySold);
+      continue;
+    }
+    const since = firstLotDate.get(itemId) || earliest;
+    if (frequency === 'daily' ? saleDate < since : saleDate.slice(0, 7) < since.slice(0, 7)) continue;
+    shippedByItem.set(itemId, (shippedByItem.get(itemId) || 0) + sale.quantitySold);
+    matchedQty += sale.quantitySold;
+  }
+  const unmatched = [...unmatchedProducts.entries()].filter(([, qty]) => qty > 0).sort((a, b) => b[1] - a[1]);
+  return {
+    shippedByItem,
+    note:
+      `accounting sales (${frequency} product sales since ${earliest}): ${shippedByItem.size} of ${firstLotDate.size} finished-goods product(s) matched, ${formatQty(matchedQty)} sold` +
+      (frequency === 'monthly' ? ' (monthly totals include the whole month of each product’s oldest lot)' : '') +
+      (unmatched.length
+        ? `; ${unmatched.length} sold product(s) not matched to a finished good: ${unmatched.slice(0, 8).map(([name, qty]) => `${name} ${formatQty(qty)}`).join(', ')}${unmatched.length > 8 ? ', …' : ''}`
+        : ''),
+  };
+}
 
 /**
  * Totals from the stored usage pull: quantity used per lot (production and sales allocations), and
@@ -634,11 +714,25 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
   companyId: string,
   snapshotRows: T[],
 ): Promise<
-  Array<T & { expirationDate: string | null; receivedDate: string | null; enteredUnitCost: number | null; lotSource: FoodReadyLotSource | null }>
+  Array<
+    T & {
+      expirationDate: string | null;
+      receivedDate: string | null;
+      enteredUnitCost: number | null;
+      lotSource: FoodReadyLotSource | null;
+      quantityWarning: string | null;
+    }
+  >
 > {
   const enteredLotCosts = await loadFoodReadyLotCosts(companyId);
   const lotCodes = [...new Set(snapshotRows.map((row) => String(row.lot || '').trim()).filter(Boolean))];
-  type LotDates = { quantity: number; expirationDate: string | null; receivedDate: string | null; source: FoodReadyLotSource | null };
+  type LotDates = {
+    quantity: number;
+    received: number;
+    expirationDate: string | null;
+    receivedDate: string | null;
+    source: FoodReadyLotSource | null;
+  };
   const lotDates = new Map<string, LotDates[]>();
   // Items made by a production batch, found the same way the snapshot ties finished-goods lots to items.
   const finishedGoodsItems = new Set<string>();
@@ -679,10 +773,12 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
       if (dims.sourceObject === ITEM_PACKAGING_ENDPOINT) continue;
       const lotCode = String(dims.lotCode || '').trim();
       if (!wanted.has(lotCode)) continue;
+      const measures = (record.measures || {}) as Record<string, unknown>;
       lotDates.set(lotCode, [
         ...(lotDates.get(lotCode) || []),
         {
-          quantity: Number((record.measures as Record<string, unknown>)?.quantityInHand || 0),
+          quantity: Number(measures.quantityInHand || 0),
+          received: Number(measures.totalQuantityReceived ?? measures.totalQtyProducedPerBatch ?? 0) || 0,
           expirationDate: estDateOnly(dims.expirationDate),
           receivedDate: estDateOnly(dims.receivedOn ?? dims.receivedDate ?? dims.createdAt),
           source: LOT_SOURCE_BY_ENDPOINT[String(dims.sourceObject || '')] ?? null,
@@ -703,6 +799,20 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
         : match?.source === 'finished_goods' && recipeIngredients.has(String(row.itemId || '').trim())
           ? 'wip'
           : (match?.source ?? null),
+      quantityWarning: match ? lotQuantityWarning(match.quantity, match.received) : null,
     };
   });
+}
+
+/** Lots this large are not plausible for one bakery lot; they are flagged, never changed. */
+const SUSPECT_LOT_QUANTITY = 1_000_000;
+
+function lotQuantityWarning(inHand: number, received: number): string | null {
+  if (received > 0 && inHand > received + 0.0001) {
+    return `FoodReady shows ${formatQty(inHand)} in hand but only ${formatQty(received)} received`;
+  }
+  if (inHand >= SUSPECT_LOT_QUANTITY || received >= SUSPECT_LOT_QUANTITY) {
+    return `FoodReady shows ${formatQty(received)} received and ${formatQty(inHand)} in hand on this lot; check it in FoodReady`;
+  }
+  return null;
 }
