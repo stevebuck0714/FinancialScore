@@ -178,14 +178,14 @@ export function priorityAccounts(accounts: AccountRow[]): AccountRow[] {
 export type QualificationRow = {
   key: string;
   label: string;
-  accounts: number;
-  reviewed: number;
-  qualified: number;
-  inProgress: number;
-  notStarted: number;
-  teamOpportunity: Record<string, number>;
-  labConfirmed: number;
-  labLikely: number;
+  accounts: AccountRow[];
+  reviewed: AccountRow[];
+  qualified: AccountRow[];
+  inProgress: AccountRow[];
+  notStarted: AccountRow[];
+  teamOpportunity: Record<string, AccountRow[]>;
+  labConfirmed: AccountRow[];
+  labLikely: AccountRow[];
 };
 
 /** Team-opportunity sizes in the order they appear in the data, smallest first when they start with a number. */
@@ -196,21 +196,21 @@ export function teamOpportunityBands(accounts: AccountRow[]): string[] {
 
 function qualificationRow(key: string, label: string, accounts: AccountRow[]): QualificationRow {
   const status = (account: AccountRow) => account.reviewStatus.toLowerCase();
-  const teamOpportunity: Record<string, number> = {};
+  const teamOpportunity: Record<string, AccountRow[]> = {};
   for (const account of accounts) {
-    if (account.teamOpportunity) teamOpportunity[account.teamOpportunity] = (teamOpportunity[account.teamOpportunity] || 0) + 1;
+    if (account.teamOpportunity) teamOpportunity[account.teamOpportunity] = [...(teamOpportunity[account.teamOpportunity] || []), account];
   }
   return {
     key,
     label,
-    accounts: accounts.length,
-    reviewed: accounts.filter((account) => status(account).startsWith('reviewed')).length,
-    qualified: accounts.filter((account) => /\bqualified\b/.test(status(account)) && !/\bdisqualified|not qualified\b/.test(status(account))).length,
-    inProgress: accounts.filter((account) => status(account).includes('progress')).length,
-    notStarted: accounts.filter((account) => !account.reviewStatus).length,
+    accounts,
+    reviewed: accounts.filter((account) => status(account).startsWith('reviewed')),
+    qualified: accounts.filter((account) => /\bqualified\b/.test(status(account)) && !/\bdisqualified|not qualified\b/.test(status(account))),
+    inProgress: accounts.filter((account) => status(account).includes('progress')),
+    notStarted: accounts.filter((account) => !account.reviewStatus),
     teamOpportunity,
-    labConfirmed: accounts.filter((account) => account.discoveryLab.toLowerCase().startsWith('yes')).length,
-    labLikely: accounts.filter((account) => account.discoveryLab.toLowerCase().startsWith('likely')).length,
+    labConfirmed: accounts.filter((account) => account.discoveryLab.toLowerCase().startsWith('yes')),
+    labLikely: accounts.filter((account) => account.discoveryLab.toLowerCase().startsWith('likely')),
   };
 }
 
