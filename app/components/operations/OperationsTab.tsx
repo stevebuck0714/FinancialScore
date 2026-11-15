@@ -12682,9 +12682,9 @@ export default function OperationsTab({
         wrap?: boolean;
         render: (row: any) => React.ReactNode;
       }> = [
-        { key: 'item', label: 'APR P/N', width: '20ch', maxWidth: '20ch', render: (row) => row.item || 'N/A' },
-        { key: 'order', label: 'Order', width: '10ch', maxWidth: '10ch', render: (row) => row.order || 'N/A' },
-        { key: 'line', label: 'Line', align: 'right', width: '8ch', maxWidth: '8ch', render: (row) => (row.line == null ? '' : row.line) },
+        { key: 'item', label: 'APR P/N', width: '16ch', maxWidth: '16ch', render: (row) => row.item || 'N/A' },
+        { key: 'order', label: 'Order', width: '7ch', maxWidth: '7ch', render: (row) => row.order || 'N/A' },
+        { key: 'line', label: 'Line', width: '6ch', maxWidth: '6ch', render: (row) => (row.line == null ? '' : row.line) },
         { key: 'customerName', label: 'Customer Name', render: (row) => row.customerName || 'N/A' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
