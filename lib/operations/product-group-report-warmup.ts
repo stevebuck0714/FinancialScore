@@ -39,6 +39,7 @@ export type AtlanticOperationalTabsWarmupResult = {
   cash: OperationalTabWarmupResult;
   dailyFinancials: OperationalTabWarmupResult;
   groups: ProductGroupReportWarmupResult;
+  inforReviewWarnings: OperationalTabWarmupResult;
 };
 
 function baseUrl(): string {
@@ -104,6 +105,45 @@ export async function warmAtlanticProductGroupReportCache(
     return {
       ok: false,
       year,
+      ms: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : 'warmup failed',
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Rebuilds the "New Infor data needs review" warnings so each section reads a
+ * stored payload instead of running the checks when it opens.
+ */
+async function warmAtlanticInforReviewWarnings(origin: string, cronSecret: string): Promise<OperationalTabWarmupResult> {
+  const url = new URL('/api/operational-data/infor-new-identities', origin);
+  url.search = new URLSearchParams({
+    companyId: ATLANTIC_PRECISION_COMPANY_ID,
+    refresh: '1',
+    cacheWarmup: '1',
+  }).toString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WARMUP_TIMEOUT_MS);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: { authorization: `Bearer ${cronSecret}` },
+    });
+    if (response.ok) return { ok: true, status: response.status, ms: Date.now() - startedAt };
+    const payload = await response.json().catch(() => null);
+    return {
+      ok: false,
+      status: response.status,
+      ms: Date.now() - startedAt,
+      error: String(payload?.error || response.statusText || `returned ${response.status}`).slice(0, 500),
+    };
+  } catch (error) {
+    return {
+      ok: false,
       ms: Date.now() - startedAt,
       error: error instanceof Error ? error.message : 'warmup failed',
     };
@@ -223,6 +263,7 @@ export async function warmAtlanticOperationalTabsCaches(
       cash: unavailable,
       dailyFinancials: unavailable,
       groups: { ...unavailable, year: Number(formatEstDate().slice(0, 4)) },
+      inforReviewWarnings: unavailable,
     };
   }
 
@@ -236,6 +277,7 @@ export async function warmAtlanticOperationalTabsCaches(
     cash,
     dailyFinancials,
     groups,
+    inforReviewWarnings,
   ] = await Promise.all([
     // Customer concentration has its own cache and is embedded into the
     // Customers payload, so build it before the Customers page cache.
@@ -275,6 +317,7 @@ export async function warmAtlanticOperationalTabsCaches(
     warmOperationalTab({ origin, cronSecret, type: 'cash', frequency, startDate, endDate, limit: '1000' }),
     warmOperationalTab({ origin, cronSecret, type: 'daily-financials', frequency, startDate, endDate, limit: '1000' }),
     warmAtlanticProductGroupReportCache({ baseUrl: origin }),
+    warmAtlanticInforReviewWarnings(origin, cronSecret),
   ]);
   return {
     ok:
@@ -285,7 +328,8 @@ export async function warmAtlanticOperationalTabsCaches(
       apAging.ok &&
       cash.ok &&
       dailyFinancials.ok &&
-      groups.ok,
+      groups.ok &&
+      inforReviewWarnings.ok,
     customers,
     products,
     inventory,
@@ -294,5 +338,6 @@ export async function warmAtlanticOperationalTabsCaches(
     cash,
     dailyFinancials,
     groups,
+    inforReviewWarnings,
   };
 }

@@ -440,6 +440,7 @@ export async function GET(request: NextRequest) {
                 cash: operationalPagesWarmup.cash,
                 dailyFinancials: operationalPagesWarmup.dailyFinancials,
                 groups: operationalPagesWarmup.groups,
+                inforReviewWarnings: operationalPagesWarmup.inforReviewWarnings,
               });
             }
           }

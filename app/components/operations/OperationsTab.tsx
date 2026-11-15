@@ -1194,9 +1194,8 @@ export default function OperationsTab({
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const [productReportView, setProductReportView] = useState<ProductReportView>('productMarginAnalysis');
   const [productForecastItemIdFilter, setProductForecastItemIdFilter] = useState('');
-  const [productForecastItemFocus, setProductForecastItemFocus] = useState<{ itemId: string; requestId: number } | null>(null);
   const [productForecastCustomerFocus, setProductForecastCustomerFocus] = useState<
-    { customerId: string; customerName: string; requestId: number } | null
+    { customerId: string; customerName: string; itemId?: string; customerPartNumber?: string; requestId: number } | null
   >(null);
   const [vendorReportView, setVendorReportView] = useState<VendorReportView>('vendorPricing');
   const [manufacturingVendorReportKey, setManufacturingVendorReportKey] = useState('vendorsItemOrderHistory');
@@ -12191,15 +12190,17 @@ export default function OperationsTab({
       {isWholesaleProductSector && effectiveProductReportView === 'revenueForecast' ? (
         <InforNewIdentitiesAlert
           companyId={selectedCompanyId}
-          surface="products"
-          onOpenForecastItem={(itemId) => {
-            setProductForecastItemIdFilter(itemId);
-            setProductForecastItemFocus({ itemId, requestId: Date.now() });
-            setProductReportView('revenueForecast');
-          }}
-          onOpenForecastCustomer={(customerId, customerName) => {
-            setProductForecastItemIdFilter('');
-            setProductForecastCustomerFocus({ customerId, customerName, requestId: Date.now() });
+          section="volumeForecast"
+          onOpenRow={(row) => {
+            if (!row.customerId) return;
+            setProductForecastItemIdFilter(row.itemId || '');
+            setProductForecastCustomerFocus({
+              customerId: row.customerId,
+              customerName: row.customerName || row.customerId,
+              itemId: row.itemId || undefined,
+              customerPartNumber: row.customerPartNumber || undefined,
+              requestId: Date.now(),
+            });
             setProductReportView('revenueForecast');
           }}
         />
@@ -14513,6 +14514,7 @@ export default function OperationsTab({
             />
           ) : activeCustomReport?.view === 'dutiesTariffs' ? (
             <>
+              <InforNewIdentitiesAlert companyId={selectedCompanyId} section="dutiesTariffs" />
               {renderReorderableCompanyReport('vendorsDutiesTariffs', 'vendors', <DutiesTariffsReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsDutiesTariffs')}
@@ -14529,6 +14531,7 @@ export default function OperationsTab({
             </>
           ) : activeCustomReport?.view === 'sgpFreight' ? (
             <>
+              <InforNewIdentitiesAlert companyId={selectedCompanyId} section="freight" />
               {renderReorderableCompanyReport('vendorsSgpFreight', 'vendors', <SgpFreightReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsSgpFreight')}
@@ -14537,6 +14540,7 @@ export default function OperationsTab({
             </>
           ) : activeCustomReport?.view === 'monthlyForecast' ? (
             <>
+              <InforNewIdentitiesAlert companyId={selectedCompanyId} section="vendorForecast" />
               {renderReorderableCompanyReport('vendorsMonthlyForecast', 'vendors', <VendorMonthlyForecastReport
                 selectedCompanyId={selectedCompanyId}
                 onOpenInfo={() => setProductChartInfoKey('vendorsMonthlyForecast')}
@@ -14594,7 +14598,6 @@ export default function OperationsTab({
             onOpenInfo={() => setProductChartInfoKey('productsRevenueForecast')}
             itemIdFilter={productForecastItemIdFilter}
             onItemIdFilterChange={setProductForecastItemIdFilter}
-            itemFocusRequest={productForecastItemFocus}
             customerFocusRequest={productForecastCustomerFocus}
           />)}
           {renderProductChartInfoModal()}

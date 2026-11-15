@@ -23,6 +23,7 @@ import ProductMonthlyTrendChartModal, {
   buildProductMonthlyTrendRows,
 } from './ProductMonthlyTrendChartModal';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
+import { notifyInforReviewWarningsStale } from '@/lib/operations/infor-new-identities-types';
 import ReportSummaryCards from './ReportSummaryCards';
 import SgpBudgetLockBar from './SgpBudgetLockBar';
 
@@ -62,10 +63,17 @@ type ProductRevenueForecastReportProps = {
   onOpenInfo?: () => void;
   itemIdFilter?: string;
   onItemIdFilterChange?: (itemId: string) => void;
-  /** Opening an item from the new-items alert resets the customer and resolves it from the item. */
-  itemFocusRequest?: { itemId: string; requestId: number } | null;
-  /** Opening a customer from the new-items alert selects that customer, even before it has forecast rows. */
-  customerFocusRequest?: { customerId: string; customerName: string; requestId: number } | null;
+  /**
+   * Opening a row from the review warning selects that customer, even before it has forecast
+   * rows, and adds the item's row when the customer's forecast does not have it yet.
+   */
+  customerFocusRequest?: {
+    customerId: string;
+    customerName: string;
+    itemId?: string;
+    customerPartNumber?: string;
+    requestId: number;
+  } | null;
 };
 
 type ItemCustomer = {
@@ -241,7 +249,6 @@ export default function ProductRevenueForecastReport({
   onOpenInfo,
   itemIdFilter = '',
   onItemIdFilterChange,
-  itemFocusRequest = null,
   customerFocusRequest = null,
 }: ProductRevenueForecastReportProps) {
   const [year, setYear] = useState(currentYear());
@@ -517,25 +524,11 @@ export default function ProductRevenueForecastReport({
     }
   }, [selectedCompanyId]);
 
-  const focusRequestId = itemFocusRequest?.requestId;
-  const focusItemId = itemFocusRequest?.itemId || '';
-  useEffect(() => {
-    if (!focusRequestId || !focusItemId || !selectedCompanyId) return;
-    pendingNewRowRef.current = null;
-    setPendingItemCustomer(null);
-    setCustomerKey('');
-    setCustomerGroup('');
-    setCustomerIdSearch('');
-    setCustomerIdSearchError(null);
-    setLines([]);
-    setDirty(false);
-    setNotice(null);
-    void lookupItemCustomers(focusItemId);
-  }, [focusItemId, focusRequestId, lookupItemCustomers, selectedCompanyId]);
-
   const customerFocusRequestId = customerFocusRequest?.requestId;
   const customerFocusId = customerFocusRequest?.customerId || '';
   const customerFocusName = customerFocusRequest?.customerName || '';
+  const customerFocusItemId = customerFocusRequest?.itemId || '';
+  const customerFocusPartNumber = customerFocusRequest?.customerPartNumber || '';
   useEffect(() => {
     if (!customerFocusRequestId || !customerFocusId || !selectedCompanyId) return;
     pendingNewRowRef.current = null;
@@ -549,10 +542,17 @@ export default function ProductRevenueForecastReport({
     setPendingItemCustomer({
       customerId: customerFocusId,
       customerName: customerFocusName,
-      customerPartNumber: '',
-      itemId: '',
+      customerPartNumber: customerFocusPartNumber,
+      itemId: customerFocusItemId,
     });
-  }, [customerFocusId, customerFocusName, customerFocusRequestId, selectedCompanyId]);
+  }, [
+    customerFocusId,
+    customerFocusItemId,
+    customerFocusName,
+    customerFocusPartNumber,
+    customerFocusRequestId,
+    selectedCompanyId,
+  ]);
 
   // Typing an APR P/N with no customer or group selected finds the item's customer.
   const typedItemId = itemIdFilter.trim();
@@ -805,6 +805,7 @@ export default function ProductRevenueForecastReport({
       setDirty(false);
       const savedCount = Array.isArray(payload.lines) ? payload.lines.length : lines.length;
       setNotice(`Saved ${savedCount} rows for ${selectedCustomer.label}.`);
+      notifyInforReviewWarningsStale(selectedCompanyId);
       setCompanyMonthTotals(null);
       setCustomers((prev) =>
         prev.map((customer) =>

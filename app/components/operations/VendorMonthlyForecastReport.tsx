@@ -19,6 +19,7 @@ import {
   type VendorMonthlyForecastLineInput,
 } from '@/lib/operations/vendor-monthly-forecast';
 import { estMonthIndex, estYear } from '@/lib/time/eastern';
+import { notifyInforReviewWarningsStale } from '@/lib/operations/infor-new-identities-types';
 import ReportSummaryCards from './ReportSummaryCards';
 import { useAprVendorLookup } from './useAprVendorLookup';
 
@@ -359,6 +360,7 @@ export default function VendorMonthlyForecastReport({
       if (payload.dataThru) setDataThru(String(payload.dataThru).slice(0, 10));
       setDirty(false);
       setNotice(`Saved ${changed.length.toLocaleString()} changed rows for ${selectedVendor.label}.`);
+      notifyInforReviewWarningsStale(selectedCompanyId);
     } catch (err: any) {
       setError(err?.message || 'Failed to save monthly forecast');
     } finally {

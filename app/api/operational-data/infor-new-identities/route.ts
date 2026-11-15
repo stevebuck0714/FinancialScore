@@ -2,15 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { isOperationalDataTypeAllowed } from '@/lib/operations/operational-dashboard-access';
-import {
-  acknowledgeInforNewIdentities,
-  getInforNewIdentities,
-} from '@/lib/operations/infor-new-identities';
-import { scheduleOperationalCacheWarmupAfterSave } from '@/lib/operations/operational-cache-save-warmup';
+import { getInforReviewWarnings } from '@/lib/operations/infor-new-identities';
+import { ATLANTIC_PRECISION_COMPANY_ID } from '@/lib/operations/product-group-report-warmup';
 
 export const dynamic = 'force-dynamic';
-// Leaves room for the post-response operational cache rebuild.
 export const maxDuration = 300;
+
+function isAtlanticCronCacheWarmup(request: NextRequest, companyId: string): boolean {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  const isCacheWarmup = ['1', 'true', 'yes'].includes(
+    String(request.nextUrl.searchParams.get('cacheWarmup') || '').trim().toLowerCase()
+  );
+  return Boolean(
+    cronSecret &&
+      request.headers.get('authorization') === `Bearer ${cronSecret}` &&
+      isCacheWarmup &&
+      companyId === ATLANTIC_PRECISION_COMPANY_ID
+  );
+}
 
 async function assertAccess(companyId: string): Promise<NextResponse | null> {
   let authContext;
@@ -60,36 +69,21 @@ export async function GET(request: NextRequest) {
   try {
     const companyId = String(request.nextUrl.searchParams.get('companyId') || '').trim();
     if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
-    const denied = await assertAccess(companyId);
-    if (denied) return denied;
+    if (!isAtlanticCronCacheWarmup(request, companyId)) {
+      const denied = await assertAccess(companyId);
+      if (denied) return denied;
+    }
 
-    const result = await getInforNewIdentities(companyId);
-    return NextResponse.json({ ok: true, ...result });
-  } catch (error) {
-    console.error('Infor new identities load failed:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to load new Infor identities' },
-      { status: 500 }
+    const refresh = ['1', 'true', 'yes'].includes(
+      String(request.nextUrl.searchParams.get('refresh') || '').trim().toLowerCase()
     );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const companyId = String(body.companyId || request.nextUrl.searchParams.get('companyId') || '').trim();
-    if (!companyId) return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
-    const denied = await assertAccess(companyId);
-    if (denied) return denied;
-
-    const result = await acknowledgeInforNewIdentities(companyId);
-    scheduleOperationalCacheWarmupAfterSave(request, companyId, 'infor-new-identities');
+    const result = await getInforReviewWarnings(companyId, { refresh });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
-    console.error('Infor new identities acknowledge failed:', error);
+    console.error('Infor review warnings load failed:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to acknowledge new Infor identities' },
-      { status: 400 }
+      { error: error instanceof Error ? error.message : 'Failed to load Infor review warnings' },
+      { status: 500 }
     );
   }
 }

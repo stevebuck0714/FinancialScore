@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import SuggestInput, { labeledSuggestionsFor } from './SuggestInput';
 import { formatEstDate, formatEstDateLabel } from '@/lib/time/eastern';
 import type { CompanyItemDutyPatch, CompanyItemDutyRow } from '@/lib/hts/item-duty-overlay';
+import { notifyInforReviewWarningsStale } from '@/lib/operations/infor-new-identities-types';
 
 type MonthlyCogsRow = {
   monthKey: string;
@@ -315,6 +316,7 @@ export default function DutiesTariffsReport({ selectedCompanyId, onOpenInfo }: D
         throw new Error(payload?.error || 'Failed to save');
       }
       setNotice(`Saved ${Number(payload.updated || 0)} item${Number(payload.updated || 0) === 1 ? '' : 's'}.`);
+      notifyInforReviewWarningsStale(selectedCompanyId);
       await load(filter);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save');

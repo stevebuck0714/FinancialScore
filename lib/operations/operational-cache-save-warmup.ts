@@ -29,6 +29,7 @@ export function scheduleOperationalCacheWarmupAfterSave(
         cash: result.cash,
         dailyFinancials: result.dailyFinancials,
         groups: result.groups,
+        inforReviewWarnings: result.inforReviewWarnings,
       });
     }
   });

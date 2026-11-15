@@ -16,6 +16,7 @@ import {
   normalizeSgpFreightAssumptions,
   type SgpFreightAssumptions,
 } from '@/lib/operational/sgp-freight-calc';
+import { notifyInforReviewWarningsStale } from '@/lib/operations/infor-new-identities-types';
 
 type SgpFreightReportProps = {
   selectedCompanyId: string;
@@ -465,6 +466,7 @@ export default function SgpFreightReport({ selectedCompanyId, onOpenInfo }: SgpF
         assumptionsDirty ? 'rate assumptions' : null,
       ].filter(Boolean);
       setNotice(`Saved ${parts.join(' and ')}.`);
+      notifyInforReviewWarningsStale(selectedCompanyId);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save SGP Freight');
     } finally {
