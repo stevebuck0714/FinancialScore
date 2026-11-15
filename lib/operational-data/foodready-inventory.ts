@@ -16,6 +16,15 @@ const FINISHED_GOODS_LOTS_ENDPOINT = '/api/moBatchOutput/search';
 const INVENTORY_ITEMS_ENDPOINT = '/api/inventoryItems/search';
 const SUPPLIER_ITEMS_ENDPOINT = '/api/supplierItems/search';
 const ITEM_PACKAGING_ENDPOINT = '/api/itemPackaging/search';
+/** Domains the inventory snapshot is built from; syncs pull these first. */
+export const FOODREADY_SNAPSHOT_ENDPOINTS: readonly string[] = [
+  INVENTORY_ITEMS_ENDPOINT,
+  FOODREADY_PURCHASED_LOTS_ENDPOINT,
+  WIP_LOTS_ENDPOINT,
+  FINISHED_GOODS_LOTS_ENDPOINT,
+  ITEM_PACKAGING_ENDPOINT,
+  SUPPLIER_ITEMS_ENDPOINT,
+];
 const LOT_ENDPOINTS = [FOODREADY_PURCHASED_LOTS_ENDPOINT, WIP_LOTS_ENDPOINT, FINISHED_GOODS_LOTS_ENDPOINT];
 
 type Dimensions = OperationalRecordInput['dimensions'];
@@ -217,9 +226,15 @@ type SnapshotRow = {
 export async function writeFoodReadyInventorySnapshot(companyId: string, output: OperationalSourceOutput): Promise<string> {
   const skipped = skippedDomains.get(companyId) || [];
   skippedDomains.delete(companyId);
-  if (skipped.length) {
-    return `Sync hit its time limit and skipped ${skipped.join(', ')} (their stored data is unchanged); inventory snapshot not rewritten, so the report keeps the last complete one. ${recipeInputsSummary(companyId, output)}`;
+  const skippedNote = skipped.length ? `Sync hit its time limit and skipped ${skipped.join(', ')} (their stored data is unchanged)` : '';
+  if (skipped.some((endpoint) => FOODREADY_SNAPSHOT_ENDPOINTS.includes(endpoint))) {
+    return `${skippedNote}; inventory snapshot not rewritten, so the report keeps the last complete one. ${recipeInputsSummary(companyId, output)}`;
   }
+  const note = await buildFoodReadyInventorySnapshot(companyId, output);
+  return skippedNote ? `${skippedNote}; ${note}` : note;
+}
+
+async function buildFoodReadyInventorySnapshot(companyId: string, output: OperationalSourceOutput): Promise<string> {
   const bySource = new Map<string, OperationalRecordInput[]>();
   for (const row of Object.values(output).flatMap((dataset) => dataset.rows)) {
     const source = text(row.dimensions, 'sourceObject');

@@ -23,6 +23,7 @@ import {
   FOODREADY_RECIPE_INPUTS_ENDPOINT,
   FOODREADY_RECIPE_INPUTS_KEY,
   FOODREADY_PURCHASED_LOTS_ENDPOINT,
+  FOODREADY_SNAPSHOT_ENDPOINTS,
   foodReadyRef,
   listFoodReadyPurchaseOrderLineIds,
   setFoodReadyRecipeInputsFailure,
@@ -450,7 +451,8 @@ export async function syncFoodReady(
   }
   const domainDeadline = syncStartedAt + DOMAIN_PULL_CUTOFF_MS;
   const skipped: string[] = [];
-  for (const domain of configuredFoodReadyDomains(metadata)) {
+  const snapshotFirst = (domain: DataDomain) => (FOODREADY_SNAPSHOT_ENDPOINTS.includes(domain.sourceObject) ? 0 : 1);
+  for (const domain of configuredFoodReadyDomains(metadata).sort((a, b) => snapshotFirst(a) - snapshotFirst(b))) {
     const currentStateQuery = CURRENT_STATE_QUERY[domain.sourceObject];
     const currentState = Boolean(currentStateQuery);
     if (currentState && window.endDate < today) continue;
