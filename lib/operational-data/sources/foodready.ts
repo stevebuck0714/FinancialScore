@@ -58,6 +58,7 @@ export const FOODREADY_LOT_USAGE_PULL_PATH = '/api/admin/foodready-lot-usage';
 const LOT_USAGE_ENDPOINTS = [
   ['production', '/api/moBatchInput/search'],
   ['sales', '/api/salesOrderItems'],
+  ['sales_order', '/api/salesOrders'],
 ] as const;
 
 const RECIPE_INPUTS_SCHEMA: OperationalDatasetSchema = {
@@ -84,8 +85,11 @@ const LOT_USAGE_SCHEMA: OperationalDatasetSchema = {
   description: 'Quantity used from each FoodReady lot: production batch inputs and sales order line allocations, all dates. Refreshed in full whenever a sync includes today.',
   grain: 'point_in_time',
   dimensions: [
-    { name: 'usageType', description: 'production or sales' },
+    { name: 'usageType', description: 'production or sales (lot allocations), sales_line (ordered quantity) or sales_order (status and ship date)' },
     { name: 'recordId' },
+    { name: 'status' },
+    { name: 'shippedOn' },
+    { name: 'soId' },
     { name: 'purchaseOrderItemLot' },
     { name: 'moBatchOutput' },
     { name: 'supplierItem' },
@@ -100,6 +104,7 @@ const LOT_USAGE_SCHEMA: OperationalDatasetSchema = {
     { name: 'recordCount', description: 'Always 1; sum to count records.' },
     { name: 'qtyUsed' },
     { name: 'unitCost' },
+    { name: 'orderQty' },
   ],
 };
 
@@ -246,12 +251,54 @@ function refId(value: unknown): string | undefined {
   return typeof id === 'string' && id.trim() ? id.trim() : undefined;
 }
 
-/** One row per lot allocation on a production batch input or sales order line: the lot drawn from and the quantity used. */
+/**
+ * Usage rows for one record: a sales order's status and ship date; a sales order line's ordered
+ * quantity; and one row per lot allocation (lot drawn from and quantity used) on production inputs
+ * and sales order lines.
+ */
 function lotUsageRows(usageType: string, record: Record<string, unknown>, today: string): OperationalRecordInput[] {
   const recordId = refId(record._id ?? record.id);
   if (!recordId) return [];
+  const createdOn = new Date(String(record.createdAt ?? ''));
+  const recordDate = Number.isNaN(createdOn.getTime()) ? today : formatEstDate(createdOn);
+  if (usageType === 'sales_order') {
+    const flat = flattenRecord(record);
+    const shippedOn = flat.shippedOn ?? flat.shipDateTime;
+    return [
+      {
+        date: recordDate,
+        externalId: `sales_order|${recordId}`,
+        dimensions: {
+          usageType,
+          recordId,
+          status: typeof flat.status === 'string' ? flat.status : undefined,
+          shippedOn: typeof shippedOn === 'string' ? shippedOn : undefined,
+          soId: typeof flat.soId === 'string' || typeof flat.soId === 'number' ? String(flat.soId) : undefined,
+        },
+        measures: { recordCount: 1 },
+      },
+    ];
+  }
+  const lineRows: OperationalRecordInput[] =
+    usageType === 'sales'
+      ? [
+          {
+            date: recordDate,
+            externalId: `sales_line|${recordId}`,
+            dimensions: {
+              usageType: 'sales_line',
+              recordId,
+              so: refId(record.so),
+              inventoryItem: refId(record.inventoryItem),
+              itemPackaging: refId(record.itemPackaging),
+              uom: refId(record.uom),
+            },
+            measures: { recordCount: 1, orderQty: Number.isFinite(Number(record.orderQty)) ? Number(record.orderQty) : 0 },
+          },
+        ]
+      : [];
   const allocations = Array.isArray(record.allocatedQty) ? record.allocatedQty : [];
-  return allocations.flatMap((value, index) => {
+  return lineRows.concat(allocations.flatMap((value, index) => {
     const allocation = asRecord(value);
     if (allocation.deleted === true || allocation.deletedAt) return [];
     const qtyUsed = Number(allocation.qtyUsed);
@@ -280,7 +327,7 @@ function lotUsageRows(usageType: string, record: Record<string, unknown>, today:
         },
       },
     ];
-  });
+  }));
 }
 
 function purchaseOrderLineRow(id: string, line: FlatRecord, today: string): OperationalRecordInput {
@@ -576,7 +623,7 @@ export async function pullFoodReadyLotUsage(companyId: string, cursor?: FoodRead
     });
   }
   const minutes = Math.max(1, Math.round((Date.now() - new Date(state.startedAt).getTime()) / 60_000));
-  const message = `${state.rows} lot allocation(s) from ${state.records} production input and sales order record(s) in ${state.step} request(s), about ${minutes} min`;
+  const message = `${state.rows} usage row(s) from ${state.records} production input, sales order line and sales order record(s) in ${state.step} request(s), about ${minutes} min`;
   await writeLotUsageStatus(companyId, 'ok', message, state.rows);
   return { ok: true, done: true, message };
 }

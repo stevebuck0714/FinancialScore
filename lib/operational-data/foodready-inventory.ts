@@ -283,13 +283,27 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     return found ? found[1] : 0;
   };
 
+  // FoodReady never reduces a lot's in-hand quantity, so stock is rebuilt from the stored usage pull.
+  const usageRows = await loadDatasetRows(companyId, FOODREADY_LOT_USAGE_KEY);
+  const usage = summarizeUsageRows(usageRows, packaging);
+  const usageAdjustments = { lots: 0, reduced: 0 };
+  /** Received (or produced) minus recorded production/sales usage; FoodReady's own figure when the lot has no usage. */
+  const lotQuantity = (row: OperationalRecordInput, receivedField: string): number => {
+    const inHand = amount(row.measures, 'quantityInHand');
+    const used = usage.usedByLot.get(text(row.dimensions, 'id')) || 0;
+    if (used <= 0) return inHand;
+    const qty = Math.max(0, (amount(row.measures, receivedField) || inHand) - used);
+    usageAdjustments.lots += 1;
+    usageAdjustments.reduced += inHand - qty;
+    return qty;
+  };
+
   // Inventory reports end no later than yesterday (EST), so the pull is stored as yesterday's closing stock.
   const snapshotDate = new Date(`${previousEstCalendarDate()}T00:00:00Z`);
   const data: SnapshotRow[] = [];
   const itemsWithLots = new Set<string>();
   const lotCounts = { purchased: 0, wip: 0, finished: 0 };
-  const pushLot = (itemId: string, fallbackName: string, fallbackCode: string, row: OperationalRecordInput, unitCost: number) => {
-    const qtyOnHand = amount(row.measures, 'quantityInHand');
+  const pushLot = (itemId: string, fallbackName: string, fallbackCode: string, row: OperationalRecordInput, unitCost: number, qtyOnHand: number) => {
     const item = items.get(itemId);
     const itemName = text(item?.dimensions, 'itemName') || fallbackName;
     if (!itemName || qtyOnHand === 0) return false;
@@ -317,7 +331,8 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
       unlinkedPurchasedLots += 1;
       continue;
     }
-    if (amount(row.measures, 'quantityInHand') === 0) continue;
+    const qty = lotQuantity(row, 'totalQuantityReceived');
+    if (qty === 0) continue;
     const cost = pickCost([
       ['entered', enteredCost(line.itemId, row)],
       ['purchaseOrderLine', line.lineCost],
@@ -325,11 +340,12 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
       ['packaging', packagingCostByItem.get(line.itemId) || 0],
       ['bakersCogsMaterial', bakersMaterialCost(itemKeys(line.itemId))],
     ]);
-    if (pushLot(line.itemId, '', '', row, cost)) lotCounts.purchased += 1;
+    if (pushLot(line.itemId, '', '', row, cost, qty)) lotCounts.purchased += 1;
   }
   for (const row of bySource.get(WIP_LOTS_ENDPOINT) || []) {
     const itemId = foodReadyRef(row.dimensions, 'item');
-    if (amount(row.measures, 'quantityInHand') === 0) continue;
+    const qty = lotQuantity(row, 'totalQuantityReceived');
+    if (qty === 0) continue;
     const keys = itemKeys(itemId, text(row.dimensions, 'itemName'), text(row.dimensions, 'itemCode'));
     const cost = pickCost([
       ['entered', enteredCost(itemId, row)],
@@ -338,19 +354,47 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
       ['bakersCogsProduct', bakersProductCost(keys)],
       ['bakersCogsMaterial', bakersMaterialCost(keys)],
     ]);
-    if (pushLot(itemId, text(row.dimensions, 'itemName'), text(row.dimensions, 'itemCode'), row, cost)) lotCounts.wip += 1;
+    if (pushLot(itemId, text(row.dimensions, 'itemName'), text(row.dimensions, 'itemCode'), row, cost, qty)) lotCounts.wip += 1;
   }
-  for (const row of bySource.get(FINISHED_GOODS_LOTS_ENDPOINT) || []) {
-    const pack = packaging.get(foodReadyRef(row.dimensions, 'itemPackaging'));
-    if (!pack?.itemId || amount(row.measures, 'quantityInHand') === 0) continue;
+
+  // Finished goods: shipped quantity per packaging (or per product, when a line has no packaging)
+  // comes off that product's lots, oldest lot first, since FoodReady does not record which lot shipped.
+  const finishedLots = (bySource.get(FINISHED_GOODS_LOTS_ENDPOINT) || [])
+    .map((row) => {
+      const packId = foodReadyRef(row.dimensions, 'itemPackaging');
+      const pack = packaging.get(packId);
+      const lotDate = estDateOnly(row.dimensions?.createdAt) || estDateOnly(row.dimensions?.expirationDate) || '9999-12-31';
+      return { row, packId, itemId: pack?.itemId || '', unitCost: pack?.unitCost || 0, lotDate, qty: lotQuantity(row, 'totalQtyProducedPerBatch') };
+    })
+    .filter((lot) => lot.itemId && lot.qty > 0)
+    .sort((a, b) => a.lotDate.localeCompare(b.lotDate));
+  const shipping = { produced: 0, applied: 0, unmatched: 0 };
+  finishedLots.forEach((lot) => {
+    shipping.produced += lot.qty;
+  });
+  const takeShipped = (lots: typeof finishedLots, shipped: number) => {
+    let remaining = shipped;
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const taken = Math.min(lot.qty, remaining);
+      lot.qty -= taken;
+      remaining -= taken;
+      shipping.applied += taken;
+    }
+    shipping.unmatched += remaining;
+  };
+  for (const [packId, shipped] of usage.shippedByPackaging) takeShipped(finishedLots.filter((lot) => lot.packId === packId), shipped);
+  for (const [itemId, shipped] of usage.shippedByItem) takeShipped(finishedLots.filter((lot) => lot.itemId === itemId), shipped);
+  for (const lot of finishedLots) {
+    if (lot.qty <= 0) continue;
     const cost = pickCost([
-      ['entered', enteredCost(pack.itemId, row)],
-      ['batchOutput', amount(row.measures, 'unitCost')],
-      ['packaging', pack.unitCost],
-      ['packaging', packagingCostByItem.get(pack.itemId) || 0],
-      ['bakersCogsProduct', bakersProductCost(itemKeys(pack.itemId))],
+      ['entered', enteredCost(lot.itemId, lot.row)],
+      ['batchOutput', amount(lot.row.measures, 'unitCost')],
+      ['packaging', lot.unitCost],
+      ['packaging', packagingCostByItem.get(lot.itemId) || 0],
+      ['bakersCogsProduct', bakersProductCost(itemKeys(lot.itemId))],
     ]);
-    if (pushLot(pack.itemId, '', '', row, cost)) lotCounts.finished += 1;
+    if (pushLot(lot.itemId, '', '', lot.row, cost, lot.qty)) lotCounts.finished += 1;
   }
 
   const lotRowCount = data.length;
@@ -392,8 +436,63 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     `Bakers COGS has ${bakersCogs.productCost.size} product and ${bakersCogs.materialCost.size} ingredient/packaging cost key(s)`,
     ...(costUnitTypes.size ? [`purchase-order cost units: ${[...costUnitTypes].slice(0, 6).join(', ')}`] : []),
     recipeInputsSummary(companyId, output),
-    await lotUsageSummary(companyId, bySource),
+    await lotUsageSummary(companyId, bySource, usageRows),
+    usageRows.length
+      ? `quantities: ${usageAdjustments.lots} lot(s) reduced by recorded usage (−${formatQty(usageAdjustments.reduced)}); finished goods ${formatQty(shipping.produced)} produced, ${formatQty(shipping.applied)} shipped taken off oldest lots first${shipping.unmatched > 0 ? `, ${formatQty(shipping.unmatched)} shipped beyond the lots in hand` : ''}; ${usage.shippedLines} shipped sales order line(s), ${usage.openLines} not shipped, ${usage.linesWithoutOrder} without a known order; sales order statuses: ${[...usage.orderStatuses.entries()].map(([status, count]) => `${status} ${count}`).join(', ') || 'none'}`
+      : 'quantities: no lot usage stored yet, so lot quantities are FoodReady’s own',
   ].join('; ');
+}
+
+const SHIPPED_ORDER_STATUS = /ship|deliver|complete|invoic|clos|fulfil/i;
+
+/**
+ * Totals from the stored usage pull: quantity used per lot (production and sales allocations), and
+ * quantity shipped per packaging or product from sales order lines whose order has shipped.
+ */
+function summarizeUsageRows(rows: OperationalRecordInput[], packaging: Map<string, { itemId: string; unitCost: number }>) {
+  const usedByLot = new Map<string, number>();
+  const shippedOrders = new Set<string>();
+  const knownOrders = new Set<string>();
+  const orderStatuses = new Map<string, number>();
+  for (const row of rows) {
+    const kind = text(row.dimensions, 'usageType');
+    if (kind === 'sales_order') {
+      const id = text(row.dimensions, 'recordId');
+      const status = text(row.dimensions, 'status') || 'no status';
+      knownOrders.add(id);
+      orderStatuses.set(status, (orderStatuses.get(status) || 0) + 1);
+      if (text(row.dimensions, 'shippedOn') || SHIPPED_ORDER_STATUS.test(status)) shippedOrders.add(id);
+    } else if (kind === 'production' || kind === 'sales') {
+      const lotId = text(row.dimensions, 'purchaseOrderItemLot') || text(row.dimensions, 'moBatchOutput');
+      if (lotId) usedByLot.set(lotId, (usedByLot.get(lotId) || 0) + amount(row.measures, 'qtyUsed'));
+    }
+  }
+  const shippedByPackaging = new Map<string, number>();
+  const shippedByItem = new Map<string, number>();
+  let shippedLines = 0;
+  let openLines = 0;
+  let linesWithoutOrder = 0;
+  for (const row of rows) {
+    if (text(row.dimensions, 'usageType') !== 'sales_line') continue;
+    const orderId = text(row.dimensions, 'so');
+    if (!knownOrders.has(orderId)) {
+      linesWithoutOrder += 1;
+      continue;
+    }
+    if (!shippedOrders.has(orderId)) {
+      openLines += 1;
+      continue;
+    }
+    shippedLines += 1;
+    const qty = amount(row.measures, 'orderQty');
+    const packId = text(row.dimensions, 'itemPackaging');
+    if (packId && packaging.has(packId)) shippedByPackaging.set(packId, (shippedByPackaging.get(packId) || 0) + qty);
+    else {
+      const itemId = text(row.dimensions, 'inventoryItem');
+      if (itemId) shippedByItem.set(itemId, (shippedByItem.get(itemId) || 0) + qty);
+    }
+  }
+  return { usedByLot, shippedByPackaging, shippedByItem, orderStatuses, shippedLines, openLines, linesWithoutOrder };
 }
 
 function formatQty(value: number): string {
@@ -437,7 +536,11 @@ async function loadDatasetRows(companyId: string, datasetKey: string): Promise<O
  * What FoodReady reports as used from each lot (production inputs and sales order lines), from the
  * latest background usage pull, against the lots in hand from this sync.
  */
-async function lotUsageSummary(companyId: string, bySource: Map<string, OperationalRecordInput[]>): Promise<string> {
+async function lotUsageSummary(
+  companyId: string,
+  bySource: Map<string, OperationalRecordInput[]>,
+  usage: OperationalRecordInput[],
+): Promise<string> {
   const [status] = await loadDatasetRows(companyId, FOODREADY_LOT_USAGE_STATUS_KEY);
   if (!status) return 'lot usage not pulled yet';
   const finishedAt = new Date(text(status.dimensions, 'finishedAt'));
@@ -445,12 +548,13 @@ async function lotUsageSummary(companyId: string, bySource: Map<string, Operatio
   const pullStatus = text(status.dimensions, 'status');
   if (pullStatus === 'running') return `lot usage pull in progress${when}: ${text(status.dimensions, 'message')}`;
   if (pullStatus !== 'ok') return `last lot usage pull failed${when}: ${text(status.dimensions, 'message')}`;
-  const usage = await loadDatasetRows(companyId, FOODREADY_LOT_USAGE_KEY);
   const totals = { production: { entries: 0, qty: 0 }, sales: { entries: 0, qty: 0 } };
   const usedByLot = new Map<string, number>();
   let salesWithCost = 0;
   for (const row of usage) {
-    const kind = text(row.dimensions, 'usageType') === 'sales' ? 'sales' : 'production';
+    const usageType = text(row.dimensions, 'usageType');
+    if (usageType !== 'production' && usageType !== 'sales') continue;
+    const kind = usageType;
     const qty = amount(row.measures, 'qtyUsed');
     totals[kind].entries += 1;
     totals[kind].qty += qty;
