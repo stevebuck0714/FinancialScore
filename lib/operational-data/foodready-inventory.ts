@@ -1,12 +1,13 @@
 import prisma from '@/lib/prisma';
 import { FOODREADY_SOURCE_CODE } from '@/lib/foodready';
 import { BAKERS_COGS_SOURCE_CODE } from '@/lib/operational/bakers-cogs';
-import { formatEstDate, previousEstCalendarDate } from '@/lib/time/eastern';
+import { formatEstDate, formatEstDateTime, previousEstCalendarDate } from '@/lib/time/eastern';
 import type { OperationalRecordInput, OperationalSourceOutput } from './types';
 
 export const FOODREADY_PURCHASE_ORDER_LINES_KEY = 'foodready.purchase_order_lines';
 export const FOODREADY_LOT_COSTS_KEY = 'foodready.lot_costs';
 export const FOODREADY_LOT_USAGE_KEY = 'foodready.lot_usage';
+export const FOODREADY_LOT_USAGE_STATUS_KEY = 'foodready.lot_usage_status';
 export const FOODREADY_RECIPE_INPUTS_KEY = 'foodready.recipe_inputs';
 export const FOODREADY_RECIPE_INPUTS_ENDPOINT = '/api/bomInput/search';
 export const FOODREADY_PURCHASED_LOTS_ENDPOINT = '/api/purchaseOrdersItemLots/search';
@@ -390,10 +391,8 @@ export async function writeFoodReadyInventorySnapshot(companyId: string, output:
     `costs entered in the Inventory report ${costSources.entered}, from purchase-order lines ${costSources.purchaseOrderLine}, supplier items ${costSources.supplierItem}, packaging ${costSources.packaging}, batch output ${costSources.batchOutput}, Bakers COGS products ${costSources.bakersCogsProduct}, Bakers COGS ingredients/packaging ${costSources.bakersCogsMaterial}, no cost ${costSources.none}`,
     `Bakers COGS has ${bakersCogs.productCost.size} product and ${bakersCogs.materialCost.size} ingredient/packaging cost key(s)`,
     ...(costUnitTypes.size ? [`purchase-order cost units: ${[...costUnitTypes].slice(0, 6).join(', ')}`] : []),
-    output[FOODREADY_RECIPE_INPUTS_KEY]
-      ? `${output[FOODREADY_RECIPE_INPUTS_KEY].rows.length} recipe input(s) (ingredients made in production are kept out of Finished Goods)`
-      : 'recipe inputs not pulled this sync',
-    lotUsageSummary(companyId, output, bySource),
+    recipeInputsSummary(companyId, output),
+    await lotUsageSummary(companyId, bySource),
   ].join('; ');
 }
 
@@ -401,19 +400,50 @@ function formatQty(value: number): string {
   return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
-/** Why the last lot usage pull for a company failed; read by the snapshot note in the same sync run. */
-const lotUsageFailures = new Map<string, string>();
+/** Why the recipe input pull failed in this sync run; read by the snapshot note in the same run. */
+const recipeInputsFailures = new Map<string, string>();
 
-export function setFoodReadyLotUsageFailure(companyId: string, reason: string) {
-  lotUsageFailures.set(companyId, reason);
+export function setFoodReadyRecipeInputsFailure(companyId: string, reason: string) {
+  recipeInputsFailures.set(companyId, reason);
 }
 
-/** What FoodReady reports as used from each lot (production inputs and sales order lines), against the lots in hand. */
-function lotUsageSummary(companyId: string, output: OperationalSourceOutput, bySource: Map<string, OperationalRecordInput[]>): string {
-  const failure = lotUsageFailures.get(companyId);
-  lotUsageFailures.delete(companyId);
-  const usage = output[FOODREADY_LOT_USAGE_KEY]?.rows;
-  if (!usage) return failure ? `lot usage not pulled: ${failure}` : 'lot usage not pulled (only syncs that include today pull it)';
+function recipeInputsSummary(companyId: string, output: OperationalSourceOutput): string {
+  const failure = recipeInputsFailures.get(companyId);
+  recipeInputsFailures.delete(companyId);
+  const rows = output[FOODREADY_RECIPE_INPUTS_KEY]?.rows;
+  if (rows) return `${rows.length} recipe input(s) (ingredients made in production are kept out of Finished Goods)`;
+  return failure ? `recipe inputs not pulled: ${failure}` : 'recipe inputs not pulled (only syncs that include today pull them)';
+}
+
+async function loadDatasetRows(companyId: string, datasetKey: string): Promise<OperationalRecordInput[]> {
+  const dataset = await prisma.operationalDataset.findUnique({
+    where: { companyId_datasetKey: { companyId, datasetKey } },
+    select: { id: true },
+  });
+  if (!dataset) return [];
+  const records = await prisma.operationalRecord.findMany({
+    where: { datasetId: dataset.id, dataMode: 'LIVE' },
+    select: { externalId: true, recordDate: true, dimensions: true, measures: true },
+  });
+  return records.map((record) => ({
+    date: record.recordDate.toISOString().slice(0, 10),
+    externalId: record.externalId,
+    dimensions: (record.dimensions || {}) as Dimensions,
+    measures: (record.measures || {}) as Measures,
+  }));
+}
+
+/**
+ * What FoodReady reports as used from each lot (production inputs and sales order lines), from the
+ * latest background usage pull, against the lots in hand from this sync.
+ */
+async function lotUsageSummary(companyId: string, bySource: Map<string, OperationalRecordInput[]>): Promise<string> {
+  const [status] = await loadDatasetRows(companyId, FOODREADY_LOT_USAGE_STATUS_KEY);
+  if (!status) return 'lot usage not pulled yet';
+  const finishedAt = new Date(text(status.dimensions, 'finishedAt'));
+  const when = Number.isNaN(finishedAt.getTime()) ? '' : ` (${formatEstDateTime(finishedAt)} EST)`;
+  if (text(status.dimensions, 'status') !== 'ok') return `last lot usage pull failed${when}: ${text(status.dimensions, 'message')}`;
+  const usage = await loadDatasetRows(companyId, FOODREADY_LOT_USAGE_KEY);
   const totals = { production: { entries: 0, qty: 0 }, sales: { entries: 0, qty: 0 } };
   const usedByLot = new Map<string, number>();
   let salesWithCost = 0;
@@ -439,7 +469,7 @@ function lotUsageSummary(companyId: string, output: OperationalSourceOutput, byS
   const purchased = inHand(FOODREADY_PURCHASED_LOTS_ENDPOINT, 'totalQuantityReceived');
   const finished = inHand(FINISHED_GOODS_LOTS_ENDPOINT, 'totalQtyProducedPerBatch');
   return [
-    `lot usage: ${totals.production.entries} production input(s) using ${formatQty(totals.production.qty)}, ${totals.sales.entries} sales order allocation(s) using ${formatQty(totals.sales.qty)} (${salesWithCost} with a unit cost), across ${usedByLot.size} lot(s)`,
+    `lot usage${when}: ${totals.production.entries} production input(s) using ${formatQty(totals.production.qty)}, ${totals.sales.entries} sales order allocation(s) using ${formatQty(totals.sales.qty)} (${salesWithCost} with a unit cost), across ${usedByLot.size} lot(s)`,
     `purchased lots in hand: ${purchased.withUsage} of ${purchased.lots} have usage; received ${formatQty(purchased.received)}, FoodReady in hand ${formatQty(purchased.inHand)}, used ${formatQty(purchased.used)}`,
     `finished-goods lots in hand: ${finished.withUsage} of ${finished.lots} have usage; produced ${formatQty(finished.received)}, FoodReady in hand ${formatQty(finished.inHand)}, used ${formatQty(finished.used)}`,
   ].join('; ');

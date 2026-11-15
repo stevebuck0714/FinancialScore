@@ -9,18 +9,21 @@ import {
   withDefaultFoodReadyDomains,
   type FoodReadyCredentials,
 } from '@/lib/foodready';
+import { after } from 'next/server';
 import { formatEstDate } from '@/lib/time/eastern';
+import { writeOperationalSourceOutput } from '../store';
 import type { OperationalDatasetSchema, OperationalRecordInput, OperationalSourceAdapter, OperationalSourceOutput, OperationalSyncWindow } from '../types';
 import { FULL_WINDOW, asRecord, readConnectionMetadata } from './common';
 import {
   FOODREADY_LOT_USAGE_KEY,
+  FOODREADY_LOT_USAGE_STATUS_KEY,
   FOODREADY_PURCHASE_ORDER_LINES_KEY,
   FOODREADY_RECIPE_INPUTS_ENDPOINT,
   FOODREADY_RECIPE_INPUTS_KEY,
   FOODREADY_PURCHASED_LOTS_ENDPOINT,
   foodReadyRef,
   listFoodReadyPurchaseOrderLineIds,
-  setFoodReadyLotUsageFailure,
+  setFoodReadyRecipeInputsFailure,
   writeFoodReadyInventorySnapshot,
 } from '../foodready-inventory';
 
@@ -45,8 +48,9 @@ const PO_LINE_LOOKUP_BUDGET_MS = 90_000;
 const PO_LINE_LOOKUP_CUTOFF_MS = 200_000;
 const PO_LINE_LOOKUP_CONCURRENCY = 2;
 const PURCHASE_ORDER_LINES_ENDPOINT = '/api/purchaseOrdersItems/search';
-/** The lot usage pull is skipped if it is still running this long after the sync started. */
-const LOT_USAGE_CUTOFF_MS = 170_000;
+/** The background lot usage pull stops this long after it starts, inside its own 300s function limit. */
+const LOT_USAGE_BUDGET_MS = 250_000;
+export const FOODREADY_LOT_USAGE_PULL_PATH = '/api/admin/foodready-lot-usage';
 const LOT_USAGE_ENDPOINTS = [
   ['production', '/api/moBatchInput/search'],
   ['sales', '/api/salesOrderItems'],
@@ -59,6 +63,15 @@ const RECIPE_INPUTS_SCHEMA: OperationalDatasetSchema = {
   grain: 'point_in_time',
   dimensions: [{ name: 'sourceObject' }, { name: 'bom' }, { name: 'inventoryItem' }, { name: 'itemPackaging' }, { name: 'supplierItem' }],
   measures: [{ name: 'recordCount', description: 'Always 1; sum to count records.' }, { name: 'inputQuantity' }],
+};
+
+const LOT_USAGE_STATUS_SCHEMA: OperationalDatasetSchema = {
+  key: FOODREADY_LOT_USAGE_STATUS_KEY,
+  label: 'FoodReady Lot Usage Pull Status',
+  description: 'Outcome of the latest background FoodReady lot usage pull.',
+  grain: 'point_in_time',
+  dimensions: [{ name: 'status' }, { name: 'message' }, { name: 'finishedAt' }],
+  measures: [{ name: 'recordCount', description: 'Always 1.' }, { name: 'rows' }],
 };
 
 const LOT_USAGE_SCHEMA: OperationalDatasetSchema = {
@@ -369,6 +382,33 @@ export async function syncFoodReady(
 
   const today = formatEstDate();
   const output: OperationalSourceOutput = {};
+  // Recipe inputs are a small list; pulling them first keeps the slower domain pulls from crowding them out.
+  if (window.endDate >= today) {
+    try {
+      const inputs = (await fetchAllFoodReadyRecords(credentials, FOODREADY_RECIPE_INPUTS_ENDPOINT))
+        .filter((raw) => raw.deleted !== true && !raw.deletedAt)
+        .map(flattenRecord);
+      output[FOODREADY_RECIPE_INPUTS_KEY] = {
+        schema: RECIPE_INPUTS_SCHEMA,
+        replaceWindow: true,
+        window: FULL_WINDOW,
+        rows: inputs.map((record, index) => ({
+          date: today,
+          externalId: String(record.id ?? index),
+          dimensions: {
+            sourceObject: FOODREADY_RECIPE_INPUTS_ENDPOINT,
+            bom: String(record.bom ?? record.bomId ?? '') || undefined,
+            inventoryItem: String(record.inventoryItem ?? record.inventoryItemId ?? '') || undefined,
+            itemPackaging: String(record.itemPackaging ?? record.itemPackagingId ?? '') || undefined,
+            supplierItem: String(record.supplierItem ?? record.supplierItemId ?? '') || undefined,
+          },
+          measures: { recordCount: 1, ...(typeof record.inputQuantity === 'number' ? { inputQuantity: record.inputQuantity } : {}) },
+        })),
+      };
+    } catch (error) {
+      setFoodReadyRecipeInputsFailure(companyId, error instanceof Error ? error.message : String(error));
+    }
+  }
   for (const domain of configuredFoodReadyDomains(metadata)) {
     const currentStateQuery = CURRENT_STATE_QUERY[domain.sourceObject];
     const currentState = Boolean(currentStateQuery);
@@ -395,48 +435,6 @@ export async function syncFoodReady(
     };
   }
 
-  if (window.endDate >= today) {
-    try {
-      const inputs = (await fetchAllFoodReadyRecords(credentials, FOODREADY_RECIPE_INPUTS_ENDPOINT, {}, syncStartedAt + LOT_USAGE_CUTOFF_MS))
-        .filter((raw) => raw.deleted !== true && !raw.deletedAt)
-        .map(flattenRecord);
-      output[FOODREADY_RECIPE_INPUTS_KEY] = {
-        schema: RECIPE_INPUTS_SCHEMA,
-        replaceWindow: true,
-        window: FULL_WINDOW,
-        rows: inputs.map((record, index) => ({
-          date: today,
-          externalId: String(record.id ?? index),
-          dimensions: {
-            sourceObject: FOODREADY_RECIPE_INPUTS_ENDPOINT,
-            bom: String(record.bom ?? record.bomId ?? '') || undefined,
-            inventoryItem: String(record.inventoryItem ?? record.inventoryItemId ?? '') || undefined,
-            itemPackaging: String(record.itemPackaging ?? record.itemPackagingId ?? '') || undefined,
-            supplierItem: String(record.supplierItem ?? record.supplierItemId ?? '') || undefined,
-          },
-          measures: { recordCount: 1, ...(typeof record.inputQuantity === 'number' ? { inputQuantity: record.inputQuantity } : {}) },
-        })),
-      };
-    } catch (error) {
-      console.warn('[foodready] recipe inputs not pulled:', error instanceof Error ? error.message : error);
-    }
-  }
-
-  if (window.endDate >= today) {
-    const startedAfter = Math.round((Date.now() - syncStartedAt) / 1000);
-    const pulled: Record<string, number> = {};
-    try {
-      const usage = await fetchLotUsage(credentials, today, syncStartedAt + LOT_USAGE_CUTOFF_MS, pulled);
-      output[FOODREADY_LOT_USAGE_KEY] = { schema: LOT_USAGE_SCHEMA, rows: usage, replaceWindow: true, window: FULL_WINDOW };
-    } catch (error) {
-      const finished = Object.entries(pulled).map(([endpoint, count]) => `${endpoint} ${count} record(s)`).join(', ') || 'none';
-      setFoodReadyLotUsageFailure(
-        companyId,
-        `started ${startedAfter}s into the sync, stopped at ${Math.round((Date.now() - syncStartedAt) / 1000)}s; finished endpoints: ${finished}; error: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
   const purchasedLotIds = Object.values(output)
     .flatMap((dataset) => dataset.rows)
     .filter((row) => row.dimensions?.sourceObject === FOODREADY_PURCHASED_LOTS_ENDPOINT)
@@ -448,16 +446,102 @@ export async function syncFoodReady(
   return output;
 }
 
+/**
+ * Pull every production input and sales order lot allocation and store it as FoodReady Lot Usage.
+ * Runs as its own request after a sync, because the sync itself has no time left for it.
+ */
+export async function pullFoodReadyLotUsage(companyId: string): Promise<{ ok: boolean; rows: number; message: string }> {
+  const startedAt = Date.now();
+  const { connection } = await readConnectionMetadata(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
+  const credentials = connection?.status === 'ACTIVE' ? foodReadyCredentialsFromConnection(connection) : null;
+  if (!credentials) return { ok: false, rows: 0, message: 'FoodReady is not connected for this company.' };
+
+  const today = formatEstDate();
+  const pulled: Record<string, number> = {};
+  let result: { ok: boolean; rows: number; message: string };
+  const output: OperationalSourceOutput = {};
+  try {
+    const usage = await fetchLotUsage(credentials, today, startedAt + LOT_USAGE_BUDGET_MS, pulled);
+    output[FOODREADY_LOT_USAGE_KEY] = { schema: LOT_USAGE_SCHEMA, rows: usage, replaceWindow: true, window: FULL_WINDOW };
+    const counts = Object.entries(pulled).map(([endpoint, count]) => `${endpoint} ${count} record(s)`).join(', ');
+    result = { ok: true, rows: usage.length, message: `${usage.length} lot allocation(s) from ${counts} in ${Math.round((Date.now() - startedAt) / 1000)}s` };
+  } catch (error) {
+    const finished = Object.entries(pulled).map(([endpoint, count]) => `${endpoint} ${count} record(s)`).join(', ') || 'none';
+    result = {
+      ok: false,
+      rows: 0,
+      message: `stopped after ${Math.round((Date.now() - startedAt) / 1000)}s; finished endpoints: ${finished}; error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  output[FOODREADY_LOT_USAGE_STATUS_KEY] = {
+    schema: LOT_USAGE_STATUS_SCHEMA,
+    replaceWindow: true,
+    window: FULL_WINDOW,
+    rows: [
+      {
+        date: today,
+        externalId: 'latest',
+        dimensions: { status: result.ok ? 'ok' : 'failed', message: result.message.slice(0, 900), finishedAt: new Date().toISOString() },
+        measures: { recordCount: 1, rows: result.rows },
+      },
+    ],
+  };
+  await writeOperationalSourceOutput({ companyId, adapter: FOODREADY_ADAPTER, output, mode: 'LIVE', window: FULL_WINDOW });
+  return result;
+}
+
+function appBaseUrl(): string {
+  for (const value of [process.env.NEXTAUTH_URL, process.env.NEXT_PUBLIC_APP_URL, process.env.WORKER_BASE_URL, process.env.VERCEL_URL]) {
+    const candidate = String(value || '').trim().replace(/\/+$/, '');
+    if (candidate) return /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+  }
+  return '';
+}
+
+/** Start the lot usage pull in its own function invocation once this request has responded. */
+function scheduleFoodReadyLotUsagePull(companyId: string): string {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  const origin = appBaseUrl();
+  if (!cronSecret || !origin) return 'lot usage pull not started (CRON_SECRET or app base URL missing)';
+  try {
+    after(async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        await fetch(new URL(FOODREADY_LOT_USAGE_PULL_PATH, origin), {
+          method: 'POST',
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: { 'content-type': 'application/json', 'x-cron-secret': cronSecret },
+          body: JSON.stringify({ companyId }),
+        });
+      } catch (error) {
+        // An abort only means this request stopped waiting; the pull keeps running in its own invocation.
+        if (!(error instanceof Error && error.name === 'AbortError')) console.warn('[foodready] lot usage pull did not start:', error);
+      } finally {
+        clearTimeout(timeout);
+      }
+    });
+    return 'lot usage pull started in the background; its results show in the next sync message';
+  } catch {
+    return 'lot usage pull not started (no request context)';
+  }
+}
+
 export const FOODREADY_ADAPTER: OperationalSourceAdapter = {
   sourceCode: FOODREADY_SOURCE_CODE,
   provider: 'FOODREADY',
   label: FOODREADY_LABEL,
   datasetPrefix: 'foodready',
   history: 'range',
-  historyNote: 'Each FoodReady sync stores the records dated inside the sync window (scheduled syncs re-pull the Overlap Days). Inventory on hand, lots in hand, items, recipes, suppliers and supplier items are current-state lists, refreshed whenever a sync includes today. Lot usage (production inputs and sales order allocations) is pulled for all dates on those syncs.',
+  historyNote: 'Each FoodReady sync stores the records dated inside the sync window (scheduled syncs re-pull the Overlap Days). Inventory on hand, lots in hand, items, recipes, suppliers and supplier items are current-state lists, refreshed whenever a sync includes today. Recipe inputs are pulled on those syncs too, and lot usage (production inputs and sales order allocations, all dates) is pulled in the background right after them.',
   defaultHistoryDays: 365,
   dynamicDatasets: true,
   datasets: [],
   sync: (context) => syncFoodReady(context),
-  afterLiveWrite: (companyId, output) => writeFoodReadyInventorySnapshot(companyId, output),
+  afterLiveWrite: async (companyId, output) => {
+    const note = await writeFoodReadyInventorySnapshot(companyId, output);
+    if (!output[FOODREADY_RECIPE_INPUTS_KEY] && !Object.values(output).some((dataset) => dataset.window === FULL_WINDOW)) return note;
+    return `${note}; ${scheduleFoodReadyLotUsagePull(companyId)}`;
+  },
 };
