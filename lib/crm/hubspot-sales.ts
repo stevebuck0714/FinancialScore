@@ -1,4 +1,5 @@
 import { fetchHubSpotPages, HubSpotDeal, hubSpotOwnerName, HubSpotOwner, HUBSPOT_SOURCE_CODE } from '@/lib/hubspot';
+import { hashCacheParts, readDerivedApiCache, writeDerivedApiCache } from '@/lib/derived-api-cache';
 import { asAmount, buildCrmReports, crmEstDate, summarizeOpportunities, type CrmActivityDetail, type CrmOpportunity } from './sales-data';
 
 const DEAL_PROPERTIES = 'dealname,pipeline,amount,dealstage,hubspot_owner_id,closedate,createdate,hs_is_closed_won,hs_is_closed_lost,hs_date_entered_dealstage';
@@ -9,9 +10,52 @@ const ACTIVITY_PROPERTIES: Record<(typeof ACTIVITY_TYPES)[number], string> = {
   tasks: 'hs_task_subject,hs_task_status,hs_task_priority,hs_timestamp,hubspot_owner_id',
 };
 const CONTACT_PROPERTIES = 'firstname,lastname,email,phone,mobilephone,jobtitle,city,state,country,lifecyclestage,hs_analytics_source,createdate,hs_last_sales_activity_timestamp';
-const COMPANY_PROPERTIES = 'name,domain,industry,type,lifecyclestage,createdate,hs_last_sales_activity_timestamp';
+const COMPANY_PROPERTIES = [
+  'name,domain,industry,type,lifecyclestage,createdate,hs_last_sales_activity_timestamp',
+  'hubspot_owner_id,num_associated_contacts,hs_num_decision_makers,notes_last_contacted,hs_last_booked_meeting_date',
+  'numberofemployees,city,state,is_public',
+  // Cogent account-planning fields; HubSpot omits properties a portal does not define.
+  'cogent_pursuit_tiers,focus_account,cogent_company_icp_fit_score_v1,icp_review_status,icp_estimated_team_opportunity,icp_inhouse_discovery_lab',
+].join(',');
 
 type HubSpotConnection = { accessToken: string; connectionMetadata?: unknown };
+
+const MAX_PAGES = 100;
+const SALES_CACHE_NAMESPACE = 'hubspot-sales';
+const SALES_CACHE_VERSION = 'v1';
+const SALES_CACHE_TTL_SECONDS = 26 * 60 * 60;
+
+/**
+ * Sales tab payload, reused until the connection changes (key, data domains, or a sync
+ * stamping lastSyncAt) so page opens do not re-read HubSpot.
+ */
+export async function loadCachedHubSpotSalesData(
+  companyId: string,
+  connection: HubSpotConnection & { updatedAt?: Date | null; lastSyncAt?: Date | null }
+) {
+  const cacheKey = hashCacheParts([SALES_CACHE_NAMESPACE, companyId]);
+  const dataVersion = [
+    SALES_CACHE_VERSION,
+    connection.updatedAt?.toISOString() || '',
+    connection.lastSyncAt?.toISOString() || '',
+  ].join(':');
+  const cached = await readDerivedApiCache<Awaited<ReturnType<typeof loadHubSpotSalesData>>>({
+    namespace: SALES_CACHE_NAMESPACE,
+    cacheKey,
+    dataVersion,
+  }).catch(() => null);
+  if (cached) return cached;
+  const payload = await loadHubSpotSalesData(connection);
+  if (payload.companies.error || payload.contacts.error) return payload;
+  await writeDerivedApiCache({
+    namespace: SALES_CACHE_NAMESPACE,
+    cacheKey,
+    dataVersion,
+    payload,
+    ttlSeconds: SALES_CACHE_TTL_SECONDS,
+  }).catch((error) => console.warn('HubSpot sales cache write failed:', error));
+  return payload;
+}
 
 /** HubSpot CRM read for the Sales tab, in the shared CRM sales payload shape. */
 export async function loadHubSpotSalesData(connection: HubSpotConnection) {
@@ -33,7 +77,7 @@ export async function loadHubSpotSalesData(connection: HubSpotConnection) {
     if (!domainEnabled(domain)) return { records: [] as HubSpotDeal[], enabled: false, error: null as string | null };
     try {
       return {
-        records: await fetchHubSpotPages<HubSpotDeal>(token, `/crm/v3/objects/${objectType}`, { limit: '100', properties, ...(associations ? { associations } : {}) }, 10),
+        records: await fetchHubSpotPages<HubSpotDeal>(token, `/crm/v3/objects/${objectType}`, { limit: '100', properties, ...(associations ? { associations } : {}) }, MAX_PAGES),
         enabled: true,
         error: null as string | null,
       };
@@ -41,22 +85,29 @@ export async function loadHubSpotSalesData(connection: HubSpotConnection) {
       return { records: [] as HubSpotDeal[], enabled: true, error: error instanceof Error ? error.message : 'HubSpot object query failed.' };
     }
   };
-  const [companies, contacts] = await Promise.all([
-    fetchCrmRecords('Companies', 'companies', COMPANY_PROPERTIES),
-    fetchCrmRecords('Contacts', 'contacts', CONTACT_PROPERTIES, 'companies'),
-  ]);
-
-  const [deals, owners, activities] = await Promise.all([
-    includeDeals ? fetchHubSpotPages<HubSpotDeal>(token, '/crm/v3/objects/deals', { limit: '100', properties: DEAL_PROPERTIES }) : Promise.resolve([] as HubSpotDeal[]),
-    includeOwners ? fetchHubSpotPages<HubSpotOwner>(token, '/crm/v3/owners', { limit: '100' }) : Promise.resolve([] as HubSpotOwner[]),
-    includeActivities
-      ? Promise.all(ACTIVITY_TYPES.map((activityType) =>
-          fetchHubSpotPages<HubSpotDeal>(token, `/crm/v3/objects/${activityType}`, { limit: '100', properties: ACTIVITY_PROPERTIES[activityType] }, 10)
-            .then((records) => ({ activityType, count: records.length, records }))
-        ))
-      : Promise.resolve([] as Array<{ activityType: string; count: number; records: HubSpotDeal[] }>),
-  ]);
+  // Objects are read one at a time to stay under HubSpot's per-10-second request limit.
+  const companies = await fetchCrmRecords('Companies', 'companies', COMPANY_PROPERTIES);
+  const contacts = await fetchCrmRecords('Contacts', 'contacts', CONTACT_PROPERTIES, 'companies');
+  const deals = includeDeals
+    ? await fetchHubSpotPages<HubSpotDeal>(token, '/crm/v3/objects/deals', { limit: '100', properties: DEAL_PROPERTIES }, MAX_PAGES)
+    : [] as HubSpotDeal[];
+  const owners = includeOwners
+    ? await fetchHubSpotPages<HubSpotOwner>(token, '/crm/v3/owners', { limit: '100' })
+    : [] as HubSpotOwner[];
+  const activities: Array<{ activityType: string; count: number; records: HubSpotDeal[] }> = [];
+  if (includeActivities) {
+    for (const activityType of ACTIVITY_TYPES) {
+      const records = await fetchHubSpotPages<HubSpotDeal>(token, `/crm/v3/objects/${activityType}`, { limit: '100', properties: ACTIVITY_PROPERTIES[activityType] }, MAX_PAGES);
+      activities.push({ activityType, count: records.length, records });
+    }
+  }
   const ownersById = new Map(owners.map((owner) => [String(owner.id), hubSpotOwnerName(owner)]));
+  for (const company of companies.records) {
+    const ownerId = String(company.properties?.hubspot_owner_id || '');
+    if (ownerId && ownersById.has(ownerId)) {
+      company.properties = { ...company.properties, hubspot_owner_name: ownersById.get(ownerId) };
+    }
+  }
 
   const opportunities: CrmOpportunity[] = deals.map((deal) => {
     const properties = deal.properties || {};

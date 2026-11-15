@@ -74,6 +74,12 @@ export async function POST(request: NextRequest) {
       window = validated.window;
     }
     const result = await runOperationalSource({ companyId, sourceCode, mode: action === 'run_live' ? 'LIVE' : 'MOCK', window });
+    // A manual Sync Now covers the same window as the nightly sync, so it counts as the last sync; a date-range sync does not.
+    if (action === 'run_live' && !window && result.ok) {
+      await prisma.operationalSystemConnection
+        .updateMany({ where: { companyId, sourceCode }, data: { lastSyncAt: new Date() } })
+        .catch((error) => console.warn('Operational source lastSyncAt update failed:', error));
+    }
     return NextResponse.json(result, { status: result.ok ? 200 : 422 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Operational source action failed';

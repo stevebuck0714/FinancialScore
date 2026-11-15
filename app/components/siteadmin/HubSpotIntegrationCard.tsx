@@ -37,6 +37,8 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
   const [incrementalSync, setIncrementalSync] = useState<'YES' | 'NO'>('YES');
   const [domains, setDomains] = useState<DataDomain[]>([]);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
   const [error, setError] = useState('');
 
   const load = async () => {
@@ -150,6 +152,28 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
       setSaving(false);
     }
   };
+  const syncNow = async () => {
+    if (!requireConnection()) return;
+    try {
+      setSyncing(true);
+      setError('');
+      setSyncMessage('');
+      const response = await fetch('/api/operational-data/store/sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, sourceCode: 'HUBSPOT_STANDARD', action: 'run_live' }),
+      });
+      const result = await response.json().catch(() => ({ error: `HubSpot sync stopped before finishing (HTTP ${response.status}); nothing from this run was stored.` }));
+      if (!response.ok || !result.ok) throw new Error(result.error || result.skipped || 'HubSpot sync failed.');
+      const rows = Array.isArray(result.datasets) ? result.datasets.reduce((total: number, dataset: { written?: number }) => total + Number(dataset.written || 0), 0) : 0;
+      setSyncMessage(`Synced ${rows.toLocaleString('en-US')} row(s).${result.note ? ` ${result.note}.` : ''}`);
+      await load();
+    } catch (syncError: any) {
+      setError(syncError?.message || 'HubSpot sync failed.');
+    } finally {
+      setSyncing(false);
+    }
+  };
   const probeDomains = () => {
     const enabled = domains.filter((domain) => domain.enabled).map((domain) => domain.dataDomain).filter(Boolean);
     alert(`HubSpot domains configured for this connection:\n\n${enabled.length ? enabled.join('\n') : 'No enabled domains'}`);
@@ -190,7 +214,7 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
             <button onClick={() => void saveConnection()} disabled={saving} style={actionButton('#334155', false)}>{saving ? 'Saving…' : 'Save'}</button>
             <button onClick={() => void validateConnection()} disabled={saving} style={actionButton('#0ea5e9', saving)}>Revalidate</button>
             <button onClick={() => void runSalesRead('test')} disabled={saving} style={actionButton('#16a34a', saving)}>Run Sync Test</button>
-            <button onClick={() => void runSalesRead('sync')} disabled={saving} style={actionButton('#0f766e', saving)}>Sync HubSpot Now</button>
+            <button onClick={() => void syncNow()} disabled={saving || syncing} style={actionButton('#0f766e', saving || syncing)}>{syncing ? 'Syncing…' : 'Sync HubSpot Now'}</button>
             <button onClick={probeDomains} disabled={saving} style={actionButton('#7c3aed', saving)}>Probe Domains</button>
           </div>
         </div>
@@ -218,6 +242,7 @@ export default function HubSpotIntegrationCard({ companyId }: { companyId: strin
         <p style={{ margin: '0 0 14px', color: '#475569', fontSize: '12px' }}>HubSpot operational domains available for downstream sales reporting</p>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}><thead><tr><th style={{ textAlign: 'left', padding: '6px' }}>Data Domain</th><th style={{ textAlign: 'left', padding: '6px' }}>HubSpot Entity</th><th style={{ padding: '6px' }}>Enabled</th><th style={{ padding: '6px' }}>Action</th></tr></thead><tbody>{domains.map((domain, index) => <tr key={`${domain.dataDomain}-${index}`}><td style={{ padding: '6px' }}><input value={domain.dataDomain} onChange={(event) => updateDomain(index, 'dataDomain', event.target.value)} style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px' }} /></td><td style={{ padding: '6px' }}><input value={domain.sourceObject} onChange={(event) => updateDomain(index, 'sourceObject', event.target.value)} style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px' }} /></td><td style={{ textAlign: 'center', padding: '6px' }}><input type="checkbox" checked={domain.enabled} onChange={(event) => updateDomain(index, 'enabled', event.target.checked)} /></td><td style={{ padding: '6px' }}><button onClick={() => setDomains((current) => current.filter((_, domainIndex) => domainIndex !== index))} disabled={saving} style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px' }}>Delete</button></td></tr>)}</tbody></table>
       </div>
+      {syncMessage ? <div style={{ color: '#166534', fontSize: '12px', gridColumn: '1 / -1' }}>{syncMessage}</div> : null}
       {error ? <div style={{ color: '#b91c1c', fontSize: '12px', gridColumn: '1 / -1' }}>{error}</div> : null}
     </div>
   );

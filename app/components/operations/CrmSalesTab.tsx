@@ -3,6 +3,18 @@
 import { useEffect, useState } from 'react';
 import { addEstCalendarMonths, formatEstDate, formatEstDateLabel, formatEstDateTime } from '@/lib/time/eastern';
 import type { CrmOpportunity } from '@/lib/crm/sales-data';
+import {
+  buildCoverageRows,
+  buildQualificationRows,
+  CONTACT_BUCKET_LABELS,
+  dataCompleteness,
+  hasAccountPlanningData,
+  priorityAccounts,
+  teamOpportunityBands,
+  toAccountRows,
+  type AccountRow,
+  type ContactBucket,
+} from '@/lib/crm/account-coverage';
 import SortableReportCollection, { type SortableReportCollectionItem } from './SortableReportCollection';
 
 type Props = {
@@ -140,6 +152,9 @@ export default function CrmSalesTab({
   const [selectedPipeline, setSelectedPipeline] = useState('');
   const [expandedIndustry, setExpandedIndustry] = useState<string | null>(null);
   const [expandedActivityStatus, setExpandedActivityStatus] = useState<string | null>(null);
+  const [coverageDrill, setCoverageDrill] = useState<{ rowKey: string; column: string } | null>(null);
+  const [prioritySearch, setPrioritySearch] = useState('');
+  const [priorityPage, setPriorityPage] = useState(0);
   const [tableSorts, setTableSorts] = useState<Record<string, { key: string; direction: 'asc' | 'desc' }>>({});
 
   useEffect(() => {
@@ -296,6 +311,40 @@ export default function CrmSalesTab({
   );
   const visibleAging = agingRows.slice(agingPage * pageSize, (agingPage + 1) * pageSize);
 
+  const accounts = toAccountRows(data?.companies?.records || [], today);
+  const showAccountReports = hasAccountPlanningData(accounts);
+  const coverageRows = buildCoverageRows(accounts, today);
+  const qualificationRows = buildQualificationRows(accounts);
+  const opportunityBands = teamOpportunityBands(accounts);
+  const completeness = dataCompleteness(accounts);
+  const showDecisionMakers = accounts.some((account) => (account.decisionMakers || 0) > 0);
+  const priorityRows = sortRows(
+    priorityAccounts(accounts).filter((account) => !prioritySearch.trim() || [account.name, account.tier, account.city, account.state, account.owner].join(' ').toLowerCase().includes(prioritySearch.trim().toLowerCase())),
+    'priorityAccounts'
+  );
+  const visiblePriority = priorityRows.slice(priorityPage * pageSize, (priorityPage + 1) * pageSize);
+  const coverageColumns: Array<{ key: string; label: string; rows: (row: (typeof coverageRows)[number]) => AccountRow[] }> = [
+    { key: 'accounts', label: 'Accounts', rows: (row) => row.accounts },
+    ...(Object.keys(CONTACT_BUCKET_LABELS) as ContactBucket[]).map((bucket) => ({ key: bucket, label: CONTACT_BUCKET_LABELS[bucket], rows: (row: (typeof coverageRows)[number]) => row.buckets[bucket] })),
+    { key: 'noContacts', label: 'No Contacts', rows: (row) => row.noContacts },
+    { key: 'meetings', label: 'Meeting Booked (90 Days)', rows: (row) => row.meetingsBooked },
+  ];
+  const drillRow = coverageDrill ? coverageRows.find((row) => row.key === coverageDrill.rowKey) : null;
+  const drillColumn = coverageDrill ? coverageColumns.find((column) => column.key === coverageDrill.column) : null;
+  const drillAccounts = drillRow && drillColumn ? sortRows(drillColumn.rows(drillRow), 'coverageDrill') : [];
+  const linkButton = { padding: 0, border: 0, background: 'transparent', color: '#1d4ed8', font: 'inherit', cursor: 'pointer', textDecoration: 'underline' } as const;
+  const daysAgo = (days: number | null) => (days == null ? '—' : number.format(days));
+  const accountTable = (rows: AccountRow[], table: string) => <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>
+    {sortableHeader(table, 'name', 'Company')}{sortableHeader(table, 'tierRank', 'Tier')}{sortableHeader(table, 'focus', 'Focus')}{sortableHeader(table, 'icpScore', 'ICP Score')}{sortableHeader(table, 'contacts', 'Contacts')}
+    {showDecisionMakers ? sortableHeader(table, 'decisionMakers', 'Decision Makers') : null}
+    {sortableHeader(table, 'lastContacted', 'Last Contacted')}{sortableHeader(table, 'daysSinceContact', 'Days Since')}{sortableHeader(table, 'lastMeeting', 'Last Meeting')}{sortableHeader(table, 'employees', 'Employees')}{sortableHeader(table, 'state', 'City / State')}{sortableHeader(table, 'owner', 'Owner')}
+  </tr></thead><tbody>{rows.length ? rows.map((account) => <tr key={account.id}>
+    <td style={cellStyle}>{account.name}</td><td style={cellStyle}>{account.tier}</td><td style={cellStyle}>{account.focus ? 'Yes' : '—'}</td><td style={cellStyle}>{account.icpScore == null ? '—' : number.format(account.icpScore)}</td><td style={cellStyle}>{account.contacts == null ? '—' : number.format(account.contacts)}</td>
+    {showDecisionMakers ? <td style={cellStyle}>{account.decisionMakers == null ? '—' : number.format(account.decisionMakers)}</td> : null}
+    <td style={cellStyle}>{formatCalendarDate(account.lastContacted)}</td><td style={cellStyle}>{daysAgo(account.daysSinceContact)}</td><td style={cellStyle}>{formatCalendarDate(account.lastMeeting)}</td><td style={cellStyle}>{account.employees == null ? '—' : number.format(account.employees)}</td><td style={cellStyle}>{[account.city, account.state].filter(Boolean).join(', ') || '—'}</td><td style={cellStyle}>{account.owner}</td>
+  </tr>) : emptyRow(showDecisionMakers ? 12 : 11, 'No accounts.')}</tbody></table></div>;
+  const completenessNote = completeness.length ? <div style={{ color: '#64748b', fontSize: '12px', marginTop: '10px' }}>Data completeness: {completeness.join(' · ')}</div> : null;
+
   const report = (id: string, node: React.ReactNode): SortableReportCollectionItem => ({ id, node });
   const standard = (id: string, render: () => React.ReactNode, available = true) => (isSectionEnabled(id) && available ? [report(id, render())] : []);
   const reportItems: SortableReportCollectionItem[] = [
@@ -305,6 +354,53 @@ export default function CrmSalesTab({
     ...standard('crmLeadSourcePerformance', () => <div style={reportStyle}><h3 style={titleStyle}>Lead Source Performance</h3><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('crmSources', 'key', 'Lead Source')}{sortableHeader('crmSources', 'total', 'Opportunities')}{sortableHeader('crmSources', 'openValue', 'Open Pipeline')}{sortableHeader('crmSources', 'wonCount', 'Won')}{sortableHeader('crmSources', 'wonValue', 'Won Value')}{sortableHeader('crmSources', 'winRate', 'Win Rate')}</tr></thead><tbody>{sortRows([...sourceRows].sort((a, b) => b.total - a.total), 'crmSources').map((row: any) => <tr key={row.key}><td style={cellStyle}>{row.key}</td><td style={cellStyle}>{number.format(row.total)}</td><td style={cellStyle}>{money.format(row.openValue)}</td><td style={cellStyle}>{number.format(row.wonCount)}</td><td style={cellStyle}>{money.format(row.wonValue)}</td><td style={cellStyle}>{percent(row.winRate)}</td></tr>)}</tbody></table></div>, hasOpportunities),
     ...standard('crmAgingOpportunities', () => <div style={reportStyle}><h3 style={{ ...titleStyle, margin: '0 0 4px' }}>Aging / Stale Opportunities</h3><div style={{ color: '#64748b', fontSize: '12px', marginBottom: '12px' }}>Open opportunities with no stage change in more than {STALE_OPPORTUNITY_DAYS} days</div><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('aging', 'name', 'Opportunity')}{sortableHeader('aging', 'owner', 'Sales Rep')}{sortableHeader('aging', 'pipeline', 'Pipeline')}{sortableHeader('aging', 'stage', 'Stage')}{sortableHeader('aging', 'value', 'Value')}{sortableHeader('aging', 'daysInStage', 'Days in Stage')}{sortableHeader('aging', 'createdDate', 'Created')}</tr></thead><tbody>{visibleAging.length ? visibleAging.map((row: any) => <tr key={row.id}><td style={cellStyle}>{row.name}</td><td style={cellStyle}>{row.owner}</td><td style={cellStyle}>{row.pipeline}</td><td style={cellStyle}>{row.stage}</td><td style={cellStyle}>{money.format(row.value)}</td><td style={cellStyle}>{row.daysInStage == null ? '—' : number.format(row.daysInStage)}</td><td style={cellStyle}>{formatCalendarDate(row.createdDate)}</td></tr>) : emptyRow(7, 'No stale opportunities.')}</tbody></table>{pagination(agingPage, agingRows.length, setAgingPage)}</div>, hasOpportunities),
     ...(showCogentView && isSectionEnabled('salesDealsByStage') && hasDeals ? [report('salesDealsByStage', <div style={reportStyle}><h3 style={titleStyle}>Deals by Stage</h3><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('stages', 'stage', 'Stage')}{sortableHeader('stages', 'dealCount', 'Deals')}{sortableHeader('stages', 'pipelineValue', 'Value')}</tr></thead><tbody>{sortRows(data?.stages || [], 'stages').map((row: any) => <tr key={row.stage}><td style={cellStyle}>{row.stage}</td><td style={cellStyle}>{number.format(row.dealCount)}</td><td style={cellStyle}>{money.format(row.pipelineValue)}</td></tr>)}</tbody></table></div>)] : []),
+    ...standard('crmTargetAccountCoverage', () => <div style={reportStyle}>
+      <h3 style={{ ...titleStyle, margin: '0 0 4px' }}>Target Account Coverage</h3>
+      <div style={{ color: '#64748b', fontSize: '12px', marginBottom: '12px' }}>Accounts by market tier and how recently each was contacted. Click a number to list the accounts.</div>
+      <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>
+        <th style={headingStyle}>Market Tier</th>
+        {coverageColumns.map((column) => <th key={column.key} style={headingStyle}>{column.label}</th>)}
+        <th style={headingStyle}>Avg Contacts</th>
+      </tr></thead><tbody>{coverageRows.map((row) => <tr key={row.key} style={row.key === '__total' ? { fontWeight: 700 } : undefined}>
+        <td style={cellStyle}>{row.label}</td>
+        {coverageColumns.map((column) => {
+          const count = column.rows(row).length;
+          const active = coverageDrill?.rowKey === row.key && coverageDrill.column === column.key;
+          return <td key={column.key} style={{ ...cellStyle, background: active ? '#eff6ff' : undefined }}>{count ? <button type="button" onClick={() => setCoverageDrill(active ? null : { rowKey: row.key, column: column.key })} style={linkButton}>{number.format(count)}</button> : '0'}</td>;
+        })}
+        <td style={cellStyle}>{row.avgContacts == null ? '—' : row.avgContacts.toFixed(1)}</td>
+      </tr>)}</tbody></table></div>
+      {drillRow && drillColumn ? <div style={{ marginTop: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <strong style={{ fontSize: '13px', color: '#0f172a' }}>{drillRow.label} · {drillColumn.label} ({number.format(drillAccounts.length)})</strong>
+          <button type="button" onClick={() => setCoverageDrill(null)}>Close</button>
+        </div>
+        {accountTable(drillAccounts, 'coverageDrill')}
+      </div> : null}
+      {completenessNote}
+    </div>, showAccountReports),
+    ...standard('crmPriorityAccounts', () => <div style={reportStyle}>
+      <h3 style={{ ...titleStyle, margin: '0 0 4px' }}>Priority Accounts Needing Attention</h3>
+      <div style={{ color: '#64748b', fontSize: '12px', marginBottom: '12px' }}>Focus accounts and Tier 1–3 accounts never contacted or not contacted in over 30 days, highest tier first.</div>
+      <input value={prioritySearch} onChange={(event) => { setPrioritySearch(event.target.value); setPriorityPage(0); }} placeholder="Search accounts" style={{ marginBottom: '10px' }} />
+      {accountTable(visiblePriority, 'priorityAccounts')}
+      {pagination(priorityPage, priorityRows.length, setPriorityPage)}
+    </div>, showAccountReports),
+    ...standard('crmOpportunitySizing', () => <div style={reportStyle}>
+      <h3 style={{ ...titleStyle, margin: '0 0 4px' }}>Opportunity Sizing &amp; ICP Qualification</h3>
+      <div style={{ color: '#64748b', fontSize: '12px', marginBottom: '12px' }}>ICP research progress and estimated scientific team opportunity by market tier.</div>
+      <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>
+        <th style={headingStyle}>Market Tier</th><th style={headingStyle}>Accounts</th><th style={headingStyle}>ICP Reviewed</th><th style={headingStyle}>Qualified</th><th style={headingStyle}>Research in Progress</th><th style={headingStyle}>Not Started</th>
+        {opportunityBands.map((band) => <th key={band} style={headingStyle}>{band}</th>)}
+        <th style={headingStyle}>In-House Lab Confirmed</th><th style={headingStyle}>In-House Lab Likely</th>
+      </tr></thead><tbody>{qualificationRows.map((row) => <tr key={row.key} style={row.key === '__total' ? { fontWeight: 700 } : undefined}>
+        <td style={cellStyle}>{row.label}</td><td style={cellStyle}>{number.format(row.accounts)}</td><td style={cellStyle}>{number.format(row.reviewed)}</td><td style={cellStyle}>{number.format(row.qualified)}</td><td style={cellStyle}>{number.format(row.inProgress)}</td><td style={cellStyle}>{number.format(row.notStarted)}</td>
+        {opportunityBands.map((band) => <td key={band} style={cellStyle}>{number.format(row.teamOpportunity[band] || 0)}</td>)}
+        <td style={cellStyle}>{number.format(row.labConfirmed)}</td><td style={cellStyle}>{number.format(row.labLikely)}</td>
+      </tr>)}</tbody></table></div>
+      {opportunityBands.length ? null : <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '8px' }}>No estimated team opportunity recorded yet. Columns appear as ICP research is entered in {providerLabel}.</div>}
+      {completenessNote}
+    </div>, showAccountReports),
     ...standard('hubspotEmployerMarketProfile', () => <div style={reportStyle}><h3 style={titleStyle}>Company Industry Profile</h3><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('companyIndustry', 'industry', 'Industry')}{sortableHeader('companyIndustry', 'count', 'Companies')}</tr></thead><tbody>{sortRows(crmReports.companyIndustry || [], 'companyIndustry').flatMap((row: any) => { const expanded = expandedIndustry === row.industry; return [<tr key={row.industry}><td style={cellStyle}><button type="button" onClick={() => setExpandedIndustry(expanded ? null : row.industry)} aria-expanded={expanded}>{expanded ? '− ' : '+ '}{row.industry}</button></td><td style={cellStyle}>{number.format(row.count)}</td></tr>, ...(expanded ? [<tr key={`${row.industry}-companies`}><td colSpan={2} style={cellStyle}>{companiesForIndustry(row.industry).map((company: any) => <span key={company.id} style={{ marginRight: '8px' }}>{company.properties?.name || 'Unnamed company'}</span>)}</td></tr>] : [])]; })}</tbody></table></div>),
     ...standard('hubspotSalesActivityByOwner', () => <div style={reportStyle}><h3 style={titleStyle}>Sales Activity by Owner</h3><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('activityOwner', 'owner', 'Owner')}{sortableHeader('activityOwner', 'count', 'Activities')}</tr></thead><tbody>{sortRows(crmReports.activityByOwner || [], 'activityOwner').map((row: any) => <tr key={row.owner}><td style={cellStyle}>{row.owner}</td><td style={cellStyle}>{number.format(row.count)}</td></tr>)}</tbody></table></div>),
     ...standard('hubspotSalesActivityStatus', () => <div style={reportStyle}><h3 style={titleStyle}>Sales Activity Status</h3><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('activityStatus', 'status', 'Status / Outcome')}{sortableHeader('activityStatus', 'count', 'Activities')}</tr></thead><tbody>{sortRows(crmReports.activityByStatus || [], 'activityStatus').flatMap((row: any) => { const status = row.status || '—'; const expanded = expandedActivityStatus === status; return [<tr key={status}><td style={cellStyle}><button type="button" onClick={() => setExpandedActivityStatus(expanded ? null : status)} aria-expanded={expanded}>{expanded ? '− ' : '+ '}{status}</button></td><td style={cellStyle}>{number.format(row.count)}</td></tr>, ...(expanded ? [<tr key={`${status}-detail`}><td colSpan={2} style={cellStyle}><table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr>{sortableHeader('activityStatusDetails', 'type', 'Activity')}{sortableHeader('activityStatusDetails', 'subject', 'Subject')}{sortableHeader('activityStatusDetails', 'owner', 'Owner')}{sortableHeader('activityStatusDetails', 'timestamp', 'Date')}{sortableHeader('activityStatusDetails', 'durationSeconds', 'Duration')}</tr></thead><tbody>{statusActivityRows.map((activity: any) => <tr key={activity.id}><td style={cellStyle}>{activity.type}</td><td style={cellStyle}>{activity.subject}</td><td style={cellStyle}>{activity.owner}</td><td style={cellStyle}>{formatCrmTimestamp(activity.timestamp)}</td><td style={cellStyle}>{activity.durationSeconds == null ? '—' : `${Math.round(activity.durationSeconds / 60)} min`}</td></tr>)}</tbody></table></td></tr>] : [])]; })}</tbody></table></div>),

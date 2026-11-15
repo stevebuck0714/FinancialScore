@@ -3,7 +3,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
 import { HUBSPOT_SOURCE_CODE } from '@/lib/hubspot';
 import { HIGHLEVEL_SOURCE_CODE, highLevelCredentialsFromConnection } from '@/lib/highlevel';
-import { loadHubSpotSalesData } from '@/lib/crm/hubspot-sales';
+import { loadCachedHubSpotSalesData } from '@/lib/crm/hubspot-sales';
 import { loadHighLevelSalesData } from '@/lib/crm/highlevel-sales';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
     const hubSpot = await getOperationalSystemConnection(companyId, 'HUBSPOT', HUBSPOT_SOURCE_CODE);
     if (hubSpot?.accessToken && hubSpot.status === 'ACTIVE') {
-      return NextResponse.json(await loadHubSpotSalesData({ accessToken: hubSpot.accessToken, connectionMetadata: hubSpot.connectionMetadata }));
+      return NextResponse.json(await loadCachedHubSpotSalesData(companyId, { ...hubSpot, accessToken: hubSpot.accessToken }));
     }
     return NextResponse.json(
       { ok: false, code: 'CRM_NOT_CONNECTED', error: 'No CRM is connected for this company. Connect HubSpot or HighLevel under Operational data sources in Site Administration.' },
