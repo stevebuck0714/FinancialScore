@@ -12684,14 +12684,14 @@ export default function OperationsTab({
       }> = [
         { key: 'item', label: 'APR P/N', width: '20ch', maxWidth: '20ch', render: (row) => row.item || 'N/A' },
         { key: 'order', label: 'Order', width: '10ch', maxWidth: '10ch', render: (row) => row.order || 'N/A' },
-        { key: 'line', label: 'Line', align: 'right', width: '6ch', maxWidth: '6ch', render: (row) => (row.line == null ? '' : row.line) },
-        { key: 'customerName', label: 'Customer Name', width: '108px', maxWidth: '126px', render: (row) => row.customerName || 'N/A' },
+        { key: 'line', label: 'Line', align: 'right', width: '8ch', maxWidth: '8ch', render: (row) => (row.line == null ? '' : row.line) },
+        { key: 'customerName', label: 'Customer Name', render: (row) => row.customerName || 'N/A' },
         { key: 'customerPartNumber', label: 'Customer P/N', width: '104px', maxWidth: '124px', render: (row) => row.customerPartNumber || 'N/A' },
         { key: 'isoDate', label: 'Date', width: '84px', maxWidth: '92px', render: (row) => formatRawDate(row.isoDate) },
         { key: 'qty', label: 'Qty ordered', align: 'right', width: '72px', maxWidth: '86px', render: (row) => formatRawQty(row.qty) },
         { key: 'qtyShipped', label: 'Qty shipped', align: 'right', width: '76px', maxWidth: '90px', render: (row) => (row.qtyShipped == null || !Number.isFinite(Number(row.qtyShipped)) ? '' : formatRawQty(row.qtyShipped)) },
-        { key: 'unitPrice', label: 'Unit Price', align: 'right', render: (row) => formatMoney(Number(row.unitPrice || 0), { currency: moneyCurrency, locale: moneyLocale, decimals: 4 }) },
-        { key: 'revenue', label: 'Revenue', align: 'right', render: (row) => formatCurrencyWithCents(row.revenue) },
+        { key: 'unitPrice', label: 'Unit Price', align: 'right', width: '88px', render: (row) => formatMoney(Number(row.unitPrice || 0), { currency: moneyCurrency, locale: moneyLocale, decimals: 4 }) },
+        { key: 'revenue', label: 'Revenue', align: 'right', width: '96px', render: (row) => formatCurrencyWithCents(row.revenue) },
       ];
       const openRawColumns: typeof rawColumns = [
         ...rawColumns.filter((column) => column.key !== 'revenue'),
@@ -12886,10 +12886,10 @@ export default function OperationsTab({
           )}
 
           <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: '1180px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#eff6ff', position: 'sticky', top: 0, zIndex: 1 }}>
-                  <th style={{ padding: '8px', fontSize: '12px', color: '#1e40af', textAlign: 'left', whiteSpace: 'nowrap' }}>Status</th>
+                  <th style={{ padding: '8px', fontSize: '12px', color: '#1e40af', textAlign: 'left', whiteSpace: 'nowrap', width: '64px' }}>Status</th>
                   {openRawColumns.map((column) => (
                     <th
                       key={column.key}
@@ -12929,9 +12929,10 @@ export default function OperationsTab({
                           whiteSpace: 'nowrap',
                           width: column.width,
                           maxWidth: column.maxWidth,
-                          overflow: column.maxWidth ? 'hidden' : undefined,
-                          textOverflow: column.maxWidth ? 'ellipsis' : undefined,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
                         }}
+                        title={column.key === 'customerName' ? row.customerName || undefined : undefined}
                       >
                         {column.render(row)}
                       </td>
@@ -13026,10 +13027,10 @@ export default function OperationsTab({
                   </div>
                 )}
                 <div style={{ overflowX: 'auto', maxHeight: '620px', overflowY: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'collapse' }}>
+                  <table style={{ width: '100%', minWidth: '1080px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
-                        <th style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', whiteSpace: 'nowrap' }}>Status</th>
+                        <th style={{ padding: '8px', fontSize: '12px', color: '#334155', textAlign: 'left', whiteSpace: 'nowrap', width: '64px' }}>Status</th>
                         {rawColumns.map((column) => (
                           <th
                             key={`filled-${column.key}`}
@@ -13068,9 +13069,10 @@ export default function OperationsTab({
                                 whiteSpace: 'nowrap',
                                 width: column.width,
                                 maxWidth: column.maxWidth,
-                                overflow: column.maxWidth ? 'hidden' : undefined,
-                                textOverflow: column.maxWidth ? 'ellipsis' : undefined,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
                               }}
+                              title={column.key === 'customerName' ? row.customerName || undefined : undefined}
                             >
                               {column.render(row)}
                             </td>
