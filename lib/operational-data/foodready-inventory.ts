@@ -257,7 +257,12 @@ async function buildFoodReadyInventorySnapshot(companyId: string, output: Operat
   const packaging = new Map(
     (bySource.get(ITEM_PACKAGING_ENDPOINT) || []).map((row) => [
       text(row.dimensions, 'id'),
-      { itemId: foodReadyRef(row.dimensions, 'inventoryItem'), unitCost: amount(row.measures, 'unitCost') },
+      {
+        itemId: foodReadyRef(row.dimensions, 'inventoryItem'),
+        unitCost: amount(row.measures, 'unitCost'),
+        // Numeric SKUs are stored as measures.
+        keys: salesProductKeys([text(row.dimensions, 'sku') || (row.measures?.sku != null ? String(row.measures.sku) : ''), text(row.dimensions, 'skuName')]),
+      },
     ]),
   );
   const packagingCostByItem = new Map<string, number>();
@@ -384,7 +389,15 @@ async function buildFoodReadyInventorySnapshot(companyId: string, output: Operat
       const packId = foodReadyRef(row.dimensions, 'itemPackaging');
       const pack = packaging.get(packId);
       const lotDate = estDateOnly(row.dimensions?.createdAt) || estDateOnly(row.dimensions?.expirationDate) || '9999-12-31';
-      return { row, packId, itemId: pack?.itemId || '', unitCost: pack?.unitCost || 0, lotDate, qty: lotQuantity(row, 'totalQtyProducedPerBatch') };
+      return {
+        row,
+        packId,
+        packKeys: pack?.keys || [],
+        itemId: pack?.itemId || '',
+        unitCost: pack?.unitCost || 0,
+        lotDate,
+        qty: lotQuantity(row, 'totalQtyProducedPerBatch'),
+      };
     })
     .filter((lot) => lot.itemId && lot.qty > 0)
     .sort((a, b) => a.lotDate.localeCompare(b.lotDate));
@@ -405,11 +418,23 @@ async function buildFoodReadyInventorySnapshot(companyId: string, output: Operat
   };
   // Accounting sales cover every shipment, including the ones on FoodReady sales orders, so a product
   // matched there uses only its accounting quantity; FoodReady sales orders cover the rest.
-  const accounting = await loadAccountingShipments(companyId, finishedLots.map((lot) => ({ itemId: lot.itemId, keys: itemKeys(lot.itemId), lotDate: lot.lotDate })));
+  const accounting = await loadAccountingShipments(
+    companyId,
+    finishedLots.map((lot) => ({
+      itemId: lot.itemId,
+      packId: lot.packId,
+      itemName: text(items.get(lot.itemId)?.dimensions, 'itemName') || lot.itemId,
+      itemKeys: itemKeys(lot.itemId),
+      packKeys: lot.packKeys,
+      lotDate: lot.lotDate,
+      qty: lot.qty,
+    })),
+  );
+  for (const [packId, shipped] of accounting.shippedByPackaging) takeShipped(finishedLots.filter((lot) => lot.packId === packId), shipped);
   for (const [itemId, shipped] of accounting.shippedByItem) takeShipped(finishedLots.filter((lot) => lot.itemId === itemId), shipped);
   const accountingApplied = shipping.applied;
   const shippedFromSalesOrders = (lots: typeof finishedLots, shipped: number) => {
-    const open = lots.filter((lot) => !accounting.shippedByItem.has(lot.itemId));
+    const open = lots.filter((lot) => !accounting.matchedItems.has(lot.itemId));
     if (open.length || !lots.length) takeShipped(open, shipped);
   };
   for (const [packId, shipped] of usage.shippedByPackaging) shippedFromSalesOrders(finishedLots.filter((lot) => lot.packId === packId), shipped);
@@ -488,21 +513,38 @@ function salesProductKeys(values: Array<string | null | undefined>): string[] {
 }
 
 /**
- * Quantity sold per finished-goods item from the accounting system's product sales (daily when
- * synced daily, otherwise monthly), counted from the item's oldest lot in hand. Items are matched to
- * accounting products by item code or name, the same keys the Bakers COGS costs use.
+ * Quantity sold from the accounting system's product sales (daily when synced daily, otherwise
+ * monthly), counted from the oldest finished-goods lot in hand. Sales match a packaging first (its
+ * SKU or SKU name, so units are the packaging's) and otherwise the item's code or name.
  */
-async function loadAccountingShipments(companyId: string, lots: Array<{ itemId: string; keys: string[]; lotDate: string }>) {
+async function loadAccountingShipments(
+  companyId: string,
+  lots: Array<{ itemId: string; packId: string; itemName: string; itemKeys: string[]; packKeys: string[]; lotDate: string; qty: number }>,
+) {
+  type Target = { kind: 'pack' | 'item'; id: string; itemId: string };
   const firstLotDate = new Map<string, string>();
-  const itemByKey = new Map<string, string>();
+  const targetByKey = new Map<string, Target>();
+  const produced = new Map<string, { name: string; qty: number }>();
   for (const lot of lots) {
-    const current = firstLotDate.get(lot.itemId);
-    if (!current || lot.lotDate < current) firstLotDate.set(lot.itemId, lot.lotDate);
-    for (const key of lot.keys) if (!itemByKey.has(key)) itemByKey.set(key, lot.itemId);
+    for (const id of [`pack|${lot.packId}`, `item|${lot.itemId}`]) {
+      const current = firstLotDate.get(id);
+      if (!current || lot.lotDate < current) firstLotDate.set(id, lot.lotDate);
+    }
+    for (const key of lot.packKeys) if (!targetByKey.has(key)) targetByKey.set(key, { kind: 'pack', id: lot.packId, itemId: lot.itemId });
+    const entry = produced.get(lot.itemId) || { name: lot.itemName, qty: 0 };
+    entry.qty += lot.qty;
+    produced.set(lot.itemId, entry);
   }
+  for (const lot of lots) {
+    for (const key of lot.itemKeys) if (!targetByKey.has(key)) targetByKey.set(key, { kind: 'item', id: lot.itemId, itemId: lot.itemId });
+  }
+  const shippedByPackaging = new Map<string, number>();
   const shippedByItem = new Map<string, number>();
+  const matchedItems = new Set<string>();
+  const soldByItem = new Map<string, number>();
+  const empty = (note: string) => ({ shippedByPackaging, shippedByItem, matchedItems, note });
   const earliest = [...firstLotDate.values()].sort()[0];
-  if (!earliest || earliest === '9999-12-31') return { shippedByItem, note: 'accounting sales: no finished-goods lots to apply them to' };
+  if (!earliest || earliest === '9999-12-31') return empty('accounting sales: no finished-goods lots to apply them to');
 
   const select = { snapshotDate: true, itemId: true, itemName: true, sku: true, quantitySold: true } as const;
   let frequency: 'daily' | 'monthly' = 'daily';
@@ -517,28 +559,40 @@ async function loadAccountingShipments(companyId: string, lots: Array<{ itemId: 
       select,
     });
   }
-  if (!sales.length) return { shippedByItem, note: `accounting sales: no product sales stored since ${earliest}, so only FoodReady sales orders were subtracted` };
+  if (!sales.length) return empty(`accounting sales: no product sales stored since ${earliest}, so only FoodReady sales orders were subtracted`);
 
   const unmatchedProducts = new Map<string, number>();
-  let matchedQty = 0;
+  const matchKinds = { pack: 0, item: 0 };
   for (const sale of sales) {
     const saleDate = sale.snapshotDate.toISOString().slice(0, 10);
-    const itemId = salesProductKeys([sale.itemName, sale.sku, sale.itemId]).map((key) => itemByKey.get(key)).find(Boolean);
-    if (!itemId) {
+    const target = salesProductKeys([sale.itemName, sale.sku, sale.itemId]).map((key) => targetByKey.get(key)).find(Boolean);
+    if (!target) {
       unmatchedProducts.set(sale.itemName, (unmatchedProducts.get(sale.itemName) || 0) + sale.quantitySold);
       continue;
     }
-    const since = firstLotDate.get(itemId) || earliest;
+    const since = firstLotDate.get(`${target.kind}|${target.id}`) || earliest;
     if (frequency === 'daily' ? saleDate < since : saleDate.slice(0, 7) < since.slice(0, 7)) continue;
-    shippedByItem.set(itemId, (shippedByItem.get(itemId) || 0) + sale.quantitySold);
-    matchedQty += sale.quantitySold;
+    const shipped = target.kind === 'pack' ? shippedByPackaging : shippedByItem;
+    shipped.set(target.id, (shipped.get(target.id) || 0) + sale.quantitySold);
+    matchedItems.add(target.itemId);
+    soldByItem.set(target.itemId, (soldByItem.get(target.itemId) || 0) + sale.quantitySold);
+    matchKinds[target.kind] += sale.quantitySold;
   }
   const unmatched = [...unmatchedProducts.entries()].filter(([, qty]) => qty > 0).sort((a, b) => b[1] - a[1]);
+  const perProduct = [...soldByItem.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([itemId, sold]) => `${produced.get(itemId)?.name || itemId} produced ${formatQty(produced.get(itemId)?.qty || 0)} / sold ${formatQty(sold)}`);
+  const notMatched = [...produced.entries()].filter(([itemId]) => !matchedItems.has(itemId)).map(([, entry]) => entry.name);
   return {
+    shippedByPackaging,
     shippedByItem,
+    matchedItems,
     note:
-      `accounting sales (${frequency} product sales since ${earliest}): ${shippedByItem.size} of ${firstLotDate.size} finished-goods product(s) matched, ${formatQty(matchedQty)} sold` +
-      (frequency === 'monthly' ? ' (monthly totals include the whole month of each product’s oldest lot)' : '') +
+      `accounting sales (${frequency} product sales since ${earliest}): ${matchedItems.size} of ${produced.size} finished-goods product(s) matched ` +
+      `(${formatQty(matchKinds.pack)} sold matched by packaging SKU, ${formatQty(matchKinds.item)} by item code/name)` +
+      (frequency === 'monthly' ? ', monthly totals include the whole month of each product’s oldest lot' : '') +
+      (perProduct.length ? `; produced in FoodReady lots vs sold since the oldest lot: ${perProduct.join(', ')}` : '') +
+      (notMatched.length ? `; finished goods with no accounting sales match: ${notMatched.join(', ')}` : '') +
       (unmatched.length
         ? `; ${unmatched.length} sold product(s) not matched to a finished good: ${unmatched.slice(0, 8).map(([name, qty]) => `${name} ${formatQty(qty)}`).join(', ')}${unmatched.length > 8 ? ', …' : ''}`
         : ''),
