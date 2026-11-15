@@ -215,6 +215,11 @@ type SnapshotRow = {
  * has one. Items with stock but no lot that can be tied back to them keep a single item-level row.
  */
 export async function writeFoodReadyInventorySnapshot(companyId: string, output: OperationalSourceOutput): Promise<string> {
+  const skipped = skippedDomains.get(companyId) || [];
+  skippedDomains.delete(companyId);
+  if (skipped.length) {
+    return `Sync hit its time limit and skipped ${skipped.join(', ')} (their stored data is unchanged); inventory snapshot not rewritten, so the report keeps the last complete one. ${recipeInputsSummary(companyId, output)}`;
+  }
   const bySource = new Map<string, OperationalRecordInput[]>();
   for (const row of Object.values(output).flatMap((dataset) => dataset.rows)) {
     const source = text(row.dimensions, 'sourceObject');
@@ -497,6 +502,14 @@ function summarizeUsageRows(rows: OperationalRecordInput[], packaging: Map<strin
 
 function formatQty(value: number): string {
   return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+/** Domains this sync run skipped for time; read by the snapshot writer in the same run. */
+const skippedDomains = new Map<string, string[]>();
+
+export function setFoodReadySkippedDomains(companyId: string, domains: string[]) {
+  if (domains.length) skippedDomains.set(companyId, domains);
+  else skippedDomains.delete(companyId);
 }
 
 /** Why the recipe input pull failed in this sync run; read by the snapshot note in the same run. */

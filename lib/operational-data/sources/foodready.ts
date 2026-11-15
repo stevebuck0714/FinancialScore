@@ -26,6 +26,7 @@ import {
   foodReadyRef,
   listFoodReadyPurchaseOrderLineIds,
   setFoodReadyRecipeInputsFailure,
+  setFoodReadySkippedDomains,
   writeFoodReadyInventorySnapshot,
 } from '../foodready-inventory';
 
@@ -49,6 +50,8 @@ const PO_LINE_LOOKUP_BUDGET_MS = 90_000;
 /** Lookups also stop this long after the sync started, leaving room to store the run within the 300s function limit. */
 const PO_LINE_LOOKUP_CUTOFF_MS = 200_000;
 const PO_LINE_LOOKUP_CONCURRENCY = 2;
+/** Domain pulls stop this long after the sync started; a domain cut off keeps its stored rows until the next sync. */
+const DOMAIN_PULL_CUTOFF_MS = 170_000;
 const PURCHASE_ORDER_LINES_ENDPOINT = '/api/purchaseOrdersItems/search';
 /** The background lot usage pull stops this long after it starts, inside its own 300s function limit. */
 const LOT_USAGE_BUDGET_MS = 230_000;
@@ -239,7 +242,6 @@ async function fetchAllFoodReadyRecords(
     all.push(...rows);
     if (rows.length < PAGE_SIZE) return all;
   }
-  if (deadline !== Number.POSITIVE_INFINITY) throw new Error(`${path} has more than ${MAX_PAGES * PAGE_SIZE} records.`);
   return all;
 }
 
@@ -369,7 +371,7 @@ async function fetchPurchaseOrderLines(
 ): Promise<OperationalRecordInput[]> {
   const rows: OperationalRecordInput[] = [];
   try {
-    const lines = (await fetchAllFoodReadyRecords(credentials, PURCHASE_ORDER_LINES_ENDPOINT)).map(flattenRecord);
+    const lines = (await fetchAllFoodReadyRecords(credentials, PURCHASE_ORDER_LINES_ENDPOINT, {}, syncStartedAt + PO_LINE_LOOKUP_CUTOFF_MS)).map(flattenRecord);
     rows.push(...lines.filter((line) => typeof line.id === 'string' && line.id).map((line) => purchaseOrderLineRow(String(line.id), line, today)));
   } catch {
     // Single-line lookups below cover every line.
@@ -446,11 +448,21 @@ export async function syncFoodReady(
       setFoodReadyRecipeInputsFailure(companyId, error instanceof Error ? error.message : String(error));
     }
   }
+  const domainDeadline = syncStartedAt + DOMAIN_PULL_CUTOFF_MS;
+  const skipped: string[] = [];
   for (const domain of configuredFoodReadyDomains(metadata)) {
     const currentStateQuery = CURRENT_STATE_QUERY[domain.sourceObject];
     const currentState = Boolean(currentStateQuery);
     if (currentState && window.endDate < today) continue;
-    const records = (await fetchAllFoodReadyRecords(credentials, domain.sourceObject, currentStateQuery))
+    let fetched: Record<string, unknown>[];
+    try {
+      fetched = await fetchAllFoodReadyRecords(credentials, domain.sourceObject, currentStateQuery, domainDeadline);
+    } catch (error) {
+      if (Date.now() <= domainDeadline) throw error;
+      skipped.push(domain.sourceObject);
+      continue;
+    }
+    const records = fetched
       .map((raw) => ({ raw, record: flattenRecord(raw) }))
       .map((entry) => ({ ...entry, date: currentState ? today : recordDate(domain.sourceObject, entry.record, today) }))
       .filter(({ date }) => currentState || (date >= window.startDate && date <= window.endDate));
@@ -480,6 +492,7 @@ export async function syncFoodReady(
     const lines = await fetchPurchaseOrderLines(credentials, companyId, purchasedLotIds, today, syncStartedAt);
     if (lines.length) output[FOODREADY_PURCHASE_ORDER_LINES_KEY] = { schema: PURCHASE_ORDER_LINES_SCHEMA, rows: lines };
   }
+  setFoodReadySkippedDomains(companyId, skipped);
   return output;
 }
 
