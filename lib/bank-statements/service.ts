@@ -30,6 +30,8 @@ export type BankStatementDocumentView = {
   period: { start: string; end: string } | null;
   /** Last 4 of each account a bank data report covers. */
   coveredLast4s: string[];
+  /** Posted transactions saved from a bank data report. */
+  transactionCount: number;
   bankAccountId: string | null;
   retrievedAt: string | null;
   uploadedAt: string;
@@ -112,6 +114,7 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
           statementRetrievedAt: true,
           tamperStatus: true,
           bankActivity: true,
+          _count: { select: { bankTransactions: true } },
           createdAt: true,
           uploadedBy: { select: { name: true, email: true } },
         },
@@ -148,6 +151,7 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
       month: d.statementMonth,
       period: activityMonths.length ? { start: activityMonths[0], end: activityMonths[activityMonths.length - 1] } : null,
       coveredLast4s: [...new Set(activity.map((a) => a.last4).filter((v): v is string => !!v))],
+      transactionCount: d._count.bankTransactions,
       retrievedAt: d.statementRetrievedAt ? d.statementRetrievedAt.toISOString() : null,
       uploadedAt: d.createdAt.toISOString(),
       uploadedByName: d.uploadedBy?.name || d.uploadedBy?.email || null,
@@ -163,9 +167,7 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     if (!engagement) {
       return { ...base, bankAccountId: null, unplacedReason: 'Start the Cash Proof to match statements to bank accounts.' };
     }
-    if (base.source === 'PLAID_ASSETS') {
-      return { ...base, bankAccountId: null, unplacedReason: 'No complete months of bank data in this report.' };
-    }
+    if (base.source === 'PLAID_ASSETS') return { ...base, bankAccountId: null, unplacedReason: null };
     if (!d.statementMonth || !d.statementAccountLast4) {
       return { ...base, bankAccountId: null, unplacedReason: 'Not read yet. Run Read Statements on the Cash Proof tab.' };
     }

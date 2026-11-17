@@ -8,6 +8,7 @@ import { ensureCompanyWithinDataRoomQuota } from '@/lib/dataroom/quota';
 import { privateBlobToken } from '@/lib/dataroom/blob-storage';
 import { formatEstDate } from '@/lib/time/eastern';
 import type { BankActivityMonth, BankStatementSource } from './providers';
+import type { BankTransactionInput } from './bank-activity';
 
 export type FetchedStatement = {
   source: Exclude<BankStatementSource, 'UPLOAD' | 'PLAID_ASSETS'>;
@@ -26,7 +27,7 @@ export type StatementImportResult = {
   errors: string[];
 };
 
-export type BankDataReportResult = { saved: boolean; accounts: string[]; months: number; error: string | null };
+export type BankDataReportResult = { saved: boolean; accounts: string[]; months: number; transactions: number; error: string | null };
 
 type ImportContext = { companyId: string; userId: string; userEmail: string };
 
@@ -186,20 +187,74 @@ export async function saveFetchedStatements(
   return result;
 }
 
-/** Saves a Plaid asset report PDF and its monthly figures into the Bank Statements folder. */
+const TRANSACTION_BATCH = 1000;
+
+/**
+ * Saves posted transactions from a bank data report. Transactions from earlier reports
+ * for the same bank account and dates are replaced, because each bank connection gets
+ * new Plaid transaction IDs and reconnecting would otherwise double count.
+ */
+async function replaceBankTransactions(companyId: string, documentId: string, transactions: BankTransactionInput[]): Promise<number> {
+  const byAccount = new Map<string, BankTransactionInput[]>();
+  for (const t of transactions) {
+    const key = `${t.institution ?? ''}|${t.accountLast4 ?? ''}`;
+    byAccount.set(key, [...(byAccount.get(key) ?? []), t]);
+  }
+  for (const rows of byAccount.values()) {
+    const dates = rows.map((t) => t.date).sort();
+    await prisma.bankTransaction.deleteMany({
+      where: {
+        companyId,
+        source: 'PLAID_ASSETS',
+        institution: rows[0].institution,
+        accountLast4: rows[0].accountLast4,
+        date: { gte: dates[0], lte: dates[dates.length - 1] },
+        dataRoomDocumentId: { not: documentId },
+      },
+    });
+  }
+  let saved = 0;
+  for (let i = 0; i < transactions.length; i += TRANSACTION_BATCH) {
+    const batch = transactions.slice(i, i + TRANSACTION_BATCH).map((t) => ({
+      ...t,
+      companyId,
+      dataRoomDocumentId: documentId,
+      source: 'PLAID_ASSETS',
+      location: t.location ? (t.location as Prisma.InputJsonValue) : undefined,
+    }));
+    saved += (await prisma.bankTransaction.createMany({ data: batch, skipDuplicates: true })).count;
+  }
+  return saved;
+}
+
+/** Saves a Plaid asset report PDF, its monthly figures, and its transactions into the Bank Statements folder. */
 export async function saveBankDataReport(
-  params: ImportContext & { institution: string | null; pdf: ArrayBuffer; activity: BankActivityMonth[]; accounts: string[] },
+  params: ImportContext & {
+    institution: string | null;
+    pdf: ArrayBuffer;
+    activity: BankActivityMonth[];
+    transactions: BankTransactionInput[];
+    accounts: string[];
+  },
 ): Promise<BankDataReportResult> {
-  const { companyId, institution, pdf, activity, accounts } = params;
+  const { companyId, institution, pdf, activity, transactions, accounts } = params;
   const body = Buffer.from(pdf);
   const quota = await ensureCompanyWithinDataRoomQuota({ companyId, incomingSizeBytes: body.length });
-  if (!quota.ok) return { saved: false, accounts, months: 0, error: 'Data Room storage quota reached; the bank data report was not saved.' };
+  if (!quota.ok) {
+    return { saved: false, accounts, months: 0, transactions: 0, error: 'Data Room storage quota reached; the bank data report was not saved.' };
+  }
   const fileName = `${safeName(institution || 'Bank')} Bank Data Report ${formatEstDate()}.pdf`;
   const documentId = await storeStatementPdf(params, fileName, body, {
     statementSource: 'PLAID_ASSETS',
     statementInstitution: institution,
-    bankActivity: activity as unknown as Prisma.InputJsonValue,
+    bankActivity: activity.length ? (activity as unknown as Prisma.InputJsonValue) : undefined,
   });
-  await fileInBankStatementsFolder(params, [documentId], { source: 'PLAID_ASSETS', imported: 1, accountMonths: activity.length });
-  return { saved: true, accounts, months: activity.length, error: null };
+  const savedTransactions = await replaceBankTransactions(companyId, documentId, transactions);
+  await fileInBankStatementsFolder(params, [documentId], {
+    source: 'PLAID_ASSETS',
+    imported: 1,
+    accountMonths: activity.length,
+    transactions: savedTransactions,
+  });
+  return { saved: true, accounts, months: activity.length, transactions: savedTransactions, error: null };
 }

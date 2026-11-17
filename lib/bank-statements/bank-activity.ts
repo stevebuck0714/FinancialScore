@@ -12,11 +12,105 @@ export type AssetReportAccount = {
   days_available: number;
   balances: { current: number | null };
   historical_balances: Array<{ date: string; current: number }>;
+  transactions: AssetReportTransaction[];
+};
+
+/** Fields past `pending` are only returned when the report is fetched with insights. */
+export type AssetReportTransaction = {
+  transaction_id: string;
+  date: string;
   /** Plaid sign convention: positive is money out of the account, negative is money in. */
-  transactions: Array<{ date: string; amount: number; pending: boolean }>;
+  amount: number;
+  pending: boolean;
+  date_transacted?: string | null;
+  iso_currency_code?: string | null;
+  unofficial_currency_code?: string | null;
+  original_description?: string | null;
+  merchant_name?: string | null;
+  category?: string[] | null;
+  category_id?: string | null;
+  credit_category?: { primary?: string | null; detailed?: string | null } | null;
+  check_number?: string | null;
+  transaction_type?: string | null;
+  payment_meta?: {
+    payer?: string | null;
+    payee?: string | null;
+    by_order_of?: string | null;
+    payment_method?: string | null;
+    payment_processor?: string | null;
+    reference_number?: string | null;
+    ppd_id?: string | null;
+    reason?: string | null;
+  } | null;
+  location?: Record<string, unknown> | null;
+};
+
+/** A posted transaction ready to save; amount is positive for money in. */
+export type BankTransactionInput = {
+  externalId: string;
+  institution: string | null;
+  accountLast4: string | null;
+  accountName: string | null;
+  date: string;
+  dateTransacted: string | null;
+  amount: number;
+  currency: string | null;
+  description: string | null;
+  merchantName: string | null;
+  category: string[];
+  categoryId: string | null;
+  creditCategoryPrimary: string | null;
+  creditCategoryDetailed: string | null;
+  checkNumber: string | null;
+  transactionType: string | null;
+  payer: string | null;
+  payee: string | null;
+  byOrderOf: string | null;
+  paymentMethod: string | null;
+  paymentProcessor: string | null;
+  referenceNumber: string | null;
+  ppdId: string | null;
+  reason: string | null;
+  location: Record<string, unknown> | null;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+const hasValue = (o: Record<string, unknown> | null | undefined) => !!o && Object.values(o).some((v) => v !== null && v !== undefined && v !== '');
+
+export function bankTransactionsFromAssetAccount(account: AssetReportAccount, institution: string | null): BankTransactionInput[] {
+  const accountLast4 = account.mask ? account.mask.slice(-4) : null;
+  const accountName = account.name || account.official_name || null;
+  return account.transactions
+    .filter((t) => !t.pending)
+    .map((t) => ({
+      externalId: t.transaction_id,
+      institution,
+      accountLast4,
+      accountName,
+      date: t.date,
+      dateTransacted: t.date_transacted || null,
+      amount: round2(-t.amount),
+      currency: t.iso_currency_code || t.unofficial_currency_code || null,
+      description: t.original_description || null,
+      merchantName: t.merchant_name || null,
+      category: t.category || [],
+      categoryId: t.category_id || null,
+      creditCategoryPrimary: t.credit_category?.primary || null,
+      creditCategoryDetailed: t.credit_category?.detailed || null,
+      checkNumber: t.check_number || null,
+      transactionType: t.transaction_type || null,
+      payer: t.payment_meta?.payer || null,
+      payee: t.payment_meta?.payee || null,
+      byOrderOf: t.payment_meta?.by_order_of || null,
+      paymentMethod: t.payment_meta?.payment_method || null,
+      paymentProcessor: t.payment_meta?.payment_processor || null,
+      referenceNumber: t.payment_meta?.reference_number || null,
+      ppdId: t.payment_meta?.ppd_id || null,
+      reason: t.payment_meta?.reason || null,
+      location: hasValue(t.location) ? t.location! : null,
+    }));
+}
 
 function lastDayOfMonth(month: string): string {
   const [y, m] = month.split('-').map(Number);

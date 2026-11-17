@@ -178,6 +178,7 @@ model Company {
   userAccess                      UserCompanyAccess[]
   documents                       CompanyDocument[]
   dataRoomDocuments               DataRoomDocument[]
+  bankTransactions                BankTransaction[]
   cashProofEngagements            CashProofEngagement[]
   documentChunks                  CompanyDocumentChunk[]
   loans                           Loan[]
@@ -488,7 +489,7 @@ model DataRoomDocument {
   storageAccess String @default("public") // public | private (private Blob store)
 
   // Bank statement provenance, certified in the QoE report.
-  statementSource      String? // UPLOAD | PLAID | FINICITY | YODLEE
+  statementSource      String? // UPLOAD | PLAID | PLAID_ASSETS | FINICITY | YODLEE
   statementInstitution String?
   statementAccountLast4 String?
   statementMonth       String? // YYYY-MM
@@ -505,13 +506,61 @@ model DataRoomDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  uploadedBy User    @relation("DataRoomDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User              @relation("DataRoomDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  bankTransactions BankTransaction[]
 
   @@index([companyId])
   @@index([uploadedByUserId])
   @@index([category])
   @@index([createdAt])
+}
+
+// Posted bank transactions pulled from a bank connector (Plaid asset report with
+// insights). Deleting the source report in the Data Room deletes its transactions.
+model BankTransaction {
+  id                 String  @id @default(cuid())
+  companyId          String
+  dataRoomDocumentId String
+  source             String // PLAID_ASSETS
+  externalId         String // Plaid transaction_id
+  institution        String?
+  accountLast4       String?
+  accountName        String?
+
+  date           String // YYYY-MM-DD posted
+  dateTransacted String? // YYYY-MM-DD
+  /// Positive is money into the account (deposit); negative is money out.
+  amount         Float
+  currency       String?
+  description    String? // bank's original description
+  merchantName   String?
+  category       String[]
+  categoryId     String?
+  creditCategoryPrimary  String?
+  creditCategoryDetailed String?
+  checkNumber     String?
+  transactionType String?
+
+  // ACH / wire transfer details
+  payer            String?
+  payee            String?
+  byOrderOf        String?
+  paymentMethod    String?
+  paymentProcessor String?
+  referenceNumber  String?
+  ppdId            String?
+  reason           String?
+
+  location Json?
+
+  createdAt DateTime @default(now())
+
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dataRoomDocument DataRoomDocument @relation(fields: [dataRoomDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([dataRoomDocumentId, externalId])
+  @@index([companyId, accountLast4, date])
 }
 
 // SBA cash proof: book cash per account per month, tied to bank statements

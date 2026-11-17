@@ -81,12 +81,8 @@ function bankActivityStatements(doc: Doc): ParsedStatement[] {
 
 async function readDocument(doc: Doc): Promise<DocumentRead> {
   const base = { documentId: doc.id, fileName: doc.originalFileName, bankAccountId: null, month: null, parsed: null };
-  if (doc.statementSource === 'PLAID_ASSETS') {
-    const parsed = bankActivityStatements(doc);
-    return parsed.length > 0
-      ? { parsed }
-      : { parsed: [], failure: { ...base, status: 'NEEDS_REVIEW', message: 'This bank data report has no complete months.' } };
-  }
+  // A report without monthly figures carries transaction detail only; statements cover its accounts.
+  if (doc.statementSource === 'PLAID_ASSETS') return { parsed: bankActivityStatements(doc) };
   if (doc.scanStatus !== 'clean') {
     return { parsed: [], failure: { ...base, status: 'PENDING_SCAN', message: 'Waiting for the Data Room virus scan to finish.' } };
   }

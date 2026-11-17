@@ -126,8 +126,8 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
           <div>
             <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#1e293b', margin: 0 }}>Bank Statements</h2>
             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', maxWidth: 760 }}>
-              Connect the client&apos;s bank to pull up to 24 months of statements directly from the bank. When the bank does not provide
-              statement PDFs, 24 months of bank data (transactions and balances) is pulled instead. Upload months 25–36 and statements
+              Connect the client&apos;s bank to pull up to 24 months of statements and transaction detail directly from the bank. When the
+              bank does not provide statement PDFs, monthly figures come from the bank data instead. Upload months 25–36 and statements
               from banks the connectors do not support. Everything is stored in the Data Room Bank Statements folder.
             </div>
           </div>
@@ -347,7 +347,13 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
                       {d.uploadedByName && d.source === 'UPLOAD' ? <span style={{ color: '#64748b' }}> · {d.uploadedByName}</span> : null}
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal', minWidth: 240, color: d.unplacedReason ? '#b45309' : '#64748b' }}>
-                      {d.unplacedReason || (d.isPrivate ? 'Private storage' : 'Standard storage')}
+                      {d.unplacedReason ||
+                        [
+                          d.source === 'PLAID_ASSETS' ? `${d.transactionCount.toLocaleString('en-US')} transactions saved` : null,
+                          d.isPrivate ? 'Private storage' : 'Standard storage',
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                     </td>
                   </tr>
                 ))}

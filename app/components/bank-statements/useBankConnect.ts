@@ -44,7 +44,7 @@ type ImportResult = {
   failed: number;
   accounts: string[];
   errors: string[];
-  bankData: { saved: boolean; accounts: string[]; months: number } | null;
+  bankData: { saved: boolean; accounts: string[]; months: number; transactions: number } | null;
   bankDataNote: string | null;
 };
 
@@ -96,7 +96,7 @@ export function useBankConnect(companyId: string, onImported: () => void) {
           result.skipped ? `${result.skipped} already on file` : null,
           result.failed ? `${result.failed} failed` : null,
           result.bankData?.saved
-            ? `bank data report for ${result.bankData.accounts.join(', ') || 'accounts without statements'} (${result.bankData.months} account-months)`
+            ? `bank data report with ${result.bankData.transactions.toLocaleString('en-US')} transactions for ${result.bankData.accounts.join(', ') || 'the connected accounts'}${result.bankData.months ? ` (${result.bankData.months} account-months without statements)` : ''}`
             : null,
         ].filter(Boolean);
         const problems = [result.errors[0], result.bankDataNote].filter(Boolean);
