@@ -1,7 +1,9 @@
 import { scanDataRoomDocument, type DataRoomScanResult } from '@/lib/dataroom/malware-scan';
 
 type ScanProviderInput = {
+  /** Null for private-store files, which the scanner cannot fetch; their bytes come from readContent. */
   fileUrl: string | null;
+  readContent?: () => Promise<ArrayBuffer>;
   fileName: string;
   contentType: string | null;
   sizeBytes: number | null;
@@ -24,15 +26,17 @@ async function scanUsingClamHttp(input: ScanProviderInput): Promise<DataRoomScan
   if (!serviceUrl) {
     throw new Error('DATAROOM_SCAN_SERVICE_URL is not configured for clamav_http provider');
   }
-  if (!input.fileUrl) {
+  if (!input.fileUrl && !input.readContent) {
     throw new Error('Missing file URL for scanner provider');
   }
+  const fileContentBase64 = input.fileUrl ? undefined : Buffer.from(await input.readContent!()).toString('base64');
 
   const response = await fetch(serviceUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      fileUrl: input.fileUrl,
+      fileUrl: input.fileUrl ?? undefined,
+      fileContentBase64,
       fileName: input.fileName,
       contentType: input.contentType,
       sizeBytes: input.sizeBytes,

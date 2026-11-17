@@ -212,6 +212,7 @@ const SdeAdjustedIncomeStatement = dynamic(
   { ssr: false, loading: ReportChunkLoading },
 );
 const CashProofWorkspace = dynamic(() => import('./components/valuation/CashProofWorkspace'), { ssr: false });
+const BankStatementsWorkspace = dynamic(() => import('./components/valuation/BankStatementsWorkspace'), { ssr: false });
 const CashProofReportSection = dynamic(() => import('./components/valuation/CashProofReportSection'), { ssr: false, loading: ReportChunkLoading });
 const ValuationEbitdaSection6Preview = dynamic(() => import('./components/valuation/ValuationEbitdaSection6Preview'), { ssr: false });
 const ValuationDcfSection7Preview = dynamic(() => import('./components/valuation/ValuationDcfSection7Preview'), { ssr: false });
@@ -3851,7 +3852,7 @@ function FinancialScorePage() {
   const [competitorSearchScopes, setCompetitorSearchScopes] = useState<CompetitorSearchScope[]>(DEFAULT_COMPETITOR_SEARCH_SCOPES);
   const [researchSourcesText, setResearchSourcesText] = useState('');
   const [businessContextLastUpdatedAt, setBusinessContextLastUpdatedAt] = useState<string | null>(null);
-  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'cash-proof' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
+  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'cash-proof' | 'bank-statements' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
   const [sdeIncomeStatementRefreshKey, setSdeIncomeStatementRefreshKey] = useState(0);
   const [ebitdaAnalysisTab, setEbitdaAnalysisTab] = useState<'revenue-quality' | 'customer-mix' | 'cash-flow-quality' | 'balance-sheet-quality'>('revenue-quality');
   const [dcfAnalysisTab, setDcfAnalysisTab] = useState<'working-capital' | 'cash-flow-quality' | 'revenue-durability' | 'balance-sheet-quality'>('working-capital');
@@ -24039,6 +24040,7 @@ function FinancialScorePage() {
                       { id: 'recommendations' as const, label: 'Executive Summary' },
                       { id: 'ebitda-adjustments' as const, label: 'Quality of Earnings' },
                       { id: 'cash-proof' as const, label: 'Cash Proof' },
+                      { id: 'bank-statements' as const, label: 'Bank Statements' },
                       { id: 'income-statement' as const, label: 'Income Statement' },
                       { id: 'revenue-quality' as const, label: 'Revenue Quality' },
                       { id: 'customer-quality' as const, label: 'Customer Quality' },
@@ -24626,6 +24628,9 @@ function FinancialScorePage() {
                 )}
                 {sdeModuleTab === 'cash-proof' && (
                   <CashProofWorkspace key={selectedCompanyId || 'none'} companyId={selectedCompanyId || null} />
+                )}
+                {sdeModuleTab === 'bank-statements' && (
+                  <BankStatementsWorkspace key={selectedCompanyId || 'none'} companyId={selectedCompanyId || null} />
                 )}
                 {sdeModuleTab === 'income-statement' && (
                   <SdeAdjustedIncomeStatement

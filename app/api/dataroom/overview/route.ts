@@ -9,6 +9,7 @@ import {
   resolveDataRoomCapabilities,
 } from '@/lib/dataroom/access';
 import { DATAROOM_COMPANY_QUOTA_BYTES, getCompanyDataRoomUsage, getUsageLevel } from '@/lib/dataroom/quota';
+import { isPrivateBlobStorageConfigured } from '@/lib/dataroom/blob-storage';
 
 function getDisplayName(name: string | null | undefined, email: string | null | undefined) {
   const trimmedName = String(name || '').trim();
@@ -177,6 +178,7 @@ export async function GET(request: NextRequest) {
         remainingBytes,
         usagePct: quotaBytes > 0 ? Math.min(100, (usedBytes / quotaBytes) * 100) : 0,
         level: usageLevel,
+        privateBankStatements: isPrivateBlobStorageConfigured(),
       },
       folders: grouped,
     });

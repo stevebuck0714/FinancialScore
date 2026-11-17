@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { extractTextFromArrayBuffer } from '@/lib/company-documents/extract-text';
 import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
+import { readDataRoomBlob } from '@/lib/dataroom/blob-storage';
 import { shiftMonth } from './book-balances';
 import { parseBankStatement, type ParsedStatement } from './statement-parser';
 import { computeTieOut } from './tie-out';
@@ -48,7 +49,16 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 
-type Doc = { id: string; originalFileName: string; blobUrl: string; contentType: string | null; scanStatus: string };
+type Doc = {
+  id: string;
+  originalFileName: string;
+  blobUrl: string;
+  storageAccess: string;
+  contentType: string | null;
+  statementMonth: string | null;
+  statementAccountLast4: string | null;
+  scanStatus: string;
+};
 
 async function readDocument(doc: Doc): Promise<{ parsed: ParsedStatement | null; failure?: StatementScanResult }> {
   const base = { documentId: doc.id, fileName: doc.originalFileName, bankAccountId: null, month: null, parsed: null };
@@ -56,10 +66,8 @@ async function readDocument(doc: Doc): Promise<{ parsed: ParsedStatement | null;
     return { parsed: null, failure: { ...base, status: 'PENDING_SCAN', message: 'Waiting for the Data Room virus scan to finish.' } };
   }
   try {
-    const res = await fetch(doc.blobUrl);
-    if (!res.ok) throw new Error(`Download failed (${res.status})`);
     const extracted = await extractTextFromArrayBuffer({
-      arrayBuffer: await res.arrayBuffer(),
+      arrayBuffer: await readDataRoomBlob(doc),
       contentType: doc.contentType,
       fileName: doc.originalFileName,
     });
@@ -108,12 +116,33 @@ export async function scanBankStatements(companyId: string, engagementId: string
   const docs: Doc[] = (
     await prisma.dataRoomDocument.findMany({
       where: { companyId, id: { in: [...scanStatusById.keys()] } },
-      select: { id: true, originalFileName: true, blobUrl: true, contentType: true },
+      select: {
+        id: true,
+        originalFileName: true,
+        blobUrl: true,
+        storageAccess: true,
+        contentType: true,
+        statementMonth: true,
+        statementAccountLast4: true,
+      },
       orderBy: { originalFileName: 'asc' },
     })
   ).map((d) => ({ ...d, scanStatus: scanStatusById.get(d.id) || '' }));
 
   const reads = await mapLimit(docs, CONCURRENCY, readDocument);
+
+  await Promise.all(
+    docs.map((doc, i) => {
+      const parsed = reads[i].parsed;
+      const month = doc.statementMonth || parsed?.month || null;
+      const last4 = doc.statementAccountLast4 || parsed?.last4 || null;
+      if (month === doc.statementMonth && last4 === doc.statementAccountLast4) return null;
+      return prisma.dataRoomDocument.update({
+        where: { id: doc.id },
+        data: { statementMonth: month, statementAccountLast4: last4 },
+      });
+    }),
+  );
 
   const samples = new Map(engagement.samples.map((s) => [`${s.bankAccountId}|${s.month}`, s]));
   const deposits = new Map<string, (typeof engagement.bankAccounts)[number]['deposits'][number]>(

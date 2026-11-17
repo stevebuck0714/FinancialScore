@@ -448,9 +448,12 @@ export async function proxy(request: NextRequest) {
     applyIdleActivityCookie(response)
   }
   
+  // Private Data Room files are shown inside the app's own PDF viewer page.
+  const allowSameOriginFraming = /^\/api\/dataroom\/documents\/[^/]+\/content$/.test(pathname)
+
   // Security headers
   response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
+  response.headers.set('X-Frame-Options', allowSameOriginFraming ? 'SAMEORIGIN' : 'DENY')
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
@@ -458,13 +461,13 @@ export async function proxy(request: NextRequest) {
   // Content Security Policy
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Next.js requires unsafe-eval and unsafe-inline
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.plaid.com", // Next.js requires unsafe-eval and unsafe-inline
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
     "connect-src 'self' https:",
-    "frame-src 'self' https://docs.google.com https://view.officeapps.live.com https://*.public.blob.vercel-storage.com",
-    "frame-ancestors 'none'",
+    "frame-src 'self' https://docs.google.com https://view.officeapps.live.com https://*.public.blob.vercel-storage.com https://cdn.plaid.com",
+    allowSameOriginFraming ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
   ].join('; ')
   response.headers.set('Content-Security-Policy', csp)
   

@@ -19,7 +19,8 @@ export type DataRoomAuditEvent = {
     | 'scan_completed'
     | 'scan_blocked'
     | 'overview_viewed'
-    | 'permissions_updated';
+    | 'permissions_updated'
+    | 'statements_imported';
   companyId: string;
   userId: string;
   userEmail: string;

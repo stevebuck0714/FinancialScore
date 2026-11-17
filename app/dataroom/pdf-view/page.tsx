@@ -11,7 +11,10 @@ type PdfViewPageProps = {
   }>;
 };
 
+const PRIVATE_CONTENT_PATH = /^\/api\/dataroom\/documents\/[A-Za-z0-9_-]+\/content$/;
+
 function isSafePdfUrl(url: string): boolean {
+  if (PRIVATE_CONTENT_PATH.test(url)) return true;
   try {
     const parsed = new URL(url);
     return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && parsed.pathname.toLowerCase().endsWith('.pdf');

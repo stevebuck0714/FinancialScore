@@ -7,6 +7,7 @@ import {
   resolveDataRoomCapabilities,
 } from '@/lib/dataroom/access';
 import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
+import { isPrivateBlob } from '@/lib/dataroom/blob-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,14 +16,14 @@ function asObject(value: unknown): Record<string, any> {
   return value as Record<string, any>;
 }
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const context = await requireAuth();
     const { id } = await ctx.params;
 
     const doc = await prisma.dataRoomDocument.findUnique({
       where: { id },
-      select: { blobUrl: true, companyId: true },
+      select: { blobUrl: true, storageAccess: true, companyId: true },
     });
     if (!doc) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -168,7 +169,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       // Ignore audit-write failures; document open should still succeed.
     }
 
-    const response = NextResponse.redirect(doc.blobUrl, { status: 302 });
+    const target = isPrivateBlob(doc)
+      ? new URL(`/api/dataroom/documents/${encodeURIComponent(id)}/content?download=1`, req.url)
+      : doc.blobUrl;
+    const response = NextResponse.redirect(target, { status: 302 });
     if (watermarkHeaderValue) {
       response.headers.set('x-corelytics-watermark', watermarkHeaderValue);
     }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
 import { formatEstDateTime } from '@/lib/time/eastern';
+import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 
 interface DataRoomViewProps {
   selectedCompanyId: string;
@@ -70,6 +71,7 @@ type StorageSummary = {
   remainingBytes: number;
   usagePct: number;
   level: 'ok' | 'warning' | 'critical';
+  privateBankStatements: boolean;
 };
 
 type AuditEvent = {
@@ -271,6 +273,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
           remainingBytes: Number(incomingStorage.remainingBytes || 0),
           usagePct: Number(incomingStorage.usagePct || 0),
           level: (incomingStorage.level as any) || 'ok',
+          privateBankStatements: Boolean(incomingStorage.privateBankStatements),
         });
       } else {
         setStorage(null);
@@ -382,9 +385,10 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     setUploading(true);
     setError(null);
     try {
+      const privateUpload = selectedFolderId === DATAROOM_BANK_STATEMENTS_FOLDER_ID && Boolean(storage?.privateBankStatements);
       const blob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/dataroom/upload',
+        access: privateUpload ? 'private' : 'public',
+        handleUploadUrl: privateUpload ? '/api/dataroom/upload-private' : '/api/dataroom/upload',
         clientPayload: JSON.stringify({
           companyId: selectedCompanyId,
           category: 'OTHER',

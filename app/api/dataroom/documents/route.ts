@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { del } from '@vercel/blob';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
-import { DATAROOM_DEFAULT_FOLDERS } from '@/lib/dataroom/constants';
+import { DATAROOM_BANK_STATEMENTS_FOLDER_ID, DATAROOM_DEFAULT_FOLDERS } from '@/lib/dataroom/constants';
+import { deleteDataRoomBlob, isPrivateBlobStorageConfigured, storageAccessForUrl } from '@/lib/dataroom/blob-storage';
 import { getDataRoomState, upsertDataRoomState } from '@/lib/dataroom/state';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
 import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
@@ -102,6 +102,12 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const storageAccess = storageAccessForUrl(blobUrl);
+      const isBankStatement = folderId === DATAROOM_BANK_STATEMENTS_FOLDER_ID;
+      if (isBankStatement && storageAccess !== 'private' && isPrivateBlobStorageConfigured()) {
+        return NextResponse.json({ error: 'Bank statements must be uploaded to private storage.' }, { status: 400 });
+      }
+
       const doc = await prisma.dataRoomDocument.upsert({
         where: { blobUrl },
         create: {
@@ -113,6 +119,8 @@ export async function POST(request: NextRequest) {
           blobPathname,
           contentType,
           sizeBytes,
+          storageAccess,
+          statementSource: isBankStatement ? 'UPLOAD' : null,
           extractionStatus: 'PENDING',
         },
         update: {
@@ -122,6 +130,8 @@ export async function POST(request: NextRequest) {
           blobPathname,
           contentType,
           sizeBytes,
+          storageAccess,
+          ...(isBankStatement ? { statementSource: 'UPLOAD' } : {}),
         },
         select: { id: true },
       });
@@ -292,7 +302,7 @@ export async function DELETE(request: NextRequest) {
 
     const doc = await prisma.dataRoomDocument.findUnique({
       where: { id: documentId },
-      select: { id: true, companyId: true, blobUrl: true },
+      select: { id: true, companyId: true, blobUrl: true, storageAccess: true },
     });
     if (!doc || doc.companyId !== companyId) {
       return NextResponse.json({ error: 'Data Room document not found for this company' }, { status: 404 });
@@ -324,7 +334,7 @@ export async function DELETE(request: NextRequest) {
     });
 
     try {
-      await del(doc.blobUrl);
+      await deleteDataRoomBlob(doc);
     } catch (e) {
       console.warn('Data Room blob delete failed (ignored):', e);
     }

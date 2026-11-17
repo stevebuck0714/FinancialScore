@@ -485,6 +485,20 @@ model DataRoomDocument {
   extractionStatus String  @default("PENDING")
   extractionError  String?
 
+  storageAccess String @default("public") // public | private (private Blob store)
+
+  // Bank statement provenance, certified in the QoE report.
+  statementSource      String? // UPLOAD | PLAID | FINICITY | YODLEE
+  statementInstitution String?
+  statementAccountLast4 String?
+  statementMonth       String? // YYYY-MM
+  statementRetrievedAt DateTime?
+  tamperProvider       String? // OCROLUS
+  tamperStatus         String? // PENDING | AUTHENTIC | SUSPECT | FAILED
+  tamperScore          Float?
+  tamperDetail         Json?
+  tamperCheckedAt      DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

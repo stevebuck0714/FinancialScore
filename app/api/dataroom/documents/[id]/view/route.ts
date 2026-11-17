@@ -7,6 +7,7 @@ import {
   resolveDataRoomCapabilities,
 } from '@/lib/dataroom/access';
 import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
+import { isPrivateBlob } from '@/lib/dataroom/blob-storage';
 
 export const dynamic = 'force-dynamic';
 const OFFICE_WEB_VIEWER_MAX_BYTES = 25 * 1024 * 1024;
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     const doc = await prisma.dataRoomDocument.findUnique({
       where: { id },
-      select: { blobUrl: true, companyId: true, contentType: true, originalFileName: true, sizeBytes: true },
+      select: { blobUrl: true, storageAccess: true, companyId: true, contentType: true, originalFileName: true, sizeBytes: true },
     });
     if (!doc) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -214,6 +215,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       });
     } catch {
       // Ignore audit-write failures; preview should still work.
+    }
+
+    if (isPrivateBlob(doc)) {
+      const contentPath = `/api/dataroom/documents/${encodeURIComponent(id)}/content`;
+      const isPdf =
+        String(doc.contentType || '').toLowerCase() === 'application/pdf' ||
+        String(doc.originalFileName || '').toLowerCase().endsWith('.pdf');
+      if (isPdf) {
+        const pdfViewerUrl = new URL('/dataroom/pdf-view', req.url);
+        pdfViewerUrl.searchParams.set('src', contentPath);
+        pdfViewerUrl.searchParams.set('name', doc.originalFileName || 'Document.pdf');
+        return NextResponse.redirect(pdfViewerUrl, { status: 302 });
+      }
+      if (canInlinePreview) return NextResponse.redirect(new URL(contentPath, req.url), { status: 302 });
+      return NextResponse.json(
+        { error: 'Private files of this type cannot be previewed. Use Download instead.' },
+        { status: 422 },
+      );
     }
 
     if (canInlinePreview) {

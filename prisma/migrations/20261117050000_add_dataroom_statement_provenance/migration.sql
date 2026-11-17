@@ -1,0 +1,11 @@
+ALTER TABLE "DataRoomDocument" ADD COLUMN "storageAccess" TEXT NOT NULL DEFAULT 'public';
+ALTER TABLE "DataRoomDocument" ADD COLUMN "statementSource" TEXT;
+ALTER TABLE "DataRoomDocument" ADD COLUMN "statementInstitution" TEXT;
+ALTER TABLE "DataRoomDocument" ADD COLUMN "statementAccountLast4" TEXT;
+ALTER TABLE "DataRoomDocument" ADD COLUMN "statementMonth" TEXT;
+ALTER TABLE "DataRoomDocument" ADD COLUMN "statementRetrievedAt" TIMESTAMP(3);
+ALTER TABLE "DataRoomDocument" ADD COLUMN "tamperProvider" TEXT;
+ALTER TABLE "DataRoomDocument" ADD COLUMN "tamperStatus" TEXT;
+ALTER TABLE "DataRoomDocument" ADD COLUMN "tamperScore" DOUBLE PRECISION;
+ALTER TABLE "DataRoomDocument" ADD COLUMN "tamperDetail" JSONB;
+ALTER TABLE "DataRoomDocument" ADD COLUMN "tamperCheckedAt" TIMESTAMP(3);

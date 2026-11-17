@@ -5,6 +5,7 @@ import { getDataRoomState, upsertDataRoomState } from '@/lib/dataroom/state';
 import { scanDataRoomDocumentWithProvider } from '@/lib/dataroom/scan-provider';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
 import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
+import { isPrivateBlob, readDataRoomBlob } from '@/lib/dataroom/blob-storage';
 
 const MAX_SCAN_ATTEMPTS = Number(process.env.DATAROOM_SCAN_MAX_ATTEMPTS || 5);
 const BASE_RETRY_SECONDS = Number(process.env.DATAROOM_SCAN_BASE_RETRY_SECONDS || 30);
@@ -94,6 +95,7 @@ export async function POST(request: NextRequest) {
         contentType: true,
         sizeBytes: true,
         blobUrl: true,
+        storageAccess: true,
       },
     });
 
@@ -128,8 +130,10 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        const privateFile = isPrivateBlob(doc);
         const result = await scanDataRoomDocumentWithProvider({
-          fileUrl: doc.blobUrl || null,
+          fileUrl: privateFile ? null : doc.blobUrl || null,
+          readContent: privateFile ? () => readDataRoomBlob(doc) : undefined,
           fileName: doc.originalFileName,
           contentType: doc.contentType,
           sizeBytes: doc.sizeBytes,
