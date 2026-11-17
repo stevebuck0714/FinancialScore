@@ -154,11 +154,15 @@ const ASSET_REPORT_POLL_MS = 3_000;
 const isDepository = (a: { type: string }) => a.type === 'depository';
 const accountLabel = (name: string | null, mask: string | null) => [name, mask ? `x${mask.slice(-4)}` : null].filter(Boolean).join(' ');
 
+// Statements is "required if supported": at a bank without statements the user is never
+// asked to consent, so Plaid answers ADDITIONAL_CONSENT_REQUIRED rather than PRODUCTS_NOT_SUPPORTED.
+const NO_STATEMENTS_CODES = new Set(['PRODUCTS_NOT_SUPPORTED', 'PRODUCT_NOT_ENABLED', 'ADDITIONAL_CONSENT_REQUIRED', 'INVALID_PRODUCT']);
+
 async function listStatements(accessToken: string): Promise<StatementsList | null> {
   try {
     return await plaidJson<StatementsList>('/statements/list', { access_token: accessToken });
   } catch (e) {
-    if (e instanceof PlaidRequestError && (e.code === 'PRODUCTS_NOT_SUPPORTED' || e.code === 'PRODUCT_NOT_ENABLED')) return null;
+    if (e instanceof PlaidRequestError && e.code && NO_STATEMENTS_CODES.has(e.code)) return null;
     throw e;
   }
 }
@@ -209,7 +213,7 @@ export async function importPlaidBankData<S, A>(
           })
         ).asset_report_token;
       } catch (e) {
-        const unavailable = e instanceof PlaidRequestError && (e.code === 'INVALID_PRODUCT' || e.code === 'PRODUCTS_NOT_SUPPORTED');
+        const unavailable = e instanceof PlaidRequestError && !!e.code && NO_STATEMENTS_CODES.has(e.code);
         bankDataNote = !unavailable
           ? `Bank data could not be requested: ${e instanceof Error ? e.message : String(e)}`
           : gapAccounts.length > 0
