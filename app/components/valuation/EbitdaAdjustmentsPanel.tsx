@@ -19,6 +19,12 @@ import { formatMoney } from '@/lib/format/currency';
 import { formatMonthShort } from '@/lib/date-utils';
 import { DEFAULT_BASE_CURRENCY } from '@/lib/constants/currencies';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
+import {
+  buildQoeAdjustmentSummary,
+  type QoeSummaryAccountInput,
+  type QoeSummaryManualInputs,
+} from '@/lib/sde/qoe-adjustment-summary';
+import QoeAdjustmentSummary from './QoeAdjustmentSummary';
 
 // -----------------------------------------------------------------------------
 // Types — kept in sync with /api/sde/ebitda-adjustments and
@@ -37,8 +43,14 @@ type AdjustmentAccount = {
   monthly: Array<{ month: string; value: number }>;
   ownerPercent: number;
   ownerAmount: number;
+  ownerMode?: OwnerAdjustmentMode;
+  ownerFixedAmount?: number | null;
+  note?: string | null;
   lineItem?: string | null;
 };
+
+type OwnerAdjustmentMode = 'PERCENT' | 'AMOUNT';
+type OwnerModeEdit = { mode: OwnerAdjustmentMode; amount: number | null };
 
 type LineItemDetail = {
   key: string;
@@ -180,6 +192,8 @@ type ContextValue = {
   saving: boolean;
   saveMessage: string | null;
   ownerPctEdits: Record<string, number>;
+  ownerModeEdits: Record<string, OwnerModeEdit>;
+  noteEdits: Record<string, string>;
   bucketEdits: Record<string, SdeBucket | null>;
   lineItemEdits: Record<string, string | null>;
   expandedRows: Set<string>;
@@ -197,6 +211,11 @@ type ContextValue = {
   lineItemTotal: (bucket: SdeBucket, lineItem: string) => number;
   dirtyCount: number;
   handleChangePct: (mappingId: string, pct: number) => void;
+  /** Fixed dollar entry; stored as an amount so it holds when the LTM total changes. */
+  handleChangeAmount: (mappingId: string, amount: number, ltm: number) => void;
+  handleChangeNote: (mappingId: string, note: string) => void;
+  /** Effective entry method for a mapping (edits override server state). */
+  effectiveOwnerMode: (mappingId: string, serverMode: OwnerAdjustmentMode | undefined) => OwnerAdjustmentMode;
   handleToggleExpand: (mappingId: string) => void;
   handleUnassign: (mappingId: string) => void;
   handleAssign: (mappingId: string, bucket: SdeBucket, lineItem?: string | null) => void;
@@ -249,6 +268,8 @@ export const EbitdaAdjustmentsProvider: React.FC<{
   const [loading, setLoading] = useState(() => Boolean(companyId));
   const [error, setError] = useState<string | null>(null);
   const [ownerPctEdits, setOwnerPctEdits] = useState<Record<string, number>>({});
+  const [ownerModeEdits, setOwnerModeEdits] = useState<Record<string, OwnerModeEdit>>({});
+  const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
   const [bucketEdits, setBucketEdits] = useState<Record<string, SdeBucket | null>>({});
   const [lineItemEdits, setLineItemEdits] = useState<Record<string, string | null>>({});
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -260,6 +281,8 @@ export const EbitdaAdjustmentsProvider: React.FC<{
   const applyApi = useCallback((json: EbitdaAdjustmentsApiResponse) => {
     setApi(json);
     setOwnerPctEdits({});
+    setOwnerModeEdits({});
+    setNoteEdits({});
     setBucketEdits({});
     setLineItemEdits({});
   }, []);
@@ -327,7 +350,24 @@ export const EbitdaAdjustmentsProvider: React.FC<{
 
   const handleChangePct = useCallback((mappingId: string, pct: number) => {
     setOwnerPctEdits((prev) => ({ ...prev, [mappingId]: pct }));
+    setOwnerModeEdits((prev) => ({ ...prev, [mappingId]: { mode: 'PERCENT', amount: null } }));
   }, []);
+
+  const handleChangeAmount = useCallback((mappingId: string, amount: number, ltm: number) => {
+    const capped = Math.max(0, Math.min(amount, ltm));
+    setOwnerPctEdits((prev) => ({ ...prev, [mappingId]: ltm > 0 ? (capped / ltm) * 100 : 0 }));
+    setOwnerModeEdits((prev) => ({ ...prev, [mappingId]: { mode: 'AMOUNT', amount: capped } }));
+  }, []);
+
+  const handleChangeNote = useCallback((mappingId: string, note: string) => {
+    setNoteEdits((prev) => ({ ...prev, [mappingId]: note }));
+  }, []);
+
+  const effectiveOwnerMode = useCallback(
+    (mappingId: string, serverMode: OwnerAdjustmentMode | undefined): OwnerAdjustmentMode =>
+      ownerModeEdits[mappingId]?.mode ?? serverMode ?? 'PERCENT',
+    [ownerModeEdits],
+  );
 
   const handleToggleExpand = useCallback((mappingId: string) => {
     setExpandedRows((prev) => {
@@ -378,6 +418,8 @@ export const EbitdaAdjustmentsProvider: React.FC<{
       for (const b of api.buckets) {
         for (const a of b.accounts) {
           if (ownerPctEdits[a.mappingId] !== undefined && ownerPctEdits[a.mappingId] !== a.ownerPercent) n += 1;
+          else if (ownerModeEdits[a.mappingId] && ownerModeEdits[a.mappingId].mode !== (a.ownerMode ?? 'PERCENT')) n += 1;
+          if (noteEdits[a.mappingId] !== undefined && noteEdits[a.mappingId].trim() !== (a.note ?? '')) n += 1;
           if (bucketEdits[a.mappingId] !== undefined && bucketEdits[a.mappingId] !== b.bucket) n += 1;
           if (
             lineItemEdits[a.mappingId] !== undefined &&
@@ -392,7 +434,7 @@ export const EbitdaAdjustmentsProvider: React.FC<{
       if (!wasAssignedHere && bucketEdits[id]) n += 1;
     }
     return n;
-  }, [api, ownerPctEdits, bucketEdits, lineItemEdits]);
+  }, [api, ownerPctEdits, ownerModeEdits, noteEdits, bucketEdits, lineItemEdits]);
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     if (!companyId) return false;
@@ -404,6 +446,17 @@ export const EbitdaAdjustmentsProvider: React.FC<{
         ownerPercent: number;
         sdeAdjustmentBucket?: SdeBucket | null;
         sdeAdjustmentLineItem?: string | null;
+        ownerAdjustmentMode?: OwnerAdjustmentMode;
+        ownerAdjustmentAmount?: number | null;
+        sdeAdjustmentNote?: string | null;
+      };
+      const applyModeAndNote = (item: Item, id: string) => {
+        const modeEdit = ownerModeEdits[id];
+        if (modeEdit) {
+          item.ownerAdjustmentMode = modeEdit.mode;
+          item.ownerAdjustmentAmount = modeEdit.mode === 'AMOUNT' ? modeEdit.amount : null;
+        }
+        if (noteEdits[id] !== undefined) item.sdeAdjustmentNote = noteEdits[id].trim() || null;
       };
       const items: Item[] = [];
       const seen = new Set<string>();
@@ -413,13 +466,20 @@ export const EbitdaAdjustmentsProvider: React.FC<{
             const editedPct = ownerPctEdits[a.mappingId];
             const editedBucket = bucketEdits[a.mappingId];
             const editedLineItem = lineItemEdits[a.mappingId];
-            if (editedPct !== undefined || editedBucket !== undefined || editedLineItem !== undefined) {
+            if (
+              editedPct !== undefined ||
+              editedBucket !== undefined ||
+              editedLineItem !== undefined ||
+              ownerModeEdits[a.mappingId] !== undefined ||
+              noteEdits[a.mappingId] !== undefined
+            ) {
               const item: Item = {
                 mappingId: a.mappingId,
                 ownerPercent: editedPct !== undefined ? editedPct : a.ownerPercent,
               };
               if (editedBucket !== undefined) item.sdeAdjustmentBucket = editedBucket;
               if (editedLineItem !== undefined) item.sdeAdjustmentLineItem = editedLineItem;
+              applyModeAndNote(item, a.mappingId);
               items.push(item);
               seen.add(a.mappingId);
             }
@@ -437,6 +497,7 @@ export const EbitdaAdjustmentsProvider: React.FC<{
         if (Object.prototype.hasOwnProperty.call(lineItemEdits, id)) {
           item.sdeAdjustmentLineItem = lineItemEdits[id];
         }
+        applyModeAndNote(item, id);
         items.push(item);
       }
       const res = await fetch('/api/sde/ebitda-adjustments/save', {
@@ -455,7 +516,7 @@ export const EbitdaAdjustmentsProvider: React.FC<{
     } finally {
       setSaving(false);
     }
-  }, [companyId, api, ownerPctEdits, bucketEdits, lineItemEdits, refreshApi]);
+  }, [companyId, api, ownerPctEdits, ownerModeEdits, noteEdits, bucketEdits, lineItemEdits, refreshApi]);
 
   const bucketByKey = useMemo(() => {
     const map = new Map<SdeBucket, BucketDetail>();
@@ -548,6 +609,8 @@ export const EbitdaAdjustmentsProvider: React.FC<{
       saving,
       saveMessage,
       ownerPctEdits,
+      ownerModeEdits,
+      noteEdits,
       bucketEdits,
       lineItemEdits,
       expandedRows,
@@ -558,6 +621,9 @@ export const EbitdaAdjustmentsProvider: React.FC<{
       lineItemTotal,
       dirtyCount,
       handleChangePct,
+      handleChangeAmount,
+      handleChangeNote,
+      effectiveOwnerMode,
       handleToggleExpand,
       handleUnassign,
       handleAssign,
@@ -574,6 +640,8 @@ export const EbitdaAdjustmentsProvider: React.FC<{
       saving,
       saveMessage,
       ownerPctEdits,
+      ownerModeEdits,
+      noteEdits,
       bucketEdits,
       lineItemEdits,
       expandedRows,
@@ -584,6 +652,9 @@ export const EbitdaAdjustmentsProvider: React.FC<{
       lineItemTotal,
       dirtyCount,
       handleChangePct,
+      handleChangeAmount,
+      handleChangeNote,
+      effectiveOwnerMode,
       handleToggleExpand,
       handleUnassign,
       handleAssign,
@@ -1436,17 +1507,19 @@ export const EbitdaLineItemTotal: React.FC<{
 // existing line-item rows on the SDE Valuation > EBITDA Adjustments tab.
 // -----------------------------------------------------------------------------
 
-export const EbitdaLineItemAccounts: React.FC<{
-  bucket: SdeBucket;
-  lineItem: string;
-  /** Saved/typed manual dollars on this line, shown as its own row beside the account rows. */
-  manualAmount?: number;
-  onClearManual?: () => void;
-  /** YYYY-MM the manual entry posts to on the monthly QoE income statement. */
-  manualMonth?: string;
-  onChangeManualMonth?: (month: string) => void;
-}> = ({ bucket, lineItem, manualAmount, onClearManual, manualMonth, onChangeManualMonth }) => {
-  const ctx = useEbitdaCtx();
+type LineAccount = {
+  mappingId: string;
+  accountCode: string | null;
+  accountId: string | null;
+  accountName: string;
+  ltm: number;
+  ownerPercent: number;
+  ownerMode: OwnerAdjustmentMode;
+  note: string | null;
+};
+
+/** Accounts effectively on a (bucket, lineItem), saved or moved there by pending edits. */
+function collectLineAccounts(ctx: ContextValue, bucket: SdeBucket, lineItem: string): LineAccount[] {
   const detail = (ctx.api?.buckets || []).find((b) => b.bucket === bucket);
   const allAccounts = detail?.accounts || [];
 
@@ -1472,14 +1545,7 @@ export const EbitdaLineItemAccounts: React.FC<{
 
   // Merge & dedupe by mappingId
   const seen = new Set<string>();
-  const accounts: Array<{
-    mappingId: string;
-    accountCode: string | null;
-    accountId: string | null;
-    accountName: string;
-    ltm: number;
-    ownerPercent: number;
-  }> = [];
+  const accounts: LineAccount[] = [];
   for (const a of localAccounts) {
     if (seen.has(a.mappingId)) continue;
     seen.add(a.mappingId);
@@ -1490,6 +1556,8 @@ export const EbitdaLineItemAccounts: React.FC<{
       accountName: a.accountName,
       ltm: a.ltm,
       ownerPercent: a.ownerPercent,
+      ownerMode: a.ownerMode ?? 'PERCENT',
+      note: a.note ?? null,
     });
   }
   for (const a of movedHere) {
@@ -1502,8 +1570,28 @@ export const EbitdaLineItemAccounts: React.FC<{
       accountName: a.accountName,
       ltm: a.ltm,
       ownerPercent: 0,
+      ownerMode: 'PERCENT',
+      note: null,
     });
   }
+  return accounts;
+}
+
+export const EbitdaLineItemAccounts: React.FC<{
+  bucket: SdeBucket;
+  lineItem: string;
+  /** Saved/typed manual dollars on this line, shown as its own row beside the account rows. */
+  manualAmount?: number;
+  onClearManual?: () => void;
+  /** YYYY-MM the manual entry posts to on the monthly QoE income statement. */
+  manualMonth?: string;
+  onChangeManualMonth?: (month: string) => void;
+  /** Reason for the manual entry, shown in the adjustment summary. */
+  manualNote?: string;
+  onChangeManualNote?: (note: string) => void;
+}> = ({ bucket, lineItem, manualAmount, onClearManual, manualMonth, onChangeManualMonth, manualNote, onChangeManualNote }) => {
+  const ctx = useEbitdaCtx();
+  const accounts = collectLineAccounts(ctx, bucket, lineItem);
 
   const hasManual = Math.abs(Number(manualAmount) || 0) >= 0.5;
   const ltmMonths = ctx.api?.ltmWindow?.months ?? [];
@@ -1532,6 +1620,16 @@ export const EbitdaLineItemAccounts: React.FC<{
     color: '#94a3b8',
   };
   const rowGrid = '1fr 76px 52px 84px 18px';
+  const activeModeStyle: React.CSSProperties = { borderColor: '#2563eb', boxShadow: '0 0 0 1px #2563eb inset' };
+  const noteInputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '2px 6px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '2px',
+    fontSize: '11px',
+    color: '#475569',
+    boxSizing: 'border-box',
+  };
 
   return (
     <div
@@ -1592,12 +1690,23 @@ export const EbitdaLineItemAccounts: React.FC<{
           )}
         </div>
       )}
+      {hasManual && onChangeManualNote && (
+        <input
+          type="text"
+          value={manualNote ?? ''}
+          onChange={(e) => onChangeManualNote(e.target.value)}
+          placeholder="Reason for this adjustment (shown in the Adjustment Summary)"
+          maxLength={1000}
+          style={noteInputStyle}
+        />
+      )}
       {accounts.map((a) => {
         const pct = ctx.ownerPctEdits[a.mappingId] ?? a.ownerPercent;
         const ownerAmt = (a.ltm * pct) / 100;
+        const mode = ctx.effectiveOwnerMode(a.mappingId, a.ownerMode);
         return (
+          <React.Fragment key={a.mappingId}>
           <div
-            key={a.mappingId}
             style={{
               display: 'grid',
               gridTemplateColumns: rowGrid,
@@ -1626,26 +1735,31 @@ export const EbitdaLineItemAccounts: React.FC<{
               min={0}
               max={100}
               step="any"
-              title="Percent of LTM to adjust"
+              title={mode === 'PERCENT' ? 'Entered as a percent of LTM' : 'Percent of LTM to adjust'}
               value={Number(pct.toFixed(2))}
               onChange={(e) =>
                 ctx.handleChangePct(a.mappingId, Math.max(0, Math.min(100, Number(e.target.value) || 0)))
               }
-              style={inputStyle}
+              style={{ ...inputStyle, ...(mode === 'PERCENT' && ownerAmt > 0 ? activeModeStyle : null) }}
             />
             <input
               type="number"
               min={0}
               max={Math.round(a.ltm)}
               step="any"
-              title="Dollar amount to adjust (up to the LTM balance)"
+              title={
+                mode === 'AMOUNT'
+                  ? 'Entered as a fixed dollar amount; it stays the same when the LTM total changes'
+                  : 'Dollar amount to adjust (up to the LTM balance)'
+              }
               value={Math.round(ownerAmt)}
-              onChange={(e) => {
-                const amount = Math.max(0, Number(e.target.value) || 0);
-                const nextPct = a.ltm > 0 ? Math.min(100, (amount / a.ltm) * 100) : 0;
-                ctx.handleChangePct(a.mappingId, nextPct);
+              onChange={(e) => ctx.handleChangeAmount(a.mappingId, Math.max(0, Number(e.target.value) || 0), a.ltm)}
+              style={{
+                ...inputStyle,
+                fontWeight: 600,
+                color: ownerAmt > 0 ? '#059669' : '#475569',
+                ...(mode === 'AMOUNT' && ownerAmt > 0 ? activeModeStyle : null),
               }}
-              style={{ ...inputStyle, fontWeight: 600, color: ownerAmt > 0 ? '#059669' : '#475569' }}
             />
             <button
               onClick={() => ctx.handleUnassign(a.mappingId)}
@@ -1655,8 +1769,53 @@ export const EbitdaLineItemAccounts: React.FC<{
               ×
             </button>
           </div>
+          {ownerAmt >= 0.5 && (
+            <input
+              type="text"
+              value={ctx.noteEdits[a.mappingId] ?? a.note ?? ''}
+              onChange={(e) => ctx.handleChangeNote(a.mappingId, e.target.value)}
+              placeholder="Reason for this adjustment (shown in the Adjustment Summary)"
+              maxLength={1000}
+              style={noteInputStyle}
+            />
+          )}
+          </React.Fragment>
         );
       })}
     </div>
   );
+};
+
+// -----------------------------------------------------------------------------
+// EbitdaAdjustmentSummary — live Adjustment Summary for the Quality of
+// Earnings page, reflecting unsaved edits.
+// -----------------------------------------------------------------------------
+
+export const EbitdaAdjustmentSummary: React.FC<{
+  /** Effective line totals the page uses for each (bucket, lineItem). */
+  lineValues: Partial<Record<SdeBucket, Record<string, number>>>;
+  manualInputs: QoeSummaryManualInputs;
+}> = ({ lineValues, manualInputs }) => {
+  const ctx = useEbitdaCtx();
+  const accountsByLine: Partial<Record<SdeBucket, Record<string, QoeSummaryAccountInput[]>>> = {};
+  for (const bucket of SDE_BUCKETS) {
+    for (const item of SDE_LINE_ITEMS[bucket]) {
+      const accounts = collectLineAccounts(ctx, bucket, item.key).map((a) => {
+        const pct = ctx.ownerPctEdits[a.mappingId] ?? a.ownerPercent;
+        return {
+          mappingId: a.mappingId,
+          accountCode: a.accountCode || a.accountId,
+          accountName: a.accountName,
+          ltm: a.ltm,
+          ownerAmount: (a.ltm * pct) / 100,
+          ownerPercent: pct,
+          ownerMode: ctx.effectiveOwnerMode(a.mappingId, a.ownerMode),
+          note: (ctx.noteEdits[a.mappingId] ?? a.note ?? '').trim() || null,
+        };
+      });
+      if (accounts.length > 0) (accountsByLine[bucket] ||= {})[item.key] = accounts;
+    }
+  }
+  const buckets = buildQoeAdjustmentSummary({ accountsByLine, lineValues, manualInputs });
+  return <QoeAdjustmentSummary buckets={buckets} fmt={fmtMoney} />;
 };

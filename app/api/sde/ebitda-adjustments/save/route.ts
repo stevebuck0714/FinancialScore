@@ -15,7 +15,33 @@ type SaveItem = {
   sdeAdjustmentBucket?: SdeBucket | null;
   // null clears the line-item assignment; omit to leave unchanged
   sdeAdjustmentLineItem?: string | null;
+  // omit to leave the entry method unchanged
+  ownerAdjustmentMode?: 'PERCENT' | 'AMOUNT';
+  ownerAdjustmentAmount?: number | null;
+  // null clears the note; omit to leave unchanged
+  sdeAdjustmentNote?: string | null;
 };
+
+const MAX_NOTE_LENGTH = 1000;
+
+function normalizeMode(raw: unknown): 'PERCENT' | 'AMOUNT' | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const v = String(raw).trim().toUpperCase();
+  return v === 'PERCENT' || v === 'AMOUNT' ? v : undefined;
+}
+
+function normalizeAmount(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(n) ? Math.max(0, n) : null;
+}
+
+function normalizeNote(raw: unknown): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  const v = String(raw).trim().slice(0, MAX_NOTE_LENGTH);
+  return v || null;
+}
 
 function clampOwnerPct(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === '') return null;
@@ -68,11 +94,15 @@ export async function POST(request: NextRequest) {
       // If the bucket is being cleared, also clear the line item.
       const lineItem =
         bucket === null ? null : normalizeLineItem(r.sdeAdjustmentLineItem, bucket as SdeBucket | undefined);
+      const mode = normalizeMode(r.ownerAdjustmentMode);
       items.push({
         mappingId,
         ownerPercent: clampOwnerPct(r.ownerPercent),
         sdeAdjustmentBucket: bucket,
         sdeAdjustmentLineItem: lineItem,
+        ownerAdjustmentMode: mode,
+        ownerAdjustmentAmount: mode === 'AMOUNT' ? normalizeAmount(r.ownerAdjustmentAmount) : null,
+        sdeAdjustmentNote: normalizeNote(r.sdeAdjustmentNote),
       });
     }
 
@@ -142,6 +172,21 @@ export async function POST(request: NextRequest) {
                     "sdeAdjustmentBucket" = ${item.sdeAdjustmentBucket},
                     "sdeAdjustmentLineItem" = ${nextLineItem},
                     "updatedAt" = NOW()
+                WHERE id = ${item.mappingId} AND "companyId" = ${companyId}
+              `;
+            }
+            if (item.ownerAdjustmentMode !== undefined) {
+              await tx.$executeRaw`
+                UPDATE "AccountMapping"
+                SET "ownerAdjustmentMode" = ${item.ownerAdjustmentMode},
+                    "ownerAdjustmentAmount" = ${item.ownerAdjustmentAmount ?? null}
+                WHERE id = ${item.mappingId} AND "companyId" = ${companyId}
+              `;
+            }
+            if (item.sdeAdjustmentNote !== undefined) {
+              await tx.$executeRaw`
+                UPDATE "AccountMapping"
+                SET "sdeAdjustmentNote" = ${item.sdeAdjustmentNote}
                 WHERE id = ${item.mappingId} AND "companyId" = ${companyId}
               `;
             }

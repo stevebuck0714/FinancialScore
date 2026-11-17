@@ -25,6 +25,8 @@ export type SdeValuationPreviewModel = {
   personalRows: { label: string; value: number }[];
   nonRecurringRows: { label: string; value: number }[];
   oneTimeRevenueRows: { label: string; value: number }[];
+  /** Effective value per adjustment line, keyed by bucket and catalog line-item key. */
+  lineItemValues: Record<'OWNER_COMP' | 'PERSONAL' | 'NON_RECURRING' | 'ONE_TIME_REVENUE', Record<string, number>>;
   personalDiscretionaryAdj: number;
   nonRecurringExpenseAdj: number;
   oneTimeRevenueAdj: number;
@@ -319,6 +321,36 @@ export function buildSdeValuationPreviewModel(params: {
     personalRows,
     nonRecurringRows,
     oneTimeRevenueRows,
+    lineItemValues: {
+      OWNER_COMP: {
+        ownerSalary: effectiveOwnerSalaryAdj,
+        ownersDraw: effectiveOwnersDrawAdj,
+        marketReplacementSalary: effectiveMarketReplacementSalary,
+        ownerCompOther: effectiveOwnerCompOther,
+      },
+      PERSONAL: {
+        personalTravel: effectivePersonalTravel,
+        familyPayroll: effectiveFamilyPayroll,
+        autoLeases: effectiveAutoLeases,
+        mealsEntertainment: effectiveMealsEntertainment,
+        clubDues: effectiveClubDues,
+        personalOther: effectivePersonalOther,
+      },
+      NON_RECURRING: {
+        legalSettlements: effectiveLegalSettlements,
+        majorRepairs: effectiveMajorRepairs,
+        consulting: effectiveConsulting,
+        erpInstall: effectiveErpInstall,
+        relocation: effectiveRelocation,
+        nonRecurringOther: effectiveNonRecurringOther,
+      },
+      ONE_TIME_REVENUE: {
+        assetSales: effectiveAssetSales,
+        insuranceProceeds: effectiveInsuranceProceeds,
+        oneTimeContract: effectiveOneTimeContract,
+        oneTimeRevenueOther: effectiveOneTimeRevenueOther,
+      },
+    },
     personalDiscretionaryAdj,
     nonRecurringExpenseAdj,
     oneTimeRevenueAdj,

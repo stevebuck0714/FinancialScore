@@ -54,7 +54,12 @@ type AccountMappingRow = {
   ownerPercent: number | null;
   sdeAdjustmentBucket: string | null;
   sdeAdjustmentLineItem: string | null;
+  ownerAdjustmentMode: string | null;
+  ownerAdjustmentAmount: number | null;
+  sdeAdjustmentNote: string | null;
 };
+
+type OwnerAdjustmentMode = 'PERCENT' | 'AMOUNT';
 
 type AccountDetail = {
   mappingId: string;
@@ -66,6 +71,10 @@ type AccountDetail = {
   monthly: Array<{ month: string; value: number }>;
   ownerPercent: number;
   ownerAmount: number;
+  ownerMode: OwnerAdjustmentMode;
+  /** The fixed dollar amount as entered, when ownerMode is 'AMOUNT'. */
+  ownerFixedAmount: number | null;
+  note: string | null;
   lineItem: string | null;
 };
 
@@ -313,7 +322,10 @@ export async function GET(request: NextRequest) {
           "targetField",
           "ownerPercent",
           "sdeAdjustmentBucket",
-          "sdeAdjustmentLineItem"
+          "sdeAdjustmentLineItem",
+          "ownerAdjustmentMode",
+          "ownerAdjustmentAmount",
+          "sdeAdjustmentNote"
         FROM "AccountMapping"
         WHERE "companyId" = ${companyId}
         ORDER BY "accountCode" ASC, "accountName" ASC
@@ -417,8 +429,21 @@ export async function GET(request: NextRequest) {
       // revenue rows are typically negative (credits). Surface the magnitude
       // for the user; sign is preserved on the raw `monthly[].value`.
       const ltmMagnitude = Math.abs(ltm);
-      const ownerPct = clampOwnerPct(mapping.ownerPercent);
-      const ownerAmount = (ltmMagnitude * ownerPct) / 100;
+      // A fixed dollar entry keeps its amount as the LTM total moves; its
+      // percentage is re-derived from the current LTM.
+      const fixedAmount =
+        mapping.ownerAdjustmentMode === 'AMOUNT' && mapping.ownerAdjustmentAmount !== null
+          ? Math.max(0, normalizeNumber(mapping.ownerAdjustmentAmount))
+          : null;
+      const ownerMode: OwnerAdjustmentMode = fixedAmount !== null ? 'AMOUNT' : 'PERCENT';
+      const ownerAmount =
+        fixedAmount !== null
+          ? Math.min(fixedAmount, ltmMagnitude)
+          : (ltmMagnitude * clampOwnerPct(mapping.ownerPercent)) / 100;
+      const ownerPct =
+        fixedAmount !== null
+          ? (ltmMagnitude > 0 ? (ownerAmount / ltmMagnitude) * 100 : 0)
+          : clampOwnerPct(mapping.ownerPercent);
       const lineItemKey = isValidLineItem(bucket, mapping.sdeAdjustmentLineItem)
         ? mapping.sdeAdjustmentLineItem
         : null;
@@ -433,6 +458,9 @@ export async function GET(request: NextRequest) {
         monthly: monthly.map((r) => ({ month: r.month, value: Math.abs(r.value) })),
         ownerPercent: ownerPct,
         ownerAmount,
+        ownerMode,
+        ownerFixedAmount: fixedAmount,
+        note: mapping.sdeAdjustmentNote?.trim() || null,
         lineItem: lineItemKey,
       };
 

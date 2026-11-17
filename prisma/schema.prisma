@@ -1434,6 +1434,13 @@ model AccountMapping {
   // Null = assigned to the bucket without a specific line. The catalog of valid
   // values lives in lib/sde/adjustment-line-items.ts (single source of truth).
   sdeAdjustmentLineItem String?
+  // How the SDE adjustment was entered: 'PERCENT' (ownerPercent of the LTM
+  // total) or 'AMOUNT' (fixed ownerAdjustmentAmount, capped at the LTM total).
+  // Null is treated as 'PERCENT'.
+  ownerAdjustmentMode   String?
+  ownerAdjustmentAmount Float?
+  // Reason for the SDE adjustment, shown in the Quality of Earnings summary.
+  sdeAdjustmentNote     String?
   company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, accountId])

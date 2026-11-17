@@ -6,6 +6,8 @@ import type { SdeValuationPreviewModel } from '@/lib/sde-valuation-preview-model
 import type { SdeExecutiveSummary, SdeExecutiveFinancialSummary, SdeRecommendation } from '@/lib/sde-recommendations';
 import ValuationBalanceSheetQualityPreview from './ValuationBalanceSheetQualityPreview';
 import { formatMoneyCompact, getCurrencySymbol } from '@/lib/format/currency';
+import type { QoeSummaryBucket } from '@/lib/sde/qoe-adjustment-summary';
+import QoeAdjustmentSummary from './QoeAdjustmentSummary';
 
 const LineChart = dynamic(() => import('@/app/components/charts/Charts').then((mod) => mod.LineChart), { ssr: false });
 
@@ -24,6 +26,8 @@ type Props = {
   locale?: string | null;
   /** `qoe` renders the QoE Report summary: EBITDA metrics in place of SDE valuation. */
   variant?: 'sde' | 'qoe';
+  /** Per-adjustment breakdown shown after the Quality of Earnings charts. */
+  adjustmentSummary?: QoeSummaryBucket[];
 };
 
 const sectionTitle = (title: string) => (
@@ -243,7 +247,7 @@ function QoeWaterfallChart({
 }
 
 export default function ValuationSdeSection5Preview(props: Props) {
-  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale, variant = 'sde' } = props;
+  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale, variant = 'sde', adjustmentSummary } = props;
   const isQoe = variant === 'qoe';
   const fmt = model.formatDollars;
   const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
@@ -691,6 +695,11 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 />
               </div>
             </div>
+            {adjustmentSummary && (
+              <div style={{ marginTop: '12px' }}>
+                <QoeAdjustmentSummary buckets={adjustmentSummary} fmt={fmt} />
+              </div>
+            )}
           </div>
         )}
 

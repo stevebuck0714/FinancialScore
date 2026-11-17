@@ -162,6 +162,7 @@ import {
 } from '@/lib/date-utils';
 import type { SdeExecutiveFinancialSummary, SdeExecutiveSummary, SdeRecommendation } from '@/lib/sde-recommendations';
 import { buildSdeValuationPreviewModel } from '@/lib/sde-valuation-preview-model';
+import { accountsByLineFromApi, buildQoeAdjustmentSummary } from '@/lib/sde/qoe-adjustment-summary';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 const RealEstateFeedMappingPanel = dynamic(() => import('./components/dashboard/RealEstateFeedMappingPanel'), { ssr: false });
 const LOBManager = dynamic(() => import('./components/dashboard/LOBManager'), { ssr: false });
@@ -205,6 +206,10 @@ const EbitdaSaveAllButton = dynamic(
 );
 const EbitdaAccountList = dynamic(
   () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaAccountList),
+  { ssr: false },
+);
+const EbitdaAdjustmentSummary = dynamic(
+  () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaAdjustmentSummary),
   { ssr: false },
 );
 const SdeAdjustedIncomeStatement = dynamic(
@@ -3916,6 +3921,8 @@ function FinancialScorePage() {
     marketReplacementSalary?: number;
     /** Line-item key → YYYY-MM the manual entry posts to on the monthly QoE income statement. */
     manualEntryMonths?: Record<string, string>;
+    /** Line-item key → reason for the manual entry, shown in the QoE Adjustment Summary. */
+    manualEntryNotes?: Record<string, string>;
     analysisQualifiers?: RevenueAnalysisQualifiers;
     analysisQualifierMode?: 'auto' | 'manual';
     analysisQualifierAudit?: any;
@@ -3932,6 +3939,7 @@ function FinancialScorePage() {
   const [savedEbitdaLineItemTotalsState, setSavedEbitdaLineItemTotals] = useState<{
     companyId: string;
     totals: Partial<Record<string, Record<string, number>>>;
+    accountsByLine: ReturnType<typeof accountsByLineFromApi>;
   } | null>(null);
 
   // State - Goals
@@ -12159,7 +12167,7 @@ function FinancialScorePage() {
             (totals[bucket.bucket] ||= {})[lineItem.key] = amount;
           }
         }
-        setSavedEbitdaLineItemTotals({ companyId: selectedCompanyId, totals });
+        setSavedEbitdaLineItemTotals({ companyId: selectedCompanyId, totals, accountsByLine: accountsByLineFromApi(data.buckets) });
       })
       .catch(() => {});
     return () => {
@@ -12185,6 +12193,17 @@ function FinancialScorePage() {
         assignedLineItemTotals: savedEbitdaLineItemTotals,
       }),
     [monthly, sdeManualInputs, sdeMultiplier, industrySectorCategory, effectiveCompanySectorCategory, customerQualityRecords, savedEbitdaLineItemTotals],
+  );
+  const sdeReportAdjustmentSummary = useMemo(
+    () =>
+      sdeValuationReportPreviewModel && savedEbitdaLineItemTotalsState?.companyId === selectedCompanyId
+        ? buildQoeAdjustmentSummary({
+            accountsByLine: savedEbitdaLineItemTotalsState.accountsByLine,
+            lineValues: sdeValuationReportPreviewModel.lineItemValues,
+            manualInputs: sdeManualInputs,
+          })
+        : undefined,
+    [sdeValuationReportPreviewModel, savedEbitdaLineItemTotalsState, selectedCompanyId, sdeManualInputs],
   );
   const valuationSectionDefinitions = useMemo(() => ([
     {
@@ -22212,6 +22231,7 @@ function FinancialScorePage() {
                   sdeRecommendationsApi={sdeRecommendationsApi}
                   currency={companyDisplayCurrency}
                   locale={selectedCompany?.locale}
+                  adjustmentSummary={sdeReportAdjustmentSummary}
                 />
               ) : (
                 <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
@@ -22259,6 +22279,7 @@ function FinancialScorePage() {
                 sdeRecommendationsApi={sdeRecommendationsApi}
                 currency={companyDisplayCurrency}
                 locale={selectedCompany?.locale}
+                adjustmentSummary={sdeReportAdjustmentSummary}
               />
             ) : valuationSectionPreview.id === '5' && !sdeValuationReportPreviewModel ? (
               <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
@@ -24129,6 +24150,8 @@ function FinancialScorePage() {
                             onClearManual={() => setSdeManualInputs((prev) => ({ ...prev, [lineKey]: 0 }))}
                             manualMonth={sdeManualInputs.manualEntryMonths?.[lineKey]}
                             onChangeManualMonth={(month) => setSdeManualInputs((prev) => ({ ...prev, manualEntryMonths: { ...(prev.manualEntryMonths || {}), [lineKey]: month } }))}
+                            manualNote={sdeManualInputs.manualEntryNotes?.[lineKey]}
+                            onChangeManualNote={(note) => setSdeManualInputs((prev) => ({ ...prev, manualEntryNotes: { ...(prev.manualEntryNotes || {}), [lineKey]: note } }))}
                           />
                         ) : null;
                         if (rowType === 'ownerSalaryInput') {
@@ -24294,6 +24317,8 @@ function FinancialScorePage() {
                             onClearManual={() => setSdeManualInputs((prev) => ({ ...prev, [String(key)]: 0 }))}
                             manualMonth={sdeManualInputs.manualEntryMonths?.[String(key)]}
                             onChangeManualMonth={(month) => setSdeManualInputs((prev) => ({ ...prev, manualEntryMonths: { ...(prev.manualEntryMonths || {}), [String(key)]: month } }))}
+                            manualNote={sdeManualInputs.manualEntryNotes?.[String(key)]}
+                            onChangeManualNote={(note) => setSdeManualInputs((prev) => ({ ...prev, manualEntryNotes: { ...(prev.manualEntryNotes || {}), [String(key)]: note } }))}
                           />
                         </React.Fragment>
                       ))}
@@ -24369,6 +24394,8 @@ function FinancialScorePage() {
                             onClearManual={() => setSdeManualInputs((prev) => ({ ...prev, [String(key)]: 0 }))}
                             manualMonth={sdeManualInputs.manualEntryMonths?.[String(key)]}
                             onChangeManualMonth={(month) => setSdeManualInputs((prev) => ({ ...prev, manualEntryMonths: { ...(prev.manualEntryMonths || {}), [String(key)]: month } }))}
+                            manualNote={sdeManualInputs.manualEntryNotes?.[String(key)]}
+                            onChangeManualNote={(note) => setSdeManualInputs((prev) => ({ ...prev, manualEntryNotes: { ...(prev.manualEntryNotes || {}), [String(key)]: note } }))}
                           />
                         </React.Fragment>
                       ))}
@@ -24416,6 +24443,8 @@ function FinancialScorePage() {
                             onClearManual={() => setSdeManualInputs((prev) => ({ ...prev, [String(key)]: 0 }))}
                             manualMonth={sdeManualInputs.manualEntryMonths?.[String(key)]}
                             onChangeManualMonth={(month) => setSdeManualInputs((prev) => ({ ...prev, manualEntryMonths: { ...(prev.manualEntryMonths || {}), [String(key)]: month } }))}
+                            manualNote={sdeManualInputs.manualEntryNotes?.[String(key)]}
+                            onChangeManualNote={(note) => setSdeManualInputs((prev) => ({ ...prev, manualEntryNotes: { ...(prev.manualEntryNotes || {}), [String(key)]: note } }))}
                           />
                         </React.Fragment>
                       ))}
@@ -24624,6 +24653,42 @@ function FinancialScorePage() {
                       </svg>
                     </div>
                   </div>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <EbitdaAdjustmentSummary
+                    manualInputs={sdeManualInputs}
+                    lineValues={{
+                      OWNER_COMP: {
+                        ownerSalary: effectiveOwnerSalaryAdj,
+                        ownersDraw: effectiveOwnersDrawAdj,
+                        marketReplacementSalary: effectiveMarketReplacementSalary,
+                        ownerCompOther: effectiveOwnerCompOther,
+                      },
+                      PERSONAL: {
+                        personalTravel: effectivePersonalTravel,
+                        familyPayroll: effectiveFamilyPayroll,
+                        autoLeases: effectiveAutoLeases,
+                        mealsEntertainment: effectiveMealsEntertainment,
+                        clubDues: effectiveClubDues,
+                        personalOther: effectivePersonalOther,
+                      },
+                      NON_RECURRING: {
+                        legalSettlements: effectiveLegalSettlements,
+                        majorRepairs: effectiveMajorRepairs,
+                        consulting: effectiveConsulting,
+                        erpInstall: effectiveErpInstall,
+                        relocation: effectiveRelocation,
+                        nonRecurringOther: effectiveNonRecurringOther,
+                      },
+                      ONE_TIME_REVENUE: {
+                        assetSales: effectiveAssetSales,
+                        insuranceProceeds: effectiveInsuranceProceeds,
+                        oneTimeContract: effectiveOneTimeContract,
+                        oneTimeRevenueOther: effectiveOneTimeRevenueOther,
+                      },
+                    }}
+                  />
                 </div>
                 </EbitdaAdjustmentsProvider>
                 </>
