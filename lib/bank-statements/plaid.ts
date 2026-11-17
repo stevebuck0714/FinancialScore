@@ -18,8 +18,22 @@ export class PlaidRequestError extends Error {
   constructor(
     message: string,
     readonly code: string | null,
+    readonly rateLimited = false,
   ) {
     super(message);
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function withRateLimitRetry<T>(fn: () => Promise<T>, attempts = 6): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!(e instanceof PlaidRequestError && e.rateLimited) || attempt >= attempts) throw e;
+      await sleep(Math.min(30_000, 2_000 * 2 ** (attempt - 1)) + Math.random() * 1_000);
+    }
   }
 }
 
@@ -33,8 +47,17 @@ async function plaidRequest(path: string, body: Record<string, unknown>): Promis
     cache: 'no-store',
   });
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { error_code?: string; display_message?: string; error_message?: string };
-    throw new PlaidRequestError(err.display_message || err.error_message || `Plaid request failed (${res.status})`, err.error_code || null);
+    const err = (await res.json().catch(() => ({}))) as {
+      error_type?: string;
+      error_code?: string;
+      display_message?: string;
+      error_message?: string;
+    };
+    throw new PlaidRequestError(
+      err.display_message || err.error_message || `Plaid request failed (${res.status})`,
+      err.error_code || null,
+      res.status === 429 || err.error_type === 'RATE_LIMIT_EXCEEDED',
+    );
   }
   return res;
 }
@@ -92,8 +115,10 @@ export async function withPlaidStatements<T>(
         accountLast4: account.account_mask ? account.account_mask.slice(-4) : null,
         accountName: account.account_name || account.account_official_name || null,
         month: `${s.year}-${String(s.month).padStart(2, '0')}`,
-        download: async () =>
-          (await plaidRequest('/statements/download', { access_token: accessToken, statement_id: s.statement_id })).arrayBuffer(),
+        download: () =>
+          withRateLimitRetry(async () =>
+            (await plaidRequest('/statements/download', { access_token: accessToken, statement_id: s.statement_id })).arrayBuffer(),
+          ),
       })),
     );
     return await save(statements, institution);

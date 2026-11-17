@@ -7,7 +7,11 @@ export const dynamic = 'force-dynamic';
 // Downloads up to 24 statement PDFs per connected account.
 export const maxDuration = 300;
 
+// New downloads stop here, leaving time for in-flight downloads, retries, and /item/remove.
+const DOWNLOAD_BUDGET_MS = 200_000;
+
 export async function POST(request: NextRequest) {
+  const deadline = Date.now() + DOWNLOAD_BUDGET_MS;
   try {
     const body = (await request.json().catch(() => ({}))) as { companyId?: string; publicToken?: string };
     const companyId = String(body.companyId || '').trim();
@@ -18,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     const result = await withPlaidStatements(publicToken, async (statements, institution) => ({
       institution,
-      ...(await saveFetchedStatements({ companyId, userId: context.userId, userEmail: context.email, statements })),
+      ...(await saveFetchedStatements({ companyId, userId: context.userId, userEmail: context.email, statements, deadline })),
     }));
     return NextResponse.json(result);
   } catch (error) {

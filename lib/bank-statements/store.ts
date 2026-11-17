@@ -24,7 +24,7 @@ export type StatementImportResult = {
   errors: string[];
 };
 
-const CONCURRENCY = 4;
+const CONCURRENCY = 2;
 
 const safeName = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'statement';
 
@@ -37,8 +37,10 @@ export async function saveFetchedStatements(params: {
   userId: string;
   userEmail: string;
   statements: FetchedStatement[];
+  /** Epoch ms after which no new downloads start, so the caller can still remove the bank connection. */
+  deadline?: number;
 }): Promise<StatementImportResult> {
-  const { companyId, userId, userEmail, statements } = params;
+  const { companyId, userId, userEmail, statements, deadline } = params;
   const privateToken = privateBlobToken();
   const result: StatementImportResult = { imported: 0, skipped: 0, failed: 0, accounts: [], errors: [] };
   result.accounts = [...new Set(statements.map((s) => [s.accountName, s.accountLast4 ? `x${s.accountLast4}` : null].filter(Boolean).join(' ')))];
@@ -52,6 +54,7 @@ export async function saveFetchedStatements(params: {
   const created: string[] = [];
   let next = 0;
   let quotaExceeded = false;
+  let timedOut = false;
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, statements.length) }, async () => {
       while (next < statements.length) {
@@ -62,8 +65,14 @@ export async function saveFetchedStatements(params: {
           continue;
         }
         seen.add(key);
-        if (quotaExceeded) {
+        if (quotaExceeded || timedOut) {
           result.failed += 1;
+          continue;
+        }
+        if (deadline && Date.now() > deadline) {
+          timedOut = true;
+          result.failed += 1;
+          result.errors.unshift('Time limit reached. Connect the bank again to pull the remaining statements; ones already saved are skipped.');
           continue;
         }
         try {
