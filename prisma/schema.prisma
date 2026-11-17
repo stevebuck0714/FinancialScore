@@ -498,6 +498,9 @@ model DataRoomDocument {
   tamperScore          Float?
   tamperDetail         Json?
   tamperCheckedAt      DateTime?
+  /// Monthly figures per account from bank data (Plaid asset report) when no statement PDF exists:
+  /// [{ last4, accountName, month, beginning, deposits, withdrawals, ending }]
+  bankActivity         Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

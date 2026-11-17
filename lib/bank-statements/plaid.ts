@@ -1,4 +1,6 @@
 import { addEstCalendarDays, formatEstDate, yearsAgoEstDate } from '@/lib/time/eastern';
+import { monthlyActivityFromAssetAccount, type AssetReportAccount } from './bank-activity';
+import type { BankActivityMonth } from './providers';
 import type { FetchedStatement } from './store';
 
 type PlaidEnv = 'sandbox' | 'production';
@@ -72,21 +74,37 @@ function statementWindow() {
   return { start_date: addEstCalendarDays(yearsAgoEstDate(2), 1), end_date: end };
 }
 
+/**
+ * Assets is required and Statements is pulled when the bank supports it, so banks
+ * without statement PDFs can still be connected. Teams without Assets access fall
+ * back to a Statements-only session.
+ */
 export async function createPlaidLinkToken(params: { userId: string; email: string | null }): Promise<string> {
-  const json = await plaidJson<{ link_token: string }>('/link/token/create', {
+  const base = {
     client_name: 'Corelytics',
     language: 'en',
     country_codes: ['US'],
     user: { client_user_id: params.userId, ...(params.email ? { email_address: params.email } : {}) },
-    products: ['statements'],
     statements: statementWindow(),
-  });
-  return json.link_token;
+  };
+  try {
+    const json = await plaidJson<{ link_token: string }>('/link/token/create', {
+      ...base,
+      products: ['assets'],
+      required_if_supported_products: ['statements'],
+    });
+    return json.link_token;
+  } catch (e) {
+    if (!(e instanceof PlaidRequestError && e.code === 'INVALID_PRODUCT')) throw e;
+    const json = await plaidJson<{ link_token: string }>('/link/token/create', { ...base, products: ['statements'] });
+    return json.link_token;
+  }
 }
 
 type StatementsList = {
   institution_name: string | null;
   accounts: Array<{
+    account_id: string;
     account_mask: string | null;
     account_name: string | null;
     account_official_name: string | null;
@@ -94,21 +112,102 @@ type StatementsList = {
   }>;
 };
 
+type AccountsList = { accounts: Array<{ account_id: string; mask: string | null; name: string; type: string; subtype: string | null }> };
+
+type AssetReport = {
+  report: {
+    date_generated: string;
+    items: Array<{ institution_name: string | null; accounts: AssetReportAccount[] }>;
+  };
+};
+
+export type PlaidBankDataReport = {
+  institution: string | null;
+  pdf: ArrayBuffer;
+  activity: BankActivityMonth[];
+  accounts: string[];
+};
+
+export type PlaidImportHandlers<S, A> = {
+  saveStatements: (statements: FetchedStatement[], institution: string | null) => Promise<S>;
+  saveBankDataReport: (report: PlaidBankDataReport) => Promise<A>;
+};
+
+export type PlaidImportOutcome<S, A> = {
+  institution: string | null;
+  statements: S;
+  bankData: A | null;
+  /** Why bank data was not pulled for accounts without statements; null when it was or was not needed. */
+  bankDataNote: string | null;
+};
+
+const ASSET_REPORT_DAYS = 730;
+const ASSET_REPORT_POLL_MS = 3_000;
+const isDepository = (a: { type: string }) => a.type === 'depository';
+const accountLabel = (name: string | null, mask: string | null) => [name, mask ? `x${mask.slice(-4)}` : null].filter(Boolean).join(' ');
+
+async function listStatements(accessToken: string): Promise<StatementsList | null> {
+  try {
+    return await plaidJson<StatementsList>('/statements/list', { access_token: accessToken });
+  } catch (e) {
+    if (e instanceof PlaidRequestError && (e.code === 'PRODUCTS_NOT_SUPPORTED' || e.code === 'PRODUCT_NOT_ENABLED')) return null;
+    throw e;
+  }
+}
+
+async function waitForAssetReport(token: string, until: number): Promise<AssetReport> {
+  for (;;) {
+    try {
+      return await plaidJson<AssetReport>('/asset_report/get', { asset_report_token: token });
+    } catch (e) {
+      if (!(e instanceof PlaidRequestError && (e.code === 'PRODUCT_NOT_READY' || e.rateLimited)) || Date.now() > until) throw e;
+      await sleep(ASSET_REPORT_POLL_MS);
+    }
+  }
+}
+
 /**
- * Exchanges the Link public token, hands every statement to `save`, and always
- * removes the Item afterwards so no bank connection or access token is kept.
+ * Exchanges the Link public token and saves statement PDFs for every account the
+ * bank provides them for. Depository accounts without statements get a Plaid asset
+ * report (PDF plus monthly figures) instead. The asset report and the Item are
+ * always removed afterwards so no bank connection or access token is kept.
  */
-export async function withPlaidStatements<T>(
+export async function importPlaidBankData<S, A>(
   publicToken: string,
-  save: (statements: FetchedStatement[], institution: string | null) => Promise<T>,
-): Promise<T> {
+  handlers: PlaidImportHandlers<S, A>,
+  assetReportDeadline: number,
+): Promise<PlaidImportOutcome<S, A>> {
   const { access_token: accessToken } = await plaidJson<{ access_token: string }>('/item/public_token/exchange', {
     public_token: publicToken,
   });
+  let assetReportToken: string | null = null;
   try {
-    const list = await plaidJson<StatementsList>('/statements/list', { access_token: accessToken });
-    const institution = list.institution_name || null;
-    const statements: FetchedStatement[] = list.accounts.flatMap((account) =>
+    const [list, { accounts }] = await Promise.all([
+      listStatements(accessToken),
+      plaidJson<AccountsList>('/accounts/get', { access_token: accessToken }),
+    ]);
+    const withStatements = new Set((list?.accounts ?? []).filter((a) => a.statements.length > 0).map((a) => a.account_id));
+    const gapAccounts = accounts.filter((a) => isDepository(a) && !withStatements.has(a.account_id));
+
+    let bankDataNote: string | null = null;
+    if (gapAccounts.length > 0) {
+      try {
+        assetReportToken = (
+          await plaidJson<{ asset_report_token: string }>('/asset_report/create', {
+            access_tokens: [accessToken],
+            days_requested: ASSET_REPORT_DAYS,
+          })
+        ).asset_report_token;
+      } catch (e) {
+        bankDataNote =
+          e instanceof PlaidRequestError && (e.code === 'INVALID_PRODUCT' || e.code === 'PRODUCTS_NOT_SUPPORTED')
+            ? `No statements or bank data available for ${gapAccounts.map((a) => accountLabel(a.name, a.mask)).join(', ')}. Upload those statements instead.`
+            : `Bank data could not be requested: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
+
+    let institution = list?.institution_name || null;
+    const statements: FetchedStatement[] = (list?.accounts ?? []).flatMap((account) =>
       account.statements.map((s) => ({
         source: 'PLAID' as const,
         institution,
@@ -121,8 +220,39 @@ export async function withPlaidStatements<T>(
           ),
       })),
     );
-    return await save(statements, institution);
+    const savedStatements = await handlers.saveStatements(statements, institution);
+
+    let bankData: A | null = null;
+    if (assetReportToken) {
+      try {
+        const { report } = await waitForAssetReport(assetReportToken, assetReportDeadline);
+        const gapIds = new Set(gapAccounts.map((a) => a.account_id));
+        const reportDate = formatEstDate(new Date(report.date_generated));
+        const reportAccounts = report.items.flatMap((item) => item.accounts).filter((a) => gapIds.has(a.account_id));
+        institution = institution || report.items[0]?.institution_name || null;
+        const pdf = await withRateLimitRetry(async () =>
+          (await plaidRequest('/asset_report/pdf/get', { asset_report_token: assetReportToken })).arrayBuffer(),
+        );
+        bankData = await handlers.saveBankDataReport({
+          institution,
+          pdf,
+          activity: reportAccounts.flatMap((a) => monthlyActivityFromAssetAccount(a, reportDate)),
+          accounts: reportAccounts.map((a) => accountLabel(a.name || a.official_name, a.mask)),
+        });
+      } catch (e) {
+        bankDataNote =
+          e instanceof PlaidRequestError && e.code === 'PRODUCT_NOT_READY'
+            ? 'The bank data report was not ready in time. Connect the bank again to retry.'
+            : `Bank data could not be saved: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
+    return { institution, statements: savedStatements, bankData, bankDataNote };
   } finally {
+    if (assetReportToken) {
+      await plaidRequest('/asset_report/remove', { asset_report_token: assetReportToken }).catch((e) =>
+        console.error('Plaid /asset_report/remove failed:', e),
+      );
+    }
     await plaidRequest('/item/remove', { access_token: accessToken }).catch((e) =>
       console.error('Plaid /item/remove failed; remove the Item from the Plaid dashboard:', e),
     );

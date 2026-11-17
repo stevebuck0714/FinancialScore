@@ -37,7 +37,16 @@ async function postJson<T>(url: string, body: Record<string, unknown>): Promise<
   return json;
 }
 
-type ImportResult = { institution: string | null; imported: number; skipped: number; failed: number; accounts: string[]; errors: string[] };
+type ImportResult = {
+  institution: string | null;
+  imported: number;
+  skipped: number;
+  failed: number;
+  accounts: string[];
+  errors: string[];
+  bankData: { saved: boolean; accounts: string[]; months: number } | null;
+  bankDataNote: string | null;
+};
 
 export type BankConnectStatus = { tone: 'info' | 'success' | 'error'; message: string } | null;
 
@@ -86,10 +95,14 @@ export function useBankConnect(companyId: string, onImported: () => void) {
           `Saved ${result.imported} statement${result.imported === 1 ? '' : 's'}${result.institution ? ` from ${result.institution}` : ''}`,
           result.skipped ? `${result.skipped} already on file` : null,
           result.failed ? `${result.failed} failed` : null,
+          result.bankData?.saved
+            ? `bank data report for ${result.bankData.accounts.join(', ') || 'accounts without statements'} (${result.bankData.months} account-months)`
+            : null,
         ].filter(Boolean);
+        const problems = [result.errors[0], result.bankDataNote].filter(Boolean);
         setStatus({
-          tone: result.failed ? 'error' : 'success',
-          message: `${parts.join(', ')}. The bank connection has been removed.${result.errors.length ? ` ${result.errors[0]}` : ''}`,
+          tone: result.failed || result.bankDataNote ? 'error' : 'success',
+          message: `${parts.join(', ')}. The bank connection has been removed.${problems.length ? ` ${problems.join(' ')}` : ''}`,
         });
         onImported();
       } catch (e) {

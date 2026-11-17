@@ -18,6 +18,7 @@ type BankStatementsResponse = BankStatementsState & {
 
 const COVERAGE: Record<CoverageStatus, { short: string; label: string; colors: { bg: string; fg: string; border: string } }> = {
   BANK_API: { short: 'API', label: 'Bank API', colors: STATUS_COLORS.TIED },
+  BANK_DATA: { short: 'DATA', label: 'Bank Data, No PDF', colors: { bg: '#f0fdfa', fg: '#0f766e', border: '#5eead4' } },
   VERIFIED_UPLOAD: { short: 'VER', label: 'Verified Upload', colors: STATUS_COLORS.RECEIVED },
   UPLOAD: { short: 'UP', label: 'Upload, Not Verified', colors: STATUS_COLORS.CLEARED },
   SUSPECT_UPLOAD: { short: 'SUS', label: 'Suspect Upload', colors: STATUS_COLORS.EXCEPTION },
@@ -125,8 +126,9 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
           <div>
             <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#1e293b', margin: 0 }}>Bank Statements</h2>
             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', maxWidth: 760 }}>
-              Connect the client&apos;s bank to pull up to 24 months of statements directly from the bank. Upload months 25–36 and
-              statements from banks the connectors do not support. Every statement is stored in the Data Room Bank Statements folder.
+              Connect the client&apos;s bank to pull up to 24 months of statements directly from the bank. When the bank does not provide
+              statement PDFs, 24 months of bank data (transactions and balances) is pulled instead. Upload months 25–36 and statements
+              from banks the connectors do not support. Everything is stored in the Data Room Bank Statements folder.
             </div>
           </div>
           <button style={buttonStyle()} onClick={() => void load()}>
@@ -138,7 +140,7 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
             <strong>{summary.covered}</strong> of {summary.accountMonths} account-months received
           </span>
           <span>
-            <strong>{summary.bankApi}</strong> from bank API
+            <strong>{summary.bankApi}</strong> from the bank
           </span>
           <span>
             <strong>{summary.uploads}</strong> uploaded
@@ -321,10 +323,22 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
                       </a>
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'left' }}>
-                      {accountName(d.bankAccountId)}
-                      {d.accountLast4 ? <span style={{ color: '#64748b' }}> · x{d.accountLast4}</span> : null}
+                      {d.coveredLast4s.length > 0 ? (
+                        d.coveredLast4s.map((l) => `x${l}`).join(', ')
+                      ) : (
+                        <>
+                          {accountName(d.bankAccountId)}
+                          {d.accountLast4 ? <span style={{ color: '#64748b' }}> · x{d.accountLast4}</span> : null}
+                        </>
+                      )}
                     </td>
-                    <td style={{ ...tdStyle, textAlign: 'left' }}>{d.month ? formatMonthLabel(d.month) : '—'}</td>
+                    <td style={{ ...tdStyle, textAlign: 'left' }}>
+                      {d.month
+                        ? formatMonthLabel(d.month)
+                        : d.period
+                          ? `${formatMonthLabel(d.period.start)} – ${formatMonthLabel(d.period.end)}`
+                          : '—'}
+                    </td>
                     <td style={{ ...tdStyle, textAlign: 'left' }}>{BANK_STATEMENT_SOURCE_LABELS[d.source]}</td>
                     <td style={{ ...tdStyle, textAlign: 'left' }}>{verificationLabel(d)}</td>
                     <td style={{ ...tdStyle, textAlign: 'left' }}>{SCAN_LABELS[d.scanStatus] || d.scanStatus}</td>

@@ -3,6 +3,7 @@ import { extractTextFromArrayBuffer } from '@/lib/company-documents/extract-text
 import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import { readDataRoomBlob } from '@/lib/dataroom/blob-storage';
+import { parseBankActivity } from '@/lib/bank-statements/providers';
 import { shiftMonth } from './book-balances';
 import { parseBankStatement, type ParsedStatement } from './statement-parser';
 import { computeTieOut } from './tie-out';
@@ -57,13 +58,37 @@ type Doc = {
   contentType: string | null;
   statementMonth: string | null;
   statementAccountLast4: string | null;
+  statementSource: string | null;
+  bankActivity: unknown;
   scanStatus: string;
 };
 
-async function readDocument(doc: Doc): Promise<{ parsed: ParsedStatement | null; failure?: StatementScanResult }> {
+type DocumentRead = { parsed: ParsedStatement[]; failure?: StatementScanResult };
+
+/** Bank data reports carry their monthly figures; they are used as-is instead of reading the PDF. */
+function bankActivityStatements(doc: Doc): ParsedStatement[] {
+  return parseBankActivity(doc.bankActivity).map((a) => ({
+    last4: a.last4,
+    month: a.month,
+    periodLabel: null,
+    beginning: a.beginning,
+    deposits: a.deposits,
+    withdrawals: a.withdrawals,
+    ending: a.ending,
+    foots: Math.abs(a.beginning + a.deposits - a.withdrawals - a.ending) <= 0.01,
+  }));
+}
+
+async function readDocument(doc: Doc): Promise<DocumentRead> {
   const base = { documentId: doc.id, fileName: doc.originalFileName, bankAccountId: null, month: null, parsed: null };
+  if (doc.statementSource === 'PLAID_ASSETS') {
+    const parsed = bankActivityStatements(doc);
+    return parsed.length > 0
+      ? { parsed }
+      : { parsed: [], failure: { ...base, status: 'NEEDS_REVIEW', message: 'This bank data report has no complete months.' } };
+  }
   if (doc.scanStatus !== 'clean') {
-    return { parsed: null, failure: { ...base, status: 'PENDING_SCAN', message: 'Waiting for the Data Room virus scan to finish.' } };
+    return { parsed: [], failure: { ...base, status: 'PENDING_SCAN', message: 'Waiting for the Data Room virus scan to finish.' } };
   }
   try {
     const extracted = await extractTextFromArrayBuffer({
@@ -74,13 +99,13 @@ async function readDocument(doc: Doc): Promise<{ parsed: ParsedStatement | null;
     if (extracted.status === 'FAILED') throw new Error(extracted.error);
     if (extracted.status === 'NO_TEXT' || extracted.text.length < 40) {
       return {
-        parsed: null,
+        parsed: [],
         failure: { ...base, status: 'NO_TEXT', message: 'No readable text. This looks like a scanned image; enter the figures by hand.' },
       };
     }
-    return { parsed: parseBankStatement(extracted.text, doc.originalFileName) };
+    return { parsed: [parseBankStatement(extracted.text, doc.originalFileName)] };
   } catch (e) {
-    return { parsed: null, failure: { ...base, status: 'FAILED', message: e instanceof Error ? e.message : String(e) } };
+    return { parsed: [], failure: { ...base, status: 'FAILED', message: e instanceof Error ? e.message : String(e) } };
   }
 }
 
@@ -124,6 +149,8 @@ export async function scanBankStatements(companyId: string, engagementId: string
         contentType: true,
         statementMonth: true,
         statementAccountLast4: true,
+        statementSource: true,
+        bankActivity: true,
       },
       orderBy: { originalFileName: 'asc' },
     })
@@ -133,7 +160,8 @@ export async function scanBankStatements(companyId: string, engagementId: string
 
   await Promise.all(
     docs.map((doc, i) => {
-      const parsed = reads[i].parsed;
+      if (doc.statementSource === 'PLAID_ASSETS') return null;
+      const parsed = reads[i].parsed[0] ?? null;
       const month = doc.statementMonth || parsed?.month || null;
       const last4 = doc.statementAccountLast4 || parsed?.last4 || null;
       if (month === doc.statementMonth && last4 === doc.statementAccountLast4) return null;
@@ -150,9 +178,10 @@ export async function scanBankStatements(companyId: string, engagementId: string
   );
   const results: StatementScanResult[] = [];
 
-  for (let i = 0; i < docs.length; i++) {
-    const doc = docs[i];
-    const { parsed, failure } = reads[i];
+  const items = docs.flatMap((doc, i) =>
+    reads[i].failure ? [{ doc, parsed: null, failure: reads[i].failure }] : reads[i].parsed.map((parsed) => ({ doc, parsed, failure: undefined })),
+  );
+  for (const { doc, parsed, failure } of items) {
     if (failure || !parsed) {
       results.push(failure!);
       continue;

@@ -10,11 +10,14 @@ import {
   AGGREGATOR_MAX_MONTHS,
   BANK_STATEMENT_PROVIDERS,
   BANK_STATEMENT_REVIEW_MONTHS,
+  BANK_STATEMENT_SOURCES,
   isAggregatorSource,
+  parseBankActivity,
   type BankStatementSource,
 } from './providers';
 
-export type CoverageStatus = 'BANK_API' | 'VERIFIED_UPLOAD' | 'SUSPECT_UPLOAD' | 'UPLOAD' | 'MISSING';
+/** BANK_DATA: monthly figures from bank transactions and balances (Plaid asset report), no statement PDF. */
+export type CoverageStatus = 'BANK_API' | 'BANK_DATA' | 'VERIFIED_UPLOAD' | 'SUSPECT_UPLOAD' | 'UPLOAD' | 'MISSING';
 
 export type BankStatementDocumentView = {
   id: string;
@@ -23,6 +26,10 @@ export type BankStatementDocumentView = {
   institution: string | null;
   accountLast4: string | null;
   month: string | null;
+  /** First and last month of a bank data report, which covers many months in one file. */
+  period: { start: string; end: string } | null;
+  /** Last 4 of each account a bank data report covers. */
+  coveredLast4s: string[];
   bankAccountId: string | null;
   retrievedAt: string | null;
   uploadedAt: string;
@@ -49,9 +56,10 @@ export type BankStatementsState = {
 };
 
 const toSource = (value: string | null): BankStatementSource =>
-  value === 'PLAID' || value === 'FINICITY' || value === 'YODLEE' ? value : 'UPLOAD';
+  BANK_STATEMENT_SOURCES.includes(value as BankStatementSource) ? (value as BankStatementSource) : 'UPLOAD';
 
 function documentStatus(doc: Pick<BankStatementDocumentView, 'source' | 'tamperStatus'>): Exclude<CoverageStatus, 'MISSING'> {
+  if (doc.source === 'PLAID_ASSETS') return 'BANK_DATA';
   if (isAggregatorSource(doc.source)) return 'BANK_API';
   if (doc.tamperStatus === 'AUTHENTIC') return 'VERIFIED_UPLOAD';
   if (doc.tamperStatus === 'SUSPECT') return 'SUSPECT_UPLOAD';
@@ -59,7 +67,7 @@ function documentStatus(doc: Pick<BankStatementDocumentView, 'source' | 'tamperS
 }
 
 // A suspect upload outranks clean uploads so it is never hidden behind another file for the same month.
-const STATUS_RANK: Record<CoverageStatus, number> = { BANK_API: 4, SUSPECT_UPLOAD: 3, VERIFIED_UPLOAD: 2, UPLOAD: 1, MISSING: 0 };
+const STATUS_RANK: Record<CoverageStatus, number> = { BANK_API: 5, BANK_DATA: 4, SUSPECT_UPLOAD: 3, VERIFIED_UPLOAD: 2, UPLOAD: 1, MISSING: 0 };
 
 export async function loadBankStatementsState(companyId: string): Promise<BankStatementsState> {
   const [company, engagement] = await Promise.all([
@@ -103,6 +111,7 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
           statementMonth: true,
           statementRetrievedAt: true,
           tamperStatus: true,
+          bankActivity: true,
           createdAt: true,
           uploadedBy: { select: { name: true, email: true } },
         },
@@ -126,7 +135,10 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     if (link.dataRoomDocumentId) linked.set(link.dataRoomDocumentId, { bankAccountId: link.bankAccountId, month: link.month });
   }
 
+  const activityById = new Map(rows.map((d) => [d.id, parseBankActivity(d.bankActivity)]));
   const documents: BankStatementDocumentView[] = rows.map((d) => {
+    const activity = activityById.get(d.id) ?? [];
+    const activityMonths = activity.map((a) => a.month).sort();
     const base = {
       id: d.id,
       fileName: d.originalFileName,
@@ -134,6 +146,8 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
       institution: d.statementInstitution,
       accountLast4: d.statementAccountLast4,
       month: d.statementMonth,
+      period: activityMonths.length ? { start: activityMonths[0], end: activityMonths[activityMonths.length - 1] } : null,
+      coveredLast4s: [...new Set(activity.map((a) => a.last4).filter((v): v is string => !!v))],
       retrievedAt: d.statementRetrievedAt ? d.statementRetrievedAt.toISOString() : null,
       uploadedAt: d.createdAt.toISOString(),
       uploadedByName: d.uploadedBy?.name || d.uploadedBy?.email || null,
@@ -141,10 +155,16 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
       scanStatus: scanStatusById.get(d.id) || 'pending_scan',
       isPrivate: isPrivateBlob(d),
     };
+    if (activity.length > 0) {
+      return { ...base, bankAccountId: null, unplacedReason: engagement ? null : 'Start the Cash Proof to match statements to bank accounts.' };
+    }
     const link = linked.get(d.id);
     if (link) return { ...base, month: base.month || link.month, bankAccountId: link.bankAccountId, unplacedReason: null };
     if (!engagement) {
       return { ...base, bankAccountId: null, unplacedReason: 'Start the Cash Proof to match statements to bank accounts.' };
+    }
+    if (base.source === 'PLAID_ASSETS') {
+      return { ...base, bankAccountId: null, unplacedReason: 'No complete months of bank data in this report.' };
     }
     if (!d.statementMonth || !d.statementAccountLast4) {
       return { ...base, bankAccountId: null, unplacedReason: 'Not read yet. Run Read Statements on the Cash Proof tab.' };
@@ -167,17 +187,34 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
   for (const account of accounts) {
     for (const month of months) coverage[`${account.id}|${month}`] = { status: 'MISSING', documentIds: [] };
   }
+  const place = (bankAccountId: string, month: string, doc: BankStatementDocumentView) => {
+    const cell = coverage[`${bankAccountId}|${month}`];
+    if (!cell) return;
+    cell.documentIds.push(doc.id);
+    const status = documentStatus(doc);
+    if (STATUS_RANK[status] > STATUS_RANK[cell.status]) cell.status = status;
+  };
   for (const doc of documents) {
+    const activity = activityById.get(doc.id) ?? [];
+    if (engagement && activity.length > 0) {
+      let placed = 0;
+      for (const entry of activity) {
+        const matches = accounts.filter((a) => a.accountLast4 && a.accountLast4 === entry.last4);
+        if (matches.length !== 1 || !monthSet.has(entry.month)) continue;
+        place(matches[0].id, entry.month, doc);
+        placed += 1;
+      }
+      if (placed === 0) {
+        doc.unplacedReason = `No Cash Proof account matches last 4 ${doc.coveredLast4s.join(', ') || '(none reported)'} within the review window.`;
+      }
+      continue;
+    }
     if (!doc.bankAccountId || !doc.month) continue;
     if (!monthSet.has(doc.month)) {
       doc.unplacedReason = 'Statement month is outside the 36-month review window.';
       continue;
     }
-    const cell = coverage[`${doc.bankAccountId}|${doc.month}`];
-    if (!cell) continue;
-    cell.documentIds.push(doc.id);
-    const status = documentStatus(doc);
-    if (STATUS_RANK[status] > STATUS_RANK[cell.status]) cell.status = status;
+    place(doc.bankAccountId, doc.month, doc);
   }
 
   const cells = Object.values(coverage);
@@ -199,8 +236,8 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     summary: {
       accountMonths: cells.length,
       covered: cells.filter((c) => c.status !== 'MISSING').length,
-      bankApi: cells.filter((c) => c.status === 'BANK_API').length,
-      uploads: cells.filter((c) => c.status !== 'MISSING' && c.status !== 'BANK_API').length,
+      bankApi: cells.filter((c) => c.status === 'BANK_API' || c.status === 'BANK_DATA').length,
+      uploads: cells.filter((c) => c.status === 'VERIFIED_UPLOAD' || c.status === 'SUSPECT_UPLOAD' || c.status === 'UPLOAD').length,
       missing: cells.filter((c) => c.status === 'MISSING').length,
     },
   };
