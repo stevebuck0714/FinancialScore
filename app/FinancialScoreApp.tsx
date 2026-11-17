@@ -54,11 +54,11 @@ const PERFORMANCE_ANALYSIS_TABS = [
   { id: 'pa-opportunity-workspace', label: 'Actions & Monitoring' },
 ] as const;
 const VALUATION_TABS = [
-  { id: 'sde', label: 'SDE' },
+  { id: 'sde', label: 'SDE/QoE Analysis' },
   { id: 'ebitda', label: 'EBITDA ANALYSIS' },
   { id: 'dcf', label: 'DCF ANALYSIS' },
   { id: 'business-overview', label: 'BUSINESS OVERVIEW / MARKET POSITION' },
-  { id: 'valuation-reports', label: 'VALUATION REPORTS' },
+  { id: 'valuation-reports', label: 'SDE REPORT' },
   { id: 'qoe-report', label: 'QOE REPORT' },
 ] as const;
 const VALUATION_REPORT_VIEWS = ['valuation-reports', 'qoe-report'] as const;
@@ -22520,10 +22520,12 @@ function FinancialScorePage() {
       {/* Valuation View */}
       {currentView === 'valuation' && selectedCompanyId && (monthly.length > 0 || valuationMethodTab === 'business-overview') && (
         <div style={valuationMethodTab === 'sde' ? VALUATION_PAGE_CONTAINER_STYLE.wide : VALUATION_PAGE_CONTAINER_STYLE.standard}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: valuationMethodTab === 'sde' ? 'flex-end' : 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            {valuationMethodTab !== 'sde' && (
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1F70C1', margin: 0 }}>
-              {valuationMethodTab === 'sde' ? 'SDE Valuation' : valuationMethodTab === 'ebitda' ? 'EBITDA Valuation' : valuationMethodTab === 'dcf' ? 'DCF Valuation' : 'Business Overview / Market Position'}
+              {valuationMethodTab === 'ebitda' ? 'EBITDA Valuation' : valuationMethodTab === 'dcf' ? 'DCF Valuation' : 'Business Overview / Market Position'}
             </h1>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               {valuationMethodTab !== 'business-overview' && (
               <button
