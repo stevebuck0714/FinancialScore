@@ -3,7 +3,7 @@ import { extractTextFromArrayBuffer } from '@/lib/company-documents/extract-text
 import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import { readDataRoomBlob } from '@/lib/dataroom/blob-storage';
-import { parseBankActivity } from '@/lib/bank-statements/providers';
+import { isAggregatorSource, parseBankActivity } from '@/lib/bank-statements/providers';
 import { shiftMonth } from './book-balances';
 import { parseBankStatement, type ParsedStatement } from './statement-parser';
 import { computeTieOut } from './tie-out';
@@ -99,7 +99,10 @@ async function readDocument(doc: Doc): Promise<DocumentRead> {
         failure: { ...base, status: 'NO_TEXT', message: 'No readable text. This looks like a scanned image; enter the figures by hand.' },
       };
     }
-    return { parsed: [parseBankStatement(extracted.text, doc.originalFileName)] };
+    const parsed = parseBankStatement(extracted.text, doc.originalFileName);
+    // The account number from a bank connector is authoritative; statement text can name several accounts.
+    if (isAggregatorSource(doc.statementSource) && doc.statementAccountLast4) parsed.last4 = doc.statementAccountLast4;
+    return { parsed: [parsed] };
   } catch (e) {
     return { parsed: [], failure: { ...base, status: 'FAILED', message: e instanceof Error ? e.message : String(e) } };
   }
@@ -158,7 +161,8 @@ export async function scanBankStatements(companyId: string, engagementId: string
     docs.map((doc, i) => {
       if (doc.statementSource === 'PLAID_ASSETS') return null;
       const parsed = reads[i].parsed[0] ?? null;
-      const month = doc.statementMonth || parsed?.month || null;
+      // A period read from the statement wins: bank connectors label statements by statement date.
+      const month = (parsed?.periodLabel ? parsed.month : null) || doc.statementMonth || parsed?.month || null;
       const last4 = doc.statementAccountLast4 || parsed?.last4 || null;
       if (month === doc.statementMonth && last4 === doc.statementAccountLast4) return null;
       return prisma.dataRoomDocument.update({

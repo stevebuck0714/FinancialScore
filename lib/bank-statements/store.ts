@@ -7,6 +7,8 @@ import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataro
 import { ensureCompanyWithinDataRoomQuota } from '@/lib/dataroom/quota';
 import { privateBlobToken } from '@/lib/dataroom/blob-storage';
 import { formatEstDate } from '@/lib/time/eastern';
+import { extractTextFromArrayBuffer } from '@/lib/company-documents/extract-text';
+import { parseBankStatement } from '@/lib/cash-proof/statement-parser';
 import type { BankActivityMonth, BankStatementSource } from './providers';
 import type { BankTransactionInput } from './bank-activity';
 
@@ -15,7 +17,8 @@ export type FetchedStatement = {
   institution: string | null;
   accountLast4: string | null;
   accountName: string | null;
-  month: string; // YYYY-MM
+  /** YYYY-MM the provider labels the statement with: its statement date, not the period covered. */
+  month: string;
   download: () => Promise<ArrayBuffer>;
 };
 
@@ -34,6 +37,19 @@ type ImportContext = { companyId: string; userId: string; userEmail: string };
 const CONCURRENCY = 2;
 
 const safeName = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'statement';
+
+/** The month a statement covers, read from its period; null when the PDF has no readable period. */
+async function periodMonthFromPdf(body: Buffer, fileName: string): Promise<string | null> {
+  try {
+    const arrayBuffer = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
+    const extracted = await extractTextFromArrayBuffer({ arrayBuffer, contentType: 'application/pdf', fileName });
+    if (extracted.status !== 'DONE') return null;
+    const parsed = parseBankStatement(extracted.text);
+    return parsed.periodLabel ? parsed.month : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Stores a PDF in the statements Blob store and creates its Data Room document row. */
 async function storeStatementPdf(
@@ -117,11 +133,15 @@ export async function saveFetchedStatements(
   result.accounts = [...new Set(statements.map((s) => [s.accountName, s.accountLast4 ? `x${s.accountLast4}` : null].filter(Boolean).join(' ')))];
   if (statements.length === 0) return result;
 
+  // File names carry the provider's statement-date label, so they identify a statement
+  // across connections even after statementMonth is set to the period covered.
+  const fileNameFor = (s: FetchedStatement) =>
+    `${safeName(s.institution || s.source)} ${s.accountLast4 ? `x${s.accountLast4} ` : ''}${s.month}.pdf`;
   const existing = await prisma.dataRoomDocument.findMany({
     where: { companyId, statementSource: { in: [...new Set(statements.map((s) => s.source))] } },
-    select: { statementSource: true, statementAccountLast4: true, statementMonth: true, statementInstitution: true },
+    select: { statementSource: true, originalFileName: true },
   });
-  const seen = new Set(existing.map((d) => `${d.statementSource}|${d.statementInstitution}|${d.statementAccountLast4}|${d.statementMonth}`));
+  const seen = new Set(existing.map((d) => `${d.statementSource}|${d.originalFileName}`));
 
   const created: string[] = [];
   let next = 0;
@@ -131,7 +151,8 @@ export async function saveFetchedStatements(
     Array.from({ length: Math.min(CONCURRENCY, statements.length) }, async () => {
       while (next < statements.length) {
         const s = statements[next++];
-        const key = `${s.source}|${s.institution}|${s.accountLast4}|${s.month}`;
+        const fileName = fileNameFor(s);
+        const key = `${s.source}|${fileName}`;
         if (seen.has(key)) {
           result.skipped += 1;
           continue;
@@ -156,13 +177,12 @@ export async function saveFetchedStatements(
             result.errors.push('Data Room storage quota reached; remaining statements were not saved.');
             continue;
           }
-          const fileName = `${safeName(s.institution || s.source)} ${s.accountLast4 ? `x${s.accountLast4} ` : ''}${s.month}.pdf`;
           created.push(
             await storeStatementPdf(params, fileName, body, {
               statementSource: s.source,
               statementInstitution: s.institution,
               statementAccountLast4: s.accountLast4,
-              statementMonth: s.month,
+              statementMonth: (await periodMonthFromPdf(body, fileName)) || s.month,
             }),
           );
           result.imported += 1;
