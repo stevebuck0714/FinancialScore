@@ -489,7 +489,7 @@ model DataRoomDocument {
   storageAccess String @default("public") // public | private (private Blob store)
 
   // Bank statement provenance, certified in the QoE report.
-  statementSource      String? // UPLOAD | PLAID | PLAID_ASSETS | FINICITY | YODLEE
+  statementSource      String? // UPLOAD | PLAID | PLAID_ASSETS
   statementInstitution String?
   statementAccountLast4 String?
   statementMonth       String? // YYYY-MM
