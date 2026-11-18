@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { DATAROOM_BANK_STATEMENTS_FOLDER_ID, DATAROOM_DEFAULT_FOLDERS } from '@/lib/dataroom/constants';
+import { isTransactionFileName } from '@/lib/bank-statements/providers';
 import { deleteDataRoomBlob, isPrivateBlobStorageConfigured, storageAccessForUrl } from '@/lib/dataroom/blob-storage';
 import { getDataRoomState, upsertDataRoomState } from '@/lib/dataroom/state';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
@@ -21,6 +22,13 @@ const CATEGORY_VALUES = new Set([
 function asCategory(value: unknown): 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'TAX_DOCUMENTS' | 'OTHER' | null {
   const s = String(value || '').trim().toUpperCase();
   return CATEGORY_VALUES.has(s) ? (s as any) : null;
+}
+
+/** CSV / Excel transaction exports wait for the Corelytics team's review; PDFs are statements. */
+function bankStatementFields(fileName: string) {
+  return isTransactionFileName(fileName)
+    ? { statementSource: 'UPLOAD_EXPORT', reviewStatus: 'PENDING' }
+    : { statementSource: 'UPLOAD' };
 }
 
 export async function POST(request: NextRequest) {
@@ -108,6 +116,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Bank statements must be uploaded to private storage.' }, { status: 400 });
       }
 
+      const statementFields = isBankStatement ? bankStatementFields(originalFileName) : {};
       const doc = await prisma.dataRoomDocument.upsert({
         where: { blobUrl },
         create: {
@@ -120,7 +129,7 @@ export async function POST(request: NextRequest) {
           contentType,
           sizeBytes,
           storageAccess,
-          statementSource: isBankStatement ? 'UPLOAD' : null,
+          ...statementFields,
           extractionStatus: 'PENDING',
         },
         update: {
@@ -131,7 +140,7 @@ export async function POST(request: NextRequest) {
           contentType,
           sizeBytes,
           storageAccess,
-          ...(isBankStatement ? { statementSource: 'UPLOAD' } : {}),
+          ...statementFields,
         },
         select: { id: true },
       });
@@ -139,10 +148,13 @@ export async function POST(request: NextRequest) {
     } else {
       const doc = await prisma.dataRoomDocument.findUnique({
         where: { id: documentId },
-        select: { id: true, companyId: true },
+        select: { id: true, companyId: true, originalFileName: true, statementSource: true },
       });
       if (!doc || doc.companyId !== companyId) {
         return NextResponse.json({ error: 'Data Room document not found for this company' }, { status: 404 });
+      }
+      if (folderId === DATAROOM_BANK_STATEMENTS_FOLDER_ID && !doc.statementSource) {
+        await prisma.dataRoomDocument.update({ where: { id: doc.id }, data: bankStatementFields(doc.originalFileName) });
       }
     }
 

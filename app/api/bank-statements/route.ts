@@ -7,6 +7,7 @@ import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
 import { loadBankStatementsState } from '@/lib/bank-statements/service';
+import { canReviewStatementExports } from '@/lib/bank-statements/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,7 @@ export async function GET(request: NextRequest) {
       companyId,
       dataRoomReady,
       canUpload: capabilities.upload || capabilities.manage,
+      canReview: canReviewStatementExports(context.role),
       ...state,
     });
   } catch (error) {

@@ -13,6 +13,21 @@ export class BankStatementsAccessError extends Error {
   }
 }
 
+/** Only the Corelytics team (Site Admins and Consultants) reviews client transaction exports. */
+export function canReviewStatementExports(role: string): boolean {
+  return role === 'SITEADMIN' || role === 'CONSULTANT';
+}
+
+export async function requireStatementReviewAccess(companyId: string) {
+  const context = await requireAuth();
+  if (!companyId) throw new BankStatementsAccessError('companyId is required', 400);
+  if (!(await validateCompanyAccess(companyId))) throw new BankStatementsAccessError('Forbidden', 403);
+  if (!canReviewStatementExports(context.role)) {
+    throw new BankStatementsAccessError('Only the Corelytics team can review transaction files.', 403);
+  }
+  return context;
+}
+
 /** The caller must be able to upload to this company's Data Room Bank Statements folder. */
 export async function requireStatementUploadAccess(companyId: string) {
   const context = await requireAuth();

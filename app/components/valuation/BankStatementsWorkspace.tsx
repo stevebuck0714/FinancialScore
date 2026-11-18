@@ -5,6 +5,7 @@ import { formatEstDateTime } from '@/lib/time/eastern';
 import { BANK_STATEMENT_SOURCE_LABELS } from '@/lib/bank-statements/providers';
 import type { BankStatementDocumentView, BankStatementsState, CoverageStatus } from '@/lib/bank-statements/service';
 import BankStatementUploader from '../bank-statements/BankStatementUploader';
+import ExportReviewPanel from '../bank-statements/ExportReviewPanel';
 import { useBankConnect } from '../bank-statements/useBankConnect';
 import { STATUS_COLORS, formatMonthLabel } from './cashProofClient';
 import { buttonStyle, cardStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
@@ -13,10 +14,12 @@ type BankStatementsResponse = BankStatementsState & {
   companyId: string;
   dataRoomReady: boolean;
   canUpload: boolean;
+  canReview: boolean;
   error?: string;
 };
 
 const COVERAGE: Record<CoverageStatus, { short: string; label: string; colors: { bg: string; fg: string; border: string } }> = {
+  CONFLICT: { short: '≠', label: 'Deposits Disagree', colors: { bg: '#fff7ed', fg: '#c2410c', border: '#fdba74' } },
   BANK_API: { short: 'API', label: 'Bank API', colors: STATUS_COLORS.TIED },
   BANK_DATA: { short: 'DATA', label: 'Bank Data, No PDF', colors: { bg: '#f0fdfa', fg: '#0f766e', border: '#5eead4' } },
   VERIFIED_UPLOAD: { short: 'VER', label: 'Verified Upload', colors: STATUS_COLORS.RECEIVED },
@@ -46,7 +49,14 @@ async function fetchBankStatements(companyId: string): Promise<BankStatementsRes
   return json;
 }
 
+const REVIEW_LABELS: Record<string, string> = {
+  PENDING: 'Awaiting Review',
+  ACCEPTED: 'Accepted',
+  REJECTED: 'Rejected',
+};
+
 function verificationLabel(doc: BankStatementDocumentView) {
+  if (doc.source === 'UPLOAD_EXPORT') return REVIEW_LABELS[doc.reviewStatus || 'PENDING'] || doc.reviewStatus;
   if (doc.source !== 'UPLOAD') return 'From bank';
   return doc.tamperStatus ? TAMPER_LABELS[doc.tamperStatus] || doc.tamperStatus : 'Not checked';
 }
@@ -77,6 +87,8 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
   const [data, setData] = useState<BankStatementsResponse | null>(null);
   const [loading, setLoading] = useState(Boolean(companyId));
   const [error, setError] = useState<string | null>(null);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -118,6 +130,10 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
   const { summary } = data;
   const canConnect = data.dataRoomReady && data.canUpload;
   const unplaced = data.documents.filter((d) => d.unplacedReason);
+  const REVIEW_ORDER: Record<string, number> = { PENDING: 0, REJECTED: 1, ACCEPTED: 2 };
+  const exportFiles = data.documents
+    .filter((d) => d.source === 'UPLOAD_EXPORT')
+    .sort((a, b) => (REVIEW_ORDER[a.reviewStatus || 'PENDING'] ?? 0) - (REVIEW_ORDER[b.reviewStatus || 'PENDING'] ?? 0));
 
   return (
     <div>
@@ -145,9 +161,19 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
           <span>
             <strong>{summary.uploads}</strong> uploaded
           </span>
+          {summary.conflicts > 0 && (
+            <span style={{ color: '#c2410c' }}>
+              <strong>{summary.conflicts}</strong> with disagreeing deposits
+            </span>
+          )}
           <span>
             <strong>{summary.missing}</strong> missing
           </span>
+          {summary.pendingReview > 0 && (
+            <span style={{ color: '#b45309' }}>
+              <strong>{summary.pendingReview}</strong> transaction file{summary.pendingReview === 1 ? '' : 's'} awaiting review
+            </span>
+          )}
         </div>
         <div
           style={{
@@ -217,7 +243,9 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
         <div style={cardStyle}>
           <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>Upload Statements</div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', marginBottom: '10px' }}>
-            For months 25–36 and banks the connectors do not reach. Uploaded statements are marked as uploads in the QoE report.
+            For months 25–36 and banks the connectors do not reach. Upload statement PDFs, or the bank&apos;s CSV / Excel transaction
+            export when PDFs are not available. Transaction files are reviewed by the Corelytics team before they count. Uploads are
+            marked as uploads in the QoE report.
           </div>
           {!data.dataRoomReady ? (
             <div style={{ fontSize: '12px', color: '#b45309' }}>Enable the Data Room for this company before uploading statements.</div>
@@ -228,6 +256,85 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
           )}
         </div>
       </div>
+
+      {data.canReview && exportFiles.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>
+            Transaction Files{summary.pendingReview > 0 ? ` · ${summary.pendingReview} Need Review` : ''}
+          </div>
+          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+            Client CSV / Excel transaction exports. Confirm the columns and bank account, then accept to add the monthly deposits and
+            withdrawals to the coverage grid and Read Statements. Bank connection figures win when they disagree.
+          </div>
+          {reviewMessage && <div style={{ marginTop: '8px', fontSize: '12px', color: '#047857' }}>{reviewMessage}</div>}
+          <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginTop: '10px' }}>
+            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...thStyle, textAlign: 'left' }}>File</th>
+                  <th style={{ ...thStyle, textAlign: 'left' }}>Status</th>
+                  <th style={{ ...thStyle, textAlign: 'left' }}>Added</th>
+                  <th style={{ ...thStyle, textAlign: 'left' }}>Detail</th>
+                  <th style={{ ...thStyle, textAlign: 'left' }} />
+                </tr>
+              </thead>
+              <tbody>
+                {exportFiles.map((d) => (
+                  <tr key={d.id}>
+                    <td style={{ ...tdStyle, textAlign: 'left' }}>
+                      <a href={`/api/dataroom/documents/${d.id}/view`} target="_blank" rel="noreferrer" style={{ color: '#2751d0' }}>
+                        {d.fileName}
+                      </a>
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'left' }}>{verificationLabel(d)}</td>
+                    <td style={{ ...tdStyle, textAlign: 'left' }}>
+                      {formatEstDateTime(d.uploadedAt)}
+                      {d.uploadedByName ? <span style={{ color: '#64748b' }}> · {d.uploadedByName}</span> : null}
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal', color: '#64748b' }}>
+                      {d.reviewStatus === 'ACCEPTED'
+                        ? `${d.transactionCount.toLocaleString('en-US')} transactions${
+                            d.period ? `, ${formatMonthLabel(d.period.start)} – ${formatMonthLabel(d.period.end)}` : ''
+                          }`
+                        : d.reviewStatus === 'REJECTED'
+                          ? d.reviewNote || '—'
+                          : d.scanStatus !== 'clean'
+                            ? 'Waiting for the virus scan.'
+                            : '—'}
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: 'left' }}>
+                      <button
+                        style={buttonStyle(d.reviewStatus === 'PENDING' ? 'primary' : 'secondary', d.scanStatus !== 'clean')}
+                        disabled={d.scanStatus !== 'clean'}
+                        onClick={() => {
+                          setReviewMessage(null);
+                          setReviewingId(reviewingId === d.id ? null : d.id);
+                        }}
+                      >
+                        {d.reviewStatus === 'PENDING' ? 'Review' : 'Re-review'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {reviewingId && (
+            <ExportReviewPanel
+              key={reviewingId}
+              companyId={companyId}
+              documentId={reviewingId}
+              cashProofAccounts={data.accounts}
+              onClose={() => setReviewingId(null)}
+              onDone={(message) => {
+                setReviewingId(null);
+                setReviewMessage(message);
+                void load();
+              }}
+            />
+          )}
+        </div>
+      )}
 
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -344,12 +451,14 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
                     <td style={{ ...tdStyle, textAlign: 'left' }}>{SCAN_LABELS[d.scanStatus] || d.scanStatus}</td>
                     <td style={{ ...tdStyle, textAlign: 'left' }}>
                       {formatEstDateTime(d.retrievedAt || d.uploadedAt)}
-                      {d.uploadedByName && d.source === 'UPLOAD' ? <span style={{ color: '#64748b' }}> · {d.uploadedByName}</span> : null}
+                      {d.uploadedByName && (d.source === 'UPLOAD' || d.source === 'UPLOAD_EXPORT') ? (
+                        <span style={{ color: '#64748b' }}> · {d.uploadedByName}</span>
+                      ) : null}
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal', minWidth: 240, color: d.unplacedReason ? '#b45309' : '#64748b' }}>
                       {d.unplacedReason ||
                         [
-                          d.source === 'PLAID_ASSETS' ? `${d.transactionCount.toLocaleString('en-US')} transactions saved` : null,
+                          d.transactionCount > 0 ? `${d.transactionCount.toLocaleString('en-US')} transactions saved` : null,
                           d.isPrivate ? 'Private storage' : 'Standard storage',
                         ]
                           .filter(Boolean)

@@ -16,8 +16,11 @@ import {
   type BankStatementSource,
 } from './providers';
 
-/** BANK_DATA: monthly figures from bank transactions and balances (Plaid asset report), no statement PDF. */
-export type CoverageStatus = 'BANK_API' | 'BANK_DATA' | 'VERIFIED_UPLOAD' | 'SUSPECT_UPLOAD' | 'UPLOAD' | 'MISSING';
+/**
+ * BANK_DATA: monthly figures from bank transactions and balances (Plaid asset report), no statement PDF.
+ * CONFLICT: two sources for the same account-month report different deposit totals.
+ */
+export type CoverageStatus = 'CONFLICT' | 'BANK_API' | 'BANK_DATA' | 'VERIFIED_UPLOAD' | 'SUSPECT_UPLOAD' | 'UPLOAD' | 'MISSING';
 
 export type BankStatementDocumentView = {
   id: string;
@@ -37,6 +40,9 @@ export type BankStatementDocumentView = {
   uploadedAt: string;
   uploadedByName: string | null;
   tamperStatus: string | null;
+  /** CSV / Excel transaction exports only. */
+  reviewStatus: string | null;
+  reviewNote: string | null;
   scanStatus: string;
   isPrivate: boolean;
   /** Why the statement is not on the coverage grid; null when it is. */
@@ -54,13 +60,22 @@ export type BankStatementsState = {
   accounts: Array<{ id: string; accountName: string; bankName: string | null; accountLast4: string | null }>;
   coverage: Record<string, { status: CoverageStatus; documentIds: string[] }>;
   documents: BankStatementDocumentView[];
-  summary: { accountMonths: number; covered: number; bankApi: number; uploads: number; missing: number };
+  summary: {
+    accountMonths: number;
+    covered: number;
+    bankApi: number;
+    uploads: number;
+    conflicts: number;
+    missing: number;
+    /** Client transaction files waiting for the Corelytics team. */
+    pendingReview: number;
+  };
 };
 
 const toSource = (value: string | null): BankStatementSource =>
   BANK_STATEMENT_SOURCES.includes(value as BankStatementSource) ? (value as BankStatementSource) : 'UPLOAD';
 
-function documentStatus(doc: Pick<BankStatementDocumentView, 'source' | 'tamperStatus'>): Exclude<CoverageStatus, 'MISSING'> {
+function documentStatus(doc: Pick<BankStatementDocumentView, 'source' | 'tamperStatus'>): Exclude<CoverageStatus, 'MISSING' | 'CONFLICT'> {
   if (doc.source === 'PLAID_ASSETS') return 'BANK_DATA';
   if (isAggregatorSource(doc.source)) return 'BANK_API';
   if (doc.tamperStatus === 'AUTHENTIC') return 'VERIFIED_UPLOAD';
@@ -69,7 +84,15 @@ function documentStatus(doc: Pick<BankStatementDocumentView, 'source' | 'tamperS
 }
 
 // A suspect upload outranks clean uploads so it is never hidden behind another file for the same month.
-const STATUS_RANK: Record<CoverageStatus, number> = { BANK_API: 5, BANK_DATA: 4, SUSPECT_UPLOAD: 3, VERIFIED_UPLOAD: 2, UPLOAD: 1, MISSING: 0 };
+const STATUS_RANK: Record<CoverageStatus, number> = {
+  CONFLICT: 6,
+  BANK_API: 5,
+  BANK_DATA: 4,
+  SUSPECT_UPLOAD: 3,
+  VERIFIED_UPLOAD: 2,
+  UPLOAD: 1,
+  MISSING: 0,
+};
 
 export async function loadBankStatementsState(companyId: string): Promise<BankStatementsState> {
   const [company, engagement] = await Promise.all([
@@ -114,6 +137,8 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
           statementRetrievedAt: true,
           tamperStatus: true,
           bankActivity: true,
+          reviewStatus: true,
+          reviewNote: true,
           _count: { select: { bankTransactions: true } },
           createdAt: true,
           uploadedBy: { select: { name: true, email: true } },
@@ -156,9 +181,21 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
       uploadedAt: d.createdAt.toISOString(),
       uploadedByName: d.uploadedBy?.name || d.uploadedBy?.email || null,
       tamperStatus: d.tamperStatus,
+      reviewStatus: d.reviewStatus,
+      reviewNote: d.reviewNote,
       scanStatus: scanStatusById.get(d.id) || 'pending_scan',
       isPrivate: isPrivateBlob(d),
     };
+    if (base.source === 'UPLOAD_EXPORT' && d.reviewStatus !== 'ACCEPTED') {
+      return {
+        ...base,
+        bankAccountId: null,
+        unplacedReason:
+          d.reviewStatus === 'REJECTED'
+            ? `Returned to the client${d.reviewNote ? `: ${d.reviewNote}` : '.'}`
+            : 'Awaiting review by the Corelytics team.',
+      };
+    }
     if (activity.length > 0) {
       return { ...base, bankAccountId: null, unplacedReason: engagement ? null : 'Start the Cash Proof to match statements to bank accounts.' };
     }
@@ -196,14 +233,17 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     const status = documentStatus(doc);
     if (STATUS_RANK[status] > STATUS_RANK[cell.status]) cell.status = status;
   };
+  const depositsByCell = new Map<string, Set<string>>();
   for (const doc of documents) {
     const activity = activityById.get(doc.id) ?? [];
-    if (engagement && activity.length > 0) {
+    if (engagement && activity.length > 0 && (doc.source !== 'UPLOAD_EXPORT' || doc.reviewStatus === 'ACCEPTED')) {
       let placed = 0;
       for (const entry of activity) {
         const matches = accounts.filter((a) => a.accountLast4 && a.accountLast4 === entry.last4);
         if (matches.length !== 1 || !monthSet.has(entry.month)) continue;
         place(matches[0].id, entry.month, doc);
+        const key = `${matches[0].id}|${entry.month}`;
+        depositsByCell.set(key, (depositsByCell.get(key) ?? new Set()).add(entry.deposits.toFixed(2)));
         placed += 1;
       }
       if (placed === 0) {
@@ -217,6 +257,9 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
       continue;
     }
     place(doc.bankAccountId, doc.month, doc);
+  }
+  for (const [key, totals] of depositsByCell) {
+    if (totals.size > 1 && coverage[key]) coverage[key].status = 'CONFLICT';
   }
 
   const cells = Object.values(coverage);
@@ -240,7 +283,9 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
       covered: cells.filter((c) => c.status !== 'MISSING').length,
       bankApi: cells.filter((c) => c.status === 'BANK_API' || c.status === 'BANK_DATA').length,
       uploads: cells.filter((c) => c.status === 'VERIFIED_UPLOAD' || c.status === 'SUSPECT_UPLOAD' || c.status === 'UPLOAD').length,
+      conflicts: cells.filter((c) => c.status === 'CONFLICT').length,
       missing: cells.filter((c) => c.status === 'MISSING').length,
+      pendingReview: documents.filter((d) => d.source === 'UPLOAD_EXPORT' && d.reviewStatus === 'PENDING').length,
     },
   };
 }

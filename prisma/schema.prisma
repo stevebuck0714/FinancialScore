@@ -489,7 +489,7 @@ model DataRoomDocument {
   storageAccess String @default("public") // public | private (private Blob store)
 
   // Bank statement provenance, certified in the QoE report.
-  statementSource      String? // UPLOAD | PLAID | PLAID_ASSETS
+  statementSource      String? // UPLOAD | UPLOAD_EXPORT | PLAID | PLAID_ASSETS
   statementInstitution String?
   statementAccountLast4 String?
   statementMonth       String? // YYYY-MM
@@ -502,6 +502,13 @@ model DataRoomDocument {
   /// Monthly figures per account from bank data (Plaid asset report) when no statement PDF exists:
   /// [{ last4, accountName, month, beginning, deposits, withdrawals, ending }]
   bankActivity         Json?
+  // Client CSV / Excel transaction exports are used only after the Corelytics team reviews them.
+  reviewStatus         String? // PENDING | ACCEPTED | REJECTED
+  reviewNote           String?
+  reviewedAt           DateTime?
+  reviewedByUserId     String?
+  /// Confirmed sheet, header row, column mapping, accounts, and month range for a transaction export.
+  importMapping        Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -60,12 +60,13 @@ type Doc = {
   statementAccountLast4: string | null;
   statementSource: string | null;
   bankActivity: unknown;
+  reviewStatus: string | null;
   scanStatus: string;
 };
 
 type DocumentRead = { parsed: ParsedStatement[]; failure?: StatementScanResult };
 
-/** Bank data reports carry their monthly figures; they are used as-is instead of reading the PDF. */
+/** Bank data reports and reviewed transaction files carry their monthly figures; they are used as-is. */
 function bankActivityStatements(doc: Doc): ParsedStatement[] {
   return parseBankActivity(doc.bankActivity).map((a) => ({
     last4: a.last4,
@@ -75,12 +76,25 @@ function bankActivityStatements(doc: Doc): ParsedStatement[] {
     deposits: a.deposits,
     withdrawals: a.withdrawals,
     ending: a.ending,
-    foots: Math.abs(a.beginning + a.deposits - a.withdrawals - a.ending) <= 0.01,
+    foots: a.beginning === null || a.ending === null || Math.abs(a.beginning + a.deposits - a.withdrawals - a.ending) <= 0.01,
   }));
 }
 
+const ACTIVITY_SOURCES = new Set(['PLAID_ASSETS', 'UPLOAD_EXPORT']);
+/** Transaction exports have no balances; only deposits and withdrawals are filled from them. */
+const isDepositsOnly = (doc: Doc) => doc.statementSource === 'UPLOAD_EXPORT';
+/** Lower wins when two sources disagree on a month's deposits. */
+const SOURCE_PRIORITY: Record<string, number> = { PLAID: 0, PLAID_ASSETS: 1 };
+
 async function readDocument(doc: Doc): Promise<DocumentRead> {
   const base = { documentId: doc.id, fileName: doc.originalFileName, bankAccountId: null, month: null, parsed: null };
+  if (doc.statementSource === 'UPLOAD_EXPORT') {
+    if (doc.reviewStatus === 'REJECTED') return { parsed: [] };
+    if (doc.reviewStatus !== 'ACCEPTED') {
+      return { parsed: [], failure: { ...base, status: 'NEEDS_REVIEW', message: 'Transaction file is awaiting review by the Corelytics team.' } };
+    }
+    return { parsed: bankActivityStatements(doc) };
+  }
   // A report without monthly figures carries transaction detail only; statements cover its accounts.
   if (doc.statementSource === 'PLAID_ASSETS') return { parsed: bankActivityStatements(doc) };
   if (doc.scanStatus !== 'clean') {
@@ -108,15 +122,45 @@ async function readDocument(doc: Doc): Promise<DocumentRead> {
   }
 }
 
-function missingFigures(p: ParsedStatement): string[] {
+function missingFigures(p: ParsedStatement, depositsOnly: boolean): string[] {
   const missing: string[] = [];
   if (!p.last4) missing.push('account last 4');
   if (!p.month) missing.push('statement period');
-  if (p.beginning === null) missing.push('beginning balance');
+  if (p.beginning === null && !depositsOnly) missing.push('beginning balance');
   if (p.deposits === null) missing.push('deposits');
   if (p.withdrawals === null) missing.push('withdrawals');
-  if (p.ending === null) missing.push('ending balance');
+  if (p.ending === null && !depositsOnly) missing.push('ending balance');
   return missing;
+}
+
+/**
+ * When sources disagree on an account-month's deposits, the bank connection wins and the others are
+ * flagged. With no bank-connection figure, every disagreeing source is flagged and none is applied.
+ */
+function sourceConflicts(items: Array<{ doc: Doc; parsed: ParsedStatement | null }>): Map<ParsedStatement, string> {
+  const groups = new Map<string, Array<{ doc: Doc; parsed: ParsedStatement }>>();
+  for (const { doc, parsed } of items) {
+    if (!parsed?.last4 || !parsed.month || parsed.deposits === null) continue;
+    const key = `${parsed.last4}|${parsed.month}`;
+    groups.set(key, [...(groups.get(key) ?? []), { doc, parsed }]);
+  }
+  const out = new Map<ParsedStatement, string>();
+  for (const group of groups.values()) {
+    if (new Set(group.map((g) => round2(g.parsed.deposits!))).size < 2) continue;
+    const ranked = [...group].sort((a, b) => (SOURCE_PRIORITY[a.doc.statementSource || ''] ?? 9) - (SOURCE_PRIORITY[b.doc.statementSource || ''] ?? 9));
+    const winner = (SOURCE_PRIORITY[ranked[0].doc.statementSource || ''] ?? 9) < 9 ? ranked[0] : null;
+    const listing = group.map((g) => `${g.doc.originalFileName} ${fmt(g.parsed.deposits)}`).join('; ');
+    for (const g of group) {
+      if (g === winner || (winner && same(g.parsed.deposits, winner.parsed.deposits))) continue;
+      out.set(
+        g.parsed,
+        winner
+          ? `Deposits of ${fmt(g.parsed.deposits)} differ from the bank connection (${fmt(winner.parsed.deposits)}, ${winner.doc.originalFileName}); bank figures used.`
+          : `Files disagree on deposits for this month (${listing}). Resolve before entering.`,
+      );
+    }
+  }
+  return out;
 }
 
 /**
@@ -150,6 +194,7 @@ export async function scanBankStatements(companyId: string, engagementId: string
         statementAccountLast4: true,
         statementSource: true,
         bankActivity: true,
+        reviewStatus: true,
       },
       orderBy: { originalFileName: 'asc' },
     })
@@ -159,7 +204,7 @@ export async function scanBankStatements(companyId: string, engagementId: string
 
   await Promise.all(
     docs.map((doc, i) => {
-      if (doc.statementSource === 'PLAID_ASSETS') return null;
+      if (ACTIVITY_SOURCES.has(doc.statementSource || '')) return null;
       const parsed = reads[i].parsed[0] ?? null;
       // A period read from the statement wins: bank connectors label statements by statement date.
       const month = (parsed?.periodLabel ? parsed.month : null) || doc.statementMonth || parsed?.month || null;
@@ -181,6 +226,7 @@ export async function scanBankStatements(companyId: string, engagementId: string
   const items = docs.flatMap((doc, i) =>
     reads[i].failure ? [{ doc, parsed: null, failure: reads[i].failure }] : reads[i].parsed.map((parsed) => ({ doc, parsed, failure: undefined })),
   );
+  const outvoted = sourceConflicts(items);
   for (const { doc, parsed, failure } of items) {
     if (failure || !parsed) {
       results.push(failure!);
@@ -189,7 +235,13 @@ export async function scanBankStatements(companyId: string, engagementId: string
     const result = (status: StatementScanStatus, message: string, bankAccountId: string | null = null) =>
       results.push({ documentId: doc.id, fileName: doc.originalFileName, status, message, bankAccountId, month: parsed.month, parsed });
 
-    const missing = missingFigures(parsed);
+    const conflict = outvoted.get(parsed);
+    if (conflict) {
+      result('CONFLICT', conflict);
+      continue;
+    }
+    const depositsOnly = isDepositsOnly(doc);
+    const missing = missingFigures(parsed, depositsOnly);
     if (missing.length > 0) {
       result('NEEDS_REVIEW', `Could not read ${missing.join(', ')}.`);
       continue;
@@ -231,7 +283,7 @@ export async function scanBankStatements(companyId: string, engagementId: string
         statementEnding: parsed.ending,
       };
       const labels = { statementBeginning: 'beginning', statementDeposits: 'deposits', statementWithdrawals: 'withdrawals', statementEnding: 'ending' };
-      const fields = Object.keys(read) as Array<keyof typeof read>;
+      const fields = (Object.keys(read) as Array<keyof typeof read>).filter((f) => read[f] !== null);
       const conflicts = fields.filter((f) => entered[f] !== null && !same(entered[f], read[f]));
       const otherDoc = sample.dataRoomDocumentId && sample.dataRoomDocumentId !== doc.id;
       if (conflicts.length > 0) {

@@ -2,7 +2,12 @@
 
 import { useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
-import { DATAROOM_BANK_STATEMENTS_FOLDER_ID, DATAROOM_MAX_FILE_SIZE_BYTES } from '@/lib/dataroom/constants';
+import {
+  DATAROOM_BANK_STATEMENTS_FOLDER_ID,
+  DATAROOM_MAX_FILE_SIZE_BYTES,
+  DATAROOM_MAX_SPREADSHEET_FILE_SIZE_BYTES,
+} from '@/lib/dataroom/constants';
+import { isTransactionFileName } from '@/lib/bank-statements/providers';
 
 type FileProgress = { key: string; name: string; status: 'uploading' | 'done' | 'failed'; message?: string };
 
@@ -63,17 +68,18 @@ export default function BankStatementUploader({
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const key = items[i].key;
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
-        setStatus(key, { status: 'failed', message: 'Only PDF statements can be uploaded here.' });
+      const isExport = isTransactionFileName(file.name);
+      if (!isExport && !file.name.toLowerCase().endsWith('.pdf')) {
+        setStatus(key, { status: 'failed', message: 'Upload statement PDFs or transaction files (CSV, XLSX, XLS).' });
         continue;
       }
-      if (file.size > DATAROOM_MAX_FILE_SIZE_BYTES) {
-        setStatus(key, { status: 'failed', message: 'File is larger than 100 MB.' });
+      if (file.size > (isExport ? DATAROOM_MAX_SPREADSHEET_FILE_SIZE_BYTES : DATAROOM_MAX_FILE_SIZE_BYTES)) {
+        setStatus(key, { status: 'failed', message: `File is larger than ${isExport ? '25' : '100'} MB.` });
         continue;
       }
       try {
         await uploadStatement(companyId, file, privateStorage);
-        setStatus(key, { status: 'done' });
+        setStatus(key, { status: 'done', message: isExport ? 'Awaiting review by the Corelytics team.' : undefined });
       } catch (e) {
         setStatus(key, { status: 'failed', message: e instanceof Error ? e.message : String(e) });
       }
@@ -106,9 +112,12 @@ export default function BankStatementUploader({
         }}
       >
         <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>
-          {busy ? 'Uploading…' : 'Drag statement PDFs here'}
+          {busy ? 'Uploading…' : 'Drag statement PDFs or transaction files here'}
         </div>
-        <div style={{ marginBottom: '10px' }}>One PDF per account per month. Files go to the Data Room Bank Statements folder.</div>
+        <div style={{ marginBottom: '10px' }}>
+          One PDF per account per month, or a CSV / Excel transaction export with date, description, and amount columns. Files go to the
+          Data Room Bank Statements folder.
+        </div>
         <button
           type="button"
           disabled={busy}
@@ -130,7 +139,7 @@ export default function BankStatementUploader({
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf,.pdf"
+          accept="application/pdf,.pdf,.csv,.xlsx,.xls"
           multiple
           style={{ display: 'none' }}
           onChange={(e) => void handleFiles(e.target.files)}
@@ -140,7 +149,8 @@ export default function BankStatementUploader({
         <div style={{ marginTop: '8px', display: 'grid', gap: '2px' }}>
           {progress.map((p) => (
             <div key={p.key} style={{ fontSize: '11px', color: p.status === 'failed' ? '#b91c1c' : p.status === 'done' ? '#047857' : '#475569' }}>
-              {p.name}: {p.status === 'uploading' ? 'Uploading…' : p.status === 'done' ? 'Uploaded' : `Failed. ${p.message || ''}`}
+              {p.name}:{' '}
+              {p.status === 'uploading' ? 'Uploading…' : p.status === 'done' ? `Uploaded${p.message ? `. ${p.message}` : ''}` : `Failed. ${p.message || ''}`}
             </div>
           ))}
         </div>
