@@ -22,6 +22,8 @@ import {
 } from './revenue-reconciliation';
 import { selectExpansionMonths, selectSampleMonths, type SampleSelectionReason } from './sampling';
 import { scanBankStatements, type StatementScan } from './statement-scan';
+import type { DetectedStatementAccount } from '@/lib/bank-statements/account-match';
+import { loadDetectedStatementAccounts } from '@/lib/bank-statements/detected-accounts';
 import { computeTieOut, type CashProofSampleStatus, type TieOutResult } from './tie-out';
 
 export class CashProofError extends Error {
@@ -100,6 +102,8 @@ export type CashProofState = {
   balanceSheetCash: Record<string, number>;
   completeness: Record<string, { bookTotal: number | null; balanceSheetCash: number | null; difference: number | null }>;
   bankStatementDocuments: Array<{ id: string; originalFileName: string; createdAt: string }>;
+  /** Bank accounts the Bank Statements folder has statements for; accounts link to these by bank and last 4. */
+  statementAccounts: DetectedStatementAccount[];
   summary: {
     sampledMonths: number;
     accountMonths: number;
@@ -155,10 +159,11 @@ async function loadBankStatementDocuments(companyId: string) {
 }
 
 export async function loadCashProofState(companyId: string): Promise<CashProofState> {
-  const [engagement, latestFinancialMonth, bankStatementDocuments] = await Promise.all([
+  const [engagement, latestFinancialMonth, bankStatementDocuments, statementAccounts] = await Promise.all([
     latestEngagement(companyId),
     resolveLatestFinancialMonth(companyId),
     loadBankStatementDocuments(companyId),
+    loadDetectedStatementAccounts(companyId),
   ]);
 
   const emptySummary = {
@@ -186,6 +191,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
       balanceSheetCash: {},
       completeness: {},
       bankStatementDocuments,
+      statementAccounts,
       summary: emptySummary,
     };
   }
@@ -348,6 +354,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     balanceSheetCash,
     completeness,
     bankStatementDocuments,
+    statementAccounts,
     summary,
   };
 }

@@ -4,6 +4,8 @@ import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import { readDataRoomBlob } from '@/lib/dataroom/blob-storage';
 import { isAggregatorSource, parseBankActivity } from '@/lib/bank-statements/providers';
+import { matchStatementAccount } from '@/lib/bank-statements/account-match';
+import { detectBankName } from './bank-names';
 import { shiftMonth } from './book-balances';
 import { parseBankStatement, type ParsedStatement } from './statement-parser';
 import { computeTieOut } from './tie-out';
@@ -58,13 +60,14 @@ type Doc = {
   contentType: string | null;
   statementMonth: string | null;
   statementAccountLast4: string | null;
+  statementInstitution: string | null;
   statementSource: string | null;
   bankActivity: unknown;
   reviewStatus: string | null;
   scanStatus: string;
 };
 
-type DocumentRead = { parsed: ParsedStatement[]; failure?: StatementScanResult };
+type DocumentRead = { parsed: ParsedStatement[]; bankName?: string | null; failure?: StatementScanResult };
 
 /** Bank data reports and reviewed transaction files carry their monthly figures; they are used as-is. */
 function bankActivityStatements(doc: Doc): ParsedStatement[] {
@@ -116,7 +119,7 @@ async function readDocument(doc: Doc): Promise<DocumentRead> {
     const parsed = parseBankStatement(extracted.text, doc.originalFileName);
     // The account number from a bank connector is authoritative; statement text can name several accounts.
     if (isAggregatorSource(doc.statementSource) && doc.statementAccountLast4) parsed.last4 = doc.statementAccountLast4;
-    return { parsed: [parsed] };
+    return { parsed: [parsed], bankName: detectBankName(extracted.text) };
   } catch (e) {
     return { parsed: [], failure: { ...base, status: 'FAILED', message: e instanceof Error ? e.message : String(e) } };
   }
@@ -192,6 +195,7 @@ export async function scanBankStatements(companyId: string, engagementId: string
         contentType: true,
         statementMonth: true,
         statementAccountLast4: true,
+        statementInstitution: true,
         statementSource: true,
         bankActivity: true,
         reviewStatus: true,
@@ -209,10 +213,12 @@ export async function scanBankStatements(companyId: string, engagementId: string
       // A period read from the statement wins: bank connectors label statements by statement date.
       const month = (parsed?.periodLabel ? parsed.month : null) || doc.statementMonth || parsed?.month || null;
       const last4 = doc.statementAccountLast4 || parsed?.last4 || null;
-      if (month === doc.statementMonth && last4 === doc.statementAccountLast4) return null;
+      const institution = doc.statementInstitution || reads[i].bankName || null;
+      if (month === doc.statementMonth && last4 === doc.statementAccountLast4 && institution === doc.statementInstitution) return null;
+      doc.statementInstitution = institution;
       return prisma.dataRoomDocument.update({
         where: { id: doc.id },
-        data: { statementMonth: month, statementAccountLast4: last4 },
+        data: { statementMonth: month, statementAccountLast4: last4, statementInstitution: institution },
       });
     }),
   );
@@ -251,16 +257,16 @@ export async function scanBankStatements(companyId: string, engagementId: string
       result('NEEDS_REVIEW', `Figures read do not foot (off by ${fmt(off)}). Check the statement and enter it by hand.`);
       continue;
     }
-    const accounts = engagement.bankAccounts.filter((a) => a.accountLast4 === parsed.last4);
-    if (accounts.length === 0) {
-      result('UNMATCHED', `No included account has last 4 ${parsed.last4}. Set Last 4 on the account in the balance grid.`);
+    const { account, candidates } = matchStatementAccount(engagement.bankAccounts, parsed.last4, doc.statementInstitution);
+    if (!account) {
+      result(
+        'UNMATCHED',
+        candidates.length === 0
+          ? `No included account has last 4 ${parsed.last4}. Link the statement account on the account in the balance grid.`
+          : `More than one included account has last 4 ${parsed.last4}, and the bank name does not tell them apart.`,
+      );
       continue;
     }
-    if (accounts.length > 1) {
-      result('UNMATCHED', `More than one included account has last 4 ${parsed.last4}.`);
-      continue;
-    }
-    const account = accounts[0];
     const month = parsed.month!;
     if (month < engagement.periodStartMonth || month > engagement.periodEndMonth) {
       result('UNMATCHED', 'Statement month is outside the review period.', account.id);

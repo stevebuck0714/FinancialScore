@@ -15,6 +15,7 @@ import {
   parseBankActivity,
   type BankStatementSource,
 } from './providers';
+import { matchStatementAccount } from './account-match';
 
 /**
  * BANK_DATA: monthly figures from bank transactions and balances (Plaid asset report), no statement PDF.
@@ -208,18 +209,18 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     if (!d.statementMonth || !d.statementAccountLast4) {
       return { ...base, bankAccountId: null, unplacedReason: 'Not read yet. Run Read Statements on the Cash Proof tab.' };
     }
-    const matches = accounts.filter((a) => a.accountLast4 === d.statementAccountLast4);
-    if (matches.length !== 1) {
+    const { account, candidates } = matchStatementAccount(accounts, d.statementAccountLast4, d.statementInstitution);
+    if (!account) {
       return {
         ...base,
         bankAccountId: null,
         unplacedReason:
-          matches.length === 0
+          candidates.length === 0
             ? `No Cash Proof account has last 4 ${d.statementAccountLast4}.`
-            : `More than one Cash Proof account has last 4 ${d.statementAccountLast4}.`,
+            : `More than one Cash Proof account has last 4 ${d.statementAccountLast4}, and the bank name does not tell them apart.`,
       };
     }
-    return { ...base, bankAccountId: matches[0].id, unplacedReason: null };
+    return { ...base, bankAccountId: account.id, unplacedReason: null };
   });
 
   const coverage: BankStatementsState['coverage'] = {};
@@ -239,10 +240,10 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     if (engagement && activity.length > 0 && (doc.source !== 'UPLOAD_EXPORT' || doc.reviewStatus === 'ACCEPTED')) {
       let placed = 0;
       for (const entry of activity) {
-        const matches = accounts.filter((a) => a.accountLast4 && a.accountLast4 === entry.last4);
-        if (matches.length !== 1 || !monthSet.has(entry.month)) continue;
-        place(matches[0].id, entry.month, doc);
-        const key = `${matches[0].id}|${entry.month}`;
+        const { account } = matchStatementAccount(accounts, entry.last4, doc.institution);
+        if (!account || !monthSet.has(entry.month)) continue;
+        place(account.id, entry.month, doc);
+        const key = `${account.id}|${entry.month}`;
         depositsByCell.set(key, (depositsByCell.get(key) ?? new Set()).add(entry.deposits.toFixed(2)));
         placed += 1;
       }

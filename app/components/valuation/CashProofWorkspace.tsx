@@ -16,6 +16,8 @@ import {
 import { buttonStyle, cardStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
 import CashProofDepositsPanel from './CashProofDepositsPanel';
 import CashProofStatementScanCard from './CashProofStatementScanCard';
+import StatementAccountPicker from './StatementAccountPicker';
+import { linkedStatementAccount, statementAccountLabel } from '@/lib/bank-statements/account-match';
 
 const FISCAL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -76,6 +78,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
   const [editingBalance, setEditingBalance] = useState<{ accountId: string; month: string; value: string } | null>(null);
   const [newAccount, setNewAccount] = useState<{ accountName: string; bankName: string; accountLast4: string } | null>(null);
   const [addMonth, setAddMonth] = useState('');
+  const [manualAccountIds, setManualAccountIds] = useState<Set<string>>(() => new Set());
   const samplePanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -187,7 +190,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
           SBA cash verification. Month-end book cash for each bank account comes from the accounting system, and a
           sample of months is tied to bank statements uploaded to the Data Room <strong>Bank Statements</strong> folder.
           Deposits from every statement are then reconciled to reported revenue. Read Statements fills in the figures from
-          uploaded PDFs.
+          the files in that folder. Link each account to its statements with the Statement Account dropdown.
         </p>
       </div>
       {engagement && (
@@ -309,6 +312,13 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
 
   const months = data?.months || [];
   const accounts = data?.accounts || [];
+  const statementAccounts = data?.statementAccounts || [];
+  const linkedBy = new Map<string, string>();
+  for (const a of accounts) {
+    const linked = linkedStatementAccount(a, statementAccounts);
+    if (linked && !linkedBy.has(linked.key)) linkedBy.set(linked.key, a.accountName);
+  }
+  const unclaimed = statementAccounts.filter((d) => !linkedBy.has(d.key));
   const summary = data!.summary;
   const outstanding = summary.requested + summary.received;
   const revenuePeriods = data?.revenueReconciliation?.periods || [];
@@ -399,8 +409,79 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
             </div>
           </div>
 
+          {unclaimed.length > 0 && (
+            <div
+              style={{
+                marginBottom: '10px',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid #fcd34d',
+                background: '#fffbeb',
+                fontSize: '12px',
+                color: '#92400e',
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+                Statements found for {unclaimed.length === 1 ? 'an account' : `${unclaimed.length} accounts`} not in the cash proof
+              </div>
+              <div style={{ marginBottom: '6px' }}>
+                Link each one to its account with the Statement Account dropdown, or add it. An account with statements but no
+                books is worth asking the client about.
+              </div>
+              <div style={{ display: 'grid', gap: '4px' }}>
+                {unclaimed.map((d) => (
+                  <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span>
+                      {statementAccountLabel(d)} ({d.months} month{d.months === 1 ? '' : 's'})
+                    </span>
+                    {canEdit && (
+                      <button
+                        style={{ ...buttonStyle(), padding: '3px 8px', fontSize: '11px' }}
+                        onClick={() =>
+                          setNewAccount({
+                            accountName: d.accountName || `${d.bankName || 'Bank'} x${d.last4}`,
+                            bankName: d.bankName || '',
+                            accountLast4: d.last4,
+                          })
+                        }
+                      >
+                        Add Account
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {newAccount && (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', marginBottom: '10px', flexWrap: 'wrap' }}>
+              {statementAccounts.length > 0 && (
+                <label style={{ fontSize: '11px', color: '#475569', flex: 2, minWidth: 200 }}>
+                  From Statements
+                  <select
+                    value={statementAccounts.find((d) => d.last4 === newAccount.accountLast4 && (d.bankName || '') === newAccount.bankName)?.key ?? ''}
+                    onChange={(e) => {
+                      const d = statementAccounts.find((s) => s.key === e.target.value);
+                      if (d) {
+                        setNewAccount({
+                          accountName: newAccount.accountName || d.accountName || `${d.bankName || 'Bank'} x${d.last4}`,
+                          bankName: d.bankName || '',
+                          accountLast4: d.last4,
+                        });
+                      }
+                    }}
+                    style={{ ...inputStyle, marginTop: '4px' }}
+                  >
+                    <option value="">Choose, or type below</option>
+                    {statementAccounts.map((d) => (
+                      <option key={d.key} value={d.key}>
+                        {statementAccountLabel(d)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {(['accountName', 'bankName', 'accountLast4'] as const).map((field) => (
                 <label key={field} style={{ fontSize: '11px', color: '#475569', flex: field === 'accountName' ? 2 : 1, minWidth: 120 }}>
                   {field === 'accountName' ? 'Account Name' : field === 'bankName' ? 'Bank' : 'Last 4'}
@@ -439,8 +520,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
                 <thead>
                   <tr>
                     <th style={{ ...thStyle, ...stickyCol(220), background: '#f8fafc' }}>Account</th>
-                    <th style={{ ...thStyle, textAlign: 'left' }}>Bank</th>
-                    <th style={{ ...thStyle, textAlign: 'left' }}>Last 4</th>
+                    <th style={{ ...thStyle, textAlign: 'left' }}>Statement Account</th>
                     <th style={{ ...thStyle, textAlign: 'center' }}>Include</th>
                     {months.map((m) => (
                       <th key={m} style={{ ...thStyle, color: sampledMonths.has(m) ? '#2751d0' : thStyle.color }}>
@@ -462,31 +542,22 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
                           </div>
                         )}
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'left' }}>
-                        <input
-                          defaultValue={account.bankName || ''}
-                          disabled={!canEdit}
-                          placeholder="Bank"
-                          onBlur={(e) => {
-                            if ((e.target.value || '') !== (account.bankName || '')) {
-                              void run('account', { action: 'update-account', engagementId: engagement.id, bankAccountId: account.id, bankName: e.target.value });
-                            }
-                          }}
-                          style={{ ...inputStyle, width: 120 }}
-                        />
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: 'left' }}>
-                        <input
-                          defaultValue={account.accountLast4 || ''}
-                          disabled={!canEdit}
-                          placeholder="0000"
-                          maxLength={4}
-                          onBlur={(e) => {
-                            if ((e.target.value || '') !== (account.accountLast4 || '')) {
-                              void run('account', { action: 'update-account', engagementId: engagement.id, bankAccountId: account.id, accountLast4: e.target.value });
-                            }
-                          }}
-                          style={{ ...inputStyle, width: 60 }}
+                      <td style={{ ...tdStyle, textAlign: 'left', minWidth: 250 }}>
+                        <StatementAccountPicker
+                          account={account}
+                          statementAccounts={statementAccounts}
+                          linkedBy={linkedBy}
+                          manual={manualAccountIds.has(account.id)}
+                          disabled={!canEdit || !!busy}
+                          onManual={(on) =>
+                            setManualAccountIds((prev) => {
+                              const next = new Set(prev);
+                              if (on) next.add(account.id);
+                              else next.delete(account.id);
+                              return next;
+                            })
+                          }
+                          onSave={(fields) => void run('account', { action: 'update-account', engagementId: engagement.id, bankAccountId: account.id, ...fields })}
                         />
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
