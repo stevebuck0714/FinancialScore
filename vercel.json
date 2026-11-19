@@ -98,7 +98,7 @@
     },
     {
       "path": "/api/cron/process-qbo-operational-backfill",
-      "schedule": "0 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/process-company-documents",

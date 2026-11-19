@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import prisma from '@/lib/prisma';
 import { AdapterFactory } from '@/lib/accounting-adapters/adapter-factory';
 import {
@@ -9,6 +10,7 @@ import {
   type QboOperationalBackfillState,
 } from '@/lib/quickbooks-online/qbo-operational-metadata';
 import { deleteQuickBooksOperationalDataInRange } from '@/lib/quickbooks-online/delete-operational-range';
+import { QBO_DAILY_FINANCIALS_SOURCE_PLATFORM } from '@/lib/quickbooks-online/general-ledger-sync';
 import { QuickBooksAdapter } from '@/lib/accounting-adapters/quickbooks-adapter';
 import type { AccountingAdapter } from '@/lib/accounting-adapters/types';
 import { addEstCalendarDays, formatEstDate } from '@/lib/time/eastern';
@@ -90,6 +92,33 @@ function computeBackfillMonthBounds(metadata: unknown): { startMonth: string; en
   return { startMonth, endMonth };
 }
 
+/**
+ * First month (YYYY-MM-01) with any activity in the company's latest synced
+ * monthly financials. Months before it have no QuickBooks history to backfill.
+ */
+async function firstQuickBooksActivityMonth(companyId: string): Promise<string | null> {
+  const record = await prisma.financialRecord.findFirst({
+    where: { companyId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  if (!record) return null;
+  const first = await prisma.monthlyFinancial.findFirst({
+    where: {
+      financialRecordId: record.id,
+      OR: [
+        { revenue: { not: 0 } },
+        { expense: { not: 0 } },
+        { cogsTotal: { not: 0 } },
+        { totalAssets: { not: 0 } },
+      ],
+    },
+    orderBy: { monthDate: 'asc' },
+    select: { monthDate: true },
+  });
+  return first ? `${first.monthDate.toISOString().slice(0, 7)}-01` : null;
+}
+
 async function mergeConnectionMetadata(
   connectionId: string,
   patch: Record<string, unknown>
@@ -148,7 +177,10 @@ export async function orchestrateQuickBooksOnlineOperationalSync(companyId: stri
   // Daily Financials needs GL history, so a connection that has never
   // backfilled starts the 3-year load on its next sync.
   if (pending === 'backfill_3y_pending' || !backfill) {
-    const { startMonth, endMonth } = computeBackfillMonthBounds(metadata);
+    const bounds = computeBackfillMonthBounds(metadata);
+    const firstActivityMonth = await firstQuickBooksActivityMonth(companyId);
+    const startMonth = firstActivityMonth && firstActivityMonth > bounds.startMonth ? firstActivityMonth : bounds.startMonth;
+    const endMonth = bounds.endMonth;
     const now = new Date().toISOString();
     await mergeConnectionMetadata(connection.id, {
       qboOperationalPendingLoad: null,
@@ -162,7 +194,11 @@ export async function orchestrateQuickBooksOnlineOperationalSync(companyId: stri
       },
     });
 
-    await triggerBackfillWorker();
+    try {
+      after(triggerBackfillWorker);
+    } catch {
+      void triggerBackfillWorker();
+    }
 
     return { kind: 'backfill_started' };
   }
@@ -198,6 +234,29 @@ export async function orchestrateQuickBooksOnlineOperationalSync(companyId: stri
     errors: [...(result.errors || []), ...(glError ? [glError] : [])],
     moduleCounts: result.moduleCounts,
   };
+}
+
+const BACKFILL_LEASE_KEY = 'qboOperationalBackfillLeaseUntil';
+
+/**
+ * Lets one backfill worker run at a time, so a cron tick that lands while a
+ * kicked-off worker is still looping does not process the same month twice.
+ */
+export async function claimQuickBooksBackfillLease(leaseMs: number): Promise<string | null> {
+  const candidates = await prisma.accountingConnection.findMany({
+    where: { platform: 'QUICKBOOKS', status: 'ACTIVE' },
+    select: { id: true, connectionMetadata: true },
+  });
+  const running = candidates.find((c) => readQboOperationalBackfill(c.connectionMetadata)?.status === 'running');
+  if (!running) return null;
+  const leaseUntil = Date.parse(String(asRecord(running.connectionMetadata)[BACKFILL_LEASE_KEY] || ''));
+  if (Number.isFinite(leaseUntil) && leaseUntil > Date.now()) return null;
+  await mergeConnectionMetadata(running.id, { [BACKFILL_LEASE_KEY]: new Date(Date.now() + leaseMs).toISOString() });
+  return running.id;
+}
+
+export async function releaseQuickBooksBackfillLease(connectionId: string): Promise<void> {
+  await mergeConnectionMetadata(connectionId, { [BACKFILL_LEASE_KEY]: null });
 }
 
 export async function triggerBackfillWorker(): Promise<void> {
@@ -252,8 +311,20 @@ export async function processQuickBooksOperationalBackfillStep(): Promise<{
     return { processed: false };
   }
 
-  const cursor = backfill.cursorMonth;
+  let cursor = backfill.cursorMonth;
   const endMonth = backfill.endMonth;
+
+  const firstActivityMonth = await firstQuickBooksActivityMonth(running.companyId);
+  if (firstActivityMonth && cursor < firstActivityMonth) {
+    await prisma.dailyFinancialSnapshot.deleteMany({
+      where: {
+        companyId: running.companyId,
+        sourcePlatform: QBO_DAILY_FINANCIALS_SOURCE_PLATFORM,
+        snapshotDate: { lt: new Date(`${firstActivityMonth}T00:00:00Z`) },
+      },
+    });
+    cursor = firstActivityMonth;
+  }
 
   if (new Date(`${cursor}T00:00:00Z`).getTime() > new Date(`${endMonth}T00:00:00Z`).getTime()) {
     const now = new Date().toISOString();
@@ -334,7 +405,6 @@ export async function processQuickBooksOperationalBackfillStep(): Promise<{
           error: null,
         },
       });
-      await triggerBackfillWorker();
     }
 
     return {
