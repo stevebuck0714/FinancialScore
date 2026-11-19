@@ -145,7 +145,9 @@ export async function orchestrateQuickBooksOnlineOperationalSync(companyId: stri
     return { kind: 'backfill_in_progress', backfill };
   }
 
-  if (pending === 'backfill_3y_pending') {
+  // Daily Financials needs GL history, so a connection that has never
+  // backfilled starts the 3-year load on its next sync.
+  if (pending === 'backfill_3y_pending' || !backfill) {
     const { startMonth, endMonth } = computeBackfillMonthBounds(metadata);
     const now = new Date().toISOString();
     await mergeConnectionMetadata(connection.id, {

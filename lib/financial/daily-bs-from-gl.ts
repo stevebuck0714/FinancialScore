@@ -41,7 +41,12 @@ import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { atlanticGlRowsSql, isAtlanticPrecisionGlCompany } from '@/lib/financial/atlantic-gl-source';
 import { BS_LAST_DAY_FIELDS, PNL_SUM_FIELDS } from '@/lib/financial/month-publish';
-import { formatEstDate, isEstBusinessDay } from '@/lib/time/eastern';
+import {
+  estReportingWindow,
+  formatEstDate,
+  isEstBusinessDay,
+  utcMidnightForEstDate,
+} from '@/lib/time/eastern';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -1486,9 +1491,15 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
       });
       return;
     }
+    // Weekend/holiday activity is reported on a business day (see
+    // estReportingWindow); the last business day of a month also carries the
+    // month's trailing non-business days so month-end balances are complete.
+    const reportingWindow = estReportingWindow(snapshotDayKey);
+    const pnlPeriodStart = utcMidnightForEstDate(reportingWindow.start);
+    const asOfDate = utcMidnightForEstDate(reportingWindow.end);
     const fiscalYearStart = computeFiscalYearStart(snapshotDate, fyMonth, fyDay);
-    const accountAnchor = accountAnchorForDate(snapshotDate);
-    const anchor = accountAnchor ? null : anchorForDate(snapshotDate);
+    const accountAnchor = accountAnchorForDate(asOfDate);
+    const anchor = accountAnchor ? null : anchorForDate(asOfDate);
     if (accountAnchor) {
       anchorsApplied++;
       accountAnchorsApplied++;
@@ -1501,11 +1512,11 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
 
     const snapshot = await computeDailyBalanceSheetFromGL(
       companyId,
-      snapshotDate,
+      asOfDate,
       fiscalYearStart,
       accountIdToTarget,
       anchor,
-      null,
+      pnlPeriodStart,
       accountAnchor
     );
 

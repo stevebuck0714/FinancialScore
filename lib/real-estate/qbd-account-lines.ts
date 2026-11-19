@@ -13,6 +13,10 @@ export const QBD_CREDIT_BALANCE_TYPES = new Set(['accountspayable', 'creditcard'
 const INCOME_TYPES = new Set(['income', 'otherincome']);
 const EXPENSE_TYPES = new Set(['expense', 'otherexpense', 'costofgoodssold']);
 
+export function isQbdActivityAccountType(type: string) {
+  return INCOME_TYPES.has(type) || EXPENSE_TYPES.has(type);
+}
+
 export const QBD_ACCOUNT_TYPE_LABEL: Record<string, string> = {
   bank: 'Bank',
   accountsreceivable: 'AccountsReceivable',

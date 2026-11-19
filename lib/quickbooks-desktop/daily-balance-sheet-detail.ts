@@ -1,37 +1,34 @@
 import prisma from '@/lib/prisma';
-import { buildQbdAccountMap, buildQbdDailyAccountBalances, pickLatestQbdBalanceSheet } from '@/lib/real-estate/qbd-account-lines';
+import {
+  buildQbdAccountMap,
+  buildQbdDailyAccountBalances,
+  isQbdActivityAccountType,
+  pickLatestQbdBalanceSheet,
+  qbdAccountKey,
+} from '@/lib/real-estate/qbd-account-lines';
 import { loadQbdAccountRows, loadQbdBalanceSheetRows, loadQbdGeneralLedgerRows } from '@/lib/quickbooks-desktop/account-books';
 import { qbdAccountSideForType, qbdBuildMappingTargetLookup, qbdSignedBalanceForTarget } from '@/lib/quickbooks-desktop/account-lookup';
 import { isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
+import { estReportingBusinessDate, estReportingWindow, formatEstDate, isEstBusinessDay } from '@/lib/time/eastern';
+import {
+  displayAccountName,
+  incomeDetailLineForTarget,
+  roundCents,
+  type DailyAccountDetail,
+  type DailyAccountDetailRow,
+} from '@/lib/financial/daily-account-detail';
 
-export type DailyBalanceSheetDetailRow = {
-  targetField: string;
-  accountName: string;
-  valuesByDate: Record<string, number>;
-};
-
-export type DailyBalanceSheetDetail = {
-  asOf: string;
-  rows: DailyBalanceSheetDetailRow[];
-};
-
-function displayAccountName(fullName: string, accountNumber?: string) {
-  const name = fullName.replace(/&#183;/g, '·').replace(/:/g, ' › ');
-  return accountNumber ? `${accountNumber} · ${name}` : name;
-}
+export type DailyBalanceSheetDetailRow = DailyAccountDetailRow;
+export type DailyBalanceSheetDetail = DailyAccountDetail;
 
 /**
  * Per-account balances behind each Daily Financials balance-sheet line, from
  * the saved QuickBooks Desktop Balance Sheet and General Ledger, mapped and
  * signed the same way the daily snapshot totals are.
  */
-export async function loadQbdDailyBalanceSheetDetail(
-  companyId: string,
-  dateKeys: string[],
-  options: { includeBalanceSheetDate?: boolean } = {},
-): Promise<DailyBalanceSheetDetail | null> {
-  const dates = Array.from(new Set(dateKeys.filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key)))).sort();
-  if (!dates.length && !options.includeBalanceSheetDate) return null;
+const isDateKey = (key: string) => /^\d{4}-\d{2}-\d{2}$/.test(key);
+
+async function loadQbdBooks(companyId: string) {
   const [accountRows, balanceSheetRows, glRows, mappings] = await Promise.all([
     loadQbdAccountRows(companyId),
     loadQbdBalanceSheetRows(companyId),
@@ -41,25 +38,110 @@ export async function loadQbdDailyBalanceSheetDetail(
       select: { accountId: true, accountName: true, accountCode: true, targetField: true },
     }),
   ]);
-  const accounts = buildQbdAccountMap(accountRows);
-  const balanceSheet = pickLatestQbdBalanceSheet(balanceSheetRows);
+  return {
+    accounts: buildQbdAccountMap(accountRows),
+    balanceSheet: pickLatestQbdBalanceSheet(balanceSheetRows),
+    glRows,
+    getTarget: qbdBuildMappingTargetLookup(mappings),
+  };
+}
+
+type QbdBooks = Awaited<ReturnType<typeof loadQbdBooks>>;
+
+export async function loadQbdDailyBalanceSheetDetail(
+  companyId: string,
+  dateKeys: string[],
+  options: { includeBalanceSheetDate?: boolean } = {},
+): Promise<DailyBalanceSheetDetail | null> {
+  const dates = Array.from(new Set(dateKeys.filter(isDateKey))).sort();
+  if (!dates.length && !options.includeBalanceSheetDate) return null;
+  return buildBalanceSheetDetail(await loadQbdBooks(companyId), dates, options);
+}
+
+/** Balance-sheet and income-statement account detail for Daily Financials, from one load of the QuickBooks Desktop books. */
+export async function loadQbdDailyAccountDetail(
+  companyId: string,
+  balanceDateKeys: string[],
+  incomeDayKeys: string[],
+): Promise<{ balance: DailyAccountDetail | null; income: DailyAccountDetail | null }> {
+  const balanceDates = Array.from(new Set(balanceDateKeys.filter(isDateKey))).sort();
+  const incomeDays = Array.from(new Set(incomeDayKeys.filter(isDateKey))).sort();
+  if (!balanceDates.length && !incomeDays.length) return { balance: null, income: null };
+  const books = await loadQbdBooks(companyId);
+  return {
+    balance: balanceDates.length ? buildBalanceSheetDetail(books, balanceDates) : null,
+    income: incomeDays.length ? buildIncomeDetail(books, incomeDays) : null,
+  };
+}
+
+/** Each mapped income-statement account's activity on every requested day, signed like the daily snapshot line it sits under. */
+function buildIncomeDetail(books: QbdBooks, days: string[]): DailyAccountDetail | null {
+  const { accounts, glRows, getTarget } = books;
+  if (!accounts.size) return null;
+  const daySet = new Set(days);
+  const rowsByKey = new Map<string, DailyAccountDetailRow>();
+  for (const glRow of glRows) {
+    const row = { ...glRow, txnDate: estReportingBusinessDate(glRow.txnDate) };
+    if (!daySet.has(row.txnDate)) continue;
+    const account = accounts.get(qbdAccountKey(row.account));
+    if (!account || !isQbdActivityAccountType(account.type)) continue;
+    const targetField = getTarget({ id: account.listId, name: account.fullName }) || getTarget({ name: account.accountNumber });
+    const line = targetField ? incomeDetailLineForTarget(targetField) : null;
+    if (!line) continue;
+    const rowKey = `${line.field}|${account.key}`;
+    const detailRow =
+      rowsByKey.get(rowKey) ||
+      { targetField: line.field, accountName: displayAccountName(account.fullName, account.accountNumber), valuesByDate: {} };
+    detailRow.valuesByDate[row.txnDate] = roundCents((detailRow.valuesByDate[row.txnDate] || 0) + row.amount * line.sign);
+    rowsByKey.set(rowKey, detailRow);
+  }
+  const rows = Array.from(rowsByKey.values())
+    .filter((row) => Object.values(row.valuesByDate).some((value) => Math.abs(value) >= 0.005))
+    .sort((a, b) => a.accountName.localeCompare(b.accountName));
+  return rows.length ? { asOf: days[days.length - 1], rows } : null;
+}
+
+function buildBalanceSheetDetail(
+  books: QbdBooks,
+  dates: string[],
+  options: { includeBalanceSheetDate?: boolean } = {},
+): DailyBalanceSheetDetail | null {
+  const { accounts, balanceSheet, glRows, getTarget } = books;
   if (!balanceSheet || !accounts.size) return null;
   if (options.includeBalanceSheetDate && !dates.includes(balanceSheet.asOf)) dates.push(balanceSheet.asOf);
 
-  const getTarget = qbdBuildMappingTargetLookup(mappings);
-  const { asOf, balances, netIncomeByDate } = buildQbdDailyAccountBalances(accounts, balanceSheet, glRows, dates);
+  // A month's last business day reports the month-end balance (same rule as
+  // the daily rows), never past today so forward-dated entries stay out.
+  const today = formatEstDate();
+  const walkDateFor = (dateKey: string) => {
+    if (!isEstBusinessDay(dateKey)) return dateKey;
+    const end = estReportingWindow(dateKey).end;
+    return end <= today ? end : dateKey > today ? dateKey : today;
+  };
+  const walkDates = Array.from(new Set(dates.map(walkDateFor))).sort();
+  const rekey = (byWalkDate: Record<string, number>) => {
+    const out: Record<string, number> = {};
+    for (const dateKey of dates) {
+      const value = byWalkDate[walkDateFor(dateKey)];
+      if (value !== undefined) out[dateKey] = value;
+    }
+    return out;
+  };
+
+  const { asOf, balances, netIncomeByDate } = buildQbdDailyAccountBalances(accounts, balanceSheet, glRows, walkDates);
   const rows: DailyBalanceSheetDetailRow[] = balances.map(({ account, byDate }) => {
     const targetField = getTarget({ id: account.listId, name: account.fullName }) || getTarget({ name: account.accountNumber });
     const side = qbdAccountSideForType(account.type);
     const valuesByDate: Record<string, number> = {};
-    for (const [dateKey, value] of Object.entries(byDate)) {
+    for (const [dateKey, value] of Object.entries(rekey(byDate))) {
       valuesByDate[dateKey] = targetField ? qbdSignedBalanceForTarget(value, side, targetField) : value;
     }
     return { targetField, accountName: displayAccountName(account.fullName, account.accountNumber), valuesByDate };
   });
-  if (Object.values(netIncomeByDate).some((value) => Math.abs(value) >= 0.005)) {
+  const netIncomeByRequestedDate = rekey(netIncomeByDate);
+  if (Object.values(netIncomeByRequestedDate).some((value) => Math.abs(value) >= 0.005)) {
     // The Balance Sheet's computed Net Income row lands in Retained Earnings.
-    rows.push({ targetField: 'retainedEarnings', accountName: 'Net Income (current year)', valuesByDate: netIncomeByDate });
+    rows.push({ targetField: 'retainedEarnings', accountName: 'Net Income (current year)', valuesByDate: netIncomeByRequestedDate });
   }
   rows.sort((a, b) => a.accountName.localeCompare(b.accountName));
   return { asOf, rows };

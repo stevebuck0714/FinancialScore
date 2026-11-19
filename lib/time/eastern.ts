@@ -129,6 +129,40 @@ export function previousEstBusinessDate(estDate: string): string {
   return cursor;
 }
 
+function sameEstMonth(a: string, b: string): boolean {
+  return a.slice(0, 7) === b.slice(0, 7);
+}
+
+/**
+ * Business day whose daily P&L carries activity posted on `estDate`.
+ * Weekend/holiday activity rolls forward to the next business day in the same
+ * month; trailing month-end days roll back so month totals stay complete.
+ */
+export function estReportingBusinessDate(estDate: string): string {
+  if (isEstBusinessDay(estDate)) return estDate;
+  for (let cursor = addEstCalendarDays(estDate, 1); sameEstMonth(cursor, estDate); cursor = addEstCalendarDays(cursor, 1)) {
+    if (isEstBusinessDay(cursor)) return cursor;
+  }
+  for (let cursor = addEstCalendarDays(estDate, -1); sameEstMonth(cursor, estDate); cursor = addEstCalendarDays(cursor, -1)) {
+    if (isEstBusinessDay(cursor)) return cursor;
+  }
+  return estDate;
+}
+
+/** Inclusive calendar range whose activity reports on business day `estDate`. */
+export function estReportingWindow(estDate: string): { start: string; end: string } {
+  let start = estDate;
+  for (let cursor = addEstCalendarDays(estDate, -1); sameEstMonth(cursor, estDate) && !isEstBusinessDay(cursor); cursor = addEstCalendarDays(cursor, -1)) {
+    start = cursor;
+  }
+  let end = estDate;
+  for (let cursor = addEstCalendarDays(estDate, 1); sameEstMonth(cursor, estDate) && !isEstBusinessDay(cursor); cursor = addEstCalendarDays(cursor, 1)) {
+    end = cursor;
+  }
+  if (end !== estDate && estReportingBusinessDate(end) !== estDate) end = estDate;
+  return { start, end };
+}
+
 export function listEstDateRange(startYmd: string, endYmd: string): string[] {
   const out: string[] = [];
   let cursor = startYmd;

@@ -1068,15 +1068,20 @@ export class QuickBooksAdapter implements AccountingAdapter {
         const linkedBill = linked.find((tx: unknown) => String(this.asRecord(tx).TxnType || '').toLowerCase() === 'bill');
         const linkedBillRecord = linkedBill ? this.asRecord(linkedBill) : {};
         const vendorRef = this.asRecord(paymentRecord.VendorRef || paymentRecord.PayeeRef);
+        const vendorName = vendorRef?.name ? String(vendorRef.name) : `Unknown Vendor ${index + 1}`;
+        const paidAmountHome = Number(paymentRecord.TotalAmt || 0);
         return {
           companyId: this.config.companyId,
           paymentDate,
           vendorId: vendorRef?.value ? String(vendorRef.value) : null,
-          vendorName: vendorRef?.name ? String(vendorRef.name) : `Unknown Vendor ${index + 1}`,
+          vendorName,
           billNo: linkedBillRecord.TxnId ? String(linkedBillRecord.TxnId) : null,
           currencyCode: currencyRef.value ? String(currencyRef.value) : null,
-          paidAmountCurrency: Number(paymentRecord.TotalAmt || 0),
-          paidAmountHome: Number(paymentRecord.TotalAmt || 0),
+          paidAmountCurrency: paidAmountHome,
+          paidAmountHome,
+          sourceItemId: paymentRecord.Id
+            ? `qbo|BillPayment|${String(paymentRecord.Id)}`
+            : `qbo|BillPayment|${paymentDate.toISOString()}|${vendorName}|${paidAmountHome}|${index}`,
           sourcePlatform: 'QUICKBOOKS',
           sourceProgram: 'QBO_QUERY',
           sourceTransaction: 'BILL_PAYMENT',
@@ -1086,7 +1091,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row) && Number.isFinite(row.paidAmountHome));
     if (paymentRows.length) {
-      await apPaymentFact.createMany({ data: paymentRows });
+      await apPaymentFact.createMany({ data: paymentRows, skipDuplicates: true });
     }
     const vendorCreditRows = vendorCredits
       .map((credit: unknown, index: number) => {
@@ -1103,15 +1108,20 @@ export class QuickBooksAdapter implements AccountingAdapter {
           : [];
         const linkedBill = linked.find((tx: unknown) => String(this.asRecord(tx).TxnType || '').toLowerCase() === 'bill');
         const linkedBillRecord = linkedBill ? this.asRecord(linkedBill) : {};
+        const vendorName = vendorRef.name ? String(vendorRef.name) : `Unknown Vendor ${index + 1}`;
+        const paidAmountHome = Number(creditRecord.TotalAmt || 0);
         return {
           companyId: this.config.companyId,
           paymentDate,
           vendorId: vendorRef.value ? String(vendorRef.value) : null,
-          vendorName: vendorRef.name ? String(vendorRef.name) : `Unknown Vendor ${index + 1}`,
+          vendorName,
           billNo: linkedBillRecord.TxnId ? String(linkedBillRecord.TxnId) : null,
           currencyCode: currencyRef.value ? String(currencyRef.value) : null,
-          paidAmountCurrency: Number(creditRecord.TotalAmt || 0),
-          paidAmountHome: Number(creditRecord.TotalAmt || 0),
+          paidAmountCurrency: paidAmountHome,
+          paidAmountHome,
+          sourceItemId: creditRecord.Id
+            ? `qbo|VendorCredit|${String(creditRecord.Id)}`
+            : `qbo|VendorCredit|${paymentDate.toISOString()}|${vendorName}|${paidAmountHome}|${index}`,
           sourcePlatform: 'QUICKBOOKS',
           sourceProgram: 'QBO_QUERY',
           sourceTransaction: 'VENDOR_CREDIT',
@@ -1121,7 +1131,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row) && Number.isFinite(row.paidAmountHome));
     if (vendorCreditRows.length) {
-      await apPaymentFact.createMany({ data: vendorCreditRows });
+      await apPaymentFact.createMany({ data: vendorCreditRows, skipDuplicates: true });
     }
 
     return openRows.length + paymentRows.length + vendorCreditRows.length;

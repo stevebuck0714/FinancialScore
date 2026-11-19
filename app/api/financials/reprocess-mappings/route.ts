@@ -19,7 +19,7 @@ import {
 } from '@/lib/financial/qbd-bakers-bs-pins';
 import { warmDailyExecutiveBriefingCache } from '@/lib/pulse/exec-briefing-warmup';
 import { warmDailyIndustryBriefCache } from '@/lib/industry-brief/warmup';
-import { formatEstDate, isEstBusinessDay } from '@/lib/time/eastern';
+import { estReportingBusinessDate, formatEstDate, isEstBusinessDay } from '@/lib/time/eastern';
 import { syncQbdAccountLinesToRealEstate } from '@/lib/real-estate/qbd-financial-adapter';
 import { isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 import {
@@ -1941,6 +1941,44 @@ async function buildQuickBooksDesktopMappedMonthlyPayload(companyId: string, bas
   };
 }
 
+/**
+ * Daily rows exist only for business days (same rule as the GL rebuild in
+ * daily-bs-from-gl). Weekend/holiday P&L is added to the business day it
+ * reports on, and the last business day of a month takes the month-end
+ * balance sheet so monthly statements stay complete.
+ */
+function rollQbdDailyRowsToBusinessDays(rows: Array<Record<string, unknown>>, importDate: string) {
+  const byDate = new Map<string, Record<string, unknown>>();
+  const nonBusiness: Array<{ dateKey: string; row: Record<string, unknown> }> = [];
+  for (const row of rows) {
+    const dateKey = qbdDateKey(qbdString(row.snapshotDate));
+    if (!dateKey) continue;
+    if (isEstBusinessDay(dateKey)) byDate.set(dateKey, { ...row });
+    else nonBusiness.push({ dateKey, row });
+  }
+  nonBusiness.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  for (const { dateKey, row } of nonBusiness) {
+    if (dateKey > importDate) continue;
+    const reportDateKey = estReportingBusinessDate(dateKey);
+    if (reportDateKey === dateKey) continue;
+    let target = byDate.get(reportDateKey);
+    if (!target) {
+      target = { ...row, snapshotDate: reportDateKey };
+      for (const field of QBD_DAILY_PNL_UPDATE_FIELDS) target[field] = 0;
+      for (const field of QBD_MONTHLY_BS_PRESERVE_FIELDS) target[field] = 0;
+      byDate.set(reportDateKey, target);
+    }
+    for (const field of QBD_DAILY_PNL_UPDATE_FIELDS) {
+      target[field] = qbdNumber(target[field]) + qbdNumber(row[field]);
+    }
+    const hasBalanceSheet = QBD_MONTHLY_BS_PRESERVE_FIELDS.some((field) => qbdNumber(row[field]) !== 0);
+    if (dateKey > reportDateKey && hasBalanceSheet) {
+      for (const field of QBD_MONTHLY_BS_PRESERVE_FIELDS) target[field] = qbdNumber(row[field]);
+    }
+  }
+  return Array.from(byDate.values());
+}
+
 async function persistQuickBooksDesktopDailyFinancialSnapshots(
   companyId: string,
   payload: Record<string, unknown>,
@@ -1960,8 +1998,8 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
         lt: new Date(Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)), 1)),
       }
     : undefined;
-  // Weekends and holidays are kept only when they carry P&L activity, so GL
-  // entries posted on those dates are not dropped from daily or monthly totals.
+  // Rows from before weekend/holiday activity was rolled into business days
+  // are removed once the month's P&L is rebuilt.
   const existingNonBusinessDates = new Set(
     (await prisma.dailyFinancialSnapshot.findMany({
       where: { companyId, frequency: 'daily', ...(monthRange ? { snapshotDate: monthRange } : {}) },
@@ -1970,20 +2008,14 @@ async function persistQuickBooksDesktopDailyFinancialSnapshots(
       .map((row) => qbdDateKey(row.snapshotDate.toISOString()))
       .filter((dateKey): dateKey is string => Boolean(dateKey && !isEstBusinessDay(dateKey))),
   );
-  const hasPnlActivity = (row: Record<string, unknown>) =>
-    ['revenue', 'cogsTotal', 'expense'].some((field) => Math.abs(qbdNumber(row[field])) > 0.005);
-  const parsedRows = rows
+  const parsedRows = rollQbdDailyRowsToBusinessDays(rows, importDate)
     .map((row) => {
       const rawDate = qbdString(row.snapshotDate);
       const dateKey = qbdDateKey(rawDate);
       if (!dateKey) return null;
       if (monthKey && dateKey.slice(0, 7) !== monthKey) return null;
       if (dateKey > importDate) return null;
-      if (!isEstBusinessDay(dateKey)) {
-        const keepForPnl = scope.canUpdatePnl && hasPnlActivity(row);
-        const keepExistingForBalanceSheet = !scope.canUpdatePnl && existingNonBusinessDates.has(dateKey);
-        if (!keepForPnl && !keepExistingForBalanceSheet) return null;
-      }
+      if (!isEstBusinessDay(dateKey)) return null;
       const snapshotDate = new Date(`${dateKey}T00:00:00.000Z`);
       if (Number.isNaN(snapshotDate.getTime())) return null;
       const numericFields = Object.fromEntries(
@@ -2231,11 +2263,12 @@ async function rebuildQuickBooksDesktopDailyPnlMonth(companyId: string, monthKey
       zeroAmountRows += 1;
       continue;
     }
-    qbdAddMappedAmount(getDailySnapshot(dateKey), target, amount);
+    const reportDateKey = estReportingBusinessDate(dateKey);
+    qbdAddMappedAmount(getDailySnapshot(reportDateKey), target, amount);
     qbdAddMappedAmount(monthlyPnl, target, amount);
     if (qbdIsIncomeStatementDetailTarget(target) && accountName) {
-      const lineKey = `${dateKey}|${accountName}|${target}`;
-      const line = dailyDetailLines.get(lineKey) || { dateKey, accountName, targetField: target, amount: 0 };
+      const lineKey = `${reportDateKey}|${accountName}|${target}`;
+      const line = dailyDetailLines.get(lineKey) || { dateKey: reportDateKey, accountName, targetField: target, amount: 0 };
       line.amount += amount;
       dailyDetailLines.set(lineKey, line);
     }

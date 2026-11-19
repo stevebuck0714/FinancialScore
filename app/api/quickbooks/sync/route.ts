@@ -433,24 +433,13 @@ export async function POST(request: NextRequest) {
     });
 
     // Fetch Chart of Accounts to get account codes/numbers
-    const accountsUrl = `${companyUrl}/query?query=SELECT * FROM Account&minorversion=65`;
-    
-    let accountsResponse: Response;
+    let accountsData: { QueryResponse: { Account: any[] } } | null = null;
     try {
-      accountsResponse = await fetchWithTokenRetry(accountsUrl, 'ChartOfAccounts');
-    } catch {
-      return NextResponse.json({ 
-        error: 'Token expired - please reconnect',
-        needsReconnect: true 
-      }, { status: 401 });
-    }
-    
-    let accountsData = null;
-    if (accountsResponse.ok) {
-      accountsData = await accountsResponse.json();
-      console.log(`Fetched ${accountsData?.QueryResponse?.Account?.length || 0} accounts from Chart of Accounts`);
-    } else {
-      console.warn('Failed to fetch Chart of Accounts, continuing without account codes');
+      const accounts = await fetchQueryRowsPaged('Account', 'WHERE Active IN (true, false)');
+      accountsData = { QueryResponse: { Account: accounts } };
+      console.log(`Fetched ${accounts.length} accounts from Chart of Accounts`);
+    } catch (error: any) {
+      console.warn('Failed to fetch Chart of Accounts, continuing without account codes:', error?.message);
     }
 
     // Fetch account mappings for LOB allocation

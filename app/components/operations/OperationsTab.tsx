@@ -17672,14 +17672,51 @@ export default function OperationsTab({
     }, {});
     // Inserts the QuickBooks accounts behind each balance-sheet line directly under it.
     // Columns are keyed by statement key; balanceDateFor maps a column to the balance date it shows.
+    // Income statement detail arrives per day; rollup columns sum the days in each period.
+    const incomeAccountDetailRowsRaw: BalanceAccountDetailRow[] = Array.isArray(dailyFinancialData?.incomeAccountDetail?.rows)
+      ? dailyFinancialData.incomeAccountDetail.rows
+      : [];
+    const rollupIncomeDetailField = (field: string): string | null => {
+      if (field === 'revenue' || field === 'cogsTotal') return field;
+      const operatingExpenseLines = new Set([
+        'expense', 'payroll', 'ownerBasePay', 'benefits', 'insurance', 'professionalFees', 'subcontractors', 'rent',
+        'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 'trainingCert',
+        'mealsEntertainment', 'interestExpense', 'depreciationAmortization', 'otherExpense',
+      ]);
+      return operatingExpenseLines.has(field) ? 'expense' : null;
+    };
+    const incomeAccountDetailByField = incomeAccountDetailRowsRaw.reduce<Record<string, BalanceAccountDetailRow[]>>((acc, row) => {
+      if (!row?.targetField) return acc;
+      if (!isRollupMode) {
+        (acc[row.targetField] ||= []).push(row);
+        return acc;
+      }
+      const field = rollupIncomeDetailField(row.targetField);
+      if (!field) return acc;
+      const valuesByDate: Record<string, number> = {};
+      Object.entries(row.valuesByDate || {}).forEach(([dayKey, value]) => {
+        const periodKey = rollupPeriodKeyForDate(`${dayKey}T00:00:00Z`);
+        if (periodKey) valuesByDate[periodKey] = Number(valuesByDate[periodKey] || 0) + Number(value || 0);
+      });
+      const existing = (acc[field] ||= []).find((account) => account.accountName === row.accountName);
+      if (existing) {
+        Object.entries(valuesByDate).forEach(([key, value]) => {
+          existing.valuesByDate[key] = Number(existing.valuesByDate[key] || 0) + value;
+        });
+      } else {
+        acc[field].push({ targetField: field, accountName: row.accountName, valuesByDate });
+      }
+      return acc;
+    }, {});
     const withBalanceAccountDetail = <Row extends { label: string; styleType?: 'normal' | 'section' | 'subtotal' | 'total'; detailField?: string }>(
       rowDefs: Row[],
       columnKeys: string[],
       balanceDateFor: (columnKey: string) => string | null,
       lineTotalFor: (field: string, columnKey: string) => number | null,
+      detailByField: Record<string, BalanceAccountDetailRow[]> = balanceAccountDetailByField,
     ) => rowDefs.flatMap((rowDef) => {
       const field = rowDef.detailField;
-      const accounts = field ? balanceAccountDetailByField[field] || [] : [];
+      const accounts = field ? detailByField[field] || [] : [];
       if (!field || !accounts.length) return [rowDef];
       const visibleAccounts = accounts.filter((account) =>
         columnKeys.some((key) => Math.abs(Number(account.valuesByDate[balanceDateFor(key) || ''] || 0)) >= 0.005)
@@ -17838,13 +17875,13 @@ export default function OperationsTab({
       const rollupRevenueDetailFields = rollupIncomeDetailFields('rev_');
       const rollupCogsDetailFields = rollupIncomeDetailFields('cogs_');
       const incomeRowDefs = [
-        { label: 'Total Revenue', styleType: 'section', valuesByDate: rollupSeries('revenue') },
+        { label: 'Total Revenue', styleType: 'section', detailField: 'revenue', valuesByDate: rollupSeries('revenue') },
         ...rollupRevenueDetailFields.map((field) => ({
           label: `  ${getFieldDisplayName(field)}`,
           styleType: 'normal' as const,
           valuesByDate: rollupIncomeLineIndex[field],
         })),
-        { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
+        { label: 'Cost of Goods Sold', styleType: 'section', detailField: 'cogsTotal', suppressValues: true },
         ...rollupCogsDetailFields.map((field) => ({
           label: `  ${getFieldDisplayName(field)}`,
           styleType: 'normal' as const,
@@ -17852,9 +17889,16 @@ export default function OperationsTab({
         })),
         { label: 'Total COGS', styleType: 'subtotal', valuesByDate: rollupSeries('cogsTotal') },
         { label: 'GROSS PROFIT', styleType: 'subtotal', valuesByDate: rollupSeries('grossProfit') },
-        { label: 'Total Operating Expenses', styleType: 'subtotal', valuesByDate: rollupSeries('expense') },
+        { label: 'Total Operating Expenses', styleType: 'subtotal', detailField: 'expense', valuesByDate: rollupSeries('expense') },
         { label: getFieldDisplayName('netIncome'), styleType: 'total', valuesByDate: rollupSeries('netIncome') },
-      ] as Array<{ label: string; styleType: 'section' | 'subtotal' | 'total'; valuesByDate: Record<string, number> }>;
+      ] as Array<{ label: string; styleType: 'normal' | 'section' | 'subtotal' | 'total'; detailField?: string; valuesByDate?: Record<string, number>; suppressValues?: boolean }>;
+      const incomeRowDefsWithDetail = withBalanceAccountDetail(
+        incomeRowDefs,
+        rollupKeys,
+        (key) => key,
+        (field, key) => (rollupByKey[key] ? Number(rollupByKey[key][field] || 0) : null),
+        incomeAccountDetailByField,
+      ) as Array<(typeof incomeRowDefs)[number] & { toggleField?: string; toggleExpanded?: boolean; isAccountDetail?: boolean }>;
       const balanceRowDefs = [
         { label: 'Current Assets', styleType: 'section', suppressValues: true },
         { label: `  ${getFieldDisplayName('cash')}`, styleType: 'normal', detailField: 'cash', valuesByDate: rollupSeries('cash') },
@@ -17993,13 +18037,13 @@ export default function OperationsTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {incomeRowDefs.map((rowDef) => (
-                      <tr key={rowDef.label} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
-                        <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
-                          {rowDef.label}
+                    {incomeRowDefsWithDetail.map((rowDef, rowIndex) => (
+                      <tr key={`${rowDef.label}-${rowIndex}`} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap', ...balanceDetailCellStyle(rowDef) }}>
+                          {renderBalanceRowLabel(rowDef)}
                         </td>
                         {rollupDays.map((day: any) => (
-                          <td key={`${rowDef.label}-${day.dateKey}`} style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontSize: '12px', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
+                          <td key={`${rowDef.label}-${rowIndex}-${day.dateKey}`} style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontSize: '12px', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap', ...balanceDetailCellStyle(rowDef) }}>
                             {rowDef.suppressValues ? '' : formatCurrency(Number(rowDef.valuesByDate?.[day.dateKey] || 0))}
                           </td>
                         ))}
@@ -18399,6 +18443,7 @@ export default function OperationsTab({
       styleType?: 'normal' | 'section' | 'subtotal' | 'total';
       valuesByDate?: Record<string, number>;
       suppressValues?: boolean;
+      detailField?: string;
     };
 
     const mappedFieldHasAnyValue = (field: string): boolean =>
@@ -18547,7 +18592,7 @@ export default function OperationsTab({
     );
 
     const incomeRowDefs: StatementRowDef[] = [
-      { label: 'Total Revenue', styleType: 'section', valuesByDate: revenueByDate },
+      { label: 'Total Revenue', styleType: 'section', detailField: 'revenue', valuesByDate: revenueByDate },
       ...revenueDetailFields.map((field) => ({
         label: `  ${getDynamicFieldDisplayName(field)}`,
         styleType: 'normal' as const,
@@ -18560,7 +18605,7 @@ export default function OperationsTab({
             valuesByDate: revenueUnallocatedByDate,
           }]
         : []),
-      { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
+      { label: 'Cost of Goods Sold', styleType: 'section', detailField: 'cogsTotal', suppressValues: true },
       ...dynamicCogsFields.map((field) => ({
         label: `  ${getDynamicFieldDisplayName(field)}`,
         styleType: 'normal' as const,
@@ -18579,6 +18624,7 @@ export default function OperationsTab({
       ...operatingExpenseFields.map((field) => ({
         label: `  ${getFieldDisplayName(field)}`,
         styleType: 'normal' as const,
+        detailField: field,
         valuesByDate: buildSeriesFromDateKeys((dateKey) => expenseFieldByDate(field, dateKey)),
       })),
       ...(hasOpexUnallocated
@@ -18588,18 +18634,39 @@ export default function OperationsTab({
             valuesByDate: opexUnallocatedByDate,
           }]
         : []),
-      { label: 'Total Operating Expenses', styleType: 'subtotal', valuesByDate: totalOperatingExpensesByDate },
+      { label: 'Total Operating Expenses', styleType: 'subtotal', detailField: 'expense', valuesByDate: totalOperatingExpensesByDate },
       { label: 'Operating Income', styleType: 'subtotal', valuesByDate: operatingIncomeByDate },
       { label: 'Other Income/(Expense)', styleType: 'section', suppressValues: true },
-      { label: getFieldDisplayName('nonOperatingIncome'), styleType: 'normal', valuesByDate: nonOperatingIncomeByDate },
-      { label: getFieldDisplayName('nonOperatingExpense'), styleType: 'normal', valuesByDate: nonOperatingExpenseByDate },
-      { label: getFieldDisplayName('extraordinaryItems'), styleType: 'normal', valuesByDate: extraordinaryItemsByDate },
+      { label: getFieldDisplayName('nonOperatingIncome'), styleType: 'normal', detailField: 'nonOperatingIncome', valuesByDate: nonOperatingIncomeByDate },
+      { label: getFieldDisplayName('nonOperatingExpense'), styleType: 'normal', detailField: 'nonOperatingExpense', valuesByDate: nonOperatingExpenseByDate },
+      { label: getFieldDisplayName('extraordinaryItems'), styleType: 'normal', detailField: 'extraordinaryItems', valuesByDate: extraordinaryItemsByDate },
       { label: getFieldDisplayName('incomeBeforeTax'), styleType: 'subtotal', valuesByDate: incomeBeforeTaxByDate },
       { label: 'Income Taxes', styleType: 'section', suppressValues: true },
-      { label: `  ${getFieldDisplayName('stateIncomeTaxes')}`, styleType: 'normal', valuesByDate: stateIncomeTaxesByDate },
-      { label: `  ${getFieldDisplayName('federalIncomeTaxes')}`, styleType: 'normal', valuesByDate: federalIncomeTaxesByDate },
+      { label: `  ${getFieldDisplayName('stateIncomeTaxes')}`, styleType: 'normal', detailField: 'stateIncomeTaxes', valuesByDate: stateIncomeTaxesByDate },
+      { label: `  ${getFieldDisplayName('federalIncomeTaxes')}`, styleType: 'normal', detailField: 'federalIncomeTaxes', valuesByDate: federalIncomeTaxesByDate },
       { label: getFieldDisplayName('netIncome'), styleType: 'total', valuesByDate: netIncomeByDate },
     ];
+    const incomeLineTotalsByField: Record<string, Record<string, number>> = {
+      revenue: revenueByDate,
+      cogsTotal: cogsTotalByDate,
+      nonOperatingIncome: nonOperatingIncomeByDate,
+      nonOperatingExpense: nonOperatingExpenseByDate,
+      extraordinaryItems: extraordinaryItemsByDate,
+      stateIncomeTaxes: stateIncomeTaxesByDate,
+      federalIncomeTaxes: federalIncomeTaxesByDate,
+    };
+    operatingExpenseFields.forEach((field) => {
+      incomeLineTotalsByField[field] = buildSeriesFromDateKeys((dateKey) => expenseFieldByDate(field, dateKey));
+    });
+    // Accounts mapped to the bare `expense` bucket sit under Total Operating
+    // Expenses, whose total also includes every subcategory, so no difference row.
+    const incomeRowDefsWithDetail = withBalanceAccountDetail(
+      incomeRowDefs,
+      dateKeys,
+      (key) => key,
+      (field, key) => (incomeLineTotalsByField[field] ? Number(incomeLineTotalsByField[field][key] || 0) : null),
+      incomeAccountDetailByField,
+    ) as Array<StatementRowDef & { toggleField?: string; toggleExpanded?: boolean; isAccountDetail?: boolean }>;
 
     const balanceRowDefs: StatementRowDef[] = [
       { label: 'Current Assets', styleType: 'section', suppressValues: true },
@@ -19031,14 +19098,14 @@ export default function OperationsTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {incomeRowDefs.map((rowDef, rowIndex) => (
+                  {incomeRowDefsWithDetail.map((rowDef, rowIndex) => (
                     <tr key={`${rowDef.label}-${rowIndex}`} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
-                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
-                        {rowDef.label}
+                      <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap', ...balanceDetailCellStyle(rowDef) }}>
+                        {renderBalanceRowLabel(rowDef)}
                       </td>
                       {statementDays.map((day) => (
                         <td
-                          key={`${rowDef.label}-${day.dateLabel}`}
+                          key={`${rowDef.label}-${rowIndex}-${day.dateLabel}`}
                           style={{
                             padding: '10px',
                             borderBottom: '1px solid #f1f5f9',
@@ -19047,6 +19114,7 @@ export default function OperationsTab({
                             fontWeight: statementRowStyle(rowDef.styleType).weight,
                             color: statementRowStyle(rowDef.styleType).textColor,
                             whiteSpace: 'nowrap',
+                            ...balanceDetailCellStyle(rowDef),
                           }}
                         >
                           {rowDef.suppressValues

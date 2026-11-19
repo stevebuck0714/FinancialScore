@@ -54,7 +54,10 @@ import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 import { getCashAccountAllowlistSet, isAllowedCashAccount } from '@/lib/financial/cash-balance-sheet-anchor';
 import { isBakersCompany } from '@/lib/financial/qbd-bakers-bs-pins';
-import { loadQbdDailyBalanceSheetDetail, type DailyBalanceSheetDetail } from '@/lib/quickbooks-desktop/daily-balance-sheet-detail';
+import { loadQbdDailyAccountDetail } from '@/lib/quickbooks-desktop/daily-balance-sheet-detail';
+import { loadQboDailyAccountDetail } from '@/lib/quickbooks-online/daily-account-detail';
+import { QBO_DAILY_FINANCIALS_SOURCE_PLATFORM } from '@/lib/quickbooks-online/general-ledger-sync';
+import type { DailyAccountDetail } from '@/lib/financial/daily-account-detail';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
 import {
   ensurePlatosClosetMonthlyFacts,
@@ -3831,6 +3834,7 @@ export async function GET(request: NextRequest) {
               statementRollup,
               productsLimitIsAll ? 'all' : boundedLimit,
               'qbd-current-year-net-income-v1',
+              cacheType === 'daily-financials' ? 'daily-financials-account-detail-v1' : null,
               shouldUseMockData ? 'mock-operational-data-v7' : 'real-operational-data-v2-hts-duty',
               cacheType === 'ar-aging' || cacheType === 'ar'
                 ? 'qbd-authoritative-aging-snapshots-v4'
@@ -12218,19 +12222,28 @@ export async function GET(request: NextRequest) {
           financialFrequencyForQuery === 'daily' ? dailyDataForAggregator : data,
           statementRollup
         );
-        let balanceSheetAccountDetail: DailyBalanceSheetDetail | null = null;
-        if (
-          !isBakersDailyFinancials &&
-          [...data, ...dailyDataForAggregator].some((row: any) => row?.sourcePlatform === 'QUICKBOOKS_DESKTOP_REPROCESS')
-        ) {
+        let balanceSheetAccountDetail: DailyAccountDetail | null = null;
+        let incomeAccountDetail: DailyAccountDetail | null = null;
+        const detailSourceRows = [...data, ...dailyDataForAggregator];
+        const loadAccountDetail = isBakersDailyFinancials
+          ? null
+          : detailSourceRows.some((row: any) => row?.sourcePlatform === 'QUICKBOOKS_DESKTOP_REPROCESS')
+            ? loadQbdDailyAccountDetail
+            : detailSourceRows.some((row: any) => row?.sourcePlatform === QBO_DAILY_FINANCIALS_SOURCE_PLATFORM)
+              ? loadQboDailyAccountDetail
+              : null;
+        if (loadAccountDetail) {
           const detailDateKeys = [
             ...data.map((row: any) => dateKeyUtc(new Date(row.snapshotDate))),
             ...statementRecords.map((row) => row.balanceDateKey || ''),
           ];
-          balanceSheetAccountDetail = await loadQbdDailyBalanceSheetDetail(companyId, detailDateKeys).catch((error) => {
-            console.warn('Daily Financials balance sheet account detail failed:', { companyId, error: String(error?.message || error) });
+          const incomeDayKeys = detailSourceRows.map((row: any) => dateKeyUtc(new Date(row.snapshotDate)));
+          const detail = await loadAccountDetail(companyId, detailDateKeys, incomeDayKeys).catch((error) => {
+            console.warn('Daily Financials account detail failed:', { companyId, error: String(error?.message || error) });
             return null;
           });
+          balanceSheetAccountDetail = detail?.balance || null;
+          incomeAccountDetail = detail?.income || null;
         }
 
         const dailyFinancialPayload = {
@@ -12238,6 +12251,7 @@ export async function GET(request: NextRequest) {
           mappedLines,
           statementRecords,
           balanceSheetAccountDetail,
+          incomeAccountDetail,
           summary: {
             latestRevenue,
             latestExpense,
