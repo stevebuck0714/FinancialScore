@@ -178,7 +178,7 @@ export async function GET(request: NextRequest) {
         remainingBytes,
         usagePct: quotaBytes > 0 ? Math.min(100, (usedBytes / quotaBytes) * 100) : 0,
         level: usageLevel,
-        privateBankStatements: isPrivateBlobStorageConfigured(),
+        privateStorage: isPrivateBlobStorageConfigured(),
       },
       folders: grouped,
     });

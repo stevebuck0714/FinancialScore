@@ -31,11 +31,7 @@ export default function TrustedDevicesPanel({ userId }: TrustedDevicesPanelProps
     try {
       setIsLoading(true);
       setError('');
-      const response = await fetch('/api/auth/trusted-devices', {
-        headers: {
-          'x-user-id': userId
-        }
-      });
+      const response = await fetch('/api/auth/trusted-devices');
 
       if (!response.ok) {
         throw new Error('Failed to load trusted devices');
@@ -60,9 +56,6 @@ export default function TrustedDevicesPanel({ userId }: TrustedDevicesPanelProps
       setIsRevoking(deviceId);
       const response = await fetch(`/api/auth/trusted-devices/${deviceId}`, {
         method: 'DELETE',
-        headers: {
-          'x-user-id': userId
-        }
       });
 
       if (!response.ok) {
@@ -87,9 +80,6 @@ export default function TrustedDevicesPanel({ userId }: TrustedDevicesPanelProps
       setIsRevoking('all');
       const response = await fetch('/api/auth/trusted-devices', {
         method: 'DELETE',
-        headers: {
-          'x-user-id': userId
-        }
       });
 
       if (!response.ok) {

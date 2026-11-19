@@ -112,8 +112,8 @@ export async function POST(request: NextRequest) {
 
       const storageAccess = storageAccessForUrl(blobUrl);
       const isBankStatement = folderId === DATAROOM_BANK_STATEMENTS_FOLDER_ID;
-      if (isBankStatement && storageAccess !== 'private' && isPrivateBlobStorageConfigured()) {
-        return NextResponse.json({ error: 'Bank statements must be uploaded to private storage.' }, { status: 400 });
+      if (storageAccess !== 'private' && isPrivateBlobStorageConfigured()) {
+        return NextResponse.json({ error: 'Data Room files must be uploaded to private storage.' }, { status: 400 });
       }
 
       const statementFields = isBankStatement ? bankStatementFields(originalFileName) : {};

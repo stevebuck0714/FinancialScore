@@ -12,6 +12,7 @@ declare module 'next-auth' {
       consultantId?: string;
       isPrimaryContact?: boolean;
       mfaEnabled?: boolean;
+      mfaPending?: boolean;
       demoCompany?: boolean;
       demoExpired?: boolean;
       demoExpiresAt?: string;
@@ -36,6 +37,7 @@ declare module 'next-auth' {
     consultantId?: string;
     isPrimaryContact?: boolean;
     mfaEnabled?: boolean;
+    mfaPending?: boolean;
     demoCompany?: boolean;
     demoExpired?: boolean;
     demoExpiresAt?: string | null;
@@ -53,6 +55,8 @@ declare module 'next-auth/jwt' {
     consultantId?: string;
     isPrimaryContact?: boolean;
     mfaEnabled?: boolean;
+    /** Signed in with a password but MFA not yet confirmed; the proxy blocks data APIs. */
+    mfaPending?: boolean;
     demoCompany?: boolean;
     demoExpired?: boolean;
     demoExpiresAt?: string | null;

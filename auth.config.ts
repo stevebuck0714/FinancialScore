@@ -1,7 +1,8 @@
 import type { NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { verifyPassword } from './lib/auth';
-import { isDemoCompany, isDemoExpired } from './lib/demo-access';
+import { isDemoCompany, isDemoExpired, shouldBypassMfaForDemo } from './lib/demo-access';
+import { isCustomerProductionMfaHostname, isMfaDisabledByEnv, requestHostname } from './lib/mfa-app-scope';
 import { findAuthUserByEmail } from './lib/auth-user-query';
 
 export const authConfig: NextAuthConfig = {
@@ -16,7 +17,7 @@ export const authConfig: NextAuthConfig = {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' }
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
@@ -62,6 +63,12 @@ export const authConfig: NextAuthConfig = {
 
           const demoCompany = isDemoCompany(user.company);
           const demoExpired = isDemoExpired(user.company);
+          // A password alone never unlocks data on the MFA host; /api/auth/login or the
+          // MFA routes clear this once the second factor (or a trusted device) is confirmed.
+          const mfaPending =
+            isCustomerProductionMfaHostname(requestHostname(request)) &&
+            !isMfaDisabledByEnv() &&
+            !shouldBypassMfaForDemo(user.company);
 
           return {
             id: user.id,
@@ -74,6 +81,7 @@ export const authConfig: NextAuthConfig = {
             consultantId: consultantId,
             isPrimaryContact: user.isPrimaryContact,
             mfaEnabled: user.mfaEnabled, // Pass MFA status to session
+            mfaPending,
             demoCompany,
             demoExpired,
             demoExpiresAt: user.company?.nextBillingDate?.toISOString() || null,
@@ -96,6 +104,7 @@ export const authConfig: NextAuthConfig = {
         token.consultantId = user.consultantId;
         token.isPrimaryContact = user.isPrimaryContact;
         token.mfaEnabled = user.mfaEnabled;
+        token.mfaPending = Boolean(user.mfaPending);
         token.demoCompany = user.demoCompany;
         token.demoExpired = user.demoExpired;
         token.demoExpiresAt = user.demoExpiresAt;
@@ -112,6 +121,7 @@ export const authConfig: NextAuthConfig = {
         session.user.consultantId = token.consultantId as string | undefined;
         session.user.isPrimaryContact = token.isPrimaryContact as boolean | undefined;
         session.user.mfaEnabled = token.mfaEnabled as boolean | undefined;
+        session.user.mfaPending = Boolean(token.mfaPending);
         session.user.demoCompany = token.demoCompany as boolean | undefined;
         session.user.demoExpired = token.demoExpired as boolean | undefined;
         session.user.demoExpiresAt = token.demoExpiresAt as string | undefined;

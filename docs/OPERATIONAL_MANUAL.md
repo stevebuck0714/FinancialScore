@@ -107,7 +107,7 @@ Data Layer
 - Migrations/Seeds: Prisma CLI + tsx scripts
 
 Integrations
-- QuickBooks: intuit-oauth
+- QuickBooks: built-in Intuit OAuth client (`lib/quickbooks-online/oauth.ts`)
 - Xero: xero-node
 - Email: Resend
 - AI: OpenAI SDK
@@ -2195,7 +2195,7 @@ This section intentionally captures implementation-level details from the source
   - lucide-react
   - react-hot-toast
 - Integrations and services:
-  - QuickBooks (`intuit-oauth`)
+  - QuickBooks (`lib/quickbooks-online/oauth.ts`)
   - Xero (`xero-node`)
   - Resend (email)
   - OpenAI SDK (AI features)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateMFASecret, generateQRCode, encryptMFASecret, generateBackupCodes, encryptBackupCodes, resolveStoredMFASecret } from '@/lib/mfa';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
+import { rejectUnlessSessionUser } from '@/lib/auth/mfa-session';
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,6 +10,9 @@ export async function POST(request: NextRequest) {
     console.log('🔐 MFA Enroll API called');
     const { userId } = await request.json();
     console.log('👤 User ID:', userId);
+
+    const sessionMismatch = await rejectUnlessSessionUser(request, userId);
+    if (sessionMismatch) return sessionMismatch;
 
     if (!userId) {
       console.error('❌ No userId provided');

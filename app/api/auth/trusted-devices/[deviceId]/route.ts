@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
 import { revokeTrustedDevice } from '@/lib/trusted-device';
 
 /**
  * DELETE /api/auth/trusted-devices/:deviceId
  * Revoke a specific trusted device
  */
-export async function DELETE(request: NextRequest, props: { params: Promise<{ deviceId: string }> }) {
+export async function DELETE(_request: NextRequest, props: { params: Promise<{ deviceId: string }> }) {
   const params = await props.params;
   try {
-    const userId = request.headers.get('x-user-id');
+    const session = await auth();
+    const userId = session?.user?.mfaPending ? null : session?.user?.id;
     const { deviceId } = params;
     
     if (!userId) {
       return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
+        { error: 'Not authenticated' },
+        { status: 401 }
       );
     }
 

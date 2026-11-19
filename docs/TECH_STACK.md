@@ -22,7 +22,7 @@ Data Layer
 - Migrations/Seeds: Prisma CLI + tsx scripts
 
 Integrations
-- QuickBooks: intuit-oauth
+- QuickBooks: built-in Intuit OAuth client (`lib/quickbooks-online/oauth.ts`)
 - Xero: xero-node
 - Email: Resend
 - AI: OpenAI SDK

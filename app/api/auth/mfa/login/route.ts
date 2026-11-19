@@ -11,12 +11,16 @@ import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device'
 import { sendTrustedDeviceNotification } from '@/lib/email';
 import { getAcceptedMfaAppScopes, getMfaAppScope } from '@/lib/mfa-app-scope';
 import { getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
+import { markSessionMfaVerified, rejectUnlessSessionUser } from '@/lib/auth/mfa-session';
 
 export async function POST(request: NextRequest) {
   try {
     const appScope = getMfaAppScope(request);
     const acceptedAppScopes = getAcceptedMfaAppScopes(request);
     const { userId, token, isBackupCode, rememberDevice, trustDurationDays } = await request.json();
+
+    const sessionMismatch = await rejectUnlessSessionUser(request, userId);
+    if (sessionMismatch) return sessionMismatch;
 
     if (!userId || !token) {
       return NextResponse.json(
@@ -180,6 +184,8 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    await markSessionMfaVerified(request, response, user.id);
 
     return response;
   } catch (error: any) {

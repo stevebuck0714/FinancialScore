@@ -1,4 +1,4 @@
-import OAuthClient from 'intuit-oauth';
+import { refreshQuickBooksToken } from '@/lib/quickbooks-online/oauth';
 import prisma from '@/lib/prisma';
 import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
 
@@ -83,16 +83,8 @@ export async function getValidQuickBooksToken(
         };
       }
 
-      const oauthClient = new OAuthClient({
-        clientId: process.env.QUICKBOOKS_CLIENT_ID || '',
-        clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || '',
-        environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
-        redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
-      });
-
       try {
-        const refreshResponse = await oauthClient.refreshUsingToken(refreshToken);
-        const newToken = refreshResponse.getJson();
+        const newToken = await refreshQuickBooksToken(refreshToken);
         const nextAccessToken = newToken.access_token || accessToken;
         const nextRefreshToken = newToken.refresh_token || refreshToken;
         const tokenExpiresAt = new Date(Date.now() + (newToken.expires_in || 3600) * 1000);

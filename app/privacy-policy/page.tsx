@@ -31,7 +31,7 @@ export default function PrivacyPolicyPage() {
           fontSize: '16px'
         }}>
           <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
-            <strong>Effective Date:</strong> November 11, 2025
+            <strong>Effective Date:</strong> November 19, 2026
           </p>
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
@@ -76,10 +76,47 @@ export default function PrivacyPolicyPage() {
                 <li>Transaction details (e.g., purchase history)</li>
               </ul>
             </li>
+            <li style={{ marginBottom: '12px' }}>
+              <strong>Business Financial Data:</strong>
+              <ul style={{ marginLeft: '24px', marginTop: '8px' }}>
+                <li>Accounting data you authorize us to import from your accounting system (e.g., QuickBooks or Xero)</li>
+                <li>Bank account data you authorize us to retrieve through Plaid, described in Section 3</li>
+                <li>Documents you upload, such as financial statements, tax returns, and bank statements</li>
+              </ul>
+            </li>
           </ul>
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-            3. How We Use Your Information
+            3. Bank Account and Accounting Data
+          </h2>
+          <p style={{ marginBottom: '12px' }}>
+            <strong>How we collect it:</strong> When a business owner or their authorized user chooses to connect a bank account, we use Plaid Inc. (&quot;Plaid&quot;) to retrieve that account&apos;s bank statements, balances, and transactions, along with the bank name, account name, and the last four digits of the account number. With your authorization, we also import data from your accounting system.
+          </p>
+          <p style={{ marginBottom: '12px' }}>
+            <strong>Your bank credentials:</strong> You sign in to your bank in Plaid&apos;s secure window. We never receive or store your bank login credentials. The bank connection is removed as soon as the requested data is retrieved, and we do not keep ongoing access to your accounts.
+          </p>
+          <p style={{ marginBottom: '12px' }}>
+            <strong>How we use it:</strong> Only to provide the services you request: financial analysis, business valuation, and Quality of Earnings reporting for your company, including verifying reported cash and revenue against bank records.
+          </p>
+          <p style={{ marginBottom: '12px' }}>
+            <strong>Who we share it with:</strong> Only people you authorize, such as a lender, broker, accountant, or advisor you choose to give access, and service providers that host or process data on our behalf under confidentiality obligations. We do not sell bank or accounting data, and we do not use or share it for advertising or marketing.
+          </p>
+          <p style={{ marginBottom: '12px' }}>
+            <strong>How we protect it:</strong> Bank and accounting data is encrypted in transit and at rest, kept in access-controlled storage, and available only to authorized users of your company and the Corelytics staff assigned to it.
+          </p>
+          <p style={{ marginBottom: '12px' }}>
+            <strong>How long we keep it:</strong> We keep this data while your company&apos;s account is active and as needed to provide the services. We delete it on an authorized request or when your account ends, unless the law requires us to keep it longer. You can request deletion at any time by contacting us.
+          </p>
+          <p style={{ marginBottom: '16px' }}>
+            <strong>Plaid:</strong> Plaid&apos;s handling of your information is governed by the{' '}
+            <a href="https://plaid.com/legal/#end-user-privacy-policy" target="_blank" rel="noopener noreferrer" style={{ color: '#667eea', textDecoration: 'none' }}>
+              Plaid End User Privacy Policy
+            </a>
+            .
+          </p>
+
+          <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
+            4. How We Use Your Information
           </h2>
           <p style={{ marginBottom: '16px' }}>
             We use the information we collect in the following ways:
@@ -98,7 +135,7 @@ export default function PrivacyPolicyPage() {
           </p>
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-            4. Disclosure of Your Information
+            5. Disclosure of Your Information
           </h2>
           <p style={{ marginBottom: '16px' }}>
             We may share information we have collected about you in certain situations. Your information may be disclosed as follows:
@@ -113,18 +150,18 @@ export default function PrivacyPolicyPage() {
             <strong>Business Transfers:</strong> We may share or transfer your information in connection with, or during negotiations of, any merger, sale of company assets, financing, or acquisition of all or a portion of our business to another company.
           </p>
           <p style={{ marginBottom: '16px' }}>
-            <strong>Marketing Communications:</strong> With your consent, or with an opportunity for you to withdraw consent, we may share your information with third parties for marketing purposes.
+            <strong>Marketing Communications:</strong> With your consent, or with an opportunity for you to withdraw consent, we may share your information with third parties for marketing purposes. This never includes bank or accounting data.
           </p>
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-            5. Security of Your Information
+            6. Security of Your Information
           </h2>
           <p style={{ marginBottom: '16px' }}>
             We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable, and no method of data transmission can be guaranteed against any interception or other type of misuse.
           </p>
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-            6. Your Rights
+            7. Your Rights
           </h2>
           <p style={{ marginBottom: '16px' }}>
             You have the following rights regarding your personal information:
@@ -139,21 +176,21 @@ export default function PrivacyPolicyPage() {
           </ul>
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-            7. Children&apos;s Privacy
+            8. Children&apos;s Privacy
           </h2>
           <p style={{ marginBottom: '16px' }}>
             Our website does not address anyone under the age of 13. We do not knowingly collect personally identifiable information from children under 13. If we become aware that we have collected personal data from a child under age 13 without verification of parental consent, we take steps to remove that information from our servers.
           </p>
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-            8. Changes to This Privacy Policy
+            9. Changes to This Privacy Policy
           </h2>
           <p style={{ marginBottom: '16px' }}>
             We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page. You are advised to review this Privacy Policy periodically for any changes. Changes to this Privacy Policy are effective when they are posted on this page.
           </p>
 
           <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-            9. Contact Us
+            10. Contact Us
           </h2>
           <p style={{ marginBottom: '16px' }}>
             If you have any questions about this Privacy Policy, please contact us:

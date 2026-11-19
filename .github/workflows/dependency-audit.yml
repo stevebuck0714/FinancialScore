@@ -1,0 +1,45 @@
+name: Dependency vulnerability scan
+
+on:
+  schedule:
+    # Mondays 9:00 AM EST (cron is UTC)
+    - cron: '0 14 * * 1'
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Full report (all dependencies)
+        run: |
+          npm audit --json > audit-report.json || true
+          node -e "const m=require('./audit-report.json').metadata.vulnerabilities; console.log('Vulnerabilities:', JSON.stringify(m));"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-${{ github.run_number }}
+          path: audit-report.json
+          retention-days: 400
+
+      - name: Fail on high or critical (production dependencies)
+        run: npm audit --omit=dev --audit-level=high

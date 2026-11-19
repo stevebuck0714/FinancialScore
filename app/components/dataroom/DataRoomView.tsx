@@ -3,8 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
 import { formatEstDateTime } from '@/lib/time/eastern';
-import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
-
 interface DataRoomViewProps {
   selectedCompanyId: string;
   companyName: string;
@@ -71,7 +69,7 @@ type StorageSummary = {
   remainingBytes: number;
   usagePct: number;
   level: 'ok' | 'warning' | 'critical';
-  privateBankStatements: boolean;
+  privateStorage: boolean;
 };
 
 type AuditEvent = {
@@ -273,7 +271,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
           remainingBytes: Number(incomingStorage.remainingBytes || 0),
           usagePct: Number(incomingStorage.usagePct || 0),
           level: (incomingStorage.level as any) || 'ok',
-          privateBankStatements: Boolean(incomingStorage.privateBankStatements),
+          privateStorage: Boolean(incomingStorage.privateStorage),
         });
       } else {
         setStorage(null);
@@ -385,7 +383,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     setUploading(true);
     setError(null);
     try {
-      const privateUpload = selectedFolderId === DATAROOM_BANK_STATEMENTS_FOLDER_ID && Boolean(storage?.privateBankStatements);
+      const privateUpload = Boolean(storage?.privateStorage);
       const blob = await upload(file.name, file, {
         access: privateUpload ? 'private' : 'public',
         handleUploadUrl: privateUpload ? '/api/dataroom/upload-private' : '/api/dataroom/upload',

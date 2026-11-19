@@ -1,19 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
 import { getTrustDurationDays, getUserTrustedDevices, revokeAllTrustedDevices } from '@/lib/trusted-device';
 import { clearMfaDeviceCookie } from '@/lib/mfa-device-cookie';
 
+async function verifiedSessionUserId(): Promise<string | null> {
+  const session = await auth();
+  if (!session?.user?.id || session.user.mfaPending) return null;
+  return session.user.id;
+}
+
 /**
  * GET /api/auth/trusted-devices
- * Get all trusted devices for a user
+ * Get all trusted devices for the signed-in user
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const userId = request.headers.get('x-user-id');
+    const userId = await verifiedSessionUserId();
     
     if (!userId) {
       return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
+        { error: 'Not authenticated' },
+        { status: 401 }
       );
     }
 
@@ -32,16 +39,16 @@ export async function GET(request: NextRequest) {
 
 /**
  * DELETE /api/auth/trusted-devices
- * Revoke all trusted devices for a user
+ * Revoke all trusted devices for the signed-in user
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id');
+    const userId = await verifiedSessionUserId();
     
     if (!userId) {
       return NextResponse.json(
-        { error: 'User ID is required' },
-        { status: 400 }
+        { error: 'Not authenticated' },
+        { status: 401 }
       );
     }
 
@@ -63,4 +70,3 @@ export async function DELETE(request: NextRequest) {
     );
   }
 }
-

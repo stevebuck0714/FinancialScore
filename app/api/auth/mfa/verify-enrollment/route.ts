@@ -5,6 +5,7 @@ import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device'
 import { sendTrustedDeviceNotification } from '@/lib/email';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
 import { getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
+import { markSessionMfaVerified, rejectUnlessSessionUser } from '@/lib/auth/mfa-session';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +13,9 @@ export async function POST(request: NextRequest) {
     const appScope = getMfaAppScope(request);
     const { userId, token, rememberDevice, trustDurationDays } = await request.json();
     console.log('👤 User ID:', userId);
-    console.log('🔢 Token received:', token);
+
+    const sessionMismatch = await rejectUnlessSessionUser(request, userId);
+    if (sessionMismatch) return sessionMismatch;
 
     if (!userId || !token) {
       console.error('❌ Missing userId or token');
@@ -140,6 +143,8 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    await markSessionMfaVerified(request, response, updatedUser.id);
 
     return response;
   } catch (error) {

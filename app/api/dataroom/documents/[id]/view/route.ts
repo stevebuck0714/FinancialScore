@@ -8,6 +8,7 @@ import {
 } from '@/lib/dataroom/access';
 import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
 import { isPrivateBlob } from '@/lib/dataroom/blob-storage';
+import { createDataRoomPreviewToken } from '@/lib/dataroom/preview-link';
 
 export const dynamic = 'force-dynamic';
 const OFFICE_WEB_VIEWER_MAX_BYTES = 25 * 1024 * 1024;
@@ -31,6 +32,13 @@ async function resolveDocumentSizeBytes(blobUrl: string, knownSizeBytes: number 
   } catch {
     return null;
   }
+}
+
+function officeViewerUrl(fileUrl: string, sizeBytes: number | null): string {
+  if (typeof sizeBytes === 'number' && sizeBytes > OFFICE_WEB_VIEWER_MAX_BYTES) {
+    return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(fileUrl)}`;
+  }
+  return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
 }
 
 function isPreviewableDocument(contentType: string | null, fileName: string) {
@@ -229,6 +237,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         return NextResponse.redirect(pdfViewerUrl, { status: 302 });
       }
       if (canInlinePreview) return NextResponse.redirect(new URL(contentPath, req.url), { status: 302 });
+      if (canOfficePreview) {
+        const previewUrl = new URL(
+          `/api/public/dataroom-preview/${createDataRoomPreviewToken(id)}`,
+          req.url,
+        ).toString();
+        return NextResponse.redirect(officeViewerUrl(previewUrl, doc.sizeBytes ?? null), { status: 302 });
+      }
       return NextResponse.json(
         { error: 'Private files of this type cannot be previewed. Use Download instead.' },
         { status: 422 },
@@ -249,12 +264,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     }
     if (canOfficePreview) {
       const sizeBytes = await resolveDocumentSizeBytes(doc.blobUrl, doc.sizeBytes ?? null);
-      if (typeof sizeBytes === 'number' && sizeBytes > OFFICE_WEB_VIEWER_MAX_BYTES) {
-        const gviewUrl = `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(doc.blobUrl)}`;
-        return NextResponse.redirect(gviewUrl, { status: 302 });
-      }
-      const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(doc.blobUrl)}`;
-      return NextResponse.redirect(officeViewerUrl, { status: 302 });
+      return NextResponse.redirect(officeViewerUrl(doc.blobUrl, sizeBytes), { status: 302 });
     }
     return NextResponse.json(
       { error: 'This file type cannot be previewed yet. Use Download instead.' },

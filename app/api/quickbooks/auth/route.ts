@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OAuthClient from 'intuit-oauth';
+import { quickBooksAuthorizeUri } from '@/lib/quickbooks-online/oauth';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,19 +19,8 @@ export async function GET(request: NextRequest) {
     console.log('QUICKBOOKS_ENVIRONMENT:', process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox (default)');
     console.log('QUICKBOOKS_REDIRECT_URI:', process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback (default)');
 
-    // Initialize OAuth client
-    const oauthClient = new OAuthClient({
-      clientId: process.env.QUICKBOOKS_CLIENT_ID || '',
-      clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || '',
-      environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
-      redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
-    });
-
-    // Generate authorization URI
-    let authUri = oauthClient.authorizeUri({
-      scope: ['com.intuit.quickbooks.accounting'],
-      state: companyId, // Pass company ID as state parameter
-    });
+    // Pass company ID as state parameter
+    let authUri = quickBooksAuthorizeUri(companyId);
     
     // Add a timestamp to force fresh authorization and prevent caching
     authUri = authUri + `&timestamp=${Date.now()}`;

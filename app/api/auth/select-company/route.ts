@@ -10,6 +10,9 @@ export async function POST(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
+    if (session.user.mfaPending) {
+      return NextResponse.json({ error: 'MFA required', mfaRequired: true }, { status: 403 });
+    }
 
     const body = (await request.json().catch(() => ({}))) as { companyId?: string };
     const companyId = String(body.companyId || '').trim();

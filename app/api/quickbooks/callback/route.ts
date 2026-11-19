@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OAuthClient from 'intuit-oauth';
+import { exchangeQuickBooksCode } from '@/lib/quickbooks-online/oauth';
 import prisma from '@/lib/prisma';
 import { encryptOAuthToken } from '@/lib/encryption';
 
@@ -20,18 +20,9 @@ export async function GET(request: NextRequest) {
 
     const companyId = state;
 
-    // Initialize OAuth client
-    const oauthClient = new OAuthClient({
-      clientId: process.env.QUICKBOOKS_CLIENT_ID || '',
-      clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || '',
-      environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
-      redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
-    });
-
     // Exchange authorization code for tokens
     console.log('🔄 Exchanging authorization code for tokens...');
-    const authResponse = await oauthClient.createToken(request.url);
-    const token = authResponse.getJson();
+    const token = await exchangeQuickBooksCode(code);
     
     console.log('✅ Received new tokens from QuickBooks');
     console.log('   Access token length:', token.access_token?.length);

@@ -5,7 +5,8 @@ export const runtime = 'nodejs';
 import { verifyPassword } from '@/lib/auth';
 import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/audit-logger';
 import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
-import { getMfaAppScope, isCustomerProductionMfaHost } from '@/lib/mfa-app-scope';
+import { getMfaAppScope, isCustomerProductionMfaHost, isMfaDisabledByEnv } from '@/lib/mfa-app-scope';
+import { markSessionMfaVerified } from '@/lib/auth/mfa-session';
 import { clearMfaDeviceCookie, getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 import { isDemoCompany, isDemoExpired, shouldBypassMfaForDemo } from '@/lib/demo-access';
@@ -109,8 +110,7 @@ export async function POST(request: NextRequest) {
     // must not force authenticator enrollment.
     const requireMfa =
       isCustomerProductionMfaHost(request) &&
-      process.env.DISABLE_MFA !== 'true' &&
-      process.env.DISABLE_MFA_DEV !== 'true' &&
+      !isMfaDisabledByEnv() &&
       !shouldBypassMfaForDemo(user.company);
     const appScope = getMfaAppScope(request);
 
@@ -292,6 +292,8 @@ export async function POST(request: NextRequest) {
       );
       clearMfaDeviceCookie(response, request);
     }
+
+    await markSessionMfaVerified(request, response, user.id);
 
     return response;
   } catch (error) {

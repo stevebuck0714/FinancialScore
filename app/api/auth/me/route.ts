@@ -22,6 +22,9 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       );
     }
+    if (session.user.mfaPending) {
+      return NextResponse.json({ error: 'MFA required', mfaRequired: true }, { status: 403 });
+    }
 
     console.log('✅ Session found for user:', session.user.id);
 

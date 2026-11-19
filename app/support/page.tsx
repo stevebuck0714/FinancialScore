@@ -464,7 +464,7 @@ function PrivacyPolicyContent() {
       
       <div style={{ lineHeight: '1.8', color: '#475569', fontSize: '16px' }}>
         <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '24px' }}>
-          <strong>Effective Date:</strong> November 11, 2025
+          <strong>Effective Date:</strong> November 19, 2026
         </p>
 
         <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
@@ -490,10 +490,35 @@ function PrivacyPolicyContent() {
           <li style={{ marginBottom: '12px' }}>
             <strong>Financial Data:</strong> Payment method details, Transaction details
           </li>
+          <li style={{ marginBottom: '12px' }}>
+            <strong>Business Financial Data:</strong> Accounting data you authorize us to import, bank account data you authorize us to retrieve through Plaid, and documents you upload
+          </li>
         </ul>
 
         <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
-          3. How We Use Your Information
+          3. Bank Account and Accounting Data
+        </h3>
+        <ul style={{ marginLeft: '24px', marginBottom: '16px' }}>
+          <li style={{ marginBottom: '8px' }}>
+            When you choose to connect a bank account, we use Plaid to retrieve its statements, balances, and transactions. You sign in to your bank in Plaid&apos;s secure window; we never receive or store your bank login credentials.
+          </li>
+          <li style={{ marginBottom: '8px' }}>The bank connection is removed as soon as the data is retrieved. We do not keep ongoing access to your accounts.</li>
+          <li style={{ marginBottom: '8px' }}>We use this data only for the financial analysis, valuation, and Quality of Earnings reporting you request.</li>
+          <li style={{ marginBottom: '8px' }}>
+            We share it only with people you authorize, such as your lender or advisor. We never sell it or use it for advertising or marketing.
+          </li>
+          <li style={{ marginBottom: '8px' }}>It is encrypted in transit and at rest, and deleted on an authorized request or when your account ends.</li>
+          <li style={{ marginBottom: '8px' }}>
+            Plaid&apos;s handling of your information is governed by the{' '}
+            <a href="https://plaid.com/legal/#end-user-privacy-policy" target="_blank" rel="noopener noreferrer" style={{ color: '#1e40af', fontWeight: '600' }}>
+              Plaid End User Privacy Policy
+            </a>
+            .
+          </li>
+        </ul>
+
+        <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: '32px', marginBottom: '16px' }}>
+          4. How We Use Your Information
         </h3>
         <ul style={{ marginLeft: '24px', marginBottom: '16px' }}>
           <li>To process transactions and fulfill orders</li>

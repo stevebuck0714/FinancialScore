@@ -38,22 +38,21 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.17.1",
+    "@prisma/client": "^6.19.3",
     "@types/qrcode": "^1.5.6",
     "@types/speakeasy": "^2.0.10",
     "@vercel/blob": "^2.3.0",
     "bcryptjs": "^3.0.2",
     "docx": "^8.5.0",
     "dotenv": "^17.2.3",
-    "intuit-oauth": "^4.2.1",
     "lucide-react": "^0.511.0",
     "mammoth": "^1.11.0",
-    "next": "^16.3.3",
+    "next": "^16.4.6",
     "next-auth": "^5.0.0-beta.32",
     "openai": "^6.3.0",
     "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
-    "prisma": "^6.17.1",
+    "prisma": "^6.19.3",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -64,7 +63,7 @@
     "speakeasy": "^2.0.0",
     "xero-node": "^13.3.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-    "zod": "^4.3.4"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@babel/parser": "^7.28.5",
@@ -72,11 +71,16 @@
     "@types/node": "^20.10.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.3.3",
-    "sqlite3": "^5.1.7",
+    "eslint-config-next": "^16.4.6",
+    "sqlite3": "^6.0.1",
     "tsx": "^4.20.6",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "^8.0.2"
+    }
   }
 }

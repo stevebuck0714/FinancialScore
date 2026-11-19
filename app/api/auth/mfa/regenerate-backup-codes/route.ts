@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { generateBackupCodes, encryptBackupCodes, verifyTOTP } from '@/lib/mfa';
 import { getAcceptedMfaAppScopes, getMfaAppScope } from '@/lib/mfa-app-scope';
+import { rejectUnlessSessionUser } from '@/lib/auth/mfa-session';
 
 export async function POST(request: NextRequest) {
   try {
     const appScope = getMfaAppScope(request);
     const acceptedAppScopes = getAcceptedMfaAppScopes(request);
     const { userId, token } = await request.json();
+
+    const sessionMismatch = await rejectUnlessSessionUser(request, userId);
+    if (sessionMismatch) return sessionMismatch;
 
     if (!userId || !token) {
       return NextResponse.json(

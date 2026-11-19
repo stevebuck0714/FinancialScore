@@ -37,6 +37,23 @@ const RATE_LIMITS = {
   '/api': { maxAttempts: 100, windowMs: 60 * 1000 }, // 100 per minute (general)
 }
 const DEMO_EXPIRED_ALLOWED_API_PREFIXES = ['/api/subscriptions', '/api/payments', '/api/auth/']
+// Route handlers trust these as identity. Only the proxy may set them, from the verified session.
+const IDENTITY_HEADERS = [
+  'x-user-id',
+  'x-user-email',
+  'x-user-role',
+  'x-company-id',
+  'x-consultant-id',
+  'x-active-company-id',
+  'x-request-method',
+  'x-session-fingerprint',
+]
+
+function headersWithoutIdentity(request: NextRequest): Headers {
+  const headers = new Headers(request.headers)
+  for (const name of IDENTITY_HEADERS) headers.delete(name)
+  return headers
+}
 
 function checkRateLimit(identifier: string, endpoint: string): { allowed: boolean; remaining: number; resetTime: number } {
   const now = Date.now()
@@ -353,7 +370,7 @@ export async function proxy(request: NextRequest) {
     
     if (!token) {
       if (isDevLocalSiteAdminBypass) {
-        const requestHeaders = new Headers(request.headers)
+        const requestHeaders = headersWithoutIdentity(request)
         requestHeaders.set('x-user-id', 'dev-local-siteadmin')
         requestHeaders.set('x-user-email', 'dev-bypass@localhost')
         requestHeaders.set('x-user-role', 'SITEADMIN')
@@ -375,9 +392,16 @@ export async function proxy(request: NextRequest) {
     if (DEBUG_MIDDLEWARE) {
       console.log('✅ Token found, user:', token.email)
     }
+
+    if (token.mfaPending) {
+      return NextResponse.json(
+        { error: 'MFA required', message: 'Finish multi-factor sign-in to continue.', mfaRequired: true },
+        { status: 403 }
+      )
+    }
     
     // Add user context to headers for downstream use
-    const requestHeaders = new Headers(request.headers)
+    const requestHeaders = headersWithoutIdentity(request)
     requestHeaders.set('x-user-id', token.id as string || '')
     requestHeaders.set('x-user-email', token.email as string || '')
     const normalizedRole = String(token.role || '').trim().toUpperCase()
@@ -422,7 +446,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (!DISABLE_AUTH_SIGNIN && !pathname.startsWith('/api') && !token) {
+  const hasVerifiedSession = Boolean(token && !token.mfaPending)
+
+  if (!DISABLE_AUTH_SIGNIN && !pathname.startsWith('/api') && !hasVerifiedSession) {
     if (pathname === '/') {
       const url = request.nextUrl.clone()
       if (url.searchParams.get('mode') === 'register') {
@@ -435,7 +461,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (!DISABLE_AUTH_SIGNIN && token && pathname === '/login') {
+  if (!DISABLE_AUTH_SIGNIN && hasVerifiedSession && pathname === '/login') {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     url.searchParams.delete('sessionExpired')
@@ -443,7 +469,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  const response = NextResponse.next()
+  const response = NextResponse.next({ request: { headers: headersWithoutIdentity(request) } })
   if (token && !DISABLE_IDLE_TIMEOUT) {
     applyIdleActivityCookie(response)
   }
