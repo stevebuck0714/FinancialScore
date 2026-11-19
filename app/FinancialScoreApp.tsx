@@ -5091,9 +5091,14 @@ function FinancialScorePage() {
   }, [selectedCompanyId, financialDataRecords]);
 
   // Persist last Site Admin location so refresh returns to same company/page.
+  // Includes companies opened inside a consultant/user preview, since a reload drops the
+  // preview and returns the Site Admin to that company.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (String(currentUser?.role || '').toLowerCase() !== 'siteadmin') return;
+    const isSiteAdmin = String(currentUser?.role || '').toLowerCase() === 'siteadmin';
+    const isSiteAdminPreview =
+      Boolean(siteAdminViewingAs) || String(siteAdminSessionUser?.role || '').toLowerCase() === 'siteadmin';
+    if (!isSiteAdmin && !isSiteAdminPreview) return;
     if (!selectedCompanyId) return;
     try {
       localStorage.setItem('fs_siteAdminLastLocation', JSON.stringify({
@@ -5107,7 +5112,7 @@ function FinancialScorePage() {
     } catch {
       // Ignore storage access issues.
     }
-  }, [adminDashboardTab, companyManagementSubTab, currentUser?.role, currentView, selectedCompanyId, siteAdminTab]);
+  }, [adminDashboardTab, companyManagementSubTab, currentUser?.role, currentView, selectedCompanyId, siteAdminTab, siteAdminViewingAs, siteAdminSessionUser]);
 
   // Load expense goals when Goals, Trend Analysis, or MD&A view is accessed
   useEffect(() => {
