@@ -22,17 +22,21 @@ const displayDate = (date: string | null | undefined) =>
 export default function CashProofTransactionDrilldown({
   data,
   money,
+  months,
   view,
   onView,
 }: {
   data: CashProofResponse;
   money: Money;
+  /** Months offered in the month picker (the exceptions list's From/To range). */
+  months: string[];
   view: { accountId: string; month: string } | null;
   onView: (view: { accountId: string; month: string } | null) => void;
 }) {
   const included = data.accounts.filter((a) => a.included);
   const [accountId, setAccountId] = useState(view?.accountId || included[0]?.id || '');
-  const [month, setMonth] = useState(view?.month || data.months[data.months.length - 1] || '');
+  const [month, setMonth] = useState(view?.month || months[months.length - 1] || '');
+  const monthOptions = month && !months.includes(month) ? [...months, month].sort() : months;
   const [tab, setTab] = useState<Tab>('matched');
   const [result, setResult] = useState<{ key: string; detail?: TransactionMatchDetail; error?: string } | null>(null);
   const runAt = data.transactionMatch?.runAt;
@@ -88,7 +92,7 @@ export default function CashProofTransactionDrilldown({
           ))}
         </select>
         <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ ...inputStyle, width: 130 }}>
-          {[...data.months].reverse().map((m) => (
+          {[...monthOptions].reverse().map((m) => (
             <option key={m} value={m}>
               {formatMonthLabel(m)}
             </option>

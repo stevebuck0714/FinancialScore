@@ -53,6 +53,8 @@ export default function CashProofTransactionMatchCard({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('OPEN');
   const [severityFilter, setSeverityFilter] = useState<TransactionExceptionSeverity | ''>('');
   const [accountFilter, setAccountFilter] = useState('');
+  const [fromMonth, setFromMonth] = useState(data.months[0] || '');
+  const [toMonth, setToMonth] = useState(data.months[data.months.length - 1] || '');
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [bulkNote, setBulkNote] = useState('');
@@ -65,10 +67,14 @@ export default function CashProofTransactionMatchCard({
         (e) =>
           (statusFilter === 'ALL' || e.status === statusFilter) &&
           (!severityFilter || e.severity === severityFilter) &&
-          (!accountFilter || (e.bankAccountId || '') === accountFilter),
+          (!accountFilter || (e.bankAccountId || '') === accountFilter) &&
+          // Account-level exceptions (no month) apply to the whole period and always show.
+          (!e.month || ((!fromMonth || e.month >= fromMonth) && (!toMonth || e.month <= toMonth))),
       ),
-    [exceptions, statusFilter, severityFilter, accountFilter],
+    [exceptions, statusFilter, severityFilter, accountFilter, fromMonth, toMonth],
   );
+  const rangeMonths = data.months.filter((m) => (!fromMonth || m >= fromMonth) && (!toMonth || m <= toMonth));
+  const isFullPeriod = fromMonth === (data.months[0] || '') && toMonth === (data.months[data.months.length - 1] || '');
   if (!match || !engagement) return null;
 
   const open = exceptions.filter((e) => e.status === 'OPEN');
@@ -77,6 +83,7 @@ export default function CashProofTransactionMatchCard({
   const matchedPct = match.totals.bankDollars > 0 ? (match.totals.matchedBankDollars / match.totals.bankDollars) * 100 : null;
   const selectableIds = rows.filter((e) => e.status === 'OPEN').map((e) => e.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  const selectedVisible = selectableIds.filter((id) => selected.has(id));
   const accountsWithSummary = match.accounts.filter((a) => data.accounts.some((x) => x.id === a.bankAccountId && x.included));
 
   const saveException = async (e: CashProofTransactionExceptionView, clear?: boolean) => {
@@ -174,12 +181,57 @@ export default function CashProofTransactionMatchCard({
               </option>
             ))}
         </select>
-        {canEdit && selected.size > 0 && (
+        <label style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          From
+          <select
+            value={fromMonth}
+            onChange={(e) => {
+              setFromMonth(e.target.value);
+              if (toMonth && e.target.value > toMonth) setToMonth(e.target.value);
+            }}
+            style={{ ...inputStyle, width: 110 }}
+          >
+            {data.months.map((m) => (
+              <option key={m} value={m}>
+                {formatMonthLabel(m)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          To
+          <select
+            value={toMonth}
+            onChange={(e) => {
+              setToMonth(e.target.value);
+              if (fromMonth && e.target.value < fromMonth) setFromMonth(e.target.value);
+            }}
+            style={{ ...inputStyle, width: 110 }}
+          >
+            {data.months.map((m) => (
+              <option key={m} value={m}>
+                {formatMonthLabel(m)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!isFullPeriod && (
+          <button
+            style={{ ...buttonStyle(), padding: '4px 8px' }}
+            onClick={() => {
+              setFromMonth(data.months[0] || '');
+              setToMonth(data.months[data.months.length - 1] || '');
+            }}
+          >
+            Full Period
+          </button>
+        )}
+        {canEdit && selectedVisible.length > 0 && (
           <>
             <input
               value={bulkNote}
               onChange={(e) => setBulkNote(e.target.value)}
-              placeholder={`Resolution note for ${selected.size} selected`}
+              placeholder={`Resolution note for ${selectedVisible.length} selected`}
               style={{ ...inputStyle, width: 280 }}
             />
             <button
@@ -189,7 +241,7 @@ export default function CashProofTransactionMatchCard({
                 const ok = await run('tx-bulk', {
                   action: 'clear-transaction-exceptions',
                   engagementId: engagement.id,
-                  exceptionIds: [...selected],
+                  exceptionIds: selectedVisible,
                   resolutionNote: bulkNote,
                 });
                 if (ok) {
@@ -315,6 +367,7 @@ export default function CashProofTransactionMatchCard({
         key={view ? `${view.accountId}|${view.month}` : 'none'}
         data={data}
         money={money}
+        months={rangeMonths}
         view={view}
         onView={onView}
       />
