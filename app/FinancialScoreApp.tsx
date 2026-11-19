@@ -1495,17 +1495,36 @@ function FinancialScorePage() {
       
       if (storedUser) {
         try {
-          const parsedUser = JSON.parse(storedUser);
+          let parsedUser = JSON.parse(storedUser);
+          console.log('? User loaded from localStorage:', parsedUser?.email);
+          
+          // Retry briefly — a single null/failed /api/auth/session on refresh
+          // was clearing local login state and forcing a re-login.
+          const session = await getSessionWithRetry();
+
+          // Older builds stored the person a Site Admin was previewing as the current user.
+          // When the signed-in session is the Site Admin, restore the Site Admin, not the preview.
+          try {
+            const storedSiteAdmin = JSON.parse(localStorage.getItem('fs_siteAdminSessionUser') || 'null');
+            const sessionEmail = String(session?.user?.email || '').toLowerCase();
+            if (
+              storedSiteAdmin &&
+              String(storedSiteAdmin.role || '').toLowerCase() === 'siteadmin' &&
+              String(parsedUser?.role || '').toLowerCase() !== 'siteadmin' &&
+              sessionEmail &&
+              String(storedSiteAdmin.email || '').toLowerCase() === sessionEmail
+            ) {
+              parsedUser = storedSiteAdmin;
+              localStorage.setItem('fs_currentUser', JSON.stringify(storedSiteAdmin));
+            }
+          } catch {
+            localStorage.removeItem('fs_siteAdminSessionUser');
+          }
           const user = {
             ...parsedUser,
             role: String(parsedUser.role || '').toLowerCase(),
             userType: parsedUser.userType ? String(parsedUser.userType).toLowerCase() : parsedUser.userType,
           };
-          console.log('? User loaded from localStorage:', user.email);
-          
-          // Retry briefly — a single null/failed /api/auth/session on refresh
-          // was clearing local login state and forcing a re-login.
-          const session = await getSessionWithRetry();
           
           if (!session) {
             console.log('?? No NextAuth session found - user will need to re-login');
@@ -5020,7 +5039,16 @@ function FinancialScorePage() {
 
   useEffect(() => { if (typeof window !== 'undefined' && consultants.length > 0) localStorage.setItem('fs_consultants', JSON.stringify(consultants)); }, [consultants]);
   useEffect(() => { if (typeof window !== 'undefined' && users.length > 0) localStorage.setItem('fs_users', JSON.stringify(users)); }, [users]);
-  useEffect(() => { if (typeof window !== 'undefined' && currentUser) localStorage.setItem('fs_currentUser', JSON.stringify(currentUser)); }, [currentUser]);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !currentUser) return;
+    // A Site Admin previewing a consultant or user stays the stored identity, so a reload
+    // returns to Site Admin instead of signing back in as the previewed person.
+    const previewing =
+      String(currentUser.role || '').toLowerCase() !== 'siteadmin' &&
+      (Boolean(siteAdminViewingAs) || String(siteAdminSessionUser?.role || '').toLowerCase() === 'siteadmin');
+    if (previewing) return;
+    localStorage.setItem('fs_currentUser', JSON.stringify(currentUser));
+  }, [currentUser, siteAdminViewingAs, siteAdminSessionUser]);
   useEffect(() => { if (typeof window !== 'undefined' && financialDataRecords.length > 0) localStorage.setItem('fs_financialDataRecords', JSON.stringify(financialDataRecords)); }, [financialDataRecords]);
 
   useEffect(() => { if (typeof window !== 'undefined' && Object.keys(assessmentResponses).length > 0 && currentUser?.userType !== 'assessment') localStorage.setItem('fs_assessmentResponses', JSON.stringify(assessmentResponses)); }, [assessmentResponses, currentUser]);
@@ -7401,6 +7429,12 @@ function FinancialScorePage() {
         operationalDashboardAccess: user.operationalDashboardAccess ?? null,
       };
       
+      if (normalizedUser.role !== 'siteadmin') {
+        localStorage.removeItem('fs_siteAdminSessionUser');
+        localStorage.removeItem('fs_siteAdminPreview');
+        setSiteAdminSessionUser(null);
+        setSiteAdminViewingAs(null);
+      }
       setCurrentUser(normalizedUser);
       setIsLoggedIn(true);
       
