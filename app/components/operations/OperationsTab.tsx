@@ -24,6 +24,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
+import BankTransactionsPanel from './BankTransactionsPanel';
 import SuggestInput, { customerIdSuggestionsFor, fetchSuggestions, labeledSuggestionsFor, valueSuggestionsFor } from './SuggestInput';
 import OperationalReportPanel from './OperationalReportPanel';
 import OperationalReportPageLayout from './OperationalReportPageLayout';
@@ -1070,7 +1071,7 @@ export default function OperationsTab({
     reportingCurrency: string | null;
     locale: string;
   }>({ baseCurrency: 'USD', reportingCurrency: null, locale: 'en-US' });
-  const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
+  const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow' | 'bank'>('summary');
   const [collapsedBalanceDetailFields, setCollapsedBalanceDetailFields] = useState<Set<string>>(() => new Set());
   const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'monthly' | 'quarterly' | 'annual'>('daily');
   const [selectedDailyTrendMetrics, setSelectedDailyTrendMetrics] = useState<Array<'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct'>>([
@@ -1769,6 +1770,8 @@ export default function OperationsTab({
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  // Daily Financials always opens on Daily; the shared, saved frequency applies to the other reports.
+  const [dailyFinancialsFrequency, setDailyFinancialsFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const yesterdayEst = previousEstCalendarDate();
   const todayLocalInputDate = toLocalInputDate(new Date());
   const maxSelectableEndDate = yesterdayEst;
@@ -2079,7 +2082,7 @@ export default function OperationsTab({
     if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
       loadTabData(activeTab);
     }
-  }, [dateRangeReady, activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup, productReportView]);
+  }, [dateRangeReady, activeTab, selectedCompanyId, industrySectorCategory, frequency, dailyFinancialsFrequency, startDate, endDate, dailyFinancialStatementRollup, productReportView]);
 
   useEffect(() => {
     if (activeOverviewSubTab !== 'customer-concentration-exposure') return;
@@ -2510,7 +2513,7 @@ export default function OperationsTab({
       : apiType === 'revenue-billables' || apiType === 'unit-economics'
       ? 60000
       : 25000;
-    const requestFrequency = frequency;
+    const requestFrequency = apiType === 'daily-financials' ? dailyFinancialsFrequency : frequency;
     // Inventory is a point-in-time report with a short operational trend.
     // Restrict its request to the warmed 90-day window so a saved, broad
     // dashboard range cannot force a multi-year inventory snapshot scan.
@@ -2888,7 +2891,7 @@ export default function OperationsTab({
   };
 
   const buildOperationalDataCacheKey = (type: OpsDataType): string => {
-    const requestFrequency = frequency;
+    const requestFrequency = type === 'daily-financials' ? dailyFinancialsFrequency : frequency;
     const rollupToken = type === 'daily-financials' ? dailyFinancialStatementRollup : 'n/a';
     const cacheFamily = type === 'sales' ? 'customers' : type;
     const requestStartDate = startDate;
@@ -4271,6 +4274,7 @@ export default function OperationsTab({
 
   const renderFilters = () => {
     const activeDataType = mapModuleToDataType(activeTab);
+    const filterFrequency = activeDataType === 'daily-financials' ? dailyFinancialsFrequency : frequency;
     if (
       isOverviewOnly ||
       activeTab === 'overview' ||
@@ -4308,8 +4312,12 @@ export default function OperationsTab({
               Frequency:
             </label>
             <select
-              value={frequency}
-              onChange={(e) => setFrequency(e.target.value as any)}
+              value={filterFrequency}
+              onChange={(e) =>
+                activeDataType === 'daily-financials'
+                  ? setDailyFinancialsFrequency(e.target.value as any)
+                  : setFrequency(e.target.value as any)
+              }
               style={{
                 padding: '6px 10px',
                 border: '1px solid #e2e8f0',
@@ -4394,7 +4402,7 @@ export default function OperationsTab({
           >
             Save
           </button>
-          {!isCustomersTab && !isWholesaleProductsTab && frequency === 'daily' && (
+          {!isCustomersTab && !isWholesaleProductsTab && filterFrequency === 'daily' && (
             <>
               <button
                 onClick={() => {
@@ -4436,7 +4444,7 @@ export default function OperationsTab({
               </button>
             </>
           )}
-          {!isCustomersTab && !isWholesaleProductsTab && frequency === 'weekly' && (
+          {!isCustomersTab && !isWholesaleProductsTab && filterFrequency === 'weekly' && (
             <>
               <button
                 onClick={() => {
@@ -4478,7 +4486,7 @@ export default function OperationsTab({
               </button>
             </>
           )}
-          {!isCustomersTab && !isWholesaleProductsTab && frequency === 'monthly' && (
+          {!isCustomersTab && !isWholesaleProductsTab && filterFrequency === 'monthly' && (
             <>
               <button
                 onClick={() => {
@@ -17976,6 +17984,7 @@ export default function OperationsTab({
             {isSectionEnabled('dailyCashflowStatement') && (
               <button style={tabButtonStyle(dailyFinancialView === 'cashflow')} onClick={() => setDailyFinancialView('cashflow')}>Cash Flow Statement</button>
             )}
+            <button style={tabButtonStyle(dailyFinancialView === 'bank')} onClick={() => setDailyFinancialView('bank')}>Bank Transactions</button>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
               <span style={{ fontSize: '12px', color: '#64748b' }}>Rollup</span>
               <button style={tabButtonStyle(dailyFinancialStatementRollup === 'daily')} onClick={() => setDailyFinancialStatementRollup('daily')}>Daily</button>
@@ -17985,7 +17994,10 @@ export default function OperationsTab({
             </div>
           </div>
 
-          <div style={{ padding: '12px 24px 24px' }}>
+          {dailyFinancialView === 'bank' && (
+            <BankTransactionsPanel companyId={selectedCompanyId} startDate={startDate} endDate={endDate} currency={statementCurrency} />
+          )}
+          <div style={{ padding: '12px 24px 24px', display: dailyFinancialView === 'bank' ? 'none' : undefined }}>
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ color: '#334155', fontSize: '13px', fontWeight: 600 }}>
@@ -18947,6 +18959,7 @@ export default function OperationsTab({
           {isSectionEnabled('dailyCashflowStatement') && (
             <button style={tabButtonStyle(dailyFinancialView === 'cashflow')} onClick={() => setDailyFinancialView('cashflow')}>Cash Flow Statement</button>
           )}
+          <button style={tabButtonStyle(dailyFinancialView === 'bank')} onClick={() => setDailyFinancialView('bank')}>Bank Transactions</button>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
             <span style={{ fontSize: '12px', color: '#64748b' }}>Rollup</span>
             <button style={tabButtonStyle(dailyFinancialStatementRollup === 'daily')} onClick={() => setDailyFinancialStatementRollup('daily')}>Daily</button>
@@ -19228,6 +19241,10 @@ export default function OperationsTab({
               Indirect cash flow from daily income-statement net income and balance-sheet movements. Line amounts are cash impact (an increase in AR is negative). Other reconciling items is income-statement NI versus the change in balance-sheet current-year NI.
             </div>
           </div>
+        )}
+
+        {dailyFinancialView === 'bank' && (
+          <BankTransactionsPanel companyId={selectedCompanyId} startDate={startDate} endDate={endDate} currency={statementCurrency} />
         )}
       </div>
     );

@@ -28,7 +28,7 @@ export type DailyBalanceSheetDetail = DailyAccountDetail;
  */
 const isDateKey = (key: string) => /^\d{4}-\d{2}-\d{2}$/.test(key);
 
-async function loadQbdBooks(companyId: string) {
+export async function loadQbdBooks(companyId: string) {
   const [accountRows, balanceSheetRows, glRows, mappings] = await Promise.all([
     loadQbdAccountRows(companyId),
     loadQbdBalanceSheetRows(companyId),
@@ -46,7 +46,7 @@ async function loadQbdBooks(companyId: string) {
   };
 }
 
-type QbdBooks = Awaited<ReturnType<typeof loadQbdBooks>>;
+export type QbdBooks = Awaited<ReturnType<typeof loadQbdBooks>>;
 
 export async function loadQbdDailyBalanceSheetDetail(
   companyId: string,

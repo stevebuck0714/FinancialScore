@@ -43,6 +43,69 @@ export async function loadQbdBalanceSheetRows(companyId: string): Promise<QbdBal
   });
 }
 
+export type QbdGlDetailRow = QbdGlRow & { txnType: string; num: string; name: string; memo: string };
+
+/**
+ * General Ledger postings in [startDate, endDate] with their transaction
+ * columns (Type, Num, Name, Memo), using the same latest-batch-per-date rule
+ * as loadQbdGeneralLedgerRows so they tie to the balances walked from it.
+ */
+export async function loadQbdGeneralLedgerDetailRows(companyId: string, startDate: string, endDate: string): Promise<QbdGlDetailRow[]> {
+  const rows = await prisma.$queryRaw<Array<{ account: string; txnDate: string; amount: string | null; txnType: string | null; num: string | null; name: string | null; memo: string | null }>>`
+    WITH parsed AS (
+      SELECT
+        COALESCE(NULLIF(TRIM(x->>'accountName'), ''), NULLIF(TRIM(x->>'rowValue'), '')) AS account,
+        p."batchId" AS "batchId",
+        p."createdAt" AS "createdAt",
+        x->'colData' AS cols
+      FROM "QuickBooksDesktopBackfillPage" p
+      CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(p."payload") = 'array' THEN p."payload" ELSE '[]'::jsonb END) x
+      WHERE p."companyId" = ${companyId}
+        AND p."requestName" = 'GeneralDetailReportQuery'
+        AND x->>'rowKind' = 'DataRow'
+    ),
+    cells AS (
+      SELECT
+        account, "batchId", "createdAt",
+        (SELECT c->>'value' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
+          WHERE c->>'colID' = '3' AND c->>'value' ~ '^\\d{4}-\\d{2}-\\d{2}' LIMIT 1) AS "txnDate",
+        (SELECT replace(c->>'value', ',', '') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
+          WHERE c->>'colID' = '8' LIMIT 1) AS amount,
+        (SELECT c->>'value' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
+          WHERE c->>'colID' = '2' LIMIT 1) AS "txnType",
+        (SELECT c->>'value' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
+          WHERE c->>'colID' = '4' LIMIT 1) AS num,
+        (SELECT c->>'value' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
+          WHERE c->>'colID' = '5' LIMIT 1) AS name,
+        (SELECT c->>'value' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
+          WHERE c->>'colID' = '6' LIMIT 1) AS memo
+      FROM parsed
+    ),
+    latest_batch_by_date AS (
+      SELECT DISTINCT ON ("txnDate") "txnDate", "batchId"
+      FROM (SELECT "txnDate", "batchId", MAX("createdAt") AS "lastSeen" FROM cells WHERE "txnDate" IS NOT NULL GROUP BY "txnDate", "batchId") b
+      ORDER BY "txnDate", "lastSeen" DESC
+    )
+    SELECT d.account, d."txnDate", d.amount, d."txnType", d.num, d.name, d.memo
+    FROM cells d
+    JOIN latest_batch_by_date l ON l."txnDate" = d."txnDate" AND l."batchId" IS NOT DISTINCT FROM d."batchId"
+    WHERE d.account IS NOT NULL
+      AND LEFT(d."txnDate", 10) >= ${startDate}
+      AND LEFT(d."txnDate", 10) <= ${endDate}
+  `;
+  return rows
+    .map((row) => ({
+      account: row.account,
+      txnDate: String(row.txnDate).slice(0, 10),
+      amount: Number(row.amount),
+      txnType: String(row.txnType || '').trim(),
+      num: String(row.num || '').trim(),
+      name: String(row.name || '').trim(),
+      memo: String(row.memo || '').trim(),
+    }))
+    .filter((row) => Number.isFinite(row.amount) && Math.abs(row.amount) >= 0.005);
+}
+
 export async function loadQbdGeneralLedgerRows(companyId: string): Promise<QbdGlRow[]> {
   // Later backfill batches replace earlier ones for the dates they cover.
   const rows = await prisma.$queryRaw<Array<{ account: string; txnDate: string; amount: string | null }>>`

@@ -312,7 +312,7 @@ export async function syncQuickBooksGeneralLedger(opts: {
       creditAmount: line.credit,
       drCr: line.debit >= line.credit ? 'DR' : 'CR',
       transNum: `${txnKey}:${seq}`,
-      ref: txnKey,
+      ref: line.docNum || null,
       description: [line.name, line.memo].filter(Boolean).join(' - ') || null,
       sourcePlatform: QBO_GL_SOURCE_PLATFORM,
       sourceProgram: 'GeneralLedger',
