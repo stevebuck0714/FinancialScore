@@ -22,6 +22,7 @@ export function buildBankRegister(input: {
   beginningBalance: number;
   ledgerEndingBalance: number | null;
   lines: BankRegisterLine[];
+  activityMonths: string[];
 }): BankRegister {
   const lines = input.lines
     .map((line, index) => ({ line, index }))
@@ -47,6 +48,7 @@ export function buildBankRegister(input: {
     endingBalance: roundCents(balance),
     ledgerEndingBalance: input.ledgerEndingBalance == null ? null : roundCents(input.ledgerEndingBalance),
     transactions,
+    activityMonths: Array.from(new Set(input.activityMonths.filter((month) => /^\d{4}-\d{2}$/.test(month)))).sort().reverse(),
   };
 }
 

@@ -17995,7 +17995,17 @@ export default function OperationsTab({
           </div>
 
           {dailyFinancialView === 'bank' && (
-            <BankTransactionsPanel companyId={selectedCompanyId} startDate={startDate} endDate={endDate} currency={statementCurrency} />
+            <BankTransactionsPanel
+            companyId={selectedCompanyId}
+            startDate={startDate}
+            endDate={endDate}
+            maxEndDate={effectiveMaxSelectableEndDate}
+            onDateRangeChange={(nextStart, nextEnd) => {
+              setStartDate(nextStart);
+              setEndDate(nextEnd);
+            }}
+            currency={statementCurrency}
+          />
           )}
           <div style={{ padding: '12px 24px 24px', display: dailyFinancialView === 'bank' ? 'none' : undefined }}>
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
@@ -19244,7 +19254,17 @@ export default function OperationsTab({
         )}
 
         {dailyFinancialView === 'bank' && (
-          <BankTransactionsPanel companyId={selectedCompanyId} startDate={startDate} endDate={endDate} currency={statementCurrency} />
+          <BankTransactionsPanel
+            companyId={selectedCompanyId}
+            startDate={startDate}
+            endDate={endDate}
+            maxEndDate={effectiveMaxSelectableEndDate}
+            onDateRangeChange={(nextStart, nextEnd) => {
+              setStartDate(nextStart);
+              setEndDate(nextEnd);
+            }}
+            currency={statementCurrency}
+          />
         )}
       </div>
     );

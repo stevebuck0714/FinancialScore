@@ -1,12 +1,16 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ALL_BANK_ACCOUNTS, type BankRegister } from '@/lib/financial/bank-register-types';
+import { formatEstDate } from '@/lib/time/eastern';
 
 type Props = {
   companyId: string;
   startDate: string;
   endDate: string;
+  /** Latest selectable To date (the page's cap). */
+  maxEndDate: string;
+  onDateRangeChange: (startDate: string, endDate: string) => void;
   currency: string;
 };
 
@@ -16,16 +20,58 @@ function formatDateKey(dateKey: string) {
   return year && month && day ? `${Number(month)}/${Number(day)}/${year}` : dateKey;
 }
 
+/** "2026-10" -> "October 2026". */
+function formatMonthKey(monthKey: string) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+function monthRange(monthKey: string, maxEndDate: string) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const end = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+  return { start: `${monthKey}-01`, end: maxEndDate && end > maxEndDate ? maxEndDate : end };
+}
+
+function monthArrowStyle(enabled: boolean): React.CSSProperties {
+  return {
+    padding: '6px 9px',
+    background: '#f1f5f9',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    fontSize: '11px',
+    color: '#475569',
+    cursor: enabled ? 'pointer' : 'not-allowed',
+    opacity: enabled ? 1 : 0.5,
+  };
+}
+
 function csvCell(value: string | number) {
   const text = String(value ?? '');
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-export default function BankTransactionsPanel({ companyId, startDate, endDate, currency }: Props) {
+export default function BankTransactionsPanel({ companyId, startDate, endDate, maxEndDate, onDateRangeChange, currency }: Props) {
   const [accountKey, setAccountKey] = useState<string>(ALL_BANK_ACCOUNTS);
   const [register, setRegister] = useState<BankRegister | null>(null);
+  const [activityMonths, setActivityMonths] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const defaultMonthApplied = useRef(false);
+
+  const currentMonthKey = /^\d{4}-\d{2}-01$/.test(startDate) ? startDate.slice(0, 7) : '';
+  const selectedMonth =
+    currentMonthKey && monthRange(currentMonthKey, maxEndDate).end === endDate ? currentMonthKey : '';
+  const monthOptions =
+    selectedMonth && !activityMonths.includes(selectedMonth)
+      ? [...activityMonths, selectedMonth].sort().reverse()
+      : activityMonths;
+  const selectedIndex = selectedMonth ? monthOptions.indexOf(selectedMonth) : -1;
+  const selectMonth = (monthKey: string) => {
+    if (!monthKey) return;
+    const range = monthRange(monthKey, maxEndDate);
+    onDateRangeChange(range.start, range.end);
+  };
 
   useEffect(() => {
     if (!companyId || !startDate || !endDate) return;
@@ -37,7 +83,9 @@ export default function BankTransactionsPanel({ companyId, startDate, endDate, c
       .then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data?.error || 'Failed to load bank transactions');
-        setRegister(data?.register || null);
+        const next: BankRegister | null = data?.register || null;
+        setRegister(next);
+        if (next) setActivityMonths(next.activityMonths || []);
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
@@ -49,6 +97,16 @@ export default function BankTransactionsPanel({ companyId, startDate, endDate, c
       });
     return () => controller.abort();
   }, [companyId, startDate, endDate, accountKey]);
+
+  useEffect(() => {
+    if (defaultMonthApplied.current || !activityMonths.length) return;
+    defaultMonthApplied.current = true;
+    if (selectedMonth) return;
+    const thisMonth = formatEstDate().slice(0, 7);
+    selectMonth(activityMonths.find((month) => month < thisMonth) || activityMonths[0]);
+    // Runs once, when the activity months first arrive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activityMonths]);
 
   const money = (value: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
@@ -116,6 +174,36 @@ export default function BankTransactionsPanel({ companyId, startDate, endDate, c
             <option key={account.key} value={account.key}>{account.name}</option>
           ))}
         </select>
+        <label style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>Statement Month:</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button
+            onClick={() => selectMonth(monthOptions[selectedIndex + 1])}
+            disabled={selectedIndex < 0 || selectedIndex >= monthOptions.length - 1}
+            title="Previous month"
+            style={monthArrowStyle(selectedIndex >= 0 && selectedIndex < monthOptions.length - 1)}
+          >
+            ◀
+          </button>
+          <select
+            value={selectedMonth}
+            onChange={(event) => selectMonth(event.target.value)}
+            disabled={!monthOptions.length}
+            style={{ padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', color: '#1e293b', background: 'white', minWidth: '170px' }}
+          >
+            {!selectedMonth && <option value="">Custom range</option>}
+            {monthOptions.map((month) => (
+              <option key={month} value={month}>{formatMonthKey(month)}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => selectMonth(monthOptions[selectedIndex - 1])}
+            disabled={selectedIndex <= 0}
+            title="Next month"
+            style={monthArrowStyle(selectedIndex > 0)}
+          >
+            ▶
+          </button>
+        </div>
         <span style={{ fontSize: '12px', color: '#64748b' }}>
           {formatDateKey(startDate)} to {formatDateKey(endDate)} (EST) · Currency: {currency}
         </span>

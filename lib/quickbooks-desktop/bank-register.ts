@@ -42,8 +42,14 @@ export async function loadQbdBankRegister(
   const balanceOn = (dateKey: string) =>
     balances.reduce((sum, { account, byDate }) => (selected.has(account.key) ? sum + Number(byDate[dateKey] || 0) : sum), 0);
 
+  const activityMonths = new Set<string>();
+  for (const row of books.glRows) {
+    if (accountsByKey.has(qbdAccountKey(row.account))) activityMonths.add(row.txnDate.slice(0, 7));
+  }
+
   const detailRows = await loadQbdGeneralLedgerDetailRows(companyId, startDate, endDate);
   return buildBankRegister({
+    activityMonths: Array.from(activityMonths),
     accounts,
     accountKey,
     startDate,

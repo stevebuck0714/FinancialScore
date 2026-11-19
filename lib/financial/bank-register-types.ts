@@ -25,4 +25,6 @@ export type BankRegister = {
   /** Balance on endDate computed independently from the books; differs from endingBalance only when the books have a gap. */
   ledgerEndingBalance: number | null;
   transactions: BankRegisterTransaction[];
+  /** "YYYY-MM" months with any posting to the selected account(s), newest first. */
+  activityMonths: string[];
 };

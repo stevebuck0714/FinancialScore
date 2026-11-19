@@ -90,7 +90,8 @@ export async function loadQboBankRegister(
     return Number(row?.balance) || 0;
   };
 
-  const [beginningBalance, ledgerEndingBalance, glRows] = await Promise.all([
+  const allBankKeys = accounts.map((account) => account.key);
+  const [beginningBalance, ledgerEndingBalance, glRows, monthRows] = await Promise.all([
     balanceThrough(addEstCalendarDays(startDate, -1)),
     balanceThrough(endDate),
     prisma.gLTransactionFact.findMany({
@@ -103,6 +104,13 @@ export async function loadQboBankRegister(
       select: { transDate: true, accountId: true, signedAmount: true, ref: true, description: true, sourceTransaction: true },
       orderBy: [{ transDate: 'asc' }, { transNum: 'asc' }],
     }),
+    prisma.$queryRaw<Array<{ month: string }>>`
+      SELECT DISTINCT to_char("transDate", 'YYYY-MM') AS month
+      FROM "GLTransactionFact"
+      WHERE "companyId" = ${companyId}
+        AND "sourcePlatform" = ${QBO_GL_SOURCE_PLATFORM}
+        AND "accountId" = ANY(${allBankKeys}::text[])
+    `,
   ]);
 
   return buildBankRegister({
@@ -112,6 +120,7 @@ export async function loadQboBankRegister(
     endDate,
     beginningBalance,
     ledgerEndingBalance,
+    activityMonths: monthRows.map((row) => row.month),
     lines: glRows.map((row) => {
       const type = String(row.sourceTransaction || '').trim();
       const ref = String(row.ref || '').trim();
