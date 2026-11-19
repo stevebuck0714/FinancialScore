@@ -6,12 +6,13 @@ import { presentCompanyJson } from '@/lib/currency/api-response';
 import {
   CashProofError,
   loadCashProofState,
+  loadTransactionMatchDetail,
   runCashProofAction,
   type CashProofAction,
 } from '@/lib/cash-proof/service';
 
 export const dynamic = 'force-dynamic';
-// Read Statements downloads and parses every file in the Bank Statements folder.
+// Read Statements downloads and parses every file in the Bank Statements folder, then runs book-to-bank matching.
 export const maxDuration = 300;
 
 const WRITE_ROLES = new Set(['SITEADMIN', 'CONSULTANT']);
@@ -37,6 +38,16 @@ export async function GET(request: NextRequest) {
     if (!(await validateCompanyAccess(companyId))) {
       await auditForbiddenAccess('CashProof', companyId, 'READ');
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    if (request.nextUrl.searchParams.get('view') === 'transactions') {
+      const bankAccountId = String(request.nextUrl.searchParams.get('bankAccountId') || '').trim();
+      const month = String(request.nextUrl.searchParams.get('month') || '').trim();
+      const detail = await withPrismaReconnectRetry(
+        () => loadTransactionMatchDetail(companyId, bankAccountId, month),
+        'cash-proof.GET.transactions',
+      );
+      return NextResponse.json(detail);
     }
 
     const state = await withPrismaReconnectRetry(() => loadCashProofState(companyId), 'cash-proof.GET');

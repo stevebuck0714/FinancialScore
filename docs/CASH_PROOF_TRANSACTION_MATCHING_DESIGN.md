@@ -1,6 +1,14 @@
 # Cash Proof: Book-to-Bank Transaction Matching (Design)
 
-Status: decisions confirmed (section 13). Nothing here is built yet.
+Status: Phase 1 built (Nov 19, 2026). Differences from this design:
+
+- `RECON_DIFFERENCE` is not a separate transaction exception. The calculated reconciling items feed the
+  sampled month's balance tie-out, so an unexplained difference already appears as a balance exception.
+- Matching runs inside the request (route `maxDuration` 300s) rather than in the background.
+- Matching runs after **Read Statements** and from the **Match Transactions** button. It does not yet run
+  automatically when a bank connection report or transaction export is accepted.
+- Open transaction exceptions block **Lock Cash Proof**, the same as open balance exceptions.
+- Engine checks: `npm run test:cash-proof-matching`.
 
 ## 1. Goal
 

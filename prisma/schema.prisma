@@ -584,6 +584,7 @@ model CashProofEngagement {
   revenueTolerancePct Float    @default(2)
   revenuePeriodNotes Json? // { [periodKey]: explanation for a deposits-to-revenue variance }
   statementScan      Json? // last Read Statements run: { scannedAt, results[] }
+  transactionMatch   Json? // last book-to-bank matching run: { runAt, settings, accounts[], totals }
   status             String    @default("DRAFT") // DRAFT | SAMPLED | LOCKED
   lockedAt           DateTime?
   lockedByUserId     String?
@@ -595,6 +596,8 @@ model CashProofEngagement {
   bankAccounts       CashProofBankAccount[]
   samples            CashProofSample[]
   revenueAdjustments CashProofRevenueAdjustment[]
+  transactionMatches    CashProofTransactionMatch[]
+  transactionExceptions CashProofTransactionException[]
 
   @@index([companyId, createdAt])
 }
@@ -621,6 +624,8 @@ model CashProofBankAccount {
   samples            CashProofSample[]
   deposits           CashProofDeposit[]
   revenueAdjustments CashProofRevenueAdjustment[]
+  transactionMatches    CashProofTransactionMatch[]
+  transactionExceptions CashProofTransactionException[]
 
   @@index([engagementId])
 }
@@ -701,6 +706,54 @@ model CashProofSample {
 
   @@unique([engagementId, bankAccountId, month])
   @@index([bankAccountId])
+}
+
+// Book-to-bank transaction matching: one row per matched group of General
+// Ledger lines and bank transactions. Replaced on every matching run.
+model CashProofTransactionMatch {
+  id                String   @id @default(cuid())
+  engagementId      String
+  bankAccountId     String
+  month             String // YYYY-MM of the earliest book line
+  rule              String // CHECK_NUMBER | EXACT | LATE_CLEARING | BATCHED_DEPOSIT | SPLIT_WITHDRAWAL
+  amount            Float
+  dayGap            Int
+  isReconcilingItem Boolean  @default(false) // cleared the bank in a later month than it was booked
+  detail            Json // { book: [{ key, date, type, num, name, amount }], bank: [{ id, date, description, checkNumber, amount }] }
+  createdAt         DateTime @default(now())
+
+  engagement  CashProofEngagement  @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  bankAccount CashProofBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId, bankAccountId, month])
+}
+
+// Differences found by book-to-bank matching. Kept across runs by fingerprint so
+// resolutions survive; exceptions that stop occurring are auto-resolved, not deleted.
+model CashProofTransactionException {
+  id               String    @id @default(cuid())
+  engagementId     String
+  bankAccountId    String? // null for a bank account found in the Data Room with no account in the books
+  month            String? // YYYY-MM
+  type             String // see TRANSACTION_EXCEPTION_TYPES
+  severity         String // CRITICAL | HIGH | MEDIUM | LOW
+  fingerprint      String
+  amount           Float
+  date             String? // YYYY-MM-DD of the line involved
+  description      String
+  detail           Json?
+  status           String    @default("OPEN") // OPEN | CLEARED | AUTO_RESOLVED
+  resolutionNote   String?
+  resolvedByUserId String?
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  engagement  CashProofEngagement   @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  bankAccount CashProofBankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([engagementId, fingerprint])
+  @@index([engagementId, bankAccountId, month])
 }
 
 model CompanyDocumentChunk {

@@ -9,8 +9,11 @@ import {
   REVENUE_ADJUSTMENT_CATEGORY_ORDER,
   REVENUE_STATUS_LABELS,
 } from '@/lib/cash-proof/revenue-reconciliation';
+import { TRANSACTION_EXCEPTION_ORDER, TRANSACTION_EXCEPTION_TYPES } from '@/lib/cash-proof/transaction-match';
 import {
   REVENUE_STATUS_COLORS,
+  SEVERITY_COLORS,
+  SEVERITY_LABELS,
   STATUS_COLORS,
   fetchCashProof,
   formatMonthLabel,
@@ -111,6 +114,29 @@ export default function CashProofReportSection({
   );
   const exceptions = reportedSamples.filter((s) => s.status === 'EXCEPTION' || s.status === 'CLEARED');
   const excludedAccounts = (data?.accounts || []).filter((a) => !a.included);
+  const transactionMatch = data?.transactionMatch ?? null;
+  const transactionExceptions = (data?.transactionExceptions || []).filter((e) => e.status !== 'AUTO_RESOLVED');
+  const openTransactionExceptions = transactionExceptions.filter((e) => e.status === 'OPEN');
+  const transactionTypeTotals = TRANSACTION_EXCEPTION_ORDER.map((type) => {
+    const ofType = transactionExceptions.filter((e) => e.type === type);
+    return {
+      type,
+      count: ofType.length,
+      open: ofType.filter((e) => e.status === 'OPEN').length,
+      dollars: Math.round(ofType.reduce((sum, e) => sum + Math.abs(e.amount), 0) * 100) / 100,
+    };
+  }).filter((t) => t.count > 0);
+  const transactionConclusion = (() => {
+    if (!transactionMatch) return '';
+    const t = transactionMatch.totals;
+    const pct = t.bankDollars > 0 ? `${((t.matchedBankDollars / t.bankDollars) * 100).toFixed(1)}%` : null;
+    const coverage = `Every book entry to the bank accounts was matched to the client's bank transactions for ${t.lineLevelAccountMonths} account-month${t.lineLevelAccountMonths === 1 ? '' : 's'}${pct ? `; ${pct} of bank dollars agree to the books` : ''}${t.totalsTestedAccountMonths ? `, and monthly totals were compared for ${t.totalsTestedAccountMonths} more account-month${t.totalsTestedAccountMonths === 1 ? '' : 's'} with statements only` : ''}.`;
+    if (openTransactionExceptions.length > 0) {
+      const critical = openTransactionExceptions.filter((e) => e.severity === 'CRITICAL').length;
+      return `${coverage} ${openTransactionExceptions.length} transaction exception${openTransactionExceptions.length === 1 ? ' remains' : 's remain'} open${critical ? `, ${critical} of them critical` : ''}.`;
+    }
+    return `${coverage} ${transactionExceptions.length ? `All ${transactionExceptions.length} transaction exceptions were cleared with documented explanations.` : 'No transaction exceptions were found.'}`;
+  })();
 
   const conclusion = (() => {
     if (!engagement || !data) return '';
@@ -185,7 +211,7 @@ export default function CashProofReportSection({
                     ['Bank Accounts', String(includedAccounts.length)],
                     ['Statements Tested', String(data!.summary.accountMonths)],
                     ['Tied / Cleared', `${data!.summary.tied} / ${data!.summary.cleared}`],
-                    ['Open Exceptions', String(data!.summary.exceptions)],
+                    ['Open Exceptions', String(data!.summary.exceptions + data!.summary.transactionExceptionsOpen)],
                     [
                       'Revenue Supported',
                       recon
@@ -200,6 +226,9 @@ export default function CashProofReportSection({
                   ))}
                 </div>
                 <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: 0 }}>{conclusion}</p>
+                {transactionConclusion && (
+                  <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '6px 0 0' }}>{transactionConclusion}</p>
+                )}
                 {revenueConclusion && (
                   <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '6px 0 0' }}>{revenueConclusion}</p>
                 )}
@@ -294,6 +323,70 @@ export default function CashProofReportSection({
                       ))}
                     </tbody>
                   </table>
+                )}
+
+                {transactionMatch && (
+                  <>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', margin: '14px 0 6px' }}>Transaction Testing</div>
+                    <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '0 0 8px' }}>{transactionConclusion}</p>
+                    {transactionTypeTotals.length > 0 && (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '10px' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...th, textAlign: 'left' }}>Exception Type</th>
+                            <th style={th}>Found</th>
+                            <th style={th}>Open</th>
+                            <th style={th}>Dollars</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {transactionTypeTotals.map((t) => (
+                            <tr key={t.type}>
+                              <td style={{ ...td, textAlign: 'left' }}>{TRANSACTION_EXCEPTION_TYPES[t.type].label}</td>
+                              <td style={td}>{t.count}</td>
+                              <td style={{ ...td, fontWeight: t.open ? 700 : 400 }}>{t.open}</td>
+                              <td style={td}>{t.type === 'UNDISCLOSED_BANK_ACCOUNT' ? '—' : money(t.dollars)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', margin: '6px 0 6px' }}>Transaction Exceptions</div>
+                    {transactionExceptions.length === 0 ? (
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>No differences were found between the books and the bank transactions.</div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...th, textAlign: 'center' }}>Severity</th>
+                            <th style={{ ...th, textAlign: 'left' }}>Account</th>
+                            <th style={{ ...th, textAlign: 'left' }}>Date</th>
+                            <th style={th}>Amount</th>
+                            <th style={{ ...th, textAlign: 'left' }}>Exception</th>
+                            <th style={{ ...th, textAlign: 'left' }}>Resolution</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {transactionExceptions.map((e) => (
+                            <tr key={e.id}>
+                              <td style={{ ...td, textAlign: 'center' }}>
+                                <span style={badge(SEVERITY_COLORS[e.severity])}>{SEVERITY_LABELS[e.severity]}</span>
+                              </td>
+                              <td style={{ ...td, textAlign: 'left' }}>{e.bankAccountId ? accountName(e.bankAccountId) : 'Not in the books'}</td>
+                              <td style={{ ...td, textAlign: 'left', whiteSpace: 'nowrap' }}>
+                                {e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}/${e.date.slice(0, 4)}` : '—'}
+                              </td>
+                              <td style={td}>{e.type === 'UNDISCLOSED_BANK_ACCOUNT' ? '—' : money(e.amount)}</td>
+                              <td style={{ ...td, textAlign: 'left' }}>
+                                <strong>{TRANSACTION_EXCEPTION_TYPES[e.type]?.label || e.type}.</strong> {e.description}
+                              </td>
+                              <td style={{ ...td, textAlign: 'left' }}>{e.status === 'CLEARED' ? e.resolutionNote : 'Open'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -448,6 +541,21 @@ export default function CashProofReportSection({
                   year, with differences over {recon?.tolerancePct ?? engagement.revenueTolerancePct}% of reported revenue
                   requiring a documented explanation.
                 </p>
+                {transactionMatch && (
+                  <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '8px 0 0' }}>
+                    Where the client provided bank transaction detail (a bank connection report or a reviewed transaction
+                    export), every General Ledger entry to each bank account was matched to the bank&apos;s transactions: by check
+                    number, then by amount within {transactionMatch.settings.exactWindowDays} days, then payments clearing up to{' '}
+                    {transactionMatch.settings.lateClearingDays} days later, and finally batched deposits and split payments.
+                    Bank activity with no book entry, book deposits that never reached the bank, payments outstanding more than{' '}
+                    {transactionMatch.settings.staleCheckDays} days, and check amounts that differ were reported as exceptions;
+                    bank fees and interest of {money(transactionMatch.settings.feeGroupMax)} or less were grouped by month. For
+                    sampled months, uncleared items were used as the reconciling items. Months with statements only were tested by
+                    comparing book and statement deposit and withdrawal totals, allowing for timing differences that reverse the
+                    following month. Bank accounts with statements in the Data Room but no account in the books were reported as
+                    exceptions.
+                  </p>
+                )}
               </div>
             )}
           </>

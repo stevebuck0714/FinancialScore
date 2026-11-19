@@ -1,4 +1,5 @@
-import type { CashProofState } from '@/lib/cash-proof/service';
+import type { CashProofState, CashProofTransactionMatchView, TransactionExceptionStatus } from '@/lib/cash-proof/service';
+import type { TransactionExceptionSeverity } from '@/lib/cash-proof/transaction-match';
 import type { CashProofSampleStatus } from '@/lib/cash-proof/tie-out';
 import type { RevenueReconciliationLine, RevenueReconciliationStatus } from '@/lib/cash-proof/revenue-reconciliation';
 import type { StatementScanStatus } from '@/lib/cash-proof/statement-scan';
@@ -98,6 +99,41 @@ export async function fetchCashProof(companyId: string): Promise<CashProofRespon
   if (!res.ok) throw new Error(json?.error || `Failed to load cash proof (${res.status})`);
   return json;
 }
+
+export type TransactionMatchDetail = {
+  bankAccountId: string;
+  month: string;
+  matches: CashProofTransactionMatchView[];
+  error?: string;
+};
+
+export async function fetchTransactionMatchDetail(companyId: string, bankAccountId: string, month: string): Promise<TransactionMatchDetail> {
+  const params = new URLSearchParams({ companyId, view: 'transactions', bankAccountId, month });
+  const res = await fetch(`/api/cash-proof?${params}`, { cache: 'no-store' });
+  const json = (await res.json().catch(() => ({}))) as TransactionMatchDetail;
+  if (!res.ok) throw new Error(json?.error || `Failed to load transactions (${res.status})`);
+  return json;
+}
+
+export const SEVERITY_COLORS: Record<TransactionExceptionSeverity, { bg: string; fg: string; border: string }> = {
+  CRITICAL: { bg: '#7f1d1d', fg: '#ffffff', border: '#7f1d1d' },
+  HIGH: STATUS_COLORS.EXCEPTION,
+  MEDIUM: STATUS_COLORS.CLEARED,
+  LOW: STATUS_COLORS.REQUESTED,
+};
+
+export const SEVERITY_LABELS: Record<TransactionExceptionSeverity, string> = {
+  CRITICAL: 'Critical',
+  HIGH: 'High',
+  MEDIUM: 'Medium',
+  LOW: 'Low',
+};
+
+export const TRANSACTION_EXCEPTION_STATUS_LABELS: Record<TransactionExceptionStatus, string> = {
+  OPEN: 'Open',
+  CLEARED: 'Cleared',
+  AUTO_RESOLVED: 'No longer found',
+};
 
 export async function postCashProof(companyId: string, body: Record<string, unknown>): Promise<CashProofResponse> {
   const res = await fetch('/api/cash-proof', {

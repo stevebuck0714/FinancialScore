@@ -16,6 +16,7 @@ import {
 import { buttonStyle, cardStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
 import CashProofDepositsPanel from './CashProofDepositsPanel';
 import CashProofStatementScanCard from './CashProofStatementScanCard';
+import CashProofTransactionMatchCard from './CashProofTransactionMatchCard';
 import StatementAccountPicker from './StatementAccountPicker';
 import { linkedStatementAccount, statementAccountLabel } from '@/lib/bank-statements/account-match';
 
@@ -79,7 +80,9 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
   const [newAccount, setNewAccount] = useState<{ accountName: string; bankName: string; accountLast4: string } | null>(null);
   const [addMonth, setAddMonth] = useState('');
   const [manualAccountIds, setManualAccountIds] = useState<Set<string>>(() => new Set());
+  const [transactionView, setTransactionView] = useState<{ accountId: string; month: string } | null>(null);
   const samplePanelRef = useRef<HTMLDivElement | null>(null);
+  const matchCardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!companyId) return;
@@ -190,7 +193,8 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
           SBA cash verification. Month-end book cash for each bank account comes from the accounting system, and a
           sample of months is tied to bank statements uploaded to the Data Room <strong>Bank Statements</strong> folder.
           Deposits from every statement are then reconciled to reported revenue. Read Statements fills in the figures from
-          the files in that folder. Link each account to its statements with the Statement Account dropdown.
+          the files in that folder, then matches every book entry to the bank transactions to find differences. Link each
+          account to its statements with the Statement Account dropdown.
         </p>
       </div>
       {engagement && (
@@ -209,6 +213,14 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
             onClick={() => run('scan', { action: 'scan-statements', engagementId: engagement.id })}
           >
             {busy === 'scan' ? `Reading ${data?.bankStatementDocuments.length ?? ''} statements…` : 'Read Statements'}
+          </button>
+          <button
+            style={buttonStyle('secondary', !canEdit || !!busy || !data?.accounts.some((a) => a.included))}
+            disabled={!canEdit || !!busy || !data?.accounts.some((a) => a.included)}
+            title="Match every book entry to the bank transactions in the Data Room and list the differences. Also runs after Read Statements."
+            onClick={() => run('match', { action: 'match-transactions', engagementId: engagement.id })}
+          >
+            {busy === 'match' ? 'Matching…' : 'Match Transactions'}
           </button>
           {data && data.samples.length === 0 ? (
             <button
@@ -330,7 +342,13 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
     { label: 'Bank Accounts', value: `${accounts.filter((a) => a.included).length} included` },
     { label: 'Sampled Months', value: `${summary.sampledMonths} (${summary.accountMonths} statements)` },
     { label: 'Tied / Cleared', value: `${summary.tied} / ${summary.cleared}` },
-    { label: 'Exceptions', value: String(summary.exceptions), alert: summary.exceptions > 0 },
+    {
+      label: 'Exceptions',
+      value: data?.transactionMatch
+        ? `${summary.exceptions} balance / ${summary.transactionExceptionsOpen} transaction`
+        : String(summary.exceptions),
+      alert: summary.exceptions + summary.transactionExceptionsOpen > 0,
+    },
     { label: 'Outstanding', value: String(outstanding) },
     {
       label: 'Deposits to Revenue',
@@ -370,6 +388,18 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
       </div>
 
       <CashProofStatementScanCard data={data!} money={money} />
+
+      <div ref={matchCardRef}>
+        <CashProofTransactionMatchCard
+          data={data!}
+          money={money}
+          canEdit={canEdit}
+          busy={busy}
+          run={run}
+          view={transactionView}
+          onView={setTransactionView}
+        />
+      </div>
 
       <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
         <div style={{ ...cardStyle, flex: 1, minWidth: 0 }}>
@@ -748,7 +778,22 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
               ))}
             </div>
             <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px' }}>
-              Reconciling items: outstanding checks as negative, deposits in transit as positive.
+              Reconciling items: outstanding checks as negative, deposits in transit as positive. Filled in by Match
+              Transactions when the month has bank transaction detail.
+              {data!.transactionMatch && (
+                <>
+                  {' '}
+                  <button
+                    onClick={() => {
+                      setTransactionView({ accountId: selectedSample.bankAccountId, month: selectedSample.month });
+                      requestAnimationFrame(() => matchCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+                    }}
+                    style={{ background: 'none', border: 'none', padding: 0, color: '#2751d0', cursor: 'pointer', fontSize: '10px' }}
+                  >
+                    View transactions
+                  </button>
+                </>
+              )}
             </div>
 
             <div style={{ marginTop: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>

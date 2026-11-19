@@ -25,6 +25,12 @@ import { scanBankStatements, type StatementScan } from './statement-scan';
 import type { DetectedStatementAccount } from '@/lib/bank-statements/account-match';
 import { loadDetectedStatementAccounts } from '@/lib/bank-statements/detected-accounts';
 import { computeTieOut, type CashProofSampleStatus, type TieOutResult } from './tie-out';
+import { runTransactionMatch, type TransactionMatchSummary } from './transaction-match-run';
+import {
+  SEVERITY_ORDER,
+  type TransactionExceptionSeverity,
+  type TransactionExceptionType,
+} from './transaction-match';
 
 export class CashProofError extends Error {
   constructor(message: string, public status = 400) {
@@ -78,6 +84,32 @@ export type CashProofSampleView = {
   tieOut: TieOutResult;
 };
 
+export type TransactionExceptionStatus = 'OPEN' | 'CLEARED' | 'AUTO_RESOLVED';
+
+export type CashProofTransactionExceptionView = {
+  id: string;
+  bankAccountId: string | null;
+  month: string | null;
+  type: TransactionExceptionType;
+  severity: TransactionExceptionSeverity;
+  amount: number;
+  date: string | null;
+  description: string;
+  status: TransactionExceptionStatus;
+  resolutionNote: string | null;
+  resolvedAt: string | null;
+};
+
+export type CashProofTransactionMatchView = {
+  id: string;
+  rule: string;
+  amount: number;
+  dayGap: number;
+  isReconcilingItem: boolean;
+  book: Array<{ key: string; date: string; type: string; num: string; name: string; amount: number }>;
+  bank: Array<{ id: string; date: string; description: string; checkNumber: string | null; amount: number }>;
+};
+
 export type CashProofState = {
   engagement: {
     id: string;
@@ -99,6 +131,8 @@ export type CashProofState = {
   revenueAdjustments: CashProofRevenueAdjustmentView[];
   revenueReconciliation: RevenueReconciliation | null;
   statementScan: StatementScan | null;
+  transactionMatch: TransactionMatchSummary | null;
+  transactionExceptions: CashProofTransactionExceptionView[];
   balanceSheetCash: Record<string, number>;
   completeness: Record<string, { bookTotal: number | null; balanceSheetCash: number | null; difference: number | null }>;
   bankStatementDocuments: Array<{ id: string; originalFileName: string; createdAt: string }>;
@@ -115,6 +149,7 @@ export type CashProofState = {
     netDifference: number;
     depositMonthsMissing: number;
     revenuePeriodsOpen: number;
+    transactionExceptionsOpen: number;
   };
 };
 
@@ -133,6 +168,22 @@ async function latestEngagement(companyId: string) {
           },
           samples: true,
           revenueAdjustments: { orderBy: [{ month: 'asc' }, { createdAt: 'asc' }] },
+          transactionExceptions: {
+            select: {
+              id: true,
+              bankAccountId: true,
+              month: true,
+              type: true,
+              severity: true,
+              amount: true,
+              date: true,
+              description: true,
+              status: true,
+              resolutionNote: true,
+              resolvedAt: true,
+            },
+            orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+          },
         },
       }),
     'cash-proof.latestEngagement',
@@ -177,6 +228,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     netDifference: 0,
     depositMonthsMissing: 0,
     revenuePeriodsOpen: 0,
+    transactionExceptionsOpen: 0,
   };
   if (!engagement) {
     return {
@@ -188,6 +240,8 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
       revenueAdjustments: [],
       revenueReconciliation: null,
       statementScan: null,
+      transactionMatch: null,
+      transactionExceptions: [],
       balanceSheetCash: {},
       completeness: {},
       bankStatementDocuments,
@@ -295,7 +349,30 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
       Math.round(counted.reduce((sum, s) => sum + (s.tieOut.difference ?? 0), 0) * 100) / 100,
     depositMonthsMissing: 0,
     revenuePeriodsOpen: 0,
+    transactionExceptionsOpen: 0,
   };
+
+  const transactionExceptions: CashProofTransactionExceptionView[] = engagement.transactionExceptions
+    .filter((e) => !e.bankAccountId || includedIds.has(e.bankAccountId))
+    .map((e) => ({
+      id: e.id,
+      bankAccountId: e.bankAccountId,
+      month: e.month,
+      type: e.type as TransactionExceptionType,
+      severity: e.severity as TransactionExceptionSeverity,
+      amount: e.amount,
+      date: e.date,
+      description: e.description,
+      status: e.status as TransactionExceptionStatus,
+      resolutionNote: e.resolutionNote,
+      resolvedAt: toIso(e.resolvedAt),
+    }))
+    .sort(
+      (a, b) =>
+        SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) ||
+        String(a.date || '').localeCompare(String(b.date || '')),
+    );
+  summary.transactionExceptionsOpen = transactionExceptions.filter((e) => e.status === 'OPEN').length;
 
   const includedAccounts = accounts.filter((a) => a.included);
   const revenueAdjustments: CashProofRevenueAdjustmentView[] = engagement.revenueAdjustments.map((r) => ({
@@ -351,12 +428,45 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     revenueAdjustments,
     revenueReconciliation,
     statementScan: (engagement.statementScan as unknown as StatementScan | null) ?? null,
+    transactionMatch: (engagement.transactionMatch as unknown as TransactionMatchSummary | null) ?? null,
+    transactionExceptions,
     balanceSheetCash,
     completeness,
     bankStatementDocuments,
     statementAccounts,
     summary,
   };
+}
+
+/** Matches, uncleared items, and exceptions for one account-month of the latest engagement. */
+export async function loadTransactionMatchDetail(companyId: string, bankAccountId: string, month: string) {
+  if (!MONTH_RE.test(month)) throw new CashProofError('Choose a month');
+  const engagement = await prisma.cashProofEngagement.findFirst({
+    where: { companyId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  if (!engagement) throw new CashProofError('Cash proof engagement not found', 404);
+  await requireBankAccount(engagement.id, bankAccountId);
+  const rows = await prisma.cashProofTransactionMatch.findMany({
+    where: { engagementId: engagement.id, bankAccountId, month },
+    orderBy: [{ createdAt: 'asc' }],
+  });
+  const matches: CashProofTransactionMatchView[] = rows
+    .map((r) => {
+      const detail = (r.detail || {}) as { book?: CashProofTransactionMatchView['book']; bank?: CashProofTransactionMatchView['bank'] };
+      return {
+        id: r.id,
+        rule: r.rule,
+        amount: r.amount,
+        dayGap: r.dayGap,
+        isReconcilingItem: r.isReconcilingItem,
+        book: detail.book || [],
+        bank: detail.bank || [],
+      };
+    })
+    .sort((a, b) => String(a.book[0]?.date || '').localeCompare(String(b.book[0]?.date || '')));
+  return { bankAccountId, month, matches };
 }
 
 async function requireEngagement(companyId: string, engagementId: string, allowLocked = false) {
@@ -479,6 +589,9 @@ export type CashProofAction =
   | { action: 'delete-revenue-adjustment'; engagementId: string; adjustmentId: string }
   | { action: 'set-revenue-period-note'; engagementId: string; periodKey: string; note: string | null }
   | { action: 'scan-statements'; engagementId: string }
+  | { action: 'match-transactions'; engagementId: string }
+  | { action: 'update-transaction-exception'; engagementId: string; exceptionId: string; resolutionNote?: string | null; clear?: boolean }
+  | { action: 'clear-transaction-exceptions'; engagementId: string; exceptionIds: string[]; resolutionNote: string }
   | { action: 'lock'; engagementId: string }
   | { action: 'unlock'; engagementId: string };
 
@@ -822,6 +935,43 @@ export async function runCashProofAction(companyId: string, userId: string, inpu
     case 'scan-statements': {
       const engagement = await requireEngagement(companyId, input.engagementId);
       await scanBankStatements(companyId, engagement.id, userId);
+      await runTransactionMatch(companyId, engagement.id);
+      return;
+    }
+    case 'match-transactions': {
+      const engagement = await requireEngagement(companyId, input.engagementId);
+      await runTransactionMatch(companyId, engagement.id);
+      return;
+    }
+    case 'update-transaction-exception': {
+      const engagement = await requireEngagement(companyId, input.engagementId);
+      const exception = await prisma.cashProofTransactionException.findFirst({
+        where: { id: input.exceptionId, engagementId: engagement.id },
+      });
+      if (!exception) throw new CashProofError('Exception not found', 404);
+      if (exception.status === 'AUTO_RESOLVED') throw new CashProofError('This exception no longer occurs in the latest matching run', 409);
+      const data: Record<string, unknown> = {};
+      if ('resolutionNote' in input) data.resolutionNote = optionalText(input.resolutionNote, 2000);
+      const note = 'resolutionNote' in data ? data.resolutionNote : exception.resolutionNote;
+      if (input.clear) {
+        if (!String(note || '').trim()) throw new CashProofError('Add a resolution note before clearing an exception');
+        Object.assign(data, { status: 'CLEARED', resolvedByUserId: userId, resolvedAt: new Date() });
+      } else if (input.clear === false) {
+        Object.assign(data, { status: 'OPEN', resolvedByUserId: null, resolvedAt: null });
+      }
+      await prisma.cashProofTransactionException.update({ where: { id: exception.id }, data });
+      return;
+    }
+    case 'clear-transaction-exceptions': {
+      const engagement = await requireEngagement(companyId, input.engagementId);
+      const note = optionalText(input.resolutionNote, 2000);
+      if (!note) throw new CashProofError('Add a resolution note before clearing exceptions');
+      const ids = Array.isArray(input.exceptionIds) ? input.exceptionIds.map(String).slice(0, 5000) : [];
+      if (ids.length === 0) throw new CashProofError('Select at least one exception');
+      await prisma.cashProofTransactionException.updateMany({
+        where: { id: { in: ids }, engagementId: engagement.id, status: 'OPEN' },
+        data: { status: 'CLEARED', resolutionNote: note, resolvedByUserId: userId, resolvedAt: new Date() },
+      });
       return;
     }
     case 'lock': {
@@ -831,6 +981,16 @@ export async function runCashProofAction(companyId: string, userId: string, inpu
       });
       if (open > 0) {
         throw new CashProofError(`${open} sampled account-month(s) are not yet tied or cleared`, 409);
+      }
+      const openTransactions = await prisma.cashProofTransactionException.count({
+        where: {
+          engagementId: engagement.id,
+          status: 'OPEN',
+          OR: [{ bankAccountId: null }, { bankAccount: { included: true } }],
+        },
+      });
+      if (openTransactions > 0) {
+        throw new CashProofError(`${openTransactions} transaction exception(s) from book-to-bank matching are still open`, 409);
       }
       const { summary } = await loadCashProofState(companyId);
       if (summary.depositMonthsMissing > 0) {
