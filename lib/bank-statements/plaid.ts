@@ -108,7 +108,11 @@ export async function createPlaidLinkToken(params: { userId: string; email: stri
   }
 }
 
-/** A one-time Assets connection limited to company credit cards. It never requests statement PDFs. */
+/**
+ * A one-time Assets connection for company cards. Plaid's Assets Link flow does
+ * not accept the credit-card account filter, so the user may see other eligible
+ * accounts; only `credit` accounts are accepted and saved after the pull.
+ */
 export async function createPlaidCreditCardLinkToken(params: { userId: string; email: string | null }): Promise<string> {
   const json = await plaidJson<{ link_token: string }>('/link/token/create', {
     client_name: 'Corelytics',
@@ -116,7 +120,6 @@ export async function createPlaidCreditCardLinkToken(params: { userId: string; e
     country_codes: ['US'],
     user: { client_user_id: params.userId, ...(params.email ? { email_address: params.email } : {}) },
     products: ['assets'],
-    account_filters: { credit: { account_subtypes: ['credit card'] } },
   });
   return json.link_token;
 }

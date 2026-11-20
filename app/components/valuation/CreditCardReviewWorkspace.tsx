@@ -200,8 +200,9 @@ export default function CreditCardReviewWorkspace({ companyId }: { companyId: st
       <div style={cardStyle}>
         <div style={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>Import Company Credit Cards</div>
         <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, marginBottom: 10 }}>
-          Ask the borrower to select business credit cards only. Plaid returns transaction data, not statement PDFs; upload original
-          card statements to the Credit Card Statements folder when support is needed for a material adjustment.
+          Ask the borrower to select business credit cards only. Plaid may show other eligible accounts, but Corelytics imports only
+          credit-card activity. Plaid returns transaction data, not statement PDFs; upload original card statements to the Credit Card
+          Statements folder when support is needed for a material adjustment.
         </div>
         <button style={buttonStyle('primary', !data.dataRoomReady || !data.canImport || busy)} disabled={!data.dataRoomReady || !data.canImport || busy} onClick={() => void connect()}>
           {busy ? 'Importing…' : 'Import with Plaid'}
