@@ -2398,12 +2398,13 @@ function FinancialScorePage() {
   }, [companies, financialScoreEnabledByCompany, selectedCompanyId]);
   const companyServiceAccess = useMemo(() => {
     if (!selectedCompanyId || !Array.isArray(companies)) {
-      return { operationalReporting: false, askCorelytics: false, expertAnalysis: false, reportPackages: false, qualityOfEarnings: false };
+      return { dailyAlerts: false, operationalReporting: false, askCorelytics: false, expertAnalysis: false, reportPackages: false, qualityOfEarnings: false };
     }
     const allocations = (companies.find((company: any) => company.id === selectedCompanyId) as any)?.userDefinedAllocations || {};
     const isEnabled = (service: any) =>
       typeof service?.enabledByAdmin === 'boolean' ? service.enabledByAdmin : true;
     return {
+      dailyAlerts: isEnabled(allocations?.dailyAlerts),
       operationalReporting: isEnabled(allocations?.operationalReporting),
       askCorelytics: isEnabled(allocations?.askCorelytics),
       expertAnalysis: isEnabled(allocations?.expertAnalysis),
@@ -2411,6 +2412,7 @@ function FinancialScorePage() {
       qualityOfEarnings: isEnabled(allocations?.qualityOfEarnings),
     };
   }, [companies, selectedCompanyId]);
+  const isDailyAlertsEnabledByAdmin = companyServiceAccess.dailyAlerts;
   const isOperationalReportingEnabledByAdmin = companyServiceAccess.operationalReporting;
   const isAskCorelyticsEnabledByAdmin = companyServiceAccess.askCorelytics;
   const isExpertAnalysisEnabledByAdmin = companyServiceAccess.expertAnalysis;
@@ -2667,6 +2669,10 @@ function FinancialScorePage() {
     }
     if (view === 'ai-analysis' && !isAskCorelyticsEnabledByAdmin) {
       alert('Ask Corelytics is disabled for this company.');
+      return;
+    }
+    if (view === 'daily-alerts' && !isDailyAlertsEnabledByAdmin) {
+      alert('Daily Alerts are disabled for this company.');
       return;
     }
     if (view.startsWith('pa-') && !isExpertAnalysisEnabledByAdmin) {
@@ -15194,7 +15200,7 @@ function FinancialScorePage() {
               ‹
             </button>
             {currentUser?.userType !== 'assessment' && null}
-            {hasCompanySectionAccess('business-pulse') && (
+            {isDailyAlertsEnabledByAdmin && hasCompanySectionAccess('business-pulse') && (
             <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={() => handleNavigation('daily-alerts')}
@@ -17810,14 +17816,14 @@ function FinancialScorePage() {
       )}
 
       {/* Daily Alerts View */}
-      {currentView === 'daily-alerts' && selectedCompanyId && (
+      {currentView === 'daily-alerts' && selectedCompanyId && isDailyAlertsEnabledByAdmin && (
         <DailyAlertsView
           companyId={selectedCompanyId}
           companyName={companyName || ''}
           onNavigate={handleNavigation}
         />
       )}
-      {currentView === 'daily-alerts' && !selectedCompanyId && (
+      {currentView === 'daily-alerts' && !selectedCompanyId && isDailyAlertsEnabledByAdmin && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view daily alerts.</p>

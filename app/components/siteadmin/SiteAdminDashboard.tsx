@@ -2509,7 +2509,7 @@ export default function SiteAdminDashboard(props: any) {
 
   const saveServiceAccessEnabledByAdmin = async (
     companyId: string,
-    serviceKey: 'operationalReporting' | 'askCorelytics' | 'expertAnalysis' | 'reportPackages' | 'qualityOfEarnings',
+    serviceKey: 'dailyAlerts' | 'operationalReporting' | 'askCorelytics' | 'expertAnalysis' | 'reportPackages' | 'qualityOfEarnings',
     enabled: boolean,
     label: string,
   ) => {
@@ -2544,7 +2544,7 @@ export default function SiteAdminDashboard(props: any) {
 
   const renderServiceAccessCard = (
     company: any,
-    serviceKey: 'operationalReporting' | 'askCorelytics' | 'expertAnalysis',
+    serviceKey: 'dailyAlerts' | 'operationalReporting' | 'askCorelytics' | 'expertAnalysis' | 'reportPackages' | 'qualityOfEarnings',
     label: string,
     colors: { background: string; border: string; heading: string },
   ) => {
@@ -9981,7 +9981,7 @@ export default function SiteAdminDashboard(props: any) {
                                               />
                                             </div>
                                             {/* Subscription Pricing */}
-                                            <div style={{ gridRow: 'span 11', padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <div style={{ gridRow: 'span 12', padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
                                               {editing ? (
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -10434,6 +10434,7 @@ export default function SiteAdminDashboard(props: any) {
                                               </button>
                                             </div>
                                             {renderServiceAccessCard(company, 'operationalReporting', 'Operational Reporting', { background: '#f0fdfa', border: '#99f6e4', heading: '#0f766e' })}
+                                            {renderServiceAccessCard(company, 'dailyAlerts', 'Daily Alerts', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
                                             {renderServiceAccessCard(company, 'askCorelytics', 'Ask Corelytics', { background: '#eff6ff', border: '#bfdbfe', heading: '#1d4ed8' })}
                                             {renderServiceAccessCard(company, 'reportPackages', 'Report Packages', { background: '#f8fafc', border: '#cbd5e1', heading: '#334155' })}
                                             {renderAiUsageCard(company)}
@@ -13790,7 +13791,7 @@ export default function SiteAdminDashboard(props: any) {
                                     />
                                   </div>
                                   {/* Subscription Pricing */}
-                                  <div style={{ gridRow: 'span 11', padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
+                                  <div style={{ gridRow: 'span 12', padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
                                     {editing ? (
                                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -14243,6 +14244,7 @@ export default function SiteAdminDashboard(props: any) {
                                     </button>
                                   </div>
                                   {renderServiceAccessCard(businessCompany, 'operationalReporting', 'Operational Reporting', { background: '#f0fdfa', border: '#99f6e4', heading: '#0f766e' })}
+                                  {renderServiceAccessCard(businessCompany, 'dailyAlerts', 'Daily Alerts', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
                                   {renderServiceAccessCard(businessCompany, 'askCorelytics', 'Ask Corelytics', { background: '#eff6ff', border: '#bfdbfe', heading: '#1d4ed8' })}
                                   {renderServiceAccessCard(businessCompany, 'reportPackages', 'Report Packages', { background: '#f8fafc', border: '#cbd5e1', heading: '#334155' })}
                                   {renderAiUsageCard(businessCompany)}

@@ -1711,6 +1711,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const serviceAccessSettings = [
+      { requestKey: 'dailyAlertsEnabledByAdmin', allocationKey: 'dailyAlerts' },
       { requestKey: 'operationalReportingEnabledByAdmin', allocationKey: 'operationalReporting' },
       { requestKey: 'askCorelyticsEnabledByAdmin', allocationKey: 'askCorelytics' },
       { requestKey: 'expertAnalysisEnabledByAdmin', allocationKey: 'expertAnalysis' },
