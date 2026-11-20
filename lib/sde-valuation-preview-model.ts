@@ -34,6 +34,7 @@ export type SdeValuationPreviewModel = {
   revenueQualityInsights: ReturnType<typeof buildRevenueQualityInsights>;
   customerQualityInsights: ReturnType<typeof buildCustomerQualityInsights>;
   workingCapitalSeries: ReturnType<typeof buildWorkingCapitalSeries>;
+  workingCapitalBalanceSeries: ReturnType<typeof buildWorkingCapitalBalanceSeries>;
   workingCapitalInsights: ReturnType<typeof buildWorkingCapitalInsights>;
   cashFlowQualitySeries: ReturnType<typeof buildCashFlowQualitySeries>;
   cashFlowQualityInsights: ReturnType<typeof buildCashFlowQualityInsights>;
@@ -286,6 +287,7 @@ export function buildSdeValuationPreviewModel(params: {
   );
 
   const workingCapitalSeries = buildWorkingCapitalSeries(monthly);
+  const workingCapitalBalanceSeries = buildWorkingCapitalBalanceSeries(monthly);
   const workingCapitalInsights = buildWorkingCapitalInsights(
     workingCapitalSeries,
     revenueQualityInsights,
@@ -358,6 +360,7 @@ export function buildSdeValuationPreviewModel(params: {
     revenueQualityInsights,
     customerQualityInsights,
     workingCapitalSeries,
+    workingCapitalBalanceSeries,
     workingCapitalInsights,
     cashFlowQualitySeries,
     cashFlowQualityInsights,
@@ -704,6 +707,34 @@ function buildWorkingCapitalSeries(monthly: MonthlyDataRow[]) {
       dio,
       dpo,
       ccc,
+    };
+  });
+}
+
+function buildWorkingCapitalBalanceSeries(monthly: MonthlyDataRow[]) {
+  return monthly.slice(-36).map((month) => {
+    const currentAssets =
+      Number((month as any)?.tca) ||
+      (Number((month as any)?.cash) || 0) +
+        (Number((month as any)?.ar) || 0) +
+        (Number((month as any)?.retainageReceivables) || 0) +
+        (Number((month as any)?.contractAssets) || 0) +
+        (Number((month as any)?.inventory) || 0) +
+        (Number((month as any)?.otherCA) || 0);
+    const currentLiabilities = Math.abs(
+      Number((month as any)?.tcl) ||
+        (Number((month as any)?.ap) || 0) +
+          (Number((month as any)?.loc) || 0) +
+          (Number((month as any)?.contractLiabilities) || 0) +
+          (Number((month as any)?.otherCL) || 0),
+    );
+
+    return {
+      month: String((month as any)?.month || ''),
+      cash: Number((month as any)?.cash) || 0,
+      inventory: Number((month as any)?.inventory) || 0,
+      currentAssets,
+      currentLiabilities,
     };
   });
 }

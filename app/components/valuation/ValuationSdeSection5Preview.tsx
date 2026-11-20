@@ -1013,6 +1013,31 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 />
                 <LineChart title="Cash Conversion Cycle Trend (Last 12 Months)" data={wc.cccMiniSeries} color="#0ea5e9" compact formatter={(v) => `${v.toFixed(1)} days`} />
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                <LineChart
+                  title="Cash Trend (Last 36 Months)"
+                  data={model.workingCapitalBalanceSeries.map((row) => ({ month: row.month, value: row.cash }))}
+                  color="#10b981"
+                  compact
+                  formatter={fmt}
+                />
+                <LineChart
+                  title="Current Assets vs Liabilities (Last 36 Months)"
+                  data={model.workingCapitalBalanceSeries.map((row) => ({ month: row.month, value: row.currentAssets }))}
+                  color="#2563eb"
+                  compact
+                  formatter={fmt}
+                  goalLineData={model.workingCapitalBalanceSeries.map((row) => row.currentLiabilities)}
+                  comparisonLabel="Liabilities"
+                />
+                <LineChart
+                  title="Inventory Trend (Last 36 Months)"
+                  data={model.workingCapitalBalanceSeries.map((row) => ({ month: row.month, value: row.inventory }))}
+                  color="#f59e0b"
+                  compact
+                  formatter={fmt}
+                />
+              </div>
             </div>
           );
         })()}
