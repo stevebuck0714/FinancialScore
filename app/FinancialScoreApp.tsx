@@ -21872,10 +21872,17 @@ function FinancialScorePage() {
               {[
                 { id: 'qoe-report', label: 'QOE REPORT' },
                 { id: 'business-overview', label: 'BUSINESS OVERVIEW' },
+                { id: 'revenue-quality', label: 'REVENUE QUALITY' },
+                { id: 'customer-quality', label: 'CUSTOMER QUALITY' },
+                { id: 'working-capital', label: 'WORKING CAPITAL' },
+                { id: 'cash-flow-quality', label: 'CASH FLOW QUALITY' },
+                { id: 'balance-sheet-quality', label: 'BALANCE SHEET QUALITY' },
               ].map((tab) => {
                 const active = tab.id === 'qoe-report'
                   ? currentView === 'qoe-report'
-                  : currentView === 'quality-of-earnings' && valuationMethodTab === 'business-overview';
+                  : tab.id === 'business-overview'
+                    ? currentView === 'quality-of-earnings' && valuationMethodTab === 'business-overview'
+                    : currentView === 'quality-of-earnings' && valuationMethodTab === 'sde' && sdeModuleTab === tab.id;
                 return (
                   <button
                     key={tab.id}
@@ -21883,8 +21890,12 @@ function FinancialScorePage() {
                     onClick={() => {
                       if (tab.id === 'qoe-report') {
                         handleNavigation('qoe-report');
-                      } else {
+                      } else if (tab.id === 'business-overview') {
                         setValuationMethodTab('business-overview');
+                        handleNavigation('quality-of-earnings');
+                      } else {
+                        setValuationMethodTab('sde');
+                        setSdeModuleTab(tab.id as typeof sdeModuleTab);
                         handleNavigation('quality-of-earnings');
                       }
                     }}
@@ -21917,11 +21928,6 @@ function FinancialScorePage() {
               {[
                 { id: 'ebitda-adjustments', label: 'Quality of Earnings' },
                 { id: 'income-statement', label: 'Income Statement' },
-                { id: 'revenue-quality', label: 'Revenue Quality' },
-                { id: 'customer-quality', label: 'Customer Quality' },
-                { id: 'working-capital', label: 'Working Capital' },
-                { id: 'cash-flow-quality', label: 'Cash Flow Quality' },
-                { id: 'balance-sheet-quality', label: 'Balance Sheet Quality' },
                 { id: 'cash-proof', label: 'Cash Proof' },
                 { id: 'bank-statements', label: 'Bank Statements' },
                 { id: 'credit-card-review', label: 'Credit Card Review' },
