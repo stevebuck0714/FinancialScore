@@ -150,6 +150,22 @@ export default function ValuationBalanceSheetQualityPreview({ monthly, className
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
         <LineChart title="Current Ratio (Last 36 Months)" data={balanceSheetChecks[0].series} color="#0ea5e9" compact formatter={balanceSheetChecks[0].formatter} />
         <LineChart title="Debt / Equity (Last 36 Months)" data={balanceSheetChecks[1].series} color="#ef4444" compact formatter={balanceSheetChecks[1].formatter} />
+        <LineChart title="Equity / Assets % (Last 36 Months)" data={balanceSheetChecks[2].series} color="#22c55e" compact formatter={balanceSheetChecks[2].formatter} />
+        <LineChart title="Balance-Sheet Integrity Gap (Last 36 Months)" data={balanceSheetChecks[3].series} color="#f59e0b" compact formatter={balanceSheetChecks[3].formatter} />
+        <LineChart
+          title="Cash Trend (Last 36 Months)"
+          data={monthly.slice(-36).map((m) => ({ month: m.month, value: Number(m.cash) || 0 }))}
+          color="#16a34a"
+          compact
+          formatter={(v) => `$${Math.round(v).toLocaleString()}`}
+        />
+        <LineChart
+          title="Accounts Receivable Trend (Last 36 Months)"
+          data={monthly.slice(-36).map((m) => ({ month: m.month, value: Number(m.ar) || 0 }))}
+          color="#2563eb"
+          compact
+          formatter={(v) => `$${Math.round(v).toLocaleString()}`}
+        />
       </div>
     </div>
   );

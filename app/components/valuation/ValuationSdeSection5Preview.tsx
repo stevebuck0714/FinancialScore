@@ -955,12 +955,86 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 formatter={(v) => compact(v)}
               />
             </div>
+            <div style={{ marginTop: '12px', overflowX: 'auto' }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>Cash Flow Metrics</div>
+              <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', fontSize: '11px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ textAlign: 'left', padding: '7px 8px', color: '#475569', minWidth: '170px' }}>Metric</th>
+                    {model.cashFlowMetricSeries.map((row) => (
+                      <th key={row.month} style={{ textAlign: 'right', padding: '7px 8px', color: '#475569', minWidth: '70px' }}>{row.month}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { label: 'Cash Flow Margin (%)', value: (row: typeof model.cashFlowMetricSeries[number]) => `${row.cashFlowMargin.toFixed(1)}%` },
+                    { label: 'Days Cash on Hand', value: (row: typeof model.cashFlowMetricSeries[number]) => `${row.daysCashOnHand.toFixed(0)} days` },
+                    { label: 'Cash Conversion Rate', value: (row: typeof model.cashFlowMetricSeries[number]) => row.cashConversionRate === null ? 'N/A' : `${row.cashConversionRate.toFixed(0)}%` },
+                    { label: 'DIO (Days Inventory Outstanding)', value: (row: typeof model.cashFlowMetricSeries[number]) => row.dio === null ? 'N/A days' : `${row.dio.toFixed(0)} days` },
+                    { label: 'DSO (Days Sales Outstanding)', value: (row: typeof model.cashFlowMetricSeries[number]) => row.dso === null ? 'N/A days' : `${row.dso.toFixed(0)} days` },
+                    { label: 'DPO (Days Payables Outstanding)', value: (row: typeof model.cashFlowMetricSeries[number]) => row.dpo === null ? 'N/A days' : `${row.dpo.toFixed(0)} days` },
+                    { label: 'Cash Conversion Cycle (CCC)', value: (row: typeof model.cashFlowMetricSeries[number]) => row.ccc === null ? 'N/A days' : `${row.ccc.toFixed(0)} days` },
+                  ].map((metric) => (
+                    <tr key={metric.label} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 8px', color: '#475569', fontWeight: metric.label.includes('CCC') ? 700 : 400 }}>{metric.label}</td>
+                      {model.cashFlowMetricSeries.map((row) => (
+                        <td key={row.month} style={{ padding: '6px 8px', textAlign: 'right', color: '#1e293b' }}>{metric.value(row)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: '12px' }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>Cash Flow Insights</div>
+              <div style={{ display: 'grid', gap: '8px' }}>
+                {[
+                  {
+                    positive: model.cashFlowMetricInsights.totalOperatingCashFlow > 0,
+                    positiveTitle: '✓ Positive Operating Cash Flow',
+                    negativeTitle: '⚠️ Negative Operating Cash Flow',
+                    positiveText: `The company generated ${compact(model.cashFlowMetricInsights.totalOperatingCashFlow)} in cash from operations over the last 12 months, indicating healthy operational performance.`,
+                    negativeText: `The company consumed ${compact(Math.abs(model.cashFlowMetricInsights.totalOperatingCashFlow))} in cash from operations over the last 12 months, which may indicate operational challenges.`,
+                  },
+                  {
+                    positive: model.cashFlowMetricInsights.totalFreeCashFlow > 0,
+                    positiveTitle: '✓ Positive Free Cash Flow',
+                    negativeTitle: '⚠️ Negative Free Cash Flow',
+                    positiveText: `After capital expenditures, the company has ${compact(model.cashFlowMetricInsights.totalFreeCashFlow)} in free cash flow available for growth, debt reduction, or distributions.`,
+                    negativeText: `Capital expenditures exceed operating cash flow by ${compact(Math.abs(model.cashFlowMetricInsights.totalFreeCashFlow))}, requiring external financing.`,
+                  },
+                  {
+                    positive: model.cashFlowMetricInsights.averageCashFlowMargin > 15,
+                    positiveTitle: '✓ Strong Cash Flow Margin',
+                    negativeTitle: model.cashFlowMetricInsights.averageCashFlowMargin > 0 ? '⚠️ Moderate Cash Flow Margin' : '⚠️ Negative Cash Flow Margin',
+                    positiveText: `At ${model.cashFlowMetricInsights.averageCashFlowMargin.toFixed(1)}%, the company is effectively converting revenue to operating cash flow, demonstrating strong operational efficiency.`,
+                    negativeText: model.cashFlowMetricInsights.averageCashFlowMargin > 0
+                      ? `The cash flow margin of ${model.cashFlowMetricInsights.averageCashFlowMargin.toFixed(1)}% suggests room for improvement in converting revenue to cash. Focus on working capital management and expense control.`
+                      : 'The negative cash flow margin indicates the business is consuming cash faster than generating it from revenue. Immediate attention to cash management is required.',
+                  },
+                ].map((insight) => (
+                  <div key={insight.positiveTitle} style={{ padding: '10px', borderRadius: '8px', background: insight.positive ? '#f0fdf4' : '#fef2f2', border: `1px solid ${insight.positive ? '#86efac' : '#fca5a5'}` }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: insight.positive ? '#065f46' : '#991b1b', marginBottom: '2px' }}>{insight.positive ? insight.positiveTitle : insight.negativeTitle}</div>
+                    <div style={{ fontSize: '12px', color: insight.positive ? '#047857' : '#dc2626' }}>{insight.positive ? insight.positiveText : insight.negativeText}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         {selections.sde_workingCapital && (() => {
           const wc = model.workingCapitalInsights;
           const latestWc = model.workingCapitalSeries[model.workingCapitalSeries.length - 1];
+          const priorYearWc = model.workingCapitalSeries.length >= 13
+            ? model.workingCapitalSeries[model.workingCapitalSeries.length - 13]
+            : null;
+          const latestBalance = model.workingCapitalBalanceSeries[model.workingCapitalBalanceSeries.length - 1];
+          const currentRatio = latestBalance?.currentLiabilities
+            ? latestBalance.currentAssets / latestBalance.currentLiabilities
+            : null;
+          const operatingWcChange = priorYearWc ? wc.currentWc - priorYearWc.operatingWc : null;
           const subheading = (text: string) => (
             <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>{text}</div>
           );
@@ -974,7 +1048,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
             <div className="valuation-print-category">
               {sectionTitle('Working Capital')}
               <ExecutiveSummary>
-                Current operating working capital is {fmt(wc.currentWc)}, averaging {wc.avgWcIntensity12.toFixed(1)}% of revenue over the last 12 months. The latest cash conversion cycle is {wc.currentCcc.toFixed(1)} days versus {wc.priorCcc.toFixed(1)} days a year ago; review the flags for liquidity implications.
+                Current operating working capital is {fmt(wc.currentWc)}, comprising {fmt(latestWc?.ar || 0)} of accounts receivable, {fmt(latestWc?.inventory || 0)} of inventory, and {fmt(Math.abs(latestWc?.ap || 0))} of accounts payable. It averages {wc.avgWcIntensity12.toFixed(1)}% of revenue over the last 12 months{operatingWcChange !== null ? ` and is ${fmt(Math.abs(operatingWcChange))} ${operatingWcChange >= 0 ? 'higher' : 'lower'} than one year ago` : ''}. {latestBalance ? `Total current assets are ${fmt(latestBalance.currentAssets)} against ${fmt(latestBalance.currentLiabilities)} of current liabilities${currentRatio !== null ? `, a ${currentRatio.toFixed(2)}x current ratio` : ''}. ` : ''}The latest cash conversion cycle is {wc.currentCcc.toFixed(1)} days, made up of {latestWc?.dso.toFixed(1) || '0.0'} days sales outstanding, {latestWc?.dio.toFixed(1) || '0.0'} days inventory outstanding, and {latestWc?.dpo.toFixed(1) || '0.0'} days payables outstanding. This is {Math.abs(wc.cccTrend12).toFixed(1)} days {wc.cccTrend12 >= 0 ? 'slower' : 'faster'} than a year ago; the accompanying cash, balance-sheet, and inventory trends show whether that change is funded by liquidity, receivables, inventory, or supplier terms.
               </ExecutiveSummary>
               {subheading('Working Capital Position')}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: '10px', marginBottom: '10px' }}>
@@ -1046,12 +1120,39 @@ export default function ValuationSdeSection5Preview(props: Props) {
           <ValuationBalanceSheetQualityPreview
             monthly={monthly}
             className="valuation-print-category"
-            executiveSummary={`Liquidity coverage is ${(() => {
-              const latest = monthly[monthly.length - 1];
-              const currentAssets = Number(latest?.tca ?? 0);
-              const currentLiabilities = Number(latest?.tcl ?? 0);
-              return currentLiabilities > 0 ? `${(currentAssets / currentLiabilities).toFixed(2)}x` : 'not available';
-            })()} and the balance sheet should be reviewed for leverage, equity cushion, and any integrity gap before finalizing the ${isQoe ? 'quality of earnings' : 'SDE'} conclusion.`}
+            executiveSummary={(() => {
+              const latest: any = monthly[monthly.length - 1] || {};
+              const currentAssets = Number(latest.tca ?? latest.currentAssets ?? 0);
+              const currentLiabilities = Number(latest.tcl ?? latest.currentLiabilities ?? 0);
+              const totalAssets = Number(latest.totalAssets ?? 0);
+              const totalLiabilities = Number(latest.totalLiab ?? 0);
+              const equityFromDetail =
+                Number(latest.ownersCapital ?? 0) +
+                Number(latest.ownersDraw ?? 0) +
+                Number(latest.commonStock ?? 0) +
+                Number(latest.preferredStock ?? 0) +
+                Number(latest.retainedEarnings ?? 0) +
+                Number(latest.additionalPaidInCapital ?? 0) +
+                Number(latest.treasuryStock ?? 0);
+              const totalEquity = Number(latest.totalEquity ?? equityFromDetail);
+              const currentRatio = currentLiabilities > 0 ? currentAssets / currentLiabilities : null;
+              const debtToEquity = totalEquity > 0 ? totalLiabilities / totalEquity : null;
+              const equityRatio = totalAssets > 0 ? totalEquity / totalAssets : null;
+              const integrityGap = totalAssets > 0
+                ? Math.abs(totalAssets - (totalLiabilities + totalEquity)) / totalAssets
+                : null;
+              const primaryConcern =
+                currentRatio !== null && currentRatio < 1.2
+                  ? 'Liquidity coverage is below the 1.20x target and should be evaluated against near-term obligations.'
+                  : debtToEquity !== null && debtToEquity > 2
+                    ? 'Leverage exceeds the 2.00x target and may constrain deal structure or valuation confidence.'
+                    : equityRatio !== null && equityRatio < 0.25
+                      ? 'The equity cushion is below the 25.0% target, reducing protection against operating volatility.'
+                      : integrityGap !== null && integrityGap > 0.01
+                        ? 'The balance-sheet integrity gap exceeds the 1.00% tolerance and should be reconciled before relying on the analysis.'
+                        : 'The balance-sheet scorecard is within its stated targets, supporting the financial position used in the analysis.';
+              return `The business reports ${fmt(currentAssets)} of current assets against ${fmt(currentLiabilities)} of current liabilities${currentRatio !== null ? `, resulting in a ${currentRatio.toFixed(2)}x current ratio` : ''}. Total assets are ${fmt(totalAssets)}, funded by ${fmt(totalLiabilities)} of liabilities and ${fmt(totalEquity)} of equity${debtToEquity !== null ? `, a ${debtToEquity.toFixed(2)}x debt-to-equity ratio` : ''}${equityRatio !== null ? ` and a ${(equityRatio * 100).toFixed(1)}% equity cushion` : ''}. Cash on hand is ${fmt(Number(latest.cash ?? 0))}, while accounts receivable is ${fmt(Number(latest.ar ?? 0))}; the trend charts show whether liquidity is being supported by cash or absorbed in receivables. ${integrityGap !== null ? `The balance-sheet integrity gap is ${(integrityGap * 100).toFixed(2)}%. ` : ''}${primaryConcern}`;
+            })()}
           />
         )}
       </div>

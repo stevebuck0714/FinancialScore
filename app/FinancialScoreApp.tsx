@@ -44,6 +44,7 @@ import { getOverviewPrintOptions } from '@/lib/operations/overview-print-options
 import { waitForNextAuthSession } from '@/lib/auth/wait-for-nextauth-session';
 import { requiresInitialPasswordChange } from '@/lib/auth/initial-password';
 import { calculateEbitda } from '@/lib/financial/ebitda';
+import { buildCashFlowMetricInsights, buildCashFlowMetricSeries } from '@/lib/financial/cash-flow-metrics';
 import { calculateOperatingWorkingCapital } from '@/lib/financial/operating-working-capital';
 import CombinedEntityFinancialStatements from '@/app/components/financial/CombinedEntityFinancialStatements';
 
@@ -23548,6 +23549,27 @@ function FinancialScorePage() {
               }
               const topBucketAmount = breakdownTotals.size > 0 ? Math.max(...Array.from(breakdownTotals.values())) : 0;
               const topBucketSharePct = breakdownTotal > 0 ? (topBucketAmount / breakdownTotal) * 100 : null;
+              const topBucketShareSeries = revenueQualitySeries.map((row, idx) => {
+                if (idx < 11) return { month: row.month, value: 0, hasData: false };
+                const rollingTotals = new Map<string, number>();
+                let rollingTotal = 0;
+                for (const sourceRow of monthly.slice(-36).slice(idx - 11, idx + 1)) {
+                  const breakdown = (sourceRow as any)?.revenueBreakdown;
+                  if (!breakdown || typeof breakdown !== 'object') continue;
+                  for (const [key, raw] of Object.entries(breakdown as Record<string, unknown>)) {
+                    const value = Number(raw) || 0;
+                    if (value <= 0) continue;
+                    rollingTotals.set(key, (rollingTotals.get(key) || 0) + value);
+                    rollingTotal += value;
+                  }
+                }
+                const largestBucket = rollingTotals.size > 0 ? Math.max(...rollingTotals.values()) : 0;
+                return {
+                  month: row.month,
+                  value: rollingTotal > 0 ? (largestBucket / rollingTotal) * 100 : 0,
+                  hasData: rollingTotal > 0,
+                };
+              });
 
               const volatilityInputs = revenueQualitySeries.slice(-12).map((r) => r.revenue);
               const meanRevenue = safeAvg(volatilityInputs);
@@ -23653,6 +23675,7 @@ function FinancialScorePage() {
                 arGrowth,
                 arRevenueSpread,
                 topBucketSharePct,
+                topBucketShareSeries,
                 revenueToCashGapSeries,
                 dsoMiniSeries,
                 arRevenueSpreadSeries,
@@ -24007,6 +24030,8 @@ function FinancialScorePage() {
                 };
               });
             })();
+            const cashFlowMetricSeries = buildCashFlowMetricSeries(monthly);
+            const cashFlowMetricInsights = buildCashFlowMetricInsights(cashFlowMetricSeries);
 
             const cashFlowQualityInsights = (() => {
               const safeAvg = (values: number[]) => values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
@@ -24929,10 +24954,7 @@ function FinancialScorePage() {
                 {sdeModuleTab === 'revenue-quality' && (
                 <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Revenue Quality</h2>
-                  <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
-                    Buyer-focused revenue reliability checks using monthly financial data, with deterministic signal rules.
-                  </p>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>Revenue Quality</h2>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px' }}>
                     <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
@@ -25445,9 +25467,9 @@ function FinancialScorePage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <LineChart
-                    title="Revenue-to-Cash Gap % (Last 36 Months)"
-                    data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.gapPct }))}
-                    color="#ef4444"
+                    title="Top Revenue Bucket % (Proxy)"
+                    data={revenueQualityInsights.topBucketShareSeries.filter((row) => row.hasData).map((row) => ({ month: row.month, value: row.value }))}
+                    color="#8b5cf6"
                     compact
                     formatter={(v) => `${v.toFixed(1)}%`}
                   />
@@ -25472,7 +25494,7 @@ function FinancialScorePage() {
                 {sdeModuleTab === 'customer-quality' && (
                 <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Customer Quality</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>Customer Quality</h2>
                   <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
                     Customer concentration and dependency risk is handled with financial proxies today, with customer-level operational feeds as optional future enhancement.
                   </p>
@@ -25740,7 +25762,7 @@ function FinancialScorePage() {
                 {sdeModuleTab === 'working-capital' && (
                 <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '6px 12px 12px 12px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>SDE Module: Working Capital</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>Working Capital</h2>
                   <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5, marginBottom: '8px' }}>
                     Buyer-oriented working capital view showing current position, cash conversion cycle, and cash tied up in operations.
                   </p>
@@ -26205,7 +26227,7 @@ function FinancialScorePage() {
                 {sdeModuleTab === 'cash-flow-quality' && (
                 <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Cash Flow Quality</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>Cash Flow Quality</h2>
                   <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
                     Cash-flow durability lens focused on conversion quality, maintenance CapEx requirements, and free cash flow resilience.
                   </p>
@@ -26435,12 +26457,80 @@ function FinancialScorePage() {
                     formatter={(v) => formatCompactDollar(v)}
                   />
                 </div>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: '0 0 10px' }}>Cash Flow Metrics</h3>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ textAlign: 'left', padding: '8px 10px', color: '#64748b', minWidth: '180px' }}>Metric</th>
+                          {cashFlowMetricSeries.map((row) => (
+                            <th key={row.month} style={{ textAlign: 'right', padding: '8px 10px', color: '#64748b', minWidth: '86px' }}>{row.month}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          { label: 'Cash Flow Margin (%)', value: (row: typeof cashFlowMetricSeries[number]) => `${row.cashFlowMargin.toFixed(1)}%` },
+                          { label: 'Days Cash on Hand', value: (row: typeof cashFlowMetricSeries[number]) => `${row.daysCashOnHand.toFixed(0)} days` },
+                          { label: 'Cash Conversion Rate', value: (row: typeof cashFlowMetricSeries[number]) => row.cashConversionRate === null ? 'N/A' : `${row.cashConversionRate.toFixed(0)}%` },
+                          { label: 'DIO (Days Inventory Outstanding)', value: (row: typeof cashFlowMetricSeries[number]) => row.dio === null ? 'N/A days' : `${row.dio.toFixed(0)} days` },
+                          { label: 'DSO (Days Sales Outstanding)', value: (row: typeof cashFlowMetricSeries[number]) => row.dso === null ? 'N/A days' : `${row.dso.toFixed(0)} days` },
+                          { label: 'DPO (Days Payables Outstanding)', value: (row: typeof cashFlowMetricSeries[number]) => row.dpo === null ? 'N/A days' : `${row.dpo.toFixed(0)} days` },
+                          { label: 'Cash Conversion Cycle (CCC)', value: (row: typeof cashFlowMetricSeries[number]) => row.ccc === null ? 'N/A days' : `${row.ccc.toFixed(0)} days` },
+                        ].map((metric) => (
+                          <tr key={metric.label} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px 10px', color: '#475569', fontWeight: metric.label.includes('CCC') ? 700 : 400 }}>{metric.label}</td>
+                            {cashFlowMetricSeries.map((row) => (
+                              <td key={row.month} style={{ padding: '8px 10px', textAlign: 'right', color: '#1e293b' }}>{metric.value(row)}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: '0 0 10px' }}>Cash Flow Insights</h3>
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    {[
+                      {
+                        positive: cashFlowMetricInsights.totalOperatingCashFlow > 0,
+                        positiveTitle: '✓ Positive Operating Cash Flow',
+                        negativeTitle: '⚠️ Negative Operating Cash Flow',
+                        positiveText: `The company generated ${formatCompactDollar(cashFlowMetricInsights.totalOperatingCashFlow)} in cash from operations over the last 12 months, indicating healthy operational performance.`,
+                        negativeText: `The company consumed ${formatCompactDollar(Math.abs(cashFlowMetricInsights.totalOperatingCashFlow))} in cash from operations over the last 12 months, which may indicate operational challenges.`,
+                      },
+                      {
+                        positive: cashFlowMetricInsights.totalFreeCashFlow > 0,
+                        positiveTitle: '✓ Positive Free Cash Flow',
+                        negativeTitle: '⚠️ Negative Free Cash Flow',
+                        positiveText: `After capital expenditures, the company has ${formatCompactDollar(cashFlowMetricInsights.totalFreeCashFlow)} in free cash flow available for growth, debt reduction, or distributions.`,
+                        negativeText: `Capital expenditures exceed operating cash flow by ${formatCompactDollar(Math.abs(cashFlowMetricInsights.totalFreeCashFlow))}, requiring external financing.`,
+                      },
+                      {
+                        positive: cashFlowMetricInsights.averageCashFlowMargin > 15,
+                        positiveTitle: '✓ Strong Cash Flow Margin',
+                        negativeTitle: cashFlowMetricInsights.averageCashFlowMargin > 0 ? '⚠️ Moderate Cash Flow Margin' : '⚠️ Negative Cash Flow Margin',
+                        positiveText: `At ${cashFlowMetricInsights.averageCashFlowMargin.toFixed(1)}%, the company is effectively converting revenue to operating cash flow, demonstrating strong operational efficiency.`,
+                        negativeText: cashFlowMetricInsights.averageCashFlowMargin > 0
+                          ? `The cash flow margin of ${cashFlowMetricInsights.averageCashFlowMargin.toFixed(1)}% suggests room for improvement in converting revenue to cash. Focus on working capital management and expense control.`
+                          : 'The negative cash flow margin indicates the business is consuming cash faster than generating it from revenue. Immediate attention to cash management is required.',
+                      },
+                    ].map((insight) => (
+                      <div key={insight.positiveTitle} style={{ padding: '12px', borderRadius: '8px', background: insight.positive ? '#f0fdf4' : '#fef2f2', border: `1px solid ${insight.positive ? '#86efac' : '#fca5a5'}` }}>
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: insight.positive ? '#065f46' : '#991b1b', marginBottom: '3px' }}>{insight.positive ? insight.positiveTitle : insight.negativeTitle}</div>
+                        <div style={{ fontSize: '13px', color: insight.positive ? '#047857' : '#dc2626' }}>{insight.positive ? insight.positiveText : insight.negativeText}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 </>
                 )}
                 {sdeModuleTab === 'balance-sheet-quality' && (
                 <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Balance Sheet Quality</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>Balance Sheet Quality</h2>
                   <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
                     Balance-sheet validation checks liquidity, leverage, equity cushion, and data integrity to validate how aggressive the SDE multiple should be.
                   </p>

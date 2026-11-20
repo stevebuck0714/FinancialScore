@@ -1,4 +1,5 @@
 import type { MonthlyDataRow } from '@/app/types';
+import { buildCashFlowMetricInsights, buildCashFlowMetricSeries } from '@/lib/financial/cash-flow-metrics';
 import { calculateOperatingWorkingCapital } from '@/lib/financial/operating-working-capital';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 
@@ -38,6 +39,8 @@ export type SdeValuationPreviewModel = {
   workingCapitalInsights: ReturnType<typeof buildWorkingCapitalInsights>;
   cashFlowQualitySeries: ReturnType<typeof buildCashFlowQualitySeries>;
   cashFlowQualityInsights: ReturnType<typeof buildCashFlowQualityInsights>;
+  cashFlowMetricSeries: ReturnType<typeof buildCashFlowMetricSeries>;
+  cashFlowMetricInsights: ReturnType<typeof buildCashFlowMetricInsights>;
 };
 
 function getYearFromMonthValue(monthValue: unknown): number | null {
@@ -299,6 +302,8 @@ export function buildSdeValuationPreviewModel(params: {
     cashFlowQualitySeries,
     sdeSectorBenchmarks,
   );
+  const cashFlowMetricSeries = buildCashFlowMetricSeries(monthly);
+  const cashFlowMetricInsights = buildCashFlowMetricInsights(cashFlowMetricSeries);
 
   return {
     formatDollars,
@@ -364,6 +369,8 @@ export function buildSdeValuationPreviewModel(params: {
     workingCapitalInsights,
     cashFlowQualitySeries,
     cashFlowQualityInsights,
+    cashFlowMetricSeries,
+    cashFlowMetricInsights,
   };
 }
 
