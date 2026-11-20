@@ -44,6 +44,7 @@ import { getOverviewPrintOptions } from '@/lib/operations/overview-print-options
 import { waitForNextAuthSession } from '@/lib/auth/wait-for-nextauth-session';
 import { requiresInitialPasswordChange } from '@/lib/auth/initial-password';
 import { calculateEbitda } from '@/lib/financial/ebitda';
+import { calculateOperatingWorkingCapital } from '@/lib/financial/operating-working-capital';
 import CombinedEntityFinancialStatements from '@/app/components/financial/CombinedEntityFinancialStatements';
 
 const PERFORMANCE_ANALYSIS_TABS = [
@@ -13355,7 +13356,12 @@ function FinancialScorePage() {
       const avgAp = hasWcData ? avg(recent12.map((m: any) => Number(m?.ap) || 0)) : Number.NaN;
       const latestMo = recent12.at(-1) as any;
       const currentWorkingCapital = hasWcData
-        ? (Number(latestMo?.ar) || 0) + (Number(latestMo?.inventory) || 0) - (Number(latestMo?.ap) || 0)
+        ? calculateOperatingWorkingCapital({
+            accountsReceivable: latestMo?.ar,
+            inventory: latestMo?.inventory,
+            accountsPayable: latestMo?.ap,
+            accruedOperatingLiabilities: latestMo?.otherCL,
+          })
         : Number.NaN;
       const latestTrend = trendData.at(-1);
       const ccc = latestTrend
@@ -13561,7 +13567,12 @@ function FinancialScorePage() {
       const hasWcData = recent12.length > 0;
       const latestMo = recent12.at(-1) as any;
       const currentWorkingCapital = hasWcData
-        ? (Number(latestMo?.ar) || 0) + (Number(latestMo?.inventory) || 0) - (Number(latestMo?.ap) || 0)
+        ? calculateOperatingWorkingCapital({
+            accountsReceivable: latestMo?.ar,
+            inventory: latestMo?.inventory,
+            accountsPayable: latestMo?.ap,
+            accruedOperatingLiabilities: latestMo?.otherCL,
+          })
         : Number.NaN;
       const latestTrend = trendData.at(-1);
       const ccc = latestTrend
@@ -23780,7 +23791,12 @@ function FinancialScorePage() {
                 const inventory = Number((m as any)?.inventory) || 0;
                 const ap = Number((m as any)?.ap) || 0;
                 const accruedOpLiabilities = Number((m as any)?.otherCL) || 0;
-                const operatingWc = ar + inventory - ap - accruedOpLiabilities;
+                const operatingWc = calculateOperatingWorkingCapital({
+                  accountsReceivable: ar,
+                  inventory,
+                  accountsPayable: ap,
+                  accruedOperatingLiabilities: accruedOpLiabilities,
+                });
                 const wcIntensityPct = revenue !== 0 ? (operatingWc / Math.abs(revenue)) * 100 : 0;
                 const monthDate = (m as any)?.month ? new Date(String((m as any).month)) : null;
                 const daysInMonth =
@@ -23809,6 +23825,30 @@ function FinancialScorePage() {
                 };
               });
             })();
+            const workingCapitalBalanceSeries = monthly.slice(-36).map((m) => {
+              const currentAssets =
+                Number((m as any)?.tca) ||
+                (Number((m as any)?.cash) || 0) +
+                  (Number((m as any)?.ar) || 0) +
+                  (Number((m as any)?.retainageReceivables) || 0) +
+                  (Number((m as any)?.contractAssets) || 0) +
+                  (Number((m as any)?.inventory) || 0) +
+                  (Number((m as any)?.otherCA) || 0);
+              const currentLiabilities = Math.abs(
+                Number((m as any)?.tcl) ||
+                  (Number((m as any)?.ap) || 0) +
+                    (Number((m as any)?.loc) || 0) +
+                    (Number((m as any)?.contractLiabilities) || 0) +
+                    (Number((m as any)?.otherCL) || 0),
+              );
+              return {
+                month: String((m as any)?.month || ''),
+                cash: Number((m as any)?.cash) || 0,
+                inventory: Number((m as any)?.inventory) || 0,
+                currentAssets,
+                currentLiabilities,
+              };
+            });
 
             const workingCapitalInsights = (() => {
               const safeAvg = (values: number[]) => values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
@@ -23835,7 +23875,7 @@ function FinancialScorePage() {
               const annualRevenue = last12.reduce((sum, row) => sum + row.revenue, 0);
               const annualCogs = last12.reduce((sum, row) => sum + row.cogs, 0);
               const dailyRevenue = annualRevenue / 365;
-              const dailyCogs = annualCogs / 365;
+              const dailyCogs = Math.abs(annualCogs) / 365;
               const arTiedUp = (latest ? latest.dso : 0) * dailyRevenue;
               const inventoryTiedUp = (latest ? latest.dio : 0) * dailyCogs;
               const supplierFinancing = (latest ? latest.dpo : 0) * dailyCogs;
@@ -26133,6 +26173,31 @@ function FinancialScorePage() {
                     color="#f59e0b"
                     compact
                     formatter={(v) => `${v.toFixed(0)} days`}
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '12px' }}>
+                  <LineChart
+                    title="Cash Trend (Last 36 Months)"
+                    data={workingCapitalBalanceSeries.map((row) => ({ month: row.month, value: row.cash }))}
+                    color="#10b981"
+                    compact
+                    formatter={(v) => formatCompactDollar(v)}
+                  />
+                  <LineChart
+                    title="Current Assets vs Liabilities (Last 36 Months)"
+                    data={workingCapitalBalanceSeries.map((row) => ({ month: row.month, value: row.currentAssets }))}
+                    color="#2563eb"
+                    compact
+                    formatter={(v) => formatCompactDollar(v)}
+                    goalLineData={workingCapitalBalanceSeries.map((row) => row.currentLiabilities)}
+                    comparisonLabel="Liabilities"
+                  />
+                  <LineChart
+                    title="Inventory Trend (Last 36 Months)"
+                    data={workingCapitalBalanceSeries.map((row) => ({ month: row.month, value: row.inventory }))}
+                    color="#f59e0b"
+                    compact
+                    formatter={(v) => formatCompactDollar(v)}
                   />
                 </div>
                 </>

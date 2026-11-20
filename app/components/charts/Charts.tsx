@@ -118,7 +118,7 @@ function ChartHeaderLink({
   );
 }
 
-export function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, showDescriptionButton, onDescriptionClick, labelFormat, goalLineData, showTrendLine }: { 
+export function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, showDescriptionButton, onDescriptionClick, labelFormat, goalLineData, comparisonLabel = 'Goal', showTrendLine }: {
   title: string; 
   data: Array<any>;
   valueKey?: string;
@@ -134,6 +134,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   onDescriptionClick?: () => void;
   labelFormat?: 'monthly' | 'quarterly' | 'semi-annual' | 'm-yy-adaptive';
   goalLineData?: number[];
+  comparisonLabel?: string;
   showTrendLine?: boolean;
 }) {
   const MAX_MONTHS = 36;
@@ -428,7 +429,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
                 fontWeight="600"
                 textAnchor="end"
               >
-                Goal
+                {comparisonLabel}
               </text>
             </>
           );

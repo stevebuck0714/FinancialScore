@@ -1,4 +1,5 @@
 import type { MonthlyDataRow } from '@/app/types';
+import { calculateOperatingWorkingCapital } from '@/lib/financial/operating-working-capital';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 
 export type SdeValuationPreviewModel = {
@@ -673,7 +674,12 @@ function buildWorkingCapitalSeries(monthly: MonthlyDataRow[]) {
     const inventory = Number((m as any)?.inventory) || 0;
     const ap = Number((m as any)?.ap) || 0;
     const accruedOpLiabilities = Number((m as any)?.otherCL) || 0;
-    const operatingWc = ar + inventory - ap - accruedOpLiabilities;
+    const operatingWc = calculateOperatingWorkingCapital({
+      accountsReceivable: ar,
+      inventory,
+      accountsPayable: ap,
+      accruedOperatingLiabilities: accruedOpLiabilities,
+    });
     const wcIntensityPct = revenue !== 0 ? (operatingWc / Math.abs(revenue)) * 100 : 0;
     const monthDate = (m as any)?.month ? new Date(String((m as any).month)) : null;
     const daysInMonth =

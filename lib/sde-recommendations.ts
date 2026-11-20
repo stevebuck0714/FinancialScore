@@ -1,5 +1,6 @@
 import { getSdeSectorBenchmarks } from './sde-sector-benchmarks';
 import { calculateEbitda } from '@/lib/financial/ebitda';
+import { calculateOperatingWorkingCapital } from '@/lib/financial/operating-working-capital';
 
 export type SdeRecommendationPriority = 'High' | 'Medium' | 'Low';
 export type SdeRecommendationModule = 'Revenue Quality' | 'Working Capital' | 'Cash Flow Quality';
@@ -236,7 +237,12 @@ export function computeSdeRecommendationsFromMonthly(
   ];
 
   const wcSeries = recent24.map((row) => {
-    const operatingWc = row.ar + row.inventory - row.ap - row.otherCL;
+    const operatingWc = calculateOperatingWorkingCapital({
+      accountsReceivable: row.ar,
+      inventory: row.inventory,
+      accountsPayable: row.ap,
+      accruedOperatingLiabilities: row.otherCL,
+    });
     const wcIntensityPct = row.revenue !== 0 ? (operatingWc / Math.abs(row.revenue)) * 100 : 0;
     const daysInMonth = daysInMonthFromLabel(row.month);
     const dso = row.ar > 0 && row.revenue > 0 ? (row.ar / row.revenue) * daysInMonth : 0;
