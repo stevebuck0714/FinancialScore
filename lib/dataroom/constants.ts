@@ -47,7 +47,9 @@ export const DATAROOM_DEFAULT_FOLDERS: DataRoomFolder[] = [
   { id: 'misc-strategic', key: 'misc_strategic', name: 'Miscellaneous / Strategic', order: 12 },
   { id: 'loans-leases', key: 'loans_leases', name: 'Loans & Leases', order: 13 },
   { id: 'bank-statements', key: 'bank_statements', name: 'Bank Statements', order: 14 },
+  { id: 'credit-card-statements', key: 'credit_card_statements', name: 'Credit Card Statements', order: 15 },
 ];
 
 export const DATAROOM_BANK_STATEMENTS_FOLDER_ID = 'bank-statements';
+export const DATAROOM_CREDIT_CARD_STATEMENTS_FOLDER_ID = 'credit-card-statements';
 

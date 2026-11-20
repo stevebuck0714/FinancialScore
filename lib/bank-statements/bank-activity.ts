@@ -74,6 +74,9 @@ export type BankTransactionInput = {
   location: Record<string, unknown> | null;
 };
 
+/** A posted credit-card transaction. Plaid's native positive-charge convention is retained. */
+export type CreditCardTransactionInput = Omit<BankTransactionInput, 'amount'> & { amount: number };
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const hasValue = (o: Record<string, unknown> | null | undefined) => !!o && Object.values(o).some((v) => v !== null && v !== undefined && v !== '');
@@ -91,6 +94,43 @@ export function bankTransactionsFromAssetAccount(account: AssetReportAccount, in
       date: t.date,
       dateTransacted: t.date_transacted || null,
       amount: round2(-t.amount),
+      currency: t.iso_currency_code || t.unofficial_currency_code || null,
+      description: t.original_description || null,
+      merchantName: t.merchant_name || null,
+      category: t.category || [],
+      categoryId: t.category_id || null,
+      creditCategoryPrimary: t.credit_category?.primary || null,
+      creditCategoryDetailed: t.credit_category?.detailed || null,
+      checkNumber: t.check_number || null,
+      transactionType: t.transaction_type || null,
+      payer: t.payment_meta?.payer || null,
+      payee: t.payment_meta?.payee || null,
+      byOrderOf: t.payment_meta?.by_order_of || null,
+      paymentMethod: t.payment_meta?.payment_method || null,
+      paymentProcessor: t.payment_meta?.payment_processor || null,
+      referenceNumber: t.payment_meta?.reference_number || null,
+      ppdId: t.payment_meta?.ppd_id || null,
+      reason: t.payment_meta?.reason || null,
+      location: hasValue(t.location) ? t.location! : null,
+    }));
+}
+
+export function creditCardTransactionsFromAssetAccount(
+  account: AssetReportAccount,
+  institution: string | null,
+): CreditCardTransactionInput[] {
+  const accountLast4 = account.mask ? account.mask.slice(-4) : null;
+  const accountName = account.name || account.official_name || null;
+  return account.transactions
+    .filter((t) => !t.pending)
+    .map((t) => ({
+      externalId: t.transaction_id,
+      institution,
+      accountLast4,
+      accountName,
+      date: t.date,
+      dateTransacted: t.date_transacted || null,
+      amount: round2(t.amount),
       currency: t.iso_currency_code || t.unofficial_currency_code || null,
       description: t.original_description || null,
       merchantName: t.merchant_name || null,

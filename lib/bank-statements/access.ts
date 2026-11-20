@@ -1,6 +1,6 @@
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
-import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
+import { DATAROOM_BANK_STATEMENTS_FOLDER_ID, DATAROOM_CREDIT_CARD_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
 
@@ -49,6 +49,40 @@ export async function requireStatementUploadAccess(companyId: string) {
   });
   if (!caps.upload && !caps.manage) {
     throw new BankStatementsAccessError('Forbidden: Data Room upload access required', 403);
+  }
+  return context;
+}
+
+/** The caller must be able to upload to this company's Data Room Credit Card Statements folder. */
+export async function requireCreditCardUploadAccess(companyId: string) {
+  const context = await requireAuth();
+  if (!companyId) throw new BankStatementsAccessError('companyId is required', 400);
+  if (!(await validateCompanyAccess(companyId))) throw new BankStatementsAccessError('Forbidden', 403);
+
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { userDefinedAllocations: true } });
+  const ready = getDataRoomState(company?.userDefinedAllocations).folders.some(
+    (f: { id?: string }) => String(f?.id) === DATAROOM_CREDIT_CARD_STATEMENTS_FOLDER_ID,
+  );
+  if (!ready) throw new BankStatementsAccessError('Enable the Data Room for this company before importing credit-card activity.', 409);
+
+  const caps = await resolveDataRoomCapabilities({
+    userId: context.userId,
+    role: context.role,
+    companyId,
+    userDefinedAllocations: company?.userDefinedAllocations,
+    folderId: DATAROOM_CREDIT_CARD_STATEMENTS_FOLDER_ID,
+  });
+  if (!caps.upload && !caps.manage) {
+    throw new BankStatementsAccessError('Forbidden: Data Room upload access required', 403);
+  }
+  return context;
+}
+
+/** Only the Corelytics team may classify transactions as QoE adjustment support. */
+export async function requireCreditCardReviewAccess(companyId: string) {
+  const context = await requireCreditCardUploadAccess(companyId);
+  if (!canReviewStatementExports(context.role)) {
+    throw new BankStatementsAccessError('Only the Corelytics team can review credit-card activity.', 403);
   }
   return context;
 }

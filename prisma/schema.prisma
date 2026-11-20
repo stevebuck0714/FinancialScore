@@ -179,6 +179,8 @@ model Company {
   documents                       CompanyDocument[]
   dataRoomDocuments               DataRoomDocument[]
   bankTransactions                BankTransaction[]
+  creditCardImports               CreditCardImport[]
+  creditCardTransactions          CreditCardTransaction[]
   cashProofEngagements            CashProofEngagement[]
   documentChunks                  CompanyDocumentChunk[]
   loans                           Loan[]
@@ -516,6 +518,7 @@ model DataRoomDocument {
   company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   uploadedBy       User              @relation("DataRoomDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
   bankTransactions BankTransaction[]
+  creditCardImport CreditCardImport?
 
   @@index([companyId])
   @@index([uploadedByUserId])
@@ -568,6 +571,64 @@ model BankTransaction {
 
   @@unique([dataRoomDocumentId, externalId])
   @@index([companyId, accountLast4, date])
+}
+
+// One-time company card import. The Plaid Item is deleted immediately after
+// its Asset Report has been saved; no Plaid token or ongoing connection exists.
+model CreditCardImport {
+  id                 String   @id @default(cuid())
+  companyId          String
+  importedByUserId   String
+  dataRoomDocumentId String   @unique
+  source             String   @default("PLAID_ASSETS")
+  institution        String?
+  requestedDays      Int      @default(730)
+  coverageStart      String?
+  coverageEnd        String?
+  accountCount       Int      @default(0)
+  transactionCount   Int      @default(0)
+  importedAt         DateTime @default(now())
+
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dataRoomDocument DataRoomDocument @relation(fields: [dataRoomDocumentId], references: [id], onDelete: Cascade)
+  transactions     CreditCardTransaction[]
+
+  @@index([companyId, importedAt(sort: Desc)])
+}
+
+// Credit-card spending is intentionally distinct from BankTransaction, whose
+// sign convention and downstream logic are for cash-proof depository accounts.
+model CreditCardTransaction {
+  id                 String   @id @default(cuid())
+  creditCardImportId String
+  companyId          String
+  externalId         String
+  accountLast4       String?
+  accountName        String?
+  date               String
+  dateTransacted     String?
+  /// Plaid sign convention: positive = card charge; negative = payment, refund, or credit.
+  amount             Float
+  currency           String?
+  description        String?
+  merchantName       String?
+  category           String[]
+  categoryId         String?
+  creditCategoryPrimary  String?
+  creditCategoryDetailed String?
+  reviewClassification String?
+  reviewNote           String?
+  reviewedByUserId     String?
+  reviewedAt           DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  creditCardImport CreditCardImport @relation(fields: [creditCardImportId], references: [id], onDelete: Cascade)
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([creditCardImportId, externalId])
+  @@index([companyId, accountLast4, date])
+  @@index([companyId, reviewClassification])
 }
 
 // SBA cash proof: book cash per account per month, tied to bank statements

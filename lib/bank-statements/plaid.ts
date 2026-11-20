@@ -1,9 +1,11 @@
 import { addEstCalendarDays, formatEstDate, yearsAgoEstDate } from '@/lib/time/eastern';
 import {
   bankTransactionsFromAssetAccount,
+  creditCardTransactionsFromAssetAccount,
   monthlyActivityFromAssetAccount,
   type AssetReportAccount,
   type BankTransactionInput,
+  type CreditCardTransactionInput,
 } from './bank-activity';
 import type { BankActivityMonth } from './providers';
 import type { FetchedStatement } from './store';
@@ -106,6 +108,19 @@ export async function createPlaidLinkToken(params: { userId: string; email: stri
   }
 }
 
+/** A one-time Assets connection limited to company credit cards. It never requests statement PDFs. */
+export async function createPlaidCreditCardLinkToken(params: { userId: string; email: string | null }): Promise<string> {
+  const json = await plaidJson<{ link_token: string }>('/link/token/create', {
+    client_name: 'Corelytics',
+    language: 'en',
+    country_codes: ['US'],
+    user: { client_user_id: params.userId, ...(params.email ? { email_address: params.email } : {}) },
+    products: ['assets'],
+    account_filters: { credit: { account_subtypes: ['credit card'] } },
+  });
+  return json.link_token;
+}
+
 type StatementsList = {
   institution_name: string | null;
   accounts: Array<{
@@ -149,9 +164,18 @@ export type PlaidImportOutcome<S, A> = {
   bankDataNote: string | null;
 };
 
+export type PlaidCreditCardImport = {
+  institution: string | null;
+  accounts: string[];
+  transactions: CreditCardTransactionInput[];
+  coverageStart: string | null;
+  coverageEnd: string | null;
+};
+
 const ASSET_REPORT_DAYS = 730;
 const ASSET_REPORT_POLL_MS = 3_000;
 const isDepository = (a: { type: string }) => a.type === 'depository';
+const isCredit = (a: { type: string }) => a.type === 'credit';
 const accountLabel = (name: string | null, mask: string | null) => [name, mask ? `x${mask.slice(-4)}` : null].filter(Boolean).join(' ');
 
 // Statements is "required if supported": at a bank without statements the user is never
@@ -272,6 +296,52 @@ export async function importPlaidBankData<S, A>(
     }
     await plaidRequest('/item/remove', { access_token: accessToken }).catch((e) =>
       console.error('Plaid /item/remove failed; remove the Item from the Plaid dashboard:', e),
+    );
+  }
+}
+
+/**
+ * Pulls up to 730 days of posted company-card activity once, then removes both
+ * the Asset Report and Item in finally. No Plaid access token is stored.
+ */
+export async function importPlaidCreditCardData(
+  publicToken: string,
+  assetReportDeadline: number,
+): Promise<PlaidCreditCardImport> {
+  const { access_token: accessToken } = await plaidJson<{ access_token: string }>('/item/public_token/exchange', {
+    public_token: publicToken,
+  });
+  let assetReportToken: string | null = null;
+  try {
+    assetReportToken = (
+      await plaidJson<{ asset_report_token: string }>('/asset_report/create', {
+        access_tokens: [accessToken],
+        days_requested: ASSET_REPORT_DAYS,
+      })
+    ).asset_report_token;
+    const { report } = await waitForAssetReport(assetReportToken, assetReportDeadline);
+    const institution = report.items[0]?.institution_name || null;
+    const accounts = report.items.flatMap((item) => item.accounts).filter(isCredit);
+    if (accounts.length === 0) {
+      throw new PlaidRequestError('No credit card accounts were returned. Select company credit cards in Plaid and try again.', 'NO_CREDIT_ACCOUNTS');
+    }
+    const transactions = accounts.flatMap((account) => creditCardTransactionsFromAssetAccount(account, institution));
+    const dates = transactions.map((transaction) => transaction.date).filter(Boolean).sort();
+    return {
+      institution,
+      accounts: accounts.map((account) => accountLabel(account.name || account.official_name, account.mask)),
+      transactions,
+      coverageStart: dates[0] || null,
+      coverageEnd: dates[dates.length - 1] || null,
+    };
+  } finally {
+    if (assetReportToken) {
+      await plaidRequest('/asset_report/remove', { asset_report_token: assetReportToken }).catch((e) =>
+        console.error('Plaid credit-card /asset_report/remove failed:', e),
+      );
+    }
+    await plaidRequest('/item/remove', { access_token: accessToken }).catch((e) =>
+      console.error('Plaid credit-card /item/remove failed; remove the Item from the Plaid dashboard:', e),
     );
   }
 }
