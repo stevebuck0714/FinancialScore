@@ -2509,7 +2509,7 @@ export default function SiteAdminDashboard(props: any) {
 
   const saveServiceAccessEnabledByAdmin = async (
     companyId: string,
-    serviceKey: 'operationalReporting' | 'askCorelytics' | 'expertAnalysis',
+    serviceKey: 'operationalReporting' | 'askCorelytics' | 'expertAnalysis' | 'reportPackages' | 'qualityOfEarnings',
     enabled: boolean,
     label: string,
   ) => {
@@ -10435,8 +10435,10 @@ export default function SiteAdminDashboard(props: any) {
                                             </div>
                                             {renderServiceAccessCard(company, 'operationalReporting', 'Operational Reporting', { background: '#f0fdfa', border: '#99f6e4', heading: '#0f766e' })}
                                             {renderServiceAccessCard(company, 'askCorelytics', 'Ask Corelytics', { background: '#eff6ff', border: '#bfdbfe', heading: '#1d4ed8' })}
+                                            {renderServiceAccessCard(company, 'reportPackages', 'Report Packages', { background: '#f8fafc', border: '#cbd5e1', heading: '#334155' })}
                                             {renderAiUsageCard(company)}
                                             {renderServiceAccessCard(company, 'expertAnalysis', 'Expert Analysis', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
+                                            {renderServiceAccessCard(company, 'qualityOfEarnings', 'Quality of Earnings', { background: '#fdf4ff', border: '#f5d0fe', heading: '#a21caf' })}
                                             <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#5b21b6', margin: 0 }}>Valuation</h6>
                                               {editingValuationPricingByCompany[company.id] ? (
@@ -14242,8 +14244,10 @@ export default function SiteAdminDashboard(props: any) {
                                   </div>
                                   {renderServiceAccessCard(businessCompany, 'operationalReporting', 'Operational Reporting', { background: '#f0fdfa', border: '#99f6e4', heading: '#0f766e' })}
                                   {renderServiceAccessCard(businessCompany, 'askCorelytics', 'Ask Corelytics', { background: '#eff6ff', border: '#bfdbfe', heading: '#1d4ed8' })}
+                                  {renderServiceAccessCard(businessCompany, 'reportPackages', 'Report Packages', { background: '#f8fafc', border: '#cbd5e1', heading: '#334155' })}
                                   {renderAiUsageCard(businessCompany)}
                                   {renderServiceAccessCard(businessCompany, 'expertAnalysis', 'Expert Analysis', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
+                                  {renderServiceAccessCard(businessCompany, 'qualityOfEarnings', 'Quality of Earnings', { background: '#fdf4ff', border: '#f5d0fe', heading: '#a21caf' })}
                                   <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#5b21b6', margin: 0 }}>Valuation</h4>
                                     {editingValuationPricingByCompany[businessCompany.id] ? (

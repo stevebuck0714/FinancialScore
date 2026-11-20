@@ -54,14 +54,13 @@ const PERFORMANCE_ANALYSIS_TABS = [
   { id: 'pa-opportunity-workspace', label: 'Actions & Monitoring' },
 ] as const;
 const VALUATION_TABS = [
-  { id: 'sde', label: 'SDE/QoE Analysis' },
+  { id: 'sde', label: 'SDE ANALYSIS' },
   { id: 'ebitda', label: 'EBITDA ANALYSIS' },
   { id: 'dcf', label: 'DCF ANALYSIS' },
   { id: 'business-overview', label: 'BUSINESS OVERVIEW / MARKET POSITION' },
-  { id: 'valuation-reports', label: 'SDE REPORT' },
-  { id: 'qoe-report', label: 'QOE REPORT' },
+  { id: 'valuation-reports', label: 'SDE REPORTS' },
 ] as const;
-const VALUATION_REPORT_VIEWS = ['valuation-reports', 'qoe-report'] as const;
+const VALUATION_REPORT_VIEWS = ['valuation-reports'] as const;
 const isValuationReportView = (view: string) => (VALUATION_REPORT_VIEWS as readonly string[]).includes(view);
 const QOE_REPORT_TITLE = 'Corelytics QoE Report';
 /** Report sections that fetch their own data mark themselves with `data-report-loading` until ready. */
@@ -389,6 +388,7 @@ const NAVIGABLE_VIEWS = new Set([
   'working-capital',
   'valuation-reports',
   'qoe-report',
+  'quality-of-earnings',
   'valuation',
   'cash-flow',
   'financial-statements',
@@ -1799,7 +1799,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'qoe-report' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'qoe-report' | 'quality-of-earnings' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
   const [valuationBuilderSelections, setValuationBuilderSelections] = useState<Record<string, boolean>>({
     es_enterpriseValueRange: true,
     es_primaryValuationMethod: true,
@@ -2162,6 +2162,7 @@ function FinancialScorePage() {
     if (view === 'custom-print') return 'standard-reports';
     if (isValuationReportView(view)) return 'valuation-reports';
     if (view === 'valuation') return 'valuation';
+    if (view === 'quality-of-earnings' || view === 'qoe-report') return 'valuation';
     if (view.startsWith('pa-')) return 'expert-analysis';
     if (view === 'dataroom') return 'dataroom';
     if (view === 'custom-reports') return 'custom-reports';
@@ -2181,6 +2182,7 @@ function FinancialScorePage() {
     if (section === 'valuation-reports' && allowed.includes('valuation')) return true;
     return false;
   };
+  const isQualityOfEarningsView = currentView === 'quality-of-earnings' || currentView === 'qoe-report';
 
   useEffect(() => {
     if (currentView === 'valuation' || isValuationReportView(currentView)) {
@@ -2396,7 +2398,7 @@ function FinancialScorePage() {
   }, [companies, financialScoreEnabledByCompany, selectedCompanyId]);
   const companyServiceAccess = useMemo(() => {
     if (!selectedCompanyId || !Array.isArray(companies)) {
-      return { operationalReporting: false, askCorelytics: false, expertAnalysis: false };
+      return { operationalReporting: false, askCorelytics: false, expertAnalysis: false, reportPackages: false, qualityOfEarnings: false };
     }
     const allocations = (companies.find((company: any) => company.id === selectedCompanyId) as any)?.userDefinedAllocations || {};
     const isEnabled = (service: any) =>
@@ -2405,11 +2407,15 @@ function FinancialScorePage() {
       operationalReporting: isEnabled(allocations?.operationalReporting),
       askCorelytics: isEnabled(allocations?.askCorelytics),
       expertAnalysis: isEnabled(allocations?.expertAnalysis),
+      reportPackages: isEnabled(allocations?.reportPackages),
+      qualityOfEarnings: isEnabled(allocations?.qualityOfEarnings),
     };
   }, [companies, selectedCompanyId]);
   const isOperationalReportingEnabledByAdmin = companyServiceAccess.operationalReporting;
   const isAskCorelyticsEnabledByAdmin = companyServiceAccess.askCorelytics;
   const isExpertAnalysisEnabledByAdmin = companyServiceAccess.expertAnalysis;
+  const isReportPackagesEnabledByAdmin = companyServiceAccess.reportPackages;
+  const isQualityOfEarningsEnabledByAdmin = companyServiceAccess.qualityOfEarnings;
   const dataRoomSubscriptionStatus = dataRoomState.subscriptionStatus;
   const isDataRoomActive = dataRoomSubscriptionStatus === 'active';
   const digitalPresenceSubscriptionStatus = digitalPresenceState.subscriptionStatus;
@@ -2625,8 +2631,12 @@ function FinancialScorePage() {
       return;
     }
 
-    if (isValuationReportView(view) && !selectedCompanyId) {
+    if ((isValuationReportView(view) || view === 'qoe-report' || view === 'quality-of-earnings') && !selectedCompanyId) {
       alert('Please select a company first.');
+      return;
+    }
+    if ((view === 'quality-of-earnings' || view === 'qoe-report') && !isQualityOfEarningsEnabledByAdmin) {
+      alert('Quality of Earnings is disabled for this company.');
       return;
     }
     if ((view === 'valuation' || isValuationReportView(view)) && !isValuationReportsEnabledByAdmin) {
@@ -5351,7 +5361,7 @@ function FinancialScorePage() {
   useEffect(() => {
     const shouldLoadCustomerQuality =
       isValuationReportView(currentView) ||
-      (currentView === 'valuation' &&
+      ((currentView === 'valuation' || currentView === 'quality-of-earnings') &&
         valuationMethodTab === 'sde' &&
         sdeModuleTab === 'customer-quality');
 
@@ -5384,7 +5394,7 @@ function FinancialScorePage() {
     });
     if (
       isValuationReportView(currentView) ||
-      (currentView === 'valuation' && valuationMethodTab === 'sde' && sdeModuleTab === 'customer-quality')
+      ((currentView === 'valuation' || currentView === 'quality-of-earnings') && valuationMethodTab === 'sde' && sdeModuleTab === 'customer-quality')
     ) {
       customerQualityParams.set('refreshConcentration', '1');
     }
@@ -15345,6 +15355,29 @@ function FinancialScorePage() {
                   {(currentView === 'valuation' || isValuationReportView(currentView)) && '› '}VALUATION
                 </h3>
               )}
+              {hasCompanySectionAccess('valuation') && isQualityOfEarningsEnabledByAdmin && (
+                <h3
+                  onClick={() => {
+                    setValuationMethodTab('sde');
+                    setSdeModuleTab('ebitda-adjustments');
+                    handleNavigation('quality-of-earnings');
+                  }}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: isQualityOfEarningsView ? '#1F70C1' : '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '16px 0 0 0',
+                    cursor: 'pointer',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25',
+                  }}
+                >
+                  {isQualityOfEarningsView && '› '}QUALITY OF EARNINGS
+                </h3>
+              )}
 
               {isDataRoomEnabledByAdmin && hasCompanySectionAccess('dataroom') && (
                 <h3
@@ -15418,7 +15451,7 @@ function FinancialScorePage() {
                 </h3>
               )}
 
-              {hasCompanySectionAccess('standard-reports') && (
+              {hasCompanySectionAccess('standard-reports') && isReportPackagesEnabledByAdmin && (
                 <h3
                   onClick={() => handleNavigation('custom-print')}
                   style={{
@@ -21791,7 +21824,7 @@ function FinancialScorePage() {
                     key={tab.id}
                     type="button"
                     onClick={() => {
-                      if (tab.id === 'valuation-reports' || tab.id === 'qoe-report') {
+                      if (tab.id === 'valuation-reports') {
                         handleNavigation(tab.id);
                       } else {
                         setValuationMethodTab(tab.id);
@@ -21821,6 +21854,98 @@ function FinancialScorePage() {
                 locale={selectedCompany?.locale}
                 baseCurrency={selectedCompany?.baseCurrency}
               />
+            </div>
+          </nav>
+        </div>
+      )}
+
+      {isQualityOfEarningsView && selectedCompanyId && hasCompanySectionAccess('valuation') && isQualityOfEarningsEnabledByAdmin && (
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
+          <nav aria-label="Quality of Earnings" style={{ borderBottom: '1px solid #cbd5e1' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+              {[
+                { id: 'qoe-report', label: 'QOE REPORT' },
+                { id: 'business-overview', label: 'BUSINESS OVERVIEW' },
+              ].map((tab) => {
+                const active = tab.id === 'qoe-report'
+                  ? currentView === 'qoe-report'
+                  : currentView === 'quality-of-earnings' && valuationMethodTab === 'business-overview';
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      if (tab.id === 'qoe-report') {
+                        handleNavigation('qoe-report');
+                      } else {
+                        setValuationMethodTab('business-overview');
+                        handleNavigation('quality-of-earnings');
+                      }
+                    }}
+                    style={{
+                      padding: '10px 14px',
+                      border: 0,
+                      borderBottom: active ? '3px solid #1F70C1' : '3px solid transparent',
+                      marginBottom: '-1px',
+                      background: active ? '#eff6ff' : 'transparent',
+                      color: active ? '#1F70C1' : '#475569',
+                      fontSize: '14px',
+                      textTransform: 'uppercase',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+              <div style={{ marginLeft: 'auto', padding: '6px 0 8px 16px', flexShrink: 0 }}>
+                <PageCurrencyBadge
+                  currency={companyDisplayCurrency}
+                  locale={selectedCompany?.locale}
+                  baseCurrency={selectedCompany?.baseCurrency}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', whiteSpace: 'nowrap', borderTop: '1px solid #e2e8f0' }}>
+              {[
+                { id: 'ebitda-adjustments', label: 'Quality of Earnings' },
+                { id: 'income-statement', label: 'Income Statement' },
+                { id: 'revenue-quality', label: 'Revenue Quality' },
+                { id: 'customer-quality', label: 'Customer Quality' },
+                { id: 'working-capital', label: 'Working Capital' },
+                { id: 'cash-flow-quality', label: 'Cash Flow Quality' },
+                { id: 'balance-sheet-quality', label: 'Balance Sheet Quality' },
+                { id: 'cash-proof', label: 'Cash Proof' },
+                { id: 'bank-statements', label: 'Bank Statements' },
+                { id: 'credit-card-review', label: 'Credit Card Review' },
+              ].map((tab) => {
+                const active = currentView === 'quality-of-earnings' && valuationMethodTab === 'sde' && sdeModuleTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setValuationMethodTab('sde');
+                      setSdeModuleTab(tab.id as typeof sdeModuleTab);
+                      handleNavigation('quality-of-earnings');
+                    }}
+                    style={{
+                      padding: '9px 12px',
+                      border: 0,
+                      borderBottom: active ? '3px solid #1F70C1' : '3px solid transparent',
+                      marginBottom: '-1px',
+                      background: active ? '#eff6ff' : 'transparent',
+                      color: active ? '#1F70C1' : '#475569',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
           </nav>
         </div>
@@ -22022,7 +22147,7 @@ function FinancialScorePage() {
         </div>
       )}
 
-      {currentView === 'qoe-report' && selectedCompanyId && (
+      {currentView === 'qoe-report' && selectedCompanyId && isQualityOfEarningsEnabledByAdmin && (
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '24px 20px 36px 20px' }}>
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
             <div style={{ padding: '26px 28px', background: 'linear-gradient(135deg, #0f4c81 0%, #1f70c1 55%, #63a8e8 100%)' }}>
@@ -22171,7 +22296,7 @@ function FinancialScorePage() {
         </div>
       )}
 
-      {currentView === 'qoe-report' && !selectedCompanyId && (
+      {currentView === 'qoe-report' && !selectedCompanyId && isQualityOfEarningsEnabledByAdmin && (
         <div style={{ maxWidth: '900px', margin: '0 auto', padding: '24px 20px' }}>
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', color: '#334155' }}>
             Please select a company first to access the QoE Report.
@@ -22579,7 +22704,7 @@ function FinancialScorePage() {
       )}
 
       {/* Valuation View */}
-      {currentView === 'valuation' && selectedCompanyId && (monthly.length > 0 || valuationMethodTab === 'business-overview') && (
+      {(currentView === 'valuation' || currentView === 'quality-of-earnings') && selectedCompanyId && (monthly.length > 0 || valuationMethodTab === 'business-overview') && (
         <div style={valuationMethodTab === 'sde' ? VALUATION_PAGE_CONTAINER_STYLE.wide : VALUATION_PAGE_CONTAINER_STYLE.standard}>
           <div style={{ display: 'flex', justifyContent: valuationMethodTab === 'sde' ? 'flex-end' : 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             {valuationMethodTab !== 'sde' && (
@@ -24097,14 +24222,12 @@ function FinancialScorePage() {
                   </div>
                 ) : (
                 <>
+                {currentView === 'valuation' && (
                 <div style={{ background: 'white', borderRadius: '10px', padding: '12px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', borderBottom: '2px solid #e2e8f0' }}>
                     {[
                       { id: 'recommendations' as const, label: 'Executive Summary' },
                       { id: 'ebitda-adjustments' as const, label: 'Quality of Earnings' },
-                      { id: 'cash-proof' as const, label: 'Cash Proof' },
-                      { id: 'bank-statements' as const, label: 'Bank Statements' },
-                      { id: 'credit-card-review' as const, label: 'Credit Card Review' },
                       { id: 'income-statement' as const, label: 'Income Statement' },
                       { id: 'revenue-quality' as const, label: 'Revenue Quality' },
                       { id: 'customer-quality' as const, label: 'Customer Quality' },
@@ -24136,6 +24259,7 @@ function FinancialScorePage() {
                     </div>
                   )}
                 </div>
+                )}
                 {sdeModuleTab === 'ebitda-adjustments' && (
                 <>
                 <EbitdaAdjustmentsProvider companyId={selectedCompanyId || null} onLineItemTotalsChange={setEbitdaLineItemTotals}>
@@ -31230,7 +31354,7 @@ function FinancialScorePage() {
       )}
 
       {/* Custom Print View - For Consultants and Company Users */}
-      {currentView === 'custom-print' && (
+      {currentView === 'custom-print' && isReportPackagesEnabledByAdmin && (
         String(currentUser?.role || '').toLowerCase() === 'siteadmin' ||
         String(currentUser?.role || '').toLowerCase() === 'consultant' ||
         (String(currentUser?.role || '').toLowerCase() === 'user' && currentUser?.userType === 'company')

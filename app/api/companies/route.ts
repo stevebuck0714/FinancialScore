@@ -1714,6 +1714,8 @@ export async function PATCH(request: NextRequest) {
       { requestKey: 'operationalReportingEnabledByAdmin', allocationKey: 'operationalReporting' },
       { requestKey: 'askCorelyticsEnabledByAdmin', allocationKey: 'askCorelytics' },
       { requestKey: 'expertAnalysisEnabledByAdmin', allocationKey: 'expertAnalysis' },
+      { requestKey: 'reportPackagesEnabledByAdmin', allocationKey: 'reportPackages' },
+      { requestKey: 'qualityOfEarningsEnabledByAdmin', allocationKey: 'qualityOfEarnings' },
     ] as const;
     const requestedServiceAccessSettings = serviceAccessSettings.filter(
       ({ requestKey }) => updateFields[requestKey] !== undefined,
