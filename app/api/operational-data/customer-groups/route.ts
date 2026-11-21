@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { assertProductsForecastAccess } from '@/lib/operations/product-revenue-actual-db';
-import { loadCustomerGroups } from '@/lib/operations/customer-groups';
+import { loadCustomerGroups, resolveCustomerGroup } from '@/lib/operations/customer-groups';
+import { loadProductRawCustomers } from '@/lib/operations/product-order-filled';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
 
   try {
-    const [forecastLines, revenueLines, assignments, inheritedGroups] = await Promise.all([
+    const [forecastLines, revenueLines, rawCustomers, assignments, inheritedGroups] = await Promise.all([
       prisma.productRevenueForecastLine.findMany({
         where: { companyId },
         select: { customerId: true, customerName: true, customerGroup: true, csr: true },
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest) {
         select: { customerId: true, customerName: true, customerGroup: true, csr: true },
         orderBy: [{ customerName: 'asc' }],
       }),
+      loadProductRawCustomers(companyId),
       prisma.customerGroupAssignment.findMany({
         where: { companyId },
         select: { customerId: true, customerName: true, customerGroup: true, csr: true, updatedAt: true },
@@ -37,7 +39,7 @@ export async function GET(request: NextRequest) {
 
     const assignmentsByCustomer = new Map(assignments.map((row) => [row.customerId, row]));
     const customers = new Map<string, { customerId: string; customerName: string; customerGroup: string; csr: string }>();
-    for (const row of [...forecastLines, ...revenueLines]) {
+    for (const row of [...rawCustomers, ...forecastLines, ...revenueLines]) {
       const customerId = normalizeText(row.customerId);
       const customerName = normalizeText(row.customerName);
       if (!customerId || !customerName) continue;
@@ -46,8 +48,8 @@ export async function GET(request: NextRequest) {
       customers.set(customerId, {
         customerId,
         customerName: assignment?.customerName || existing?.customerName || customerName,
-        customerGroup: assignment?.customerGroup ?? existing?.customerGroup ?? inheritedGroups.get(customerId) ?? normalizeText(row.customerGroup),
-        csr: assignment?.csr ?? existing?.csr ?? normalizeText(row.csr),
+        customerGroup: assignment?.customerGroup ?? resolveCustomerGroup(inheritedGroups, customerId, customerName),
+        csr: assignment ? assignment.csr || '' : existing?.csr || normalizeText(row.csr),
       });
     }
 
