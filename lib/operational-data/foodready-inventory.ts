@@ -788,38 +788,8 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
     source: FoodReadyLotSource | null;
   };
   const lotDates = new Map<string, LotDates[]>();
-  // Items made by a production batch, found the same way the snapshot ties finished-goods lots to items.
-  const finishedGoodsItems = new Set<string>();
-  const records = await prisma.operationalRecord.findMany({
-    where: {
-      companyId,
-      dataMode: 'LIVE',
-      dataset: { sourceCode: FOODREADY_SOURCE_CODE },
-      OR: [...LOT_ENDPOINTS, ITEM_PACKAGING_ENDPOINT, FOODREADY_RECIPE_INPUTS_ENDPOINT].map((endpoint) => ({
-        dimensions: { path: ['sourceObject'], equals: endpoint },
-      })),
-    },
-    select: { dimensions: true, measures: true },
-  });
-  const packagingItem = new Map<string, string>();
-  for (const record of records) {
-    const dims = (record.dimensions || {}) as Dimensions;
-    if (text(dims, 'sourceObject') === ITEM_PACKAGING_ENDPOINT) packagingItem.set(text(dims, 'id'), foodReadyRef(dims, 'inventoryItem'));
-  }
-  // Produced items that go into another recipe (e.g. sugar mixes) are ingredients, not finished goods.
-  const recipeIngredients = new Set<string>();
-  for (const record of records) {
-    const dims = (record.dimensions || {}) as Dimensions;
-    if (text(dims, 'sourceObject') !== FOODREADY_RECIPE_INPUTS_ENDPOINT) continue;
-    const itemId = foodReadyRef(dims, 'inventoryItem') || packagingItem.get(foodReadyRef(dims, 'itemPackaging')) || '';
-    if (itemId) recipeIngredients.add(itemId);
-  }
-  for (const record of records) {
-    const dims = (record.dimensions || {}) as Dimensions;
-    if (text(dims, 'sourceObject') !== FINISHED_GOODS_LOTS_ENDPOINT) continue;
-    const itemId = packagingItem.get(foodReadyRef(dims, 'itemPackaging'));
-    if (itemId && !recipeIngredients.has(itemId)) finishedGoodsItems.add(itemId);
-  }
+  const records = await loadClassificationRecords(companyId, LOT_ENDPOINTS);
+  const { finishedGoodsItems, recipeIngredients } = classifyFoodReadyItems(records);
   if (lotCodes.length) {
     const wanted = new Set(lotCodes);
     for (const record of records) {
@@ -856,6 +826,68 @@ export async function foodReadyInventoryLotRecords<T extends { itemId?: string |
       quantityWarning: match ? lotQuantityWarning(match.quantity, match.received) : null,
     };
   });
+}
+
+async function loadClassificationRecords(companyId: string, extraEndpoints: readonly string[] = []) {
+  return prisma.operationalRecord.findMany({
+    where: {
+      companyId,
+      dataMode: 'LIVE',
+      dataset: { sourceCode: FOODREADY_SOURCE_CODE },
+      OR: [...new Set([...extraEndpoints, FINISHED_GOODS_LOTS_ENDPOINT, ITEM_PACKAGING_ENDPOINT, FOODREADY_RECIPE_INPUTS_ENDPOINT])].map((endpoint) => ({
+        dimensions: { path: ['sourceObject'], equals: endpoint },
+      })),
+    },
+    select: { dimensions: true, measures: true },
+  });
+}
+
+/**
+ * Finished goods are items made by a production batch, tied to items the same way the snapshot ties
+ * finished-goods lots; produced items that go into another recipe (e.g. sugar mixes) are ingredients.
+ */
+function classifyFoodReadyItems(records: Array<{ dimensions: unknown }>) {
+  const packagingItem = new Map<string, string>();
+  for (const record of records) {
+    const dims = (record.dimensions || {}) as Dimensions;
+    if (text(dims, 'sourceObject') === ITEM_PACKAGING_ENDPOINT) packagingItem.set(text(dims, 'id'), foodReadyRef(dims, 'inventoryItem'));
+  }
+  const recipeIngredients = new Set<string>();
+  for (const record of records) {
+    const dims = (record.dimensions || {}) as Dimensions;
+    if (text(dims, 'sourceObject') !== FOODREADY_RECIPE_INPUTS_ENDPOINT) continue;
+    const itemId = foodReadyRef(dims, 'inventoryItem') || packagingItem.get(foodReadyRef(dims, 'itemPackaging')) || '';
+    if (itemId) recipeIngredients.add(itemId);
+  }
+  const finishedGoodsItems = new Set<string>();
+  for (const record of records) {
+    const dims = (record.dimensions || {}) as Dimensions;
+    if (text(dims, 'sourceObject') !== FINISHED_GOODS_LOTS_ENDPOINT) continue;
+    const itemId = packagingItem.get(foodReadyRef(dims, 'itemPackaging'));
+    if (itemId && !recipeIngredients.has(itemId)) finishedGoodsItems.add(itemId);
+  }
+  return { finishedGoodsItems, recipeIngredients };
+}
+
+/**
+ * Daily FoodReady inventory value split into finished goods and raw materials (packaging and WIP
+ * included), from the stored daily snapshots; items are classified as they are today.
+ */
+export async function foodReadyInventoryValueByType(companyId: string, start: Date, end: Date): Promise<Map<string, { finished: number; raw: number }>> {
+  const { finishedGoodsItems } = classifyFoodReadyItems(await loadClassificationRecords(companyId));
+  const rows = await prisma.inventorySnapshot.groupBy({
+    by: ['snapshotDate', 'itemId'],
+    where: { companyId, frequency: 'daily', snapshotDate: { gte: start, lte: end } },
+    _sum: { assetValue: true },
+  });
+  const byDay = new Map<string, { finished: number; raw: number }>();
+  for (const row of rows) {
+    const day = row.snapshotDate.toISOString().slice(0, 10);
+    const totals = byDay.get(day) || { finished: 0, raw: 0 };
+    totals[finishedGoodsItems.has(String(row.itemId || '')) ? 'finished' : 'raw'] += Number(row._sum.assetValue || 0);
+    byDay.set(day, totals);
+  }
+  return byDay;
 }
 
 /** Lots this large are not plausible for one bakery lot; they are flagged, never changed. */

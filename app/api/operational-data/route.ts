@@ -35,7 +35,7 @@ import {
 import { BAMBOOHR_SOURCE_CODE } from '@/lib/bamboohr';
 import { getOperationalSystemConnection } from '@/lib/operational/operational-system-connections';
 import { readCogentRateCard } from '@/lib/operational/cogent-rate-card';
-import { foodReadyInventoryLotRecords, isFoodReadyInventorySource } from '@/lib/operational-data/foodready-inventory';
+import { foodReadyInventoryLotRecords, foodReadyInventoryValueByType, isFoodReadyInventorySource } from '@/lib/operational-data/foodready-inventory';
 import { buildCustomersSitesFromSales, emptyCustomersSitesPayload } from '@/lib/operations/customers-sites-reports';
 import {
   buildIsolvedPayrollEmptyPayload,
@@ -11688,10 +11688,39 @@ export async function GET(request: NextRequest) {
               [...latestInventoryEffective].sort((a, b) => Number(b.assetValue || 0) - Number(a.assetValue || 0)),
             )
           : latestInventoryBySku;
+        const inventoryTrend: Array<{ snapshotDate: Date; assetValue: number; qtyOnHand: number; finished?: number | null; raw?: number | null }> =
+          inventoryTrendDaily;
+        if (foodReadyInventory && inventoryTrendDaily.length) {
+          const valueByType = await foodReadyInventoryValueByType(companyId, inventoryTrendDaily[0].snapshotDate, endUtcDay);
+          let carry: { finished: number; raw: number } | null = null;
+          const typeDays = [...valueByType.keys()].sort();
+          // Carry the last snapshot before the window into it; days before any FoodReady snapshot stay empty.
+          if (!typeDays.length || typeDays[0] > toIsoDay(inventoryTrendDaily[0].snapshotDate)) {
+            const prior = await prisma.inventorySnapshot.findFirst({
+              where: { companyId, frequency: 'daily', snapshotDate: { lt: inventoryTrendDaily[0].snapshotDate } },
+              orderBy: { snapshotDate: 'desc' },
+              select: { snapshotDate: true },
+            });
+            if (prior) {
+              const priorTotals = await foodReadyInventoryValueByType(companyId, prior.snapshotDate, prior.snapshotDate);
+              carry = priorTotals.get(toIsoDay(prior.snapshotDate)) || null;
+            }
+          }
+          let nextTypeDay = 0;
+          for (const point of inventoryTrend) {
+            const day = toIsoDay(point.snapshotDate);
+            while (nextTypeDay < typeDays.length && typeDays[nextTypeDay] <= day) {
+              carry = valueByType.get(typeDays[nextTypeDay]) || carry;
+              nextTypeDay += 1;
+            }
+            point.finished = carry ? carry.finished : null;
+            point.raw = carry ? carry.raw : null;
+          }
+        }
 
         return cacheOperationalPayload({
           records: inventoryRecords,
-          trend: inventoryTrendDaily,
+          trend: inventoryTrend,
           unitCostHistory,
           agingReport,
           summary: { ...inventoryMetrics, splitByInventoryType: foodReadyInventory },

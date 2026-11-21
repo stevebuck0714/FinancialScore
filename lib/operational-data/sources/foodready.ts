@@ -42,8 +42,8 @@ const TIMESTAMP_FIELD = /(Date|On|At)$/;
 /** Fields kept from a populated reference (uom, inventoryType, item, location, ...). */
 const REFERENCE_SUBFIELDS = ['_id', 'id', 'name', 'code', 'type', 'itemName', 'itemCode'];
 const MAX_FIELDS = 100;
-const PAGE_SIZE = 200;
-const MAX_PAGES = 100;
+export const PAGE_SIZE = 200;
+export const MAX_PAGES = 100;
 /** Pause between page requests so a full pull stays under FoodReady's rate limit. */
 const PAGE_DELAY_MS = 250;
 /** Purchase-order line lookups per sync stop after this long; the rest are looked up on the next sync. */
@@ -53,7 +53,7 @@ const PO_LINE_LOOKUP_CUTOFF_MS = 200_000;
 const PO_LINE_LOOKUP_CONCURRENCY = 2;
 /** Domain pulls stop this long after the sync started; a domain cut off keeps its stored rows until the next sync. */
 const DOMAIN_PULL_CUTOFF_MS = 170_000;
-const PURCHASE_ORDER_LINES_ENDPOINT = '/api/purchaseOrdersItems/search';
+export const PURCHASE_ORDER_LINES_ENDPOINT = '/api/purchaseOrdersItems/search';
 /** The background lot usage pull stops this long after it starts, inside its own 300s function limit. */
 const LOT_USAGE_BUDGET_MS = 230_000;
 /** Safety cap on chained requests for one pull. */
@@ -132,7 +132,7 @@ const PURCHASE_ORDER_LINES_SCHEMA: OperationalDatasetSchema = {
  * Current-state endpoints: the full list as of the sync date, not history. Lot endpoints only
  * return lots with quantity in hand. Each sync that reaches today replaces the whole dataset.
  */
-const CURRENT_STATE_QUERY: Record<string, Record<string, boolean>> = {
+export const CURRENT_STATE_QUERY: Record<string, Record<string, boolean>> = {
   '/api/inventoryItems/search': {},
   '/api/itemPackaging/search': {},
   '/api/bom/search': {},
@@ -168,7 +168,7 @@ function keyPart(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'records';
 }
 
-function rowsFromPayload(payload: unknown): Record<string, unknown>[] {
+export function rowsFromPayload(payload: unknown): Record<string, unknown>[] {
   if (Array.isArray(payload)) return payload.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'));
   const data = asRecord(payload).data;
   return Array.isArray(data) ? data.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object')) : [];

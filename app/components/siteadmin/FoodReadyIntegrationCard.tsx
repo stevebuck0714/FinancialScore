@@ -29,9 +29,10 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
   const [domains, setDomains] = useState<Domain[]>([]);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [checking, setChecking] = useState<'validate' | 'probe' | 'sync_test' | null>(null);
+  const [checking, setChecking] = useState<'validate' | 'probe' | 'sync_test' | 'diagnose' | null>(null);
   const busy = saving || syncing || checking !== null;
   const [syncMessage, setSyncMessage] = useState('');
+  const [diagnostic, setDiagnostic] = useState('');
   const [error, setError] = useState('');
 
   const load = async () => {
@@ -83,7 +84,7 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
     }
   };
 
-  const runCheck = async (action: 'validate' | 'probe' | 'sync_test') => {
+  const runCheck = async (action: 'validate' | 'probe' | 'sync_test' | 'diagnose') => {
     const response = await fetch('/api/operational-system-integrations/foodready/test', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ companyId, action }),
@@ -130,6 +131,18 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
       alert(`FoodReady domain probe:\n\n${lines.join('\n')}`);
     } catch (checkError: any) {
       setError(checkError?.message || 'FoodReady domain probe failed.');
+    } finally {
+      setChecking(null);
+    }
+  };
+
+  const diagnoseCosts = async () => {
+    if (status !== 'ACTIVE') { setError('Save the FoodReady Organization ID and API Key before diagnosing.'); return; }
+    try {
+      setChecking('diagnose'); setError(''); setDiagnostic('');
+      setDiagnostic(formatDiagnostic((await runCheck('diagnose')).report));
+    } catch (checkError: any) {
+      setError(checkError?.message || 'FoodReady cost diagnostic failed.');
     } finally {
       setChecking(null);
     }
@@ -206,6 +219,7 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
           <button onClick={() => void runSyncTest()} disabled={busy} style={actionButton('#16a34a', busy)}>{checking === 'sync_test' ? 'Testing…' : 'Run Sync Test'}</button>
           <button onClick={() => void syncNow()} disabled={busy} style={actionButton('#0f766e', busy)}>{syncing ? 'Syncing…' : 'Sync FoodReady Now'}</button>
           <button onClick={() => void probeDomains()} disabled={busy} style={actionButton('#7c3aed', busy)}>{checking === 'probe' ? 'Probing…' : 'Probe Domains'}</button>
+          <button onClick={() => void diagnoseCosts()} disabled={busy} title="Read-only: compares stored records to FoodReady and lists lots left out of or valued at $0 in the inventory snapshot." style={actionButton('#b45309', busy)}>{checking === 'diagnose' ? 'Diagnosing…' : 'Diagnose Costs'}</button>
         </div>
       </div>
       <div style={{ marginBottom: 10 }}><OperationalDateRangeSync companyId={companyId} sourceCode={SOURCE_CODE} compact /></div>
@@ -243,5 +257,67 @@ export default function FoodReadyIntegrationCard({ companyId }: { companyId: str
     </div>
     {error && <div style={{ color: '#b91c1c', fontSize: 12, gridColumn: '1 / -1' }}>{error}</div>}
     {syncMessage && <div style={{ color: '#166534', fontSize: 12, gridColumn: '1 / -1' }}>{syncMessage}</div>}
+    {diagnostic && <div style={{ gridColumn: '1 / -1', border: '1px solid #bae6fd', borderRadius: 8, background: '#f8fafc', padding: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <h4 style={{ margin: 0, color: '#0c4a6e' }}>FoodReady Cost Diagnostic</h4>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => void navigator.clipboard.writeText(diagnostic)} style={{ ...button(), padding: '6px 10px' }}>Copy</button>
+          <button onClick={() => setDiagnostic('')} style={{ ...button('#64748b'), padding: '6px 10px' }}>Close</button>
+        </div>
+      </div>
+      <pre style={{ margin: 0, maxHeight: 480, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{diagnostic}</pre>
+    </div>}
   </div>;
+}
+
+type Diagnostic = {
+  generatedAt: string;
+  lastSync: { at: string | null; status: string | null; message: string | null } | null;
+  syncRecordCap: number;
+  endpoints: { dataDomain: string; endpoint: string; currentState: boolean; foodReady: number | null; foodReadyComplete: boolean; stored: number; error?: string }[];
+  purchasedLots: {
+    inHand: number;
+    unlinked: { noPoItemOnLot: number; poLineNotStored: number; supplierItemNotStored: number; supplierItemWithoutItem: number };
+    listed: Record<string, string | number>[];
+  };
+  zeroCostLots: { snapshotDate: string | null; snapshotRows: number; count: number; listed: { itemName: string; sku: string | null; lot: string | null; qtyOnHand: number }[] };
+};
+
+const UNLINKED_REASONS: Record<string, string> = {
+  noPoItemOnLot: 'lot has no purchase-order line reference',
+  poLineNotStored: 'purchase-order line not looked up yet',
+  supplierItemNotStored: 'purchase-order line’s supplier item not stored',
+  supplierItemWithoutItem: 'supplier item not linked to an inventory item',
+};
+
+function formatDiagnostic(report: Diagnostic): string {
+  const n = (value: number) => value.toLocaleString('en-US');
+  const unlinkedTotal = Object.values(report.purchasedLots.unlinked).reduce((sum, value) => sum + value, 0);
+  const lines = [
+    `Generated ${report.generatedAt} (read-only; nothing was changed)`,
+    report.lastSync ? `Last sync: ${report.lastSync.at ?? 'never'} · ${report.lastSync.status ?? ''}` : 'Last sync: none',
+    ...(report.lastSync?.message ? [`  ${report.lastSync.message}`] : []),
+    '',
+    `RECORD COUNTS (stored vs FoodReady; the sync stops at ${n(report.syncRecordCap)} records per endpoint)`,
+    ...report.endpoints.map((row) => {
+      const foodReady = row.error ? `error: ${row.error}` : `${row.foodReadyComplete ? '' : 'at least '}${n(row.foodReady ?? 0)}`;
+      const gap = !row.error && row.foodReady !== null && row.foodReadyComplete && row.foodReady > row.stored ? `  ← ${n(row.foodReady - row.stored)} not stored` : '';
+      const capped = row.foodReady !== null && row.foodReady > report.syncRecordCap ? '  ← over the sync cap' : '';
+      const scope = row.currentState ? 'current' : 'all dates in FoodReady, synced window stored';
+      return `- ${row.dataDomain} (${row.endpoint}) [${scope}]: stored ${n(row.stored)} · FoodReady ${foodReady}${gap}${capped}`;
+    }),
+    '',
+    `PURCHASED LOTS LEFT OUT OF THE INVENTORY SNAPSHOT: ${n(unlinkedTotal)} of ${n(report.purchasedLots.inHand)} stored lots in hand`,
+    ...Object.entries(report.purchasedLots.unlinked).map(([reason, count]) => `- ${UNLINKED_REASONS[reason]}: ${n(count)}`),
+    ...report.purchasedLots.listed.map((lot) =>
+      `  · lot ${lot.lotCode || lot.lotId} · ${UNLINKED_REASONS[String(lot.reason)]} · in hand ${lot.quantityInHand} of ${lot.totalQuantityReceived} received${lot.supplierItemName ? ` · ${lot.supplierItemName}` : ''}${lot.poItem ? ` · PO line ${lot.poItem}` : ''}${lot.receivedOn ? ` · ${String(lot.receivedOn).slice(0, 10)}` : ''}`),
+    ...(report.purchasedLots.listed.length < unlinkedTotal ? [`  · … ${n(unlinkedTotal - report.purchasedLots.listed.length)} more`] : []),
+    '',
+    report.zeroCostLots.snapshotDate
+      ? `ROWS VALUED AT $0 IN THE ${report.zeroCostLots.snapshotDate} SNAPSHOT: ${n(report.zeroCostLots.count)} of ${n(report.zeroCostLots.snapshotRows)}`
+      : 'ROWS VALUED AT $0: no daily inventory snapshot stored',
+    ...report.zeroCostLots.listed.map((row) => `  · ${row.itemName}${row.sku ? ` (${row.sku})` : ''}${row.lot ? ` · lot ${row.lot}` : ' · no lot'} · qty ${row.qtyOnHand}`),
+    ...(report.zeroCostLots.listed.length < report.zeroCostLots.count ? [`  · … ${n(report.zeroCostLots.count - report.zeroCostLots.listed.length)} more`] : []),
+  ];
+  return lines.join('\n');
 }

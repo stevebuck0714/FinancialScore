@@ -4,11 +4,13 @@ import { getOperationalSystemConnection } from '@/lib/operational/operational-sy
 import { FOODREADY_SOURCE_CODE, foodReadyApiRequest, foodReadyCredentialsFromConnection, normalizeFoodReadyOverlapDays } from '@/lib/foodready';
 import { configuredFoodReadyDomains, syncFoodReady } from '@/lib/operational-data/sources/foodready';
 import { asRecord } from '@/lib/operational-data/sources/common';
+import { diagnoseFoodReadyCosts } from '@/lib/operational-data/foodready-diagnostics';
 import { addEstCalendarDays, formatEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
-type Action = 'validate' | 'probe' | 'sync_test';
+type Action = 'validate' | 'probe' | 'sync_test' | 'diagnose';
 
 function firstRecord(payload: unknown): Record<string, unknown> | null {
   const rows = Array.isArray(payload) ? payload : asRecord(payload).data;
@@ -16,14 +18,14 @@ function firstRecord(payload: unknown): Record<string, unknown> | null {
   return first && typeof first === 'object' ? first as Record<string, unknown> : null;
 }
 
-/** Read-only checks behind the FoodReady Connect, Probe Domains and Run Sync Test buttons; nothing is stored. */
+/** Read-only checks behind the FoodReady Connect, Probe Domains, Run Sync Test and Diagnose Costs buttons; nothing is stored. */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
     const action = String(body.action || '') as Action;
-    if (!['validate', 'probe', 'sync_test'].includes(action)) {
-      return NextResponse.json({ ok: false, error: 'action must be validate, probe or sync_test.' }, { status: 400 });
+    if (!['validate', 'probe', 'sync_test', 'diagnose'].includes(action)) {
+      return NextResponse.json({ ok: false, error: 'action must be validate, probe, sync_test or diagnose.' }, { status: 400 });
     }
     const connection = await getOperationalSystemConnection(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
     const credentials = connection?.status === 'ACTIVE' ? foodReadyCredentialsFromConnection(connection) : null;
@@ -48,6 +50,10 @@ export async function POST(request: NextRequest) {
         }
       }
       return NextResponse.json({ ok: true, results });
+    }
+
+    if (action === 'diagnose') {
+      return NextResponse.json({ ok: true, report: await diagnoseFoodReadyCosts(companyId, credentials, metadata) });
     }
 
     const overlapDays = normalizeFoodReadyOverlapDays(asRecord(metadata.foodReadySettings).overlapDays);

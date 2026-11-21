@@ -15806,9 +15806,6 @@ export default function OperationsTab({
     };
     const inventoryAgingSortLabel = (key: string) =>
       inventoryAgingSortKey === key ? (inventoryAgingSortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const top10InventoryByValue = [...latestRecords]
-      .sort((a: any, b: any) => Number(b?.assetValue || 0) - Number(a?.assetValue || 0))
-      .slice(0, 10);
     const top5InventoryValue = Number(summary?.top5InventoryValue || 0);
     const inventoryMetricDateLabel = String(summary?.latestInventoryMonthLabel || summary?.latestInventoryMonthKey || '').trim();
     const totalObsolescenceExposure =
@@ -15816,32 +15813,59 @@ export default function OperationsTab({
       (Array.isArray(rawInventoryAgingRows)
         ? rawInventoryAgingRows.reduce((sum: number, row: any) => sum + Number(row?.estimatedObsolescenceExposure || 0), 0)
         : 0);
-    // Lot-level sources show raw materials and finished goods as separate card rows with no combined totals.
+    // Lot-level sources report finished goods and raw materials separately, with no combined totals.
     const splitInventoryCards = showInventoryLotDates || summary?.splitByInventoryType === true;
+    const INVENTORY_TYPE_TITLES = { finished: 'Finished Goods', raw: 'Raw Materials, Packaging & WIP' } as const;
+    const inventoryProductKey = (row: any) => String(row?.sku || row?.itemId || row?.itemName || '').trim().toUpperCase();
+    // A product is a finished good when any of its lots came from a production batch (same rule as the Inventory table).
+    const inventoryTypeByKey = new Map<string, 'finished' | 'raw'>();
+    if (splitInventoryCards) {
+      for (const row of latestRecords) {
+        const type = row?.lotSource === 'finished_goods' ? 'finished' : 'raw';
+        for (const key of [inventoryProductKey(row), String(row?.itemName || '').trim().toUpperCase()]) {
+          if (key && inventoryTypeByKey.get(key) !== 'finished') inventoryTypeByKey.set(key, type);
+        }
+      }
+    }
+    const inventoryRowType = (row: any): 'finished' | 'raw' | null =>
+      inventoryTypeByKey.get(inventoryProductKey(row)) || inventoryTypeByKey.get(String(row?.itemName || '').trim().toUpperCase()) || null;
+    const top10InventoryByValue = (() => {
+      const byProduct = new Map<string, { itemName: string; sku: string; assetValue: number }>();
+      for (const row of latestRecords) {
+        if (splitInventoryCards && inventoryRowType(row) !== 'raw') continue;
+        const key = inventoryProductKey(row);
+        if (!key) continue;
+        const product = byProduct.get(key) || { itemName: String(row?.itemName || key), sku: String(row?.sku || ''), assetValue: 0 };
+        product.assetValue += Number(row?.assetValue || 0);
+        byProduct.set(key, product);
+      }
+      return [...byProduct.values()].sort((a, b) => b.assetValue - a.assetValue).slice(0, 10);
+    })();
+    const inventoryAgingSections = splitInventoryCards
+      ? (['finished', 'raw'] as const).map((type) => ({
+          key: type,
+          title: INVENTORY_TYPE_TITLES[type],
+          rows: sortedInventoryAgingRows.filter((row: any) => (inventoryRowType(row) || 'raw') === type),
+        }))
+      : [{ key: 'all', title: '', rows: sortedInventoryAgingRows }];
     const inventoryTypeCardRows = splitInventoryCards
       ? (() => {
-          const productKey = (row: any) => String(row?.sku || row?.itemId || row?.itemName || '').trim().toUpperCase();
-          const typeByKey = new Map<string, 'finished' | 'raw'>();
           const productValues = { finished: new Map<string, number>(), raw: new Map<string, number>() };
           for (const row of latestRecords) {
-            const type = row?.lotSource === 'finished_goods' ? 'finished' : 'raw';
-            const key = productKey(row);
-            if (!key) continue;
-            typeByKey.set(key, type);
-            const nameKey = String(row?.itemName || '').trim().toUpperCase();
-            if (nameKey && !typeByKey.has(nameKey)) typeByKey.set(nameKey, type);
+            const key = inventoryProductKey(row);
+            const type = inventoryRowType(row);
+            if (!key || !type) continue;
             productValues[type].set(key, (productValues[type].get(key) || 0) + Number(row?.assetValue || 0));
           }
           const obsolescence = { finished: 0, raw: 0 };
           for (const row of Array.isArray(rawInventoryAgingRows) ? rawInventoryAgingRows : []) {
-            const type = typeByKey.get(String(row?.sku || '').trim().toUpperCase()) || typeByKey.get(String(row?.itemName || '').trim().toUpperCase());
-            if (type) obsolescence[type] += Number(row?.estimatedObsolescenceExposure || 0);
+            obsolescence[inventoryRowType(row) || 'raw'] += Number(row?.estimatedObsolescenceExposure || 0);
           }
           return (['raw', 'finished'] as const).map((type) => {
             const values = [...productValues[type].values()];
             return {
               type,
-              title: type === 'raw' ? 'Raw Materials, Packaging & WIP' : 'Finished Goods',
+              title: INVENTORY_TYPE_TITLES[type],
               items: values.length,
               value: values.reduce((sum, value) => sum + value, 0),
               top5: values.sort((a, b) => b - a).slice(0, 5).reduce((sum, value) => sum + value, 0),
@@ -15997,9 +16021,15 @@ export default function OperationsTab({
         const parsed = parseDateValue(point.snapshotDate);
         if (!parsed) return null;
         const utcDay = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
-        return { utcDay, dateKey: toIsoDay(utcDay), value: Number(point.assetValue || 0) };
+        return {
+          utcDay,
+          dateKey: toIsoDay(utcDay),
+          value: Number(point.assetValue || 0),
+          finished: point.finished == null ? null : Number(point.finished),
+          raw: point.raw == null ? null : Number(point.raw),
+        };
       })
-      .filter((row: any): row is { utcDay: Date; dateKey: string; value: number } => Boolean(row))
+      .filter((row: any): row is { utcDay: Date; dateKey: string; value: number; finished: number | null; raw: number | null } => Boolean(row))
       .sort((a: any, b: any) => a.utcDay.getTime() - b.utcDay.getTime());
     const departmentTrendRows = Array.isArray(departmentTrend) ? departmentTrend : [];
     const departmentTrendRowsSorted = departmentTrendRows
@@ -16025,7 +16055,7 @@ export default function OperationsTab({
         ? trendRowsSorted
         : frequency === 'weekly'
           ? (() => {
-              const byWeek = new Map<string, { utcDay: Date; dateKey: string; label: string; value: number }>();
+              const byWeek = new Map<string, { utcDay: Date; dateKey: string; label: string; value: number; finished: number | null; raw: number | null }>();
               for (const row of trendRowsSorted) {
                 const start = weekStartUtc(row.utcDay);
                 const key = toIsoDay(start);
@@ -16036,13 +16066,15 @@ export default function OperationsTab({
                     dateKey: row.dateKey,
                     label: formatInventoryDay(row.utcDay),
                     value: row.value,
+                    finished: row.finished,
+                    raw: row.raw,
                   });
                 }
               }
               return Array.from(byWeek.values()).sort((a, b) => a.utcDay.getTime() - b.utcDay.getTime());
             })()
           : (() => {
-              const byMonth = new Map<string, { utcDay: Date; dateKey: string; label: string; value: number }>();
+              const byMonth = new Map<string, { utcDay: Date; dateKey: string; label: string; value: number; finished: number | null; raw: number | null }>();
               for (const row of trendRowsSorted) {
                 const key = `${row.utcDay.getUTCFullYear()}-${String(row.utcDay.getUTCMonth() + 1).padStart(2, '0')}`;
                 const prior = byMonth.get(key);
@@ -16052,6 +16084,8 @@ export default function OperationsTab({
                     dateKey: row.dateKey,
                     label: formatInventoryPeriodEndDate(row.utcDay),
                     value: row.value,
+                    finished: row.finished,
+                    raw: row.raw,
                   });
                 }
               }
@@ -16061,6 +16095,8 @@ export default function OperationsTab({
       dateKey: row.dateKey,
       label: row.label || formatInventoryDay(row.utcDay),
       value: row.value,
+      finished: row.finished,
+      raw: row.raw,
     }));
     const trendRowByDateKey = new Map<string, (typeof trendData)[number]>(trendData.map((row) => [row.dateKey, row]));
     for (const row of departmentTrendRowsSorted) {
@@ -16203,16 +16239,32 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend onClick={toggleInventoryTrendSeries} wrapperStyle={{ cursor: 'pointer' }} />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="#0f766e"
-                strokeWidth={3}
-                dot={{ fill: '#0f766e', stroke: '#ffffff', strokeWidth: 2, r: 4 }}
-                name="Total"
-                hide={Boolean(hiddenInventoryTrendSeries.value)}
-              />
-              {inventoryDepartmentTrendLines.map((line, index) => (
+              {splitInventoryCards
+                ? (['finished', 'raw'] as const).map((type) => (
+                    <Line
+                      key={type}
+                      type="monotone"
+                      dataKey={type}
+                      stroke={type === 'finished' ? '#0f766e' : '#2563eb'}
+                      strokeWidth={3}
+                      dot={{ r: 3 }}
+                      name={INVENTORY_TYPE_TITLES[type]}
+                      connectNulls
+                      hide={Boolean(hiddenInventoryTrendSeries[type])}
+                    />
+                  ))
+                : (
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#0f766e"
+                    strokeWidth={3}
+                    dot={{ fill: '#0f766e', stroke: '#ffffff', strokeWidth: 2, r: 4 }}
+                    name="Total"
+                    hide={Boolean(hiddenInventoryTrendSeries.value)}
+                  />
+                )}
+              {!splitInventoryCards && inventoryDepartmentTrendLines.map((line, index) => (
                 <Line
                   key={line.dataKey}
                   type="monotone"
@@ -16696,8 +16748,12 @@ export default function OperationsTab({
                   {showInventoryLotDates && <th style={{ width: '36px', padding: '12px 6px' }} />}
                   <th onClick={() => handleInventorySort('sku')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Item ID{inventorySortLabel('sku')}</th>
                   <th onClick={() => handleInventorySort('itemName')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Item Name{inventorySortLabel('itemName')}</th>
-                  <th onClick={() => handleInventorySort('warehouse')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Warehouse{inventorySortLabel('warehouse')}</th>
-                  <th onClick={() => handleInventorySort('bin')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Bin{inventorySortLabel('bin')}</th>
+                  {!showInventoryLotDates && (
+                    <>
+                      <th onClick={() => handleInventorySort('warehouse')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Warehouse{inventorySortLabel('warehouse')}</th>
+                      <th onClick={() => handleInventorySort('bin')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Bin{inventorySortLabel('bin')}</th>
+                    </>
+                  )}
                   <th onClick={() => handleInventorySort('lot')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Lot{inventorySortLabel('lot')}</th>
                   {showInventoryLotDates && (
                     <>
@@ -16743,8 +16799,6 @@ export default function OperationsTab({
                           </td>
                           <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{group.sku}</td>
                           <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '600' }}>{group.itemName}</td>
-                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>N/A</td>
-                          <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>N/A</td>
                           <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{group.lot || 'N/A'}</td>
                           <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
                             {formatUnitCost(Number(group.avgCost || 0))}
@@ -16785,8 +16839,6 @@ export default function OperationsTab({
                             <td />
                             <td />
                             <td />
-                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{String(lot.warehouse || '').trim() || 'N/A'}</td>
-                            <td style={{ padding: '8px 12px', fontSize: '13px', color: '#64748b' }}>{String(lot.bin || '').trim() || 'N/A'}</td>
                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#1e293b' }}>{String(lot.lot || '').trim() || 'N/A'}</td>
                             <td style={{ padding: '6px 12px', textAlign: 'right' }}>
                               <InventoryLotCostInput
@@ -16855,7 +16907,7 @@ export default function OperationsTab({
                   ))}
                   {(showInventoryLotDates ? section.groups.length === 0 : sortedInventoryRecords.length === 0) && (
                     <tr>
-                      <td colSpan={showInventoryLotDates ? 12 : 9} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                      <td colSpan={showInventoryLotDates ? 10 : 9} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
                         {section.title ? `No ${section.title.toLowerCase()} match your search.` : 'No inventory rows match your search.'}
                       </td>
                     </tr>
@@ -16979,7 +17031,7 @@ export default function OperationsTab({
           >
             <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Top 10 SKUs by Inventory Asset Value
+            {splitInventoryCards ? `Top 10 ${INVENTORY_TYPE_TITLES.raw} SKUs by Inventory Asset Value` : 'Top 10 SKUs by Inventory Asset Value'}
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
@@ -17054,6 +17106,17 @@ export default function OperationsTab({
                 {inventoryAgingError}
               </div>
             )}
+            {inventoryAgingSections.map((section, sectionIndex) => (
+            <div key={`inventory-aging-section-${section.key}`} style={{ marginTop: sectionIndex > 0 ? '24px' : 0 }}>
+            {section.title && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', marginBottom: '8px' }}>
+                <h4 style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b', margin: 0 }}>{section.title}</h4>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  {section.rows.length.toLocaleString()} product{section.rows.length === 1 ? '' : 's'} ·{' '}
+                  {formatCurrency(section.rows.reduce((sum: number, row: any) => sum + Number(row?.estimatedObsolescenceExposure || 0), 0))} exposure
+                </span>
+              </div>
+            )}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -17073,7 +17136,7 @@ export default function OperationsTab({
                 </thead>
                 {inventoryAgingTableExpanded && (
                   <tbody>
-                    {sortedInventoryAgingRows.map((row: any, index: number) => {
+                    {section.rows.map((row: any, index: number) => {
                       const riskColor =
                         row.riskTier === 'High' ? '#b91c1c' : row.riskTier === 'Medium' ? '#b45309' : '#166534';
                       return (
@@ -17108,10 +17171,12 @@ export default function OperationsTab({
                         </tr>
                       );
                     })}
-                    {sortedInventoryAgingRows.length === 0 && (
+                    {section.rows.length === 0 && (
                       <tr>
                         <td colSpan={11} style={{ padding: '14px', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
-                          No aging proxy rows match your search for the selected range yet.
+                          {section.title
+                            ? `No ${section.title.toLowerCase()} aging rows match your search for the selected range yet.`
+                            : 'No aging proxy rows match your search for the selected range yet.'}
                         </td>
                       </tr>
                     )}
@@ -17119,6 +17184,8 @@ export default function OperationsTab({
                 )}
               </table>
             </div>
+            </div>
+            ))}
             </div>
           </OperationalReportPanel>
         )}
