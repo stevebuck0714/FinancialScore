@@ -226,7 +226,7 @@ type SnapshotRow = {
 export async function writeFoodReadyInventorySnapshot(companyId: string, output: OperationalSourceOutput): Promise<string> {
   const skipped = skippedDomains.get(companyId) || [];
   skippedDomains.delete(companyId);
-  const skippedNote = skipped.length ? `Sync hit its time limit and skipped ${skipped.join(', ')} (their stored data is unchanged)` : '';
+  const skippedNote = skipped.length ? `Sync hit its time limit and skipped ${skipped.join(', ')} (their stored data is unchanged until the background pull saves them)` : '';
   if (skipped.some((endpoint) => FOODREADY_SNAPSHOT_ENDPOINTS.includes(endpoint))) {
     return `${skippedNote}; inventory snapshot not rewritten, so the report keeps the last complete one. ${recipeInputsSummary(companyId, output)}`;
   }

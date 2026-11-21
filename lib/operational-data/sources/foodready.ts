@@ -54,6 +54,12 @@ const PO_LINE_LOOKUP_CONCURRENCY = 2;
 /** Domain pulls stop this long after the sync started; a domain cut off keeps its stored rows until the next sync. */
 const DOMAIN_PULL_CUTOFF_MS = 170_000;
 export const PURCHASE_ORDER_LINES_ENDPOINT = '/api/purchaseOrdersItems/search';
+/** Domains a sync skips are pulled in the background, each request stopping this long after it starts. */
+const DOMAIN_BACKGROUND_BUDGET_MS = 230_000;
+/** A background request doesn't start another domain with less than this left. */
+const DOMAIN_BACKGROUND_START_MARGIN_MS = 60_000;
+const DOMAIN_BACKGROUND_MAX_STEPS = 10;
+export const FOODREADY_DOMAIN_PULL_PATH = '/api/admin/foodready-domains';
 /** The background lot usage pull stops this long after it starts, inside its own 300s function limit. */
 const LOT_USAGE_BUDGET_MS = 230_000;
 /** Safety cap on chained requests for one pull. */
@@ -137,7 +143,8 @@ export const CURRENT_STATE_QUERY: Record<string, Record<string, boolean>> = {
   '/api/itemPackaging/search': {},
   '/api/bom/search': {},
   '/api/v2/suppliers/search': {},
-  '/api/supplierItems/search': {},
+  // Lots received against a supplier item that was later deleted still need it to find their item.
+  '/api/supplierItems/search': { withDeleted: true },
   '/api/purchaseOrdersItemLots/search': { hasAvailableQtyInHand: true },
   '/api/wipItemLots/search': { hasQuantityInHand: true },
   '/api/moBatchOutput/search': { hasQuantityInHand: true },
@@ -453,37 +460,14 @@ export async function syncFoodReady(
   const skipped: string[] = [];
   const snapshotFirst = (domain: DataDomain) => (FOODREADY_SNAPSHOT_ENDPOINTS.includes(domain.sourceObject) ? 0 : 1);
   for (const domain of configuredFoodReadyDomains(metadata).sort((a, b) => snapshotFirst(a) - snapshotFirst(b))) {
-    const currentStateQuery = CURRENT_STATE_QUERY[domain.sourceObject];
-    const currentState = Boolean(currentStateQuery);
-    if (currentState && window.endDate < today) continue;
-    let fetched: Record<string, unknown>[];
+    if (CURRENT_STATE_QUERY[domain.sourceObject] && window.endDate < today) continue;
     try {
-      fetched = await fetchAllFoodReadyRecords(credentials, domain.sourceObject, currentStateQuery, domainDeadline);
+      const dataset = await pullDomainDataset(credentials, domain, window, today, domainDeadline);
+      output[dataset.schema.key] = dataset;
     } catch (error) {
       if (Date.now() <= domainDeadline) throw error;
       skipped.push(domain.sourceObject);
-      continue;
     }
-    const records = fetched
-      .map((raw) => ({ raw, record: flattenRecord(raw) }))
-      .map((entry) => ({ ...entry, date: currentState ? today : recordDate(domain.sourceObject, entry.record, today) }))
-      .filter(({ date }) => currentState || (date >= window.startDate && date <= window.endDate));
-    const schema = schemaFor(domain, records.map(({ record }) => record), currentState);
-    output[schema.key] = {
-      schema,
-      replaceWindow: true,
-      window: currentState ? FULL_WINDOW : window,
-      rows: records.map(({ raw, record, date }, index) => {
-        const dimensions: Record<string, string | number | boolean | null> = { sourceObject: domain.sourceObject };
-        const measures: Record<string, number> = { recordCount: 1 };
-        Object.entries(record).forEach(([key, value]) => {
-          if (typeof value === 'number') measures[key] = value;
-          else dimensions[key] = value;
-        });
-        const identity = String(raw._id ?? raw.id ?? index);
-        return { date, externalId: `${domain.sourceObject}|${identity}`, dimensions, measures };
-      }),
-    };
   }
 
   const purchasedLotIds = Object.values(output)
@@ -495,7 +479,126 @@ export async function syncFoodReady(
     if (lines.length) output[FOODREADY_PURCHASE_ORDER_LINES_KEY] = { schema: PURCHASE_ORDER_LINES_SCHEMA, rows: lines };
   }
   setFoodReadySkippedDomains(companyId, skipped);
+  if (skipped.length) pendingDomainPulls.set(companyId, { endpoints: skipped, window });
+  else pendingDomainPulls.delete(companyId);
   return output;
+}
+
+/** One domain's records as a dataset: current-state endpoints replace everything, history replaces the sync window. */
+async function pullDomainDataset(
+  credentials: FoodReadyCredentials,
+  domain: DataDomain,
+  window: OperationalSyncWindow,
+  today: string,
+  deadline: number,
+): Promise<OperationalSourceOutput[string]> {
+  const currentStateQuery = CURRENT_STATE_QUERY[domain.sourceObject];
+  const currentState = Boolean(currentStateQuery);
+  const fetched = await fetchAllFoodReadyRecords(credentials, domain.sourceObject, currentStateQuery, deadline);
+  const records = fetched
+    .map((raw) => ({ raw, record: flattenRecord(raw) }))
+    .map((entry) => ({ ...entry, date: currentState ? today : recordDate(domain.sourceObject, entry.record, today) }))
+    .filter(({ date }) => currentState || (date >= window.startDate && date <= window.endDate));
+  return {
+    schema: schemaFor(domain, records.map(({ record }) => record), currentState),
+    replaceWindow: true,
+    window: currentState ? FULL_WINDOW : window,
+    rows: records.map(({ raw, record, date }, index) => {
+      const dimensions: Record<string, string | number | boolean | null> = { sourceObject: domain.sourceObject };
+      const measures: Record<string, number> = { recordCount: 1 };
+      Object.entries(record).forEach(([key, value]) => {
+        if (typeof value === 'number') measures[key] = value;
+        else dimensions[key] = value;
+      });
+      const identity = String(raw._id ?? raw.id ?? index);
+      return { date, externalId: `${domain.sourceObject}|${identity}`, dimensions, measures };
+    }),
+  };
+}
+
+/** Domains the last sync skipped for time, with its window; read by afterLiveWrite in the same run. */
+const pendingDomainPulls = new Map<string, { endpoints: string[]; window: OperationalSyncWindow }>();
+
+export type FoodReadyDomainPullRequest = { endpoints: string[]; window: OperationalSyncWindow; step: number };
+export type FoodReadyDomainPullResult = { ok: boolean; message: string; next?: FoodReadyDomainPullRequest };
+
+/**
+ * Pull domains a sync skipped for time, each in full, saving each as it finishes. When this
+ * request's time runs out the rest continue in a new request.
+ */
+export async function pullFoodReadyDomains(companyId: string, request: FoodReadyDomainPullRequest): Promise<FoodReadyDomainPullResult> {
+  const deadline = Date.now() + DOMAIN_BACKGROUND_BUDGET_MS;
+  const { connection, metadata } = await readConnectionMetadata(companyId, 'FOODREADY', FOODREADY_SOURCE_CODE);
+  const credentials = connection?.status === 'ACTIVE' ? foodReadyCredentialsFromConnection(connection) : null;
+  if (!credentials) return { ok: false, message: 'FoodReady is not connected for this company.' };
+  const domains = configuredFoodReadyDomains(metadata);
+  const today = formatEstDate();
+  const remaining = request.endpoints.filter((endpoint) => domains.some((domain) => domain.sourceObject === endpoint));
+  const done: string[] = [];
+  const failed: string[] = [];
+  let attempted = 0;
+  while (remaining.length) {
+    if (attempted && Date.now() > deadline - DOMAIN_BACKGROUND_START_MARGIN_MS) break;
+    attempted += 1;
+    const endpoint = remaining.shift()!;
+    const domain = domains.find((row) => row.sourceObject === endpoint)!;
+    try {
+      const dataset = await pullDomainDataset(credentials, domain, request.window, today, deadline);
+      await writeOperationalSourceOutput({
+        companyId,
+        adapter: FOODREADY_ADAPTER,
+        mode: 'LIVE',
+        window: request.window,
+        output: { [dataset.schema.key]: dataset },
+      });
+      done.push(`${endpoint} (${dataset.rows.length})`);
+    } catch (error) {
+      if (attempted > 1 && Date.now() > deadline) {
+        remaining.unshift(endpoint);
+        break;
+      }
+      failed.push(`${endpoint}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const parts = [done.length ? `pulled ${done.join(', ')}` : '', failed.length ? `failed ${failed.join('; ')}` : ''].filter(Boolean);
+  const canContinue = remaining.length && request.step < DOMAIN_BACKGROUND_MAX_STEPS;
+  if (remaining.length) parts.push(canContinue ? `continuing with ${remaining.join(', ')}` : `stopped before ${remaining.join(', ')}`);
+  const message = parts.join('; ') || 'nothing to pull';
+  if (failed.length || (remaining.length && !canContinue)) console.warn(`[foodready] background domain pull for ${companyId}: ${message}`);
+  return {
+    ok: !failed.length,
+    message,
+    next: canContinue ? { endpoints: remaining, window: request.window, step: request.step + 1 } : undefined,
+  };
+}
+
+/** Start (or continue) the pull of skipped domains in its own function invocation once this request has responded. */
+export function scheduleFoodReadyDomainPull(companyId: string, request: FoodReadyDomainPullRequest, originOverride?: string): string {
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  const origin = originOverride || appBaseUrl();
+  if (!cronSecret || !origin) return 'skipped domains not pulled in the background (CRON_SECRET or app base URL missing)';
+  try {
+    after(async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        await fetch(new URL(FOODREADY_DOMAIN_PULL_PATH, origin), {
+          method: 'POST',
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: { 'content-type': 'application/json', 'x-cron-secret': cronSecret },
+          body: JSON.stringify({ companyId, request }),
+        });
+      } catch (error) {
+        if (!(error instanceof Error && error.name === 'AbortError')) console.warn('[foodready] background domain pull did not start:', error);
+      } finally {
+        clearTimeout(timeout);
+      }
+    });
+    return `pulling ${request.endpoints.join(', ')} in the background`;
+  } catch {
+    return 'skipped domains not pulled in the background (no request context)';
+  }
 }
 
 /** Where a lot usage pull resumes when it continues in a new request. */
@@ -693,7 +796,10 @@ export const FOODREADY_ADAPTER: OperationalSourceAdapter = {
   datasets: [],
   sync: (context) => syncFoodReady(context),
   afterLiveWrite: async (companyId, output) => {
-    const note = await writeFoodReadyInventorySnapshot(companyId, output);
+    const snapshotNote = await writeFoodReadyInventorySnapshot(companyId, output);
+    const pending = pendingDomainPulls.get(companyId);
+    pendingDomainPulls.delete(companyId);
+    const note = pending ? `${snapshotNote}; ${scheduleFoodReadyDomainPull(companyId, { ...pending, step: 1 })}` : snapshotNote;
     if (!output[FOODREADY_RECIPE_INPUTS_KEY] && !Object.values(output).some((dataset) => dataset.window === FULL_WINDOW)) return note;
     return `${note}; ${scheduleFoodReadyLotUsagePull(companyId)}`;
   },
