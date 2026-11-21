@@ -1756,6 +1756,8 @@ model RealEstateFixedAsset {
   assetClass      String
   cost            Decimal   @db.Decimal(18, 2)
   inServiceDate   DateTime? @db.Date
+  /// Phased completion: cost recorded after inServiceDate and before this date belongs to buildings finished on this date.
+  laterPhaseInServiceDate DateTime? @db.Date
   /// Null for non-depreciable assets (land).
   usefulLifeYears Decimal?  @db.Decimal(6, 2)
   basis           String?

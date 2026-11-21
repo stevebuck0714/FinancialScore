@@ -5,7 +5,7 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensureRealEstateConstructionTables } from '@/lib/real-estate/construction-tables';
 import { classifyFixedAssetAccount } from '@/lib/real-estate/quickbooks-report-lines';
-import { republishConsolidatedFinancials } from '@/lib/real-estate/consolidated-financials';
+import { loadRegisterBookSchedule, republishConsolidatedFinancials } from '@/lib/real-estate/consolidated-financials';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,8 +33,9 @@ async function rebuildFromQuickBooks(companyId: string) {
   if (!assets.length) {
     return NextResponse.json({ error: 'No QuickBooks Desktop fixed-asset balances were found. Run the QuickBooks Desktop sync first.' }, { status: 400 });
   }
-  const existing = await prisma.$queryRawUnsafe<Array<{ assetClass: string; inServiceDate: string | null; usefulLifeYears: number | null }>>(
-    `SELECT "assetClass", to_char("inServiceDate", 'YYYY-MM-DD') AS "inServiceDate", "usefulLifeYears"::float AS "usefulLifeYears"
+  const existing = await prisma.$queryRawUnsafe<Array<{ assetClass: string; inServiceDate: string | null; laterPhaseInServiceDate: string | null; usefulLifeYears: number | null }>>(
+    `SELECT "assetClass", to_char("inServiceDate", 'YYYY-MM-DD') AS "inServiceDate",
+       to_char("laterPhaseInServiceDate", 'YYYY-MM-DD') AS "laterPhaseInServiceDate", "usefulLifeYears"::float AS "usefulLifeYears"
      FROM "RealEstateFixedAsset" WHERE "companyId"=$1 ORDER BY "sortOrder"`,
     companyId,
   );
@@ -43,17 +44,18 @@ async function rebuildFromQuickBooks(companyId: string) {
     const matches = existing.filter((asset) => classes.includes(asset.assetClass));
     return {
       inServiceDate: matches.find((asset) => asset.inServiceDate)?.inServiceDate || null,
+      laterPhaseInServiceDate: assetClass === 'land' ? null : matches.find((asset) => asset.laterPhaseInServiceDate)?.laterPhaseInServiceDate || null,
       usefulLifeYears: assetClass === 'land' ? null : matches.find((asset) => asset.usefulLifeYears)?.usefulLifeYears ?? DEFAULT_LIFE[assetClass],
     };
   };
   await prisma.$transaction([
     prisma.$executeRawUnsafe('DELETE FROM "RealEstateFixedAsset" WHERE "companyId"=$1', companyId),
     ...assets.map((asset, index) => {
-      const { inServiceDate, usefulLifeYears } = carried(asset.assetClass);
+      const { inServiceDate, laterPhaseInServiceDate, usefulLifeYears } = carried(asset.assetClass);
       return prisma.$executeRawUnsafe(
-        `INSERT INTO "RealEstateFixedAsset" ("id","companyId","name","assetClass","cost","inServiceDate","usefulLifeYears","basis","sortOrder","updatedAt")
-         VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,CURRENT_TIMESTAMP)`,
-        randomUUID(), companyId, asset.name, asset.assetClass, Math.round(asset.amount * 100) / 100, inServiceDate, usefulLifeYears,
+        `INSERT INTO "RealEstateFixedAsset" ("id","companyId","name","assetClass","cost","inServiceDate","laterPhaseInServiceDate","usefulLifeYears","basis","sortOrder","updatedAt")
+         VALUES ($1,$2,$3,$4,$5,$6::date,$7::date,$8,$9,$10,CURRENT_TIMESTAMP)`,
+        randomUUID(), companyId, asset.name, asset.assetClass, Math.round(asset.amount * 100) / 100, inServiceDate, laterPhaseInServiceDate, usefulLifeYears,
         `QuickBooks Desktop account ${asset.accountCode} "${asset.accountName}" at ${asset.periodEnd}.`, index + 1,
       );
     }),
@@ -103,12 +105,16 @@ export async function GET(request: NextRequest) {
       ),
       prisma.$queryRawUnsafe<any[]>(
         `SELECT "id", "name", "assetClass", "cost"::float AS "cost", to_char("inServiceDate", 'YYYY-MM-DD') AS "inServiceDate",
-          "usefulLifeYears"::float AS "usefulLifeYears", "basis", "sortOrder"
+          to_char("laterPhaseInServiceDate", 'YYYY-MM-DD') AS "laterPhaseInServiceDate", "usefulLifeYears"::float AS "usefulLifeYears", "basis", "sortOrder"
          FROM "RealEstateFixedAsset" WHERE "companyId"=$1 ORDER BY "sortOrder", "name"`,
         companyId,
       ),
     ]);
-    return NextResponse.json({ draws, budgetLines, invoices, fundingSources, fixedAssets });
+    const bookSchedule = await loadRegisterBookSchedule(companyId).catch((error) => {
+      console.error('Register book schedule failed:', { companyId, error });
+      return null;
+    });
+    return NextResponse.json({ draws, budgetLines, invoices, fundingSources, fixedAssets, bookSchedule });
   } catch (error: any) {
     return NextResponse.json({ error: 'Failed to load construction data', details: String(error?.message || error) }, { status: 500 });
   }
@@ -138,28 +144,35 @@ export async function POST(request: NextRequest) {
     const assetClass = String(body.assetClass || '').trim();
     const cost = Number(body.cost);
     const inServiceDate = body.inServiceDate ? String(body.inServiceDate) : null;
+    const laterPhaseDate = body.laterPhaseInServiceDate ? String(body.laterPhaseInServiceDate) : null;
     const usefulLifeYears = body.usefulLifeYears === null || body.usefulLifeYears === '' || body.usefulLifeYears === undefined ? null : Number(body.usefulLifeYears);
     if (
       !name || !ASSET_CLASSES.includes(assetClass) || !Number.isFinite(cost) || cost < 0 ||
       (inServiceDate && !/^\d{4}-\d{2}-\d{2}$/.test(inServiceDate)) ||
+      (laterPhaseDate && !/^\d{4}-\d{2}-\d{2}$/.test(laterPhaseDate)) ||
       (usefulLifeYears !== null && (!Number.isFinite(usefulLifeYears) || usefulLifeYears <= 0 || usefulLifeYears > 100))
     ) {
-      return NextResponse.json({ error: 'Provide an asset name, class, cost, a valid in-service date, and a useful life between 0 and 100 years.' }, { status: 400 });
+      return NextResponse.json({ error: 'Provide an asset name, class, cost, valid dates, and a useful life between 0 and 100 years.' }, { status: 400 });
+    }
+    if (laterPhaseDate && assetClass !== 'land' && (!inServiceDate || laterPhaseDate.slice(0, 7) <= inServiceDate.slice(0, 7))) {
+      return NextResponse.json({ error: 'The later phase in-service date must be in a later month than the in-service date.' }, { status: 400 });
     }
     const lifeForClass = assetClass === 'land' ? null : usefulLifeYears;
+    const laterPhaseInServiceDate = assetClass === 'land' ? null : laterPhaseDate;
     const basis = String(body.basis || '').trim() || null;
     if (id) {
       const updated = await prisma.$executeRawUnsafe(
-        `UPDATE "RealEstateFixedAsset" SET "name"=$3, "assetClass"=$4, "cost"=$5, "inServiceDate"=$6::date, "usefulLifeYears"=$7, "basis"=$8, "updatedAt"=CURRENT_TIMESTAMP
+        `UPDATE "RealEstateFixedAsset" SET "name"=$3, "assetClass"=$4, "cost"=$5, "inServiceDate"=$6::date, "usefulLifeYears"=$7, "basis"=$8,
+           "laterPhaseInServiceDate"=$9::date, "updatedAt"=CURRENT_TIMESTAMP
          WHERE "id"=$1 AND "companyId"=$2`,
-        id, companyId, name, assetClass, Math.round(cost * 100) / 100, inServiceDate, lifeForClass, basis,
+        id, companyId, name, assetClass, Math.round(cost * 100) / 100, inServiceDate, lifeForClass, basis, laterPhaseInServiceDate,
       );
       if (!updated) return NextResponse.json({ error: 'Asset was not found for this company.' }, { status: 404 });
     } else {
       await prisma.$executeRawUnsafe(
-        `INSERT INTO "RealEstateFixedAsset" ("id","companyId","name","assetClass","cost","inServiceDate","usefulLifeYears","basis","sortOrder","updatedAt")
-         VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,(SELECT COALESCE(MAX("sortOrder"),0)+1 FROM "RealEstateFixedAsset" WHERE "companyId"=$2),CURRENT_TIMESTAMP)`,
-        randomUUID(), companyId, name, assetClass, Math.round(cost * 100) / 100, inServiceDate, lifeForClass, basis,
+        `INSERT INTO "RealEstateFixedAsset" ("id","companyId","name","assetClass","cost","inServiceDate","usefulLifeYears","basis","laterPhaseInServiceDate","sortOrder","updatedAt")
+         VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9::date,(SELECT COALESCE(MAX("sortOrder"),0)+1 FROM "RealEstateFixedAsset" WHERE "companyId"=$2),CURRENT_TIMESTAMP)`,
+        randomUUID(), companyId, name, assetClass, Math.round(cost * 100) / 100, inServiceDate, lifeForClass, basis, laterPhaseInServiceDate,
       );
     }
     await republishConsolidatedFinancials(companyId, 'fixed-asset-register');

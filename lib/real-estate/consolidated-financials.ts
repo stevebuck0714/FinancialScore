@@ -57,8 +57,20 @@ type Line = {
 };
 type AccountMappingRow = { accountName: string; accountCode: string | null; targetField: string };
 type PropertyMapping = { financialFeed: string; accountCode: string; targetField: string; bookTreatment?: string | null };
-export type RegisterAsset = { name: string; assetClass: string; cost: number; inServiceDate: string | null; usefulLifeYears: number | null; basis: string | null };
+export type RegisterAsset = {
+  id?: string;
+  name: string;
+  assetClass: string;
+  cost: number;
+  inServiceDate: string | null;
+  laterPhaseInServiceDate?: string | null;
+  usefulLifeYears: number | null;
+  basis: string | null;
+};
+/** Combined book depreciation for one register asset, by month (YYYY-MM). */
+export type RegisterBookSchedule = { assetId: string; bookCost: number; laterPhaseCost: number; depreciationByMonth: Record<string, number> };
 export type BudgetLine = { name: string; revisedBudget: number; costClass: string };
+export type ConstructionDraw = { sequence: number; drawDate: string | null; funded: number };
 type Row = Record<string, any> & {
   monthDate: string;
   revenue: number;
@@ -97,13 +109,18 @@ export type ConsolidatedActivityLine = {
   amount: number;
 };
 
+export type NoteTable = { title: string; columns: string[]; rows: Array<{ label: string; values: Array<number | null>; total?: boolean }> };
+
 export type ConsolidationNote = {
   key: string;
   title: string;
   paragraphs: string[];
   items?: string[];
   byYear?: Array<{ label: string; values: Record<string, number> }>;
+  tables?: NoteTable[];
 };
+
+export type DrawTotals = { retainageHeld: number; liquidatedDamages: number };
 
 export type BookDepreciationYear = { year: number; depreciation: number; loanFeeAmortization: number; capitalizedInterest: number; netFixedAssets: number };
 
@@ -129,8 +146,7 @@ const TYPE_FIELD: Record<string, string> = {
 const SKIP_TARGETS = new Set(['ignored', 'ignore', 'unmapped', 'skip', 'exclude', 'excluded']);
 const INTERCOMPANY_ACCOUNT = /due\s*to\s*\/\s*from\s*sln|due\s+(to|from)\s+sln|nusbaum/i;
 const CONTRIBUTED_LAND_ACCOUNT = /land\s+contributions?\b/i;
-const ACCUMULATED_ACCOUNT = /accumulated\s+(depreciation|amortization)|accum\.?\s*(depr|amort)/i;
-const LOAN_FEE_ACCOUNT = /loan\s+(fees?|costs?)|financing\s+(fees?|costs?)|debt\s+issuance|loan\s+closing\s+costs?/i;
+const ACCUMULATED_ACCOUNT = /accumulated\s+(depreciation|amortization)|accum\.?\s*(depr|amort)|\baccum(ulated)?\b.*\bamortization\b/i;const LOAN_FEE_ACCOUNT = /loan\s+(fees?|costs?)|financing\s+(fees?|costs?)|debt\s+issuance|loan\s+closing\s+costs?/i;
 const NON_DEPRECIABLE_PROPERTY = /escrow|reserve|deposit/i;
 const PROPERTY_TAX_ACCOUNT = /real\s+estate\s+tax|property\s+tax/i;
 // SLN's balance sheet varies month to month and sometimes repeats owner-level
@@ -267,7 +283,17 @@ function propertyField(key: string, group: string): string {
   }
 }
 
-type DepreciationComponent = { name: string; assetClass: string; cost: number; share: number; lifeYears: number; inServiceMonth: string | null; assumedInService: boolean };
+type DepreciationComponent = {
+  assetId: string | null;
+  name: string;
+  assetClass: string;
+  cost: number;
+  share: number;
+  lifeYears: number;
+  inServiceMonth: string | null;
+  laterPhaseMonth: string | null;
+  assumedInService: boolean;
+};
 
 /**
  * Book depreciation components: the register's depreciable assets, or the
@@ -277,28 +303,34 @@ type DepreciationComponent = { name: string; assetClass: string; cost: number; s
  */
 function depreciationPlan(fixedAssets: RegisterAsset[], budgetLines: BudgetLine[], lastDrawDate: string | null) {
   const assumedMonth = lastDrawDate ? lastDrawDate.slice(0, 7) : null;
-  type Part = { name: string; assetClass: string; cost: number; lifeYears: number; inServiceDate: string | null };
+  type Part = { assetId: string | null; name: string; assetClass: string; cost: number; lifeYears: number; inServiceDate: string | null; laterPhaseDate: string | null };
   let source: 'register' | 'budget' | null = null;
   let parts: Part[] = fixedAssets
     .filter((asset) => asset.assetClass !== 'land' && Number(asset.cost) > 0)
     .map((asset) => ({
+      assetId: asset.id || null,
       name: asset.name,
       assetClass: asset.assetClass,
       cost: Number(asset.cost),
       lifeYears: Number(asset.usefulLifeYears) > 0 ? Number(asset.usefulLifeYears) : DEFAULT_LIFE_YEARS[asset.assetClass] || 40,
       inServiceDate: asset.inServiceDate,
+      laterPhaseDate: asset.inServiceDate && asset.laterPhaseInServiceDate && asset.laterPhaseInServiceDate.slice(0, 7) > asset.inServiceDate.slice(0, 7)
+        ? asset.laterPhaseInServiceDate
+        : null,
     }));
   if (parts.length) source = 'register';
   else {
     const total = (classes: string[]) => budgetLines.filter((line) => classes.includes(line.costClass)).reduce((sum, line) => sum + Number(line.revisedBudget || 0), 0);
     parts = [
-      { name: 'Building (hard and capitalized soft construction costs)', assetClass: 'building', cost: total(['hard', 'soft']), lifeYears: 40, inServiceDate: null },
-      { name: 'Furniture, fixtures and equipment', assetClass: 'ffe', cost: total(['ffe']), lifeYears: 7, inServiceDate: null },
+      { assetId: null, name: 'Building (hard and capitalized soft construction costs)', assetClass: 'building', cost: total(['hard', 'soft']), lifeYears: 40, inServiceDate: null, laterPhaseDate: null },
+      { assetId: null, name: 'Furniture, fixtures and equipment', assetClass: 'ffe', cost: total(['ffe']), lifeYears: 7, inServiceDate: null, laterPhaseDate: null },
     ].filter((part) => part.cost > 0);
     if (parts.length) source = 'budget';
   }
   const totalCost = parts.reduce((sum, part) => sum + part.cost, 0);
   const components: DepreciationComponent[] = parts.map((part) => ({
+    assetId: part.assetId,
+    laterPhaseMonth: part.laterPhaseDate ? part.laterPhaseDate.slice(0, 7) : null,
     name: part.name,
     assetClass: part.assetClass,
     cost: part.cost,
@@ -319,6 +351,25 @@ function depreciationPlan(fixedAssets: RegisterAsset[], budgetLines: BudgetLine[
   };
 }
 
+/** Cost funded on each construction draw (equity, loan and retainage held), by month. Undated draws sit midway between the dated draws around them. */
+function drawFundingByMonth(draws: ConstructionDraw[]) {
+  const ordered = [...draws].sort((a, b) => a.sequence - b.sequence);
+  const dayOf = (date: string) => Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
+  const funding = new Map<string, number>();
+  ordered.forEach((draw, index) => {
+    if (Math.abs(draw.funded) < 0.005) return;
+    let date = draw.drawDate;
+    if (!date) {
+      const before = ordered.slice(0, index).reverse().find((row) => row.drawDate)?.drawDate;
+      const after = ordered.slice(index + 1).find((row) => row.drawDate)?.drawDate;
+      if (before && after) date = new Date((dayOf(before) + dayOf(after)) / 2).toISOString().slice(0, 10);
+      else date = before || after || null;
+    }
+    if (date) funding.set(date.slice(0, 7), (funding.get(date.slice(0, 7)) || 0) + draw.funded);
+  });
+  return funding;
+}
+
 type Layer = { start: number; end: number; perMonth: number };
 const activeAmount = (layers: Layer[], index: number) => layers.reduce((sum, layer) => sum + (index >= layer.start && index < layer.end ? layer.perMonth : 0), 0);
 
@@ -331,13 +382,16 @@ export function buildConsolidatedMonthlyRows(input: {
   fixedAssets?: RegisterAsset[];
   budgetLines?: BudgetLine[];
   lastDrawDate?: string | null;
+  drawTotals?: DrawTotals | null;
+  draws?: ConstructionDraw[];
   debtIssuance?: DebtIssuanceTerm | null;
 }) {
   const allLines = [...input.slnLines, ...input.bgahLines];
   if (!allLines.length) {
     return {
       rows: [] as Row[], months: [] as ConsolidatedMonth[], balanceLines: [] as ConsolidatedBalanceLine[], activityLines: [] as ConsolidatedActivityLine[],
-      notes: [] as ConsolidationNote[], bookDepreciation: [] as BookDepreciationYear[], unmappedSlnAccounts: 0, unmappedBgahAccounts: [] as string[], remappedBgahAccounts: [] as string[],
+      notes: [] as ConsolidationNote[], bookDepreciation: [] as BookDepreciationYear[], registerSchedule: [] as RegisterBookSchedule[],
+      unmappedSlnAccounts: 0, unmappedBgahAccounts: [] as string[], remappedBgahAccounts: [] as string[],
     };
   }
   const lineMonths = allLines.map((line) => monthOf(line.periodEnd)).sort();
@@ -347,8 +401,11 @@ export function buildConsolidatedMonthlyRows(input: {
 
   const plan = depreciationPlan(input.fixedAssets || [], input.budgetLines || [], input.lastDrawDate || null);
   const bookDepreciationActive = plan.components.length > 0;
-  const inServiceIndex = plan.projectInServiceMonth ? monthIndex(plan.projectInServiceMonth) : Number.POSITIVE_INFINITY;
-  const preService = (month: string) => monthIndex(month) < inServiceIndex;
+  const componentWindows = plan.components.map((component) => ({
+    start: component.inServiceMonth ? monthIndex(component.inServiceMonth) : Number.POSITIVE_INFINITY,
+    later: component.laterPhaseMonth ? monthIndex(component.laterPhaseMonth) : Number.NEGATIVE_INFINITY,
+  }));
+  const inLaterPhase = (componentIndex: number, index: number) => index > componentWindows[componentIndex].start && index < componentWindows[componentIndex].later;
 
   const activityLines: ConsolidatedActivityLine[] = [];
   const post = (sourceEntity: ConsolidatedActivityLine['sourceEntity'], month: string, target: string, amount: number, label: string) => {
@@ -375,6 +432,7 @@ export function buildConsolidatedMonthlyRows(input: {
   const bgahTarget = (line: Line) => targetByName.get(normalizeKey(line.accountName)) || targetByCode.get(normalizeKey(line.accountCode)) || '';
 
   const unmappedBgah = new Set<string>();
+  const bgahBalanceMonths = new Set<string>();
   const remappedBgah = new Set<string>();
   const depreciationBooked = new Map<string, number>();
   const quickBooksDepreciationIgnored = new Map<string, number>();
@@ -385,14 +443,17 @@ export function buildConsolidatedMonthlyRows(input: {
   const capitalized = new Map<string, number>();
   const slnDepreciable = new Map<string, number>();
   const bgahInterest = new Map<string, number>();
+  const quickBooksCapitalizedInterest = new Map<string, number>();
   const realEstateTaxCash = new Map<string, number>();
   const insuranceCash = new Map<string, number>();
   const contributedLandBasis = new Map<string, { field: string; accountType: string; amount: number }>();
   const loanFeeBasis = new Map<string, { field: string; accountType: string; amount: number }>();
   const quickBooksAccumulated = new Map<string, Map<string, { accountType: string; amount: number }>>();
   const depreciableBase = new Map<string, number>();
+  const depreciableAccounts = new Map<string, Map<string, number>>();
   const loanFeeAccounts = new Set<string>();
   const excludedPropertyAccounts = new Set<string>();
+  const reclassifiedConstructionAccounts = new Set<string>();
   const addTo = (map: Map<string, number>, month: string, amount: number) => map.set(month, (map.get(month) || 0) + amount);
   const balanceLines: ConsolidatedBalanceLine[] = [];
   const addBalanceLine = (sourceEntity: ConsolidatedBalanceLine['sourceEntity'], month: string, line: Pick<Line, 'accountCode' | 'accountName' | 'accountType'>, amount: number) => {
@@ -404,6 +465,7 @@ export function buildConsolidatedMonthlyRows(input: {
     const month = monthOf(line.periodEnd);
     const amount = Number(line.amount || 0);
     coverage.get(month)!.bgah = true;
+    if (String(line.reportType).toUpperCase() !== 'ACTIVITY') bgahBalanceMonths.add(month);
     if (String(line.reportType).toUpperCase() === 'ACTIVITY') {
       let target = bgahTarget(line);
       if (!target) {
@@ -414,6 +476,10 @@ export function buildConsolidatedMonthlyRows(input: {
       if (SKIP_TARGETS.has(target) || !isIncomeStatementTarget(target)) continue;
       if (target === 'depreciationAmortization') {
         addTo(bookDepreciationActive ? quickBooksDepreciationIgnored : depreciationBooked, month, amount);
+        continue;
+      }
+      if (target === 'interestExpense' && amount < 0 && bookDepreciationActive) {
+        addTo(quickBooksCapitalizedInterest, month, -amount);
         continue;
       }
       if (target === 'interestExpense') addTo(bgahInterest, month, amount);
@@ -440,6 +506,12 @@ export function buildConsolidatedMonthlyRows(input: {
       addTo(bgahEquityResidual, month, amount);
       continue;
     }
+    let presentedLine = line;
+    if (side === 'asset' && classifyFixedAssetAccount(line.accountName) === 'construction_in_progress' && !FIXED_ASSET_FIELDS.includes(field)) {
+      field = 'fixedAssets';
+      presentedLine = { ...line, accountType: 'FixedAsset' };
+      reclassifiedConstructionAccounts.add(line.accountName);
+    }
     if (side === 'asset' && CONTRIBUTED_LAND_ACCOUNT.test(line.accountName)) {
       const basis = contributedLandBasis.get(month);
       contributedLandBasis.set(month, { field, accountType: line.accountType, amount: (basis?.amount || 0) + amount });
@@ -456,14 +528,19 @@ export function buildConsolidatedMonthlyRows(input: {
         loanFeeAccounts.add(line.accountName);
         const basis = loanFeeBasis.get(month);
         loanFeeBasis.set(month, { field, accountType: line.accountType, amount: (basis?.amount || 0) + amount });
-      } else if (normalizeType(line.accountType) === 'fixedasset') {
+      } else if (normalizeType(line.accountType) === 'fixedasset' || classifyFixedAssetAccount(line.accountName) === 'construction_in_progress') {
         const isLand = CONTRIBUTED_LAND_ACCOUNT.test(line.accountName) || classifyFixedAssetAccount(line.accountName) === 'land';
         if (!isLand && NON_DEPRECIABLE_PROPERTY.test(line.accountName)) excludedPropertyAccounts.add(line.accountName);
-        else if (!isLand) addTo(depreciableBase, month, amount);
+        else if (!isLand) {
+          addTo(depreciableBase, month, amount);
+          const accounts = depreciableAccounts.get(month) || new Map<string, number>();
+          accounts.set(line.accountName, (accounts.get(line.accountName) || 0) + amount);
+          depreciableAccounts.set(month, accounts);
+        }
       }
     }
     rows.get(month)![field] = Number(rows.get(month)![field] || 0) + amount;
-    addBalanceLine('BGAH', month, line, amount);
+    addBalanceLine('BGAH', month, presentedLine, amount);
   }
 
   // Without a book depreciation plan, each year's QuickBooks depreciation is spread evenly over its twelve months.
@@ -571,6 +648,54 @@ export function buildConsolidatedMonthlyRows(input: {
   const loanFeeExpensedByMonth = new Map<string, number>();
   const bookDepreciationYears = new Map<number, BookDepreciationYear>();
 
+  // QuickBooks property cost by month, carried forward through months without a balance sheet.
+  // Interest the CPA capitalized at year-end (negative QuickBooks interest expense) is taken out of property cost; the
+  // combined books capitalize the same amount in the months the interest was incurred.
+  const quickBooksBase = new Map<string, number>();
+  const baseMonthFor = new Map<string, string | null>();
+  const quickBooksCapitalizedToDate = new Map<string, number>();
+  let carriedBase = 0;
+  let carriedMonth: string | null = null;
+  let quickBooksCapitalized = 0;
+  months.forEach((month) => {
+    if (depreciableBase.has(month)) [carriedBase, carriedMonth] = [depreciableBase.get(month)!, month];
+    else if (bgahBalanceMonths.has(month)) [carriedBase, carriedMonth] = [0, month];
+    quickBooksCapitalized += quickBooksCapitalizedInterest.get(month) || 0;
+    quickBooksCapitalizedToDate.set(month, quickBooksCapitalized);
+    quickBooksBase.set(month, carriedBase - quickBooksCapitalized);
+    baseMonthFor.set(month, carriedMonth);
+  });
+  const constructionEndIndex = componentWindows.reduce((latest, window) => Math.max(latest, Number.isFinite(window.later) ? window.later : window.start), Number.NEGATIVE_INFINITY);
+  const cpaCapitalized = new Map<string, number>();
+  const cpaYears = new Map<string, number>();
+  quickBooksCapitalizedInterest.forEach((amount, month) => cpaYears.set(month.slice(0, 4), (cpaYears.get(month.slice(0, 4)) || 0) + amount));
+  cpaYears.forEach((amount, year) => {
+    const incurred = months.filter((month) => month.startsWith(year) && (bgahInterest.get(month) || 0) > 0);
+    const duringConstruction = incurred.filter((month) => monthIndex(month) < constructionEndIndex);
+    const total = (list: string[]) => list.reduce((sum, month) => sum + bgahInterest.get(month)!, 0);
+    const spread = total(duringConstruction) >= amount ? duringConstruction : incurred;
+    const spreadTotal = total(spread);
+    if (spreadTotal > 0) spread.forEach((month) => cpaCapitalized.set(month, (amount * bgahInterest.get(month)!) / spreadTotal));
+  });
+  // QuickBooks books property cost at year-end; within each year its increase is timed by the construction draws.
+  const funding = drawFundingByMonth(input.draws || []);
+  const timedBase = new Map(quickBooksBase);
+  const drawTimedYears: string[] = [];
+  [...new Set(months.map((month) => month.slice(0, 4)))].forEach((year) => {
+    const yearMonths = months.filter((month) => month.startsWith(year));
+    const yearFunding = yearMonths.reduce((total, month) => total + (funding.get(month) || 0), 0);
+    if (yearFunding <= 0) return;
+    const priorEnd = months.filter((month) => month < `${year}-01`).at(-1);
+    const opening = priorEnd ? quickBooksBase.get(priorEnd)! : 0;
+    const increase = quickBooksBase.get(yearMonths.at(-1)!)! - opening;
+    let funded = 0;
+    yearMonths.forEach((month) => {
+      funded += funding.get(month) || 0;
+      timedBase.set(month, opening + (increase * funded) / yearFunding);
+    });
+    drawTimedYears.push(year);
+  });
+
   const firstSlnMonth = input.slnLines.map((line) => monthOf(line.periodEnd)).sort()[0] || null;
   let cumulativePrincipal = 0;
   let cumulativeCapital = 0;
@@ -581,6 +706,10 @@ export function buildConsolidatedMonthlyRows(input: {
   let cumulativeInterestAccrual = 0;
   let previousBase = 0;
   let lastQuickBooksBase = 0;
+  let lastBaseMonth: string | null = null;
+  const componentLaterCost = plan.components.map(() => 0);
+  const componentDepreciation = plan.components.map(() => new Map<string, number>());
+  const laterPhaseShares = new Map<string, number>();
   let previousLoanFee = 0;
   let lastLoanFee = 0;
   const monthInfo: ConsolidatedMonth[] = [];
@@ -610,7 +739,7 @@ export function buildConsolidatedMonthlyRows(input: {
     // Loan fees: netted against the loan, amortized straight-line through the end of the loan term.
     const loanFee = loanFeeBasis.get(month);
     if (loanFee) lastLoanFee = loanFee.amount;
-    else if (cover.bgah) lastLoanFee = 0;
+    else if (bgahBalanceMonths.has(month)) lastLoanFee = 0;
     if (termEndIndex !== null && index <= termEndIndex && Math.abs(lastLoanFee - previousLoanFee) >= 0.005) {
       loanFeeLayers.push({ start: index, end: termEndIndex + 1, perMonth: (lastLoanFee - previousLoanFee) / (termEndIndex - index + 1) });
     }
@@ -624,36 +753,59 @@ export function buildConsolidatedMonthlyRows(input: {
     if (accrual) post('CONSOLIDATION', month, 'interestExpense', accrual, ADJUSTMENT.accruedInterest);
     cumulativeInterestAccrual += accrual;
 
-    // Interest before the property is placed in service is part of its cost.
-    let capitalizedInterest = 0;
-    if (preService(month)) {
-      const expensedInterest = (bgahInterest.get(month) || 0) + (slnInterest.get(month) || 0) + accrual;
-      if (expensedInterest) post('CONSOLIDATION', month, 'interestExpense', -expensedInterest, ADJUSTMENT.capitalizedInterest);
-      capitalizedInterest = expensedInterest + amortization;
-    } else if (amortization) {
-      post('CONSOLIDATION', month, 'interestExpense', amortization, ADJUSTMENT.loanFeeAmortization);
-      addTo(loanFeeExpensedByMonth, month, amortization);
+    lastQuickBooksBase = timedBase.get(month) || 0;
+    lastBaseMonth = baseMonthFor.get(month) || null;
+
+    // Interest is part of property cost while it is under construction: all of an asset's share before its in-service
+    // date, then the later-phase cost's share until the later-phase date.
+    const propertyCost = lastQuickBooksBase + cumulativeCapitalizedInterest;
+    const quickBooksAddition = propertyCost - previousBase;
+    const laterComponents = plan.components.map((_, componentIndex) => componentIndex).filter((componentIndex) => inLaterPhase(componentIndex, index));
+    let capitalizedShare = 0;
+    plan.components.forEach((component, componentIndex) => {
+      if (index < componentWindows[componentIndex].start) capitalizedShare += component.share;
+      else if (laterComponents.includes(componentIndex)) {
+        componentLaterCost[componentIndex] += quickBooksAddition * component.share;
+        if (propertyCost > 0) capitalizedShare += componentLaterCost[componentIndex] / propertyCost;
+      }
+    });
+    capitalizedShare = Math.min(1, Math.max(0, capitalizedShare));
+    if (laterComponents.length) laterPhaseShares.set(month, capitalizedShare);
+    // Years the CPA capitalized interest use the CPA's amount for BGAH's interest; SLN interest and accruals use the share.
+    const bgahCapitalized = cpaYears.has(month.slice(0, 4)) ? cpaCapitalized.get(month) || 0 : (bgahInterest.get(month) || 0) * capitalizedShare;
+    const interestCapitalized = bgahCapitalized + ((slnInterest.get(month) || 0) + accrual) * capitalizedShare;
+    if (Math.abs(interestCapitalized) >= 0.005) post('CONSOLIDATION', month, 'interestExpense', -interestCapitalized, ADJUSTMENT.capitalizedInterest);
+    const capitalizedInterest = interestCapitalized + amortization * capitalizedShare;
+    const amortizationExpensed = amortization * (1 - capitalizedShare);
+    if (Math.abs(amortizationExpensed) >= 0.005) {
+      post('CONSOLIDATION', month, 'interestExpense', amortizationExpensed, ADJUSTMENT.loanFeeAmortization);
+      addTo(loanFeeExpensedByMonth, month, amortizationExpensed);
     }
     if (capitalizedInterest) addTo(capitalizedInterestByMonth, month, capitalizedInterest);
     cumulativeCapitalizedInterest += capitalizedInterest;
+    laterComponents.forEach((componentIndex) => { componentLaterCost[componentIndex] += capitalizedInterest * plan.components[componentIndex].share; });
 
     // Book depreciation: each month's addition to property cost is a layer depreciated from the month it is in service.
+    // Cost added while an asset's later phase is under construction is depreciated from the later-phase date.
     let depreciation = 0;
     if (bookDepreciationActive) {
-      if (depreciableBase.has(month)) lastQuickBooksBase = depreciableBase.get(month)!;
-      else if (cover.bgah) lastQuickBooksBase = 0;
       const base = lastQuickBooksBase + cumulativeCapitalizedInterest;
       const addition = base - previousBase;
       previousBase = base;
       plan.components.forEach((component, componentIndex) => {
         if (!component.inServiceMonth || Math.abs(addition) < 0.005) return;
         const lifeMonths = Math.round(component.lifeYears * 12);
-        const start = Math.max(index, monthIndex(component.inServiceMonth));
+        const window = componentWindows[componentIndex];
+        const start = laterComponents.includes(componentIndex) ? window.later : Math.max(index, window.start);
         projectLayers[componentIndex].push({ start, end: start + lifeMonths, perMonth: (addition * component.share) / lifeMonths });
+      });
+      projectLayers.forEach((layers, componentIndex) => {
+        const amount = activeAmount(layers, index);
+        if (amount) componentDepreciation[componentIndex].set(month, round(amount));
       });
       const improvement = slnDepreciable.get(month) || 0;
       if (Math.abs(improvement) >= 0.005 && plan.projectInServiceMonth) {
-        const start = Math.max(index, inServiceIndex);
+        const start = Math.max(index, monthIndex(plan.projectInServiceMonth));
         improvementLayers.push({ start, end: start + improvementLifeMonths, perMonth: improvement / improvementLifeMonths });
       }
       depreciation = projectLayers.reduce((total, layers) => total + activeAmount(layers, index), 0) + activeAmount(improvementLayers, index);
@@ -670,7 +822,9 @@ export function buildConsolidatedMonthlyRows(input: {
       quickBooksAccumulatedRemoved -= value.amount;
       addBalanceLine('CONSOLIDATION', month, consolidationLine('QuickBooks accumulated depreciation replaced by book depreciation', value.accountType), -value.amount);
     });
-    row.fixedAssets = Number(row.fixedAssets || 0) + cumulativeCapitalizedInterest - cumulativeDepreciation;
+    const quickBooksCapitalizedRemoved = quickBooksCapitalizedToDate.get(month) || 0;
+    row.fixedAssets = Number(row.fixedAssets || 0) + cumulativeCapitalizedInterest - cumulativeDepreciation - quickBooksCapitalizedRemoved;
+    addBalanceLine('CONSOLIDATION', month, consolidationLine('Interest capitalized in QuickBooks at year-end, replaced by book capitalized interest', 'FixedAsset'), -quickBooksCapitalizedRemoved);
     addBalanceLine('CONSOLIDATION', month, consolidationLine('Interest capitalized to construction in progress', 'FixedAsset'), cumulativeCapitalizedInterest);
     addBalanceLine('CONSOLIDATION', month, consolidationLine('Accumulated depreciation (book)', 'FixedAsset'), -cumulativeDepreciation);
 
@@ -723,7 +877,8 @@ export function buildConsolidatedMonthlyRows(input: {
     const entities: Array<'SLN' | 'BGAH'> = [];
     if (cover.slnActivity || cover.slnBalance) entities.push('SLN');
     if (cover.bgah) entities.push('BGAH');
-    const adjustmentRetained = quickBooksAccumulatedRemoved + cumulativeCapitalizedInterest - cumulativeDepreciation + loanFeeRetained - cumulativeInterestAccrual + spreadRetained;
+    const adjustmentRetained = quickBooksAccumulatedRemoved + cumulativeCapitalizedInterest - quickBooksCapitalizedRemoved - cumulativeDepreciation + loanFeeRetained
+      - cumulativeInterestAccrual + spreadRetained;
     const expectedRetained = (bgahEquityResidual.get(month) || 0) + cumulativeSlnNet + timing + adjustmentRetained + (slnEquity.get(month) || 0);
     const retainedLine = consolidationLine('Cumulative Earnings (Deficit)', 'Equity');
     if (cover.bgah) {
@@ -747,14 +902,24 @@ export function buildConsolidatedMonthlyRows(input: {
     contributedLand: input.contributedLand || null,
     contributedLandBasis,
     debtIssuance: input.debtIssuance || null,
+    drawTimedYears,
+    cpaCapitalizedByYear: new Map([...cpaYears.entries()].sort()),
+    phasedAssets: plan.components.flatMap((component, componentIndex) => component.laterPhaseMonth && component.inServiceMonth
+      ? [{ name: component.name, inServiceMonth: component.inServiceMonth, laterPhaseMonth: component.laterPhaseMonth, laterCost: componentLaterCost[componentIndex] }]
+      : []),
+    laterPhaseShares,
     loanFeeAccounts: [...loanFeeAccounts].sort(),
     lastLoanFee,
     excludedPropertyAccounts: [...excludedPropertyAccounts].sort(),
+    reclassifiedConstructionAccounts: [...reclassifiedConstructionAccounts].sort(),
     quickBooksDepreciationIgnored,
     bookDepreciationByMonth,
     cumulativeDepreciation,
-    depreciableCost: previousBase,
+    quickBooksPropertyAccounts: lastBaseMonth ? [...(depreciableAccounts.get(lastBaseMonth) || new Map()).entries()].sort((a, b) => a[0].localeCompare(b[0])) : [],
+    quickBooksPropertyCost: lastQuickBooksBase,
+    capitalizedInterest: cumulativeCapitalizedInterest,
     improvementsCapitalized: [...slnDepreciable.values()].reduce((total, amount) => total + amount, 0),
+    drawTotals: input.drawTotals || null,
     capitalizedInterestByMonth,
     loanFeeAmortizationByMonth,
     loanFeeExpensedByMonth,
@@ -772,6 +937,14 @@ export function buildConsolidatedMonthlyRows(input: {
     activityLines,
     notes,
     bookDepreciation: [...bookDepreciationYears.values()].sort((a, b) => a.year - b.year),
+    registerSchedule: plan.components.flatMap((component, componentIndex): RegisterBookSchedule[] => component.assetId
+      ? [{
+          assetId: component.assetId,
+          bookCost: round(previousBase * component.share),
+          laterPhaseCost: round(componentLaterCost[componentIndex]),
+          depreciationByMonth: Object.fromEntries(componentDepreciation[componentIndex]),
+        }]
+      : []),
     unmappedSlnAccounts: mapped.unmapped.length,
     unmappedBgahAccounts: [...unmappedBgah].sort(),
     remappedBgahAccounts: [...remappedBgah].sort(),
@@ -786,14 +959,22 @@ function buildNotes(facts: {
   contributedLand: ContributedLand | null;
   contributedLandBasis: Map<string, { amount: number }>;
   debtIssuance: DebtIssuanceTerm | null;
+  phasedAssets: Array<{ name: string; inServiceMonth: string; laterPhaseMonth: string; laterCost: number }>;
+  drawTimedYears: string[];
+  cpaCapitalizedByYear: Map<string, number>;
+  laterPhaseShares: Map<string, number>;
   loanFeeAccounts: string[];
   lastLoanFee: number;
   excludedPropertyAccounts: string[];
+  reclassifiedConstructionAccounts: string[];
   quickBooksDepreciationIgnored: Map<string, number>;
   bookDepreciationByMonth: Map<string, number>;
   cumulativeDepreciation: number;
-  depreciableCost: number;
+  quickBooksPropertyAccounts: Array<[string, number]>;
+  quickBooksPropertyCost: number;
+  capitalizedInterest: number;
   improvementsCapitalized: number;
+  drawTotals: DrawTotals | null;
   capitalizedInterestByMonth: Map<string, number>;
   loanFeeAmortizationByMonth: Map<string, number>;
   loanFeeExpensedByMonth: Map<string, number>;
@@ -844,22 +1025,79 @@ function buildNotes(facts: {
       : 'the construction budget (hard and capitalized soft costs as building, FF&E as furniture and equipment) because the fixed-asset register has no depreciable assets';
     const inServiceText = plan.projectInServiceMonth
       ? `The property is treated as placed in service in ${monthLabel(plan.projectInServiceMonth)}${plan.inServiceAssumed ? `, the month of the last construction draw, because no in-service date is entered in the register. Enter the certificate of occupancy date on Construction → Fixed Assets to change it` : ''}.`
-      : 'No in-service date is entered in the register and no construction draws are loaded, so no depreciation is recorded and no interest is capitalized.';
+      : 'No in-service date is entered in the register and no construction draws are loaded, so no depreciation is recorded and interest is capitalized to construction in progress.';
+    const phasedText = facts.phasedAssets.length
+      ? `The property was completed in phases. Each register asset with a later-phase in-service date splits its cost by when it was recorded: cost through its in-service month is the first phase, and cost recorded after that and before the later-phase month belongs to the buildings finished later and is depreciated from the later-phase month. Cost recorded after the later-phase month (final draws, retainage) is depreciated from the month recorded. Later-phase cost, including its capitalized interest: ${facts.phasedAssets.map((asset) => `${asset.name} ${usd(asset.laterCost)} (in service ${monthLabel(asset.inServiceMonth)}, later phase ${monthLabel(asset.laterPhaseMonth)})`).join('; ')}.`
+      : null;
     const ignored = [...facts.quickBooksDepreciationIgnored.values()].reduce((total, amount) => total + amount, 0);
+    const projectCost = facts.quickBooksPropertyCost + facts.capitalizedInterest;
+    const depreciableCost = projectCost + facts.improvementsCapitalized;
+    const registerCost = plan.components.reduce((total, component) => total + component.cost, 0);
+    const registerLabel = plan.source === 'register' ? 'Register' : 'Construction budget';
+    const componentRows = plan.components.map((component) => {
+      const bookCost = projectCost * component.share;
+      return { label: `${component.name} (${component.lifeYears} years)`, values: [component.cost, component.cost / component.lifeYears, bookCost, bookCost / component.lifeYears, component.cost - bookCost] };
+    });
+    const improvementAnnual = facts.improvementsCapitalized / plan.improvementLifeYears;
+    const registerAnnual = componentRows.reduce((total, row) => total + (row.values[1] as number), 0);
+    const bookAnnual = componentRows.reduce((total, row) => total + (row.values[3] as number), 0) + improvementAnnual;
+    const lastTwelve = facts.months.slice(-12);
+    const lastTwelveDepreciation = lastTwelve.reduce((total, month) => total + (facts.bookDepreciationByMonth.get(month) || 0), 0);
+    const monthsInService = plan.projectInServiceMonth ? lastTwelve.filter((month) => month >= plan.projectInServiceMonth!).length : 0;
+    const explanations = [
+      ...(facts.drawTotals && Math.abs(facts.drawTotals.retainageHeld) >= 0.5 ? [`Retainage held from the contractor on the construction draws: ${usd(facts.drawTotals.retainageHeld)}. The budget counts it as cost; cash-basis QuickBooks records it only when paid.`] : []),
+      ...(facts.drawTotals && Math.abs(facts.drawTotals.liquidatedDamages) >= 0.5 ? [`Liquidated damages still withheld from the contractor (net of releases): ${usd(facts.drawTotals.liquidatedDamages)}. Withheld amounts lower the cost actually paid.`] : []),
+      'Budget soft costs (construction interest, fees) that QuickBooks expensed or recorded outside its fixed-asset accounts; construction interest expensed in QuickBooks before the in-service month is added back above as capitalized interest.',
+    ];
     notes.push({
       key: 'depreciation',
       title: 'Property and depreciation',
       paragraphs: [
         `Property is carried at cost: BGAH's QuickBooks property accounts, plus capital improvements paid through SLN and interest capitalized during construction. Construction in progress is not depreciated until the property is placed in service. ${inServiceText}`,
-        `Depreciation is straight-line from the month each cost is placed in service. The split of property cost between asset classes and their useful lives come from ${sourceText}. Depreciable property cost at ${monthLabel(lastMonth)} is ${usd(facts.depreciableCost)}; accumulated book depreciation is ${usd(facts.cumulativeDepreciation)}.`,
+        ...(phasedText ? [phasedText] : []),
+        ...(facts.drawTimedYears.length
+          ? [`QuickBooks records property cost at year-end, so within each year the cost is timed by the construction draws: each year's increase in QuickBooks property cost is spread over the months it was funded (equity, loan and retainage held, by draw date), and QuickBooks' year-end balances are unchanged. Draws without a date are placed midway between the draws around them. Draw-timed years: ${facts.drawTimedYears.join(', ')}.`]
+          : []),
+        `Depreciation is straight-line from the month each cost is placed in service. The split of property cost between asset classes and their useful lives come from ${sourceText}; the cost depreciated is the combined books' property cost, not the ${registerLabel.toLowerCase()} cost. Depreciable property cost at ${monthLabel(lastMonth)} is ${usd(depreciableCost)}; accumulated book depreciation is ${usd(facts.cumulativeDepreciation)}.`,
         `Capital improvements paid through SLN (${usd(facts.improvementsCapitalized)} to date) are depreciated over ${plan.improvementLifeYears} years from the later of the month paid and the in-service date.`,
+        `Book depreciation for the 12 months to ${monthLabel(lastMonth)} is ${usd(lastTwelveDepreciation)}, with the property in service for ${monthsInService} of those months. At current cost the full-year amount is ${usd(bookAnnual)}, against ${usd(registerAnnual)} on the ${registerLabel.toLowerCase()}; the difference is the cost difference below${monthsInService < 12 ? ' plus the months before the in-service date' : ''}.`,
         ...(Math.abs(ignored) >= 0.5 ? [`QuickBooks recorded ${usd(ignored)} of depreciation and amortization; it is replaced by book depreciation and its accumulated balance is removed.`] : []),
       ],
       items: [
-        ...plan.components.map((component) => `${component.name}: ${percent(component.share)} of depreciable cost, ${component.lifeYears} years${component.inServiceMonth ? `, in service ${monthLabel(component.inServiceMonth)}${component.assumedInService ? ' (assumed)' : ''}` : ', no in-service date'}.`),
+        ...plan.components.map((component) => `${component.name}: ${percent(component.share)} of depreciable cost, ${component.lifeYears} years${component.inServiceMonth ? `, in service ${monthLabel(component.inServiceMonth)}${component.assumedInService ? ' (assumed)' : ''}` : ', no in-service date'}${component.laterPhaseMonth ? `, later phase in service ${monthLabel(component.laterPhaseMonth)}` : ''}.`),
+        ...(facts.reclassifiedConstructionAccounts.length ? [`Construction in progress that QuickBooks records as an other asset (${facts.reclassifiedConstructionAccounts.join('; ')}) is presented with property and included in property cost.`] : []),
         ...(facts.excludedPropertyAccounts.length ? [`Not depreciated (escrows and deposits recorded as property in QuickBooks): ${facts.excludedPropertyAccounts.join('; ')}.`] : []),
       ],
+      tables: [
+        {
+          title: `${registerLabel} vs. combined book cost and annual depreciation at ${monthLabel(lastMonth)}`,
+          columns: [`${registerLabel} cost`, `${registerLabel} annual depreciation`, 'Combined book cost', 'Combined annual depreciation', `${registerLabel} above book cost`],
+          rows: [
+            ...componentRows,
+            { label: `Capital improvements paid through SLN (${plan.improvementLifeYears} years)`, values: [null, null, facts.improvementsCapitalized, improvementAnnual, -facts.improvementsCapitalized] },
+            { label: 'Total (excluding land)', values: [registerCost, registerAnnual, depreciableCost, bookAnnual, registerCost - depreciableCost], total: true },
+          ],
+        },
+        {
+          title: `Combined book cost at ${monthLabel(lastMonth)}`,
+          columns: ['Amount'],
+          rows: [
+            ...facts.quickBooksPropertyAccounts.map(([name, amount]) => ({ label: `QuickBooks: ${name}`, values: [amount] })),
+            { label: 'Interest capitalized during construction', values: [facts.capitalizedInterest] },
+            { label: 'Capital improvements paid through SLN', values: [facts.improvementsCapitalized] },
+            { label: 'Combined depreciable property cost', values: [depreciableCost], total: true },
+            { label: `${registerLabel} cost (excluding land)`, values: [registerCost] },
+            { label: `${registerLabel} above combined book cost`, values: [registerCost - depreciableCost], total: true },
+          ],
+        },
+      ],
       byYear: hasAmounts(facts.bookDepreciationByMonth) ? [{ label: 'Book depreciation', values: byYear(facts.bookDepreciationByMonth) }] : undefined,
+    });
+    notes.push({
+      key: 'register-difference',
+      title: `Why the ${registerLabel.toLowerCase()} cost differs from the combined book cost`,
+      paragraphs: [`The ${registerLabel.toLowerCase()} is ${usd(Math.abs(registerCost - depreciableCost))} ${registerCost >= depreciableCost ? 'above' : 'below'} the combined book cost. Items from the construction records that can account for it:`],
+      items: explanations,
     });
     notes.push({
       key: 'capitalized-interest',
@@ -867,7 +1105,13 @@ function buildNotes(facts: {
       paragraphs: [
         plan.projectInServiceMonth
           ? `Interest on the project loan before the property is placed in service (${monthLabel(plan.projectInServiceMonth)}) is part of the property's cost (ASC 835-20). That interest, including mortgage interest paid by SLN and loan-fee amortization for the same months, is moved from interest expense to construction in progress and depreciated with the property.`
-          : 'No interest is capitalized because the in-service date is not known.',
+          : 'No in-service date is known, so the property is still under construction and all interest is capitalized to construction in progress.',
+        ...(facts.cpaCapitalizedByYear.size
+          ? [`BGAH's CPA capitalized construction interest at year-end in QuickBooks (${[...facts.cpaCapitalizedByYear.entries()].map(([year, amount]) => `${year}: ${usd(amount)}`).join('; ')}), recorded as a reduction of December interest expense and an addition to property. The combined books use the CPA's amount for those years but record it in the months the interest was incurred, during construction, instead of as one December entry; the December entries are removed from interest expense and property so the interest is capitalized once. In other years, and for interest paid through SLN, the rule below applies.`]
+          : []),
+        ...(facts.laterPhaseShares.size
+          ? [`From ${monthLabel([...facts.laterPhaseShares.keys()][0])} through ${monthLabel([...facts.laterPhaseShares.keys()].at(-1)!)}, while the later buildings were under construction, ${facts.cpaCapitalizedByYear.size ? 'interest the CPA did not capitalize (and loan-fee amortization)' : 'interest'} is capitalized on their share of property cost (their accumulated cost divided by total property cost, rising to ${percent(Math.max(...facts.laterPhaseShares.values()))}); the rest is interest expense. One loan financed the whole project, so both phases carry the same rate.`]
+          : []),
       ],
       byYear: hasAmounts(facts.capitalizedInterestByMonth) ? [{ label: 'Interest capitalized', values: byYear(facts.capitalizedInterestByMonth) }] : undefined,
     });
@@ -884,7 +1128,7 @@ function buildNotes(facts: {
       key: 'loan-fees',
       title: 'Loan fees (debt issuance costs)',
       paragraphs: [
-        `Loan fees recorded as an asset in QuickBooks (${facts.loanFeeAccounts.join('; ')}: ${usd(facts.lastLoanFee)} at ${monthLabel(lastMonth)}) are presented as a reduction of the loan (ASC 835-30) and amortized straight-line over the ${facts.debtIssuance.source}. Amortization before the in-service date is capitalized with construction interest; afterwards it is interest expense.`,
+        `Loan fees recorded as an asset in QuickBooks (${facts.loanFeeAccounts.join('; ')}: ${usd(facts.lastLoanFee)} at ${monthLabel(lastMonth)}) are presented as a reduction of the loan (ASC 835-30) and amortized straight-line over the ${facts.debtIssuance.source}. Amortization before the in-service date is capitalized with construction interest${facts.laterPhaseShares.size ? ', and the later buildings\' share is capitalized until they are completed' : ''}; the rest is interest expense.`,
       ],
       byYear: hasAmounts(facts.loanFeeAmortizationByMonth)
         ? [
@@ -935,7 +1179,7 @@ function buildNotes(facts: {
 
 export async function loadConsolidationInput(companyId: string) {
   await Promise.all([ensureRealEstateAccountMappingTable(), ensureRealEstateConstructionTables()]);
-  const [allLines, propertyMappings, accountMappings, fixedAssets, budgetLines, lastDraw] = await Promise.all([
+  const [allLines, propertyMappings, accountMappings, fixedAssets, budgetLines, drawRows] = await Promise.all([
     prisma.$queryRawUnsafe<any[]>(
       `SELECT "sourceEntity", "reportType", "periodEnd", "accountCode", "accountName", "accountType", "amount"::float AS "amount"
        FROM "RealEstateFinancialLine" WHERE "companyId"=$1`,
@@ -947,8 +1191,8 @@ export async function loadConsolidationInput(companyId: string) {
     ),
     prisma.accountMapping.findMany({ where: { companyId }, select: { accountName: true, accountCode: true, targetField: true } }),
     prisma.$queryRawUnsafe<RegisterAsset[]>(
-      `SELECT "name", "assetClass", "cost"::float AS "cost", to_char("inServiceDate", 'YYYY-MM-DD') AS "inServiceDate",
-        "usefulLifeYears"::float AS "usefulLifeYears", "basis"
+      `SELECT "id", "name", "assetClass", "cost"::float AS "cost", to_char("inServiceDate", 'YYYY-MM-DD') AS "inServiceDate",
+        to_char("laterPhaseInServiceDate", 'YYYY-MM-DD') AS "laterPhaseInServiceDate", "usefulLifeYears"::float AS "usefulLifeYears", "basis"
        FROM "RealEstateFixedAsset" WHERE "companyId"=$1 ORDER BY "sortOrder", "name"`,
       companyId,
     ),
@@ -956,11 +1200,15 @@ export async function loadConsolidationInput(companyId: string) {
       `SELECT "name", "revisedBudget"::float AS "revisedBudget", "costClass" FROM "RealEstateConstructionBudgetLine" WHERE "companyId"=$1`,
       companyId,
     ),
-    prisma.$queryRawUnsafe<Array<{ drawDate: string | null }>>(
-      `SELECT to_char(MAX("drawDate"), 'YYYY-MM-DD') AS "drawDate" FROM "RealEstateConstructionDraw" WHERE "companyId"=$1`,
+    prisma.$queryRawUnsafe<Array<{ sequence: number; drawDate: string | null; funded: number; retainageHeld: number; liquidatedDamages: number }>>(
+      `SELECT "sequence", to_char("drawDate", 'YYYY-MM-DD') AS "drawDate",
+        ("equityFunded" + "loanFunded" + "retainageHeld")::float AS "funded", "retainageHeld"::float AS "retainageHeld",
+        "liquidatedDamages"::float AS "liquidatedDamages"
+       FROM "RealEstateConstructionDraw" WHERE "companyId"=$1 ORDER BY "sequence"`,
       companyId,
     ),
   ]);
+  const drawDates = drawRows.map((draw) => draw.drawDate).filter((date): date is string => Boolean(date)).sort();
   const { lines } = buildEntityReportLines(allLines, propertyMappings);
   return {
     slnLines: lines.filter((line) => line.sourceEntity === 'SLN') as Line[],
@@ -970,7 +1218,12 @@ export async function loadConsolidationInput(companyId: string) {
     contributedLand: contributedLand(companyId),
     fixedAssets,
     budgetLines,
-    lastDrawDate: lastDraw[0]?.drawDate || null,
+    lastDrawDate: drawDates.at(-1) || null,
+    drawTotals: {
+      retainageHeld: drawRows.reduce((total, draw) => total + Number(draw.retainageHeld || 0), 0),
+      liquidatedDamages: drawRows.reduce((total, draw) => total + Number(draw.liquidatedDamages || 0), 0),
+    },
+    draws: drawRows.map((draw) => ({ sequence: Number(draw.sequence), drawDate: draw.drawDate, funded: Number(draw.funded || 0) })),
     debtIssuance: debtIssuanceTerm(companyId),
   };
 }
@@ -1015,6 +1268,13 @@ export async function publishConsolidatedFinancials(companyId: string, reason: s
     unmappedSlnAccounts: built.unmappedSlnAccounts,
     unmappedBgahAccounts: built.unmappedBgahAccounts.length,
   };
+}
+
+/** The combined books' depreciation for each register asset, for the register and depreciation schedule. Null for other companies. */
+export async function loadRegisterBookSchedule(companyId: string) {
+  if (!isConsolidatedReportingCompany(companyId)) return null;
+  const built = buildConsolidatedMonthlyRows(await loadConsolidationInput(companyId));
+  return { asOfMonth: built.months.at(-1)?.month || null, assets: built.registerSchedule };
 }
 
 /** Re-publishes after a source or mapping change; failures are logged, never thrown. */

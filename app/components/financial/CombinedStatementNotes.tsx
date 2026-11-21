@@ -79,6 +79,16 @@ export default function CombinedStatementNotes({ companyId, notes, statementNote
           <strong>{note.title}</strong>
           {note.paragraphs.map((paragraph, index) => <p key={index} style={{ margin: '6px 0 0', color: '#334155', lineHeight: 1.5 }}>{paragraph}</p>)}
           {note.items && <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#334155', lineHeight: 1.5 }}>{note.items.map((item) => <li key={item}>{item}</li>)}</ul>}
+          {(note.tables || []).map((table) => <div key={table.title} style={{ overflowX: 'auto', marginTop: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 4 }}>{table.title}</div>
+            <table style={{ borderCollapse: 'collapse' }}>
+              <thead><tr><th style={{ ...th, textAlign: 'left' }} />{table.columns.map((column) => <th key={column} style={th}>{column}</th>)}</tr></thead>
+              <tbody>{table.rows.map((row) => <tr key={row.label} style={row.total ? { background: '#f8fafc' } : undefined}>
+                <td style={{ ...td, textAlign: 'left', fontWeight: row.total ? 800 : 400, whiteSpace: 'normal', minWidth: 220 }}>{row.label}</td>
+                {row.values.map((value, index) => <td key={index} style={{ ...td, fontWeight: row.total ? 800 : 400 }}>{value === null ? '—' : fmt(value)}</td>)}
+              </tr>)}</tbody>
+            </table>
+          </div>)}
           {years.length > 0 && <div style={{ overflowX: 'auto', marginTop: 8 }}>
             <table style={{ borderCollapse: 'collapse' }}>
               <thead><tr><th style={{ ...th, textAlign: 'left' }}>Year</th>{years.map((year) => <th key={year} style={th}>{year}</th>)}</tr></thead>

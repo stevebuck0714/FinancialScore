@@ -45,4 +45,5 @@ export async function ensureRealEstateConstructionTables() {
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await prisma.$executeRawUnsafe('ALTER TABLE "RealEstateFixedAsset" ADD COLUMN IF NOT EXISTS "laterPhaseInServiceDate" DATE');
 }

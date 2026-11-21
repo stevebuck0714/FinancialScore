@@ -18,8 +18,9 @@ type Draw = { sequence: number; label: string; drawDate: string | null; equityFu
 type BudgetLine = { lineNumber: number; name: string; revisedBudget: number; remainingAfter: number; asOfSequence: number; costClass: string };
 type Invoice = { id: string; drawSequence: number; budgetLine: string; vendor: string; invoiceDate: string | null; invoiceNumber: string | null; debtAmount: number; equityAmount: number; sourceFileName: string | null };
 type FundingSource = { stage: string; effectiveSequence: number; sourceName: string; amount: number; sortOrder: number };
-type FixedAsset = { id: string; name: string; assetClass: string; cost: number; inServiceDate: string | null; usefulLifeYears: number | null; basis: string | null; sortOrder: number };
-type AssetDraft = { name: string; assetClass: string; cost: string; inServiceDate: string; usefulLifeYears: string };
+type FixedAsset = { id: string; name: string; assetClass: string; cost: number; inServiceDate: string | null; laterPhaseInServiceDate: string | null; usefulLifeYears: number | null; basis: string | null; sortOrder: number };
+type AssetDraft = { name: string; assetClass: string; cost: string; inServiceDate: string; laterPhaseInServiceDate: string; usefulLifeYears: string };
+type BookSchedule = { asOfMonth: string | null; assets: Array<{ assetId: string; bookCost: number; laterPhaseCost: number; depreciationByMonth: Record<string, number> }> };
 type View = 'draws' | 'sources-uses' | 'fixed-assets' | 'depreciation' | 'loan';
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 18 };
@@ -57,6 +58,7 @@ const formatDate = (ymd: string | null) => {
   const [year, month, day] = ymd.split('-').map(Number);
   return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1]} ${day}, ${year}`;
 };
+const formatMonth = (ym: string) => formatDate(`${ym}-01`).replace(' 1,', '');
 const budgetUsed = (draw: Draw) => draw.equityFunded + draw.loanFunded + draw.retainageHeld;
 const shortDrawLabel = (draw: Draw) => draw.label.replace(/^Draw /, 'D').replace(/ \(Closing\)$/, '').replace(/ \(Interest\)$/, 'i').replace(/ \(Req 26 & 27\)$/, 'r');
 const draftFor = (asset: FixedAsset): AssetDraft => ({
@@ -64,6 +66,7 @@ const draftFor = (asset: FixedAsset): AssetDraft => ({
   assetClass: asset.assetClass,
   cost: String(asset.cost),
   inServiceDate: asset.inServiceDate || '',
+  laterPhaseInServiceDate: asset.laterPhaseInServiceDate || '',
   usefulLifeYears: asset.usefulLifeYears == null ? '' : String(asset.usefulLifeYears),
 });
 
@@ -82,7 +85,7 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
   ] as Array<[View, string, string]>).filter(([, , key]) => reportEnabled(key));
   const { sortRows, sortableHeader } = useTableSort(th);
 
-  const [data, setData] = useState<{ draws: Draw[]; budgetLines: BudgetLine[]; invoices: Invoice[]; fundingSources: FundingSource[]; fixedAssets: FixedAsset[] }>({ draws: [], budgetLines: [], invoices: [], fundingSources: [], fixedAssets: [] });
+  const [data, setData] = useState<{ draws: Draw[]; budgetLines: BudgetLine[]; invoices: Invoice[]; fundingSources: FundingSource[]; fixedAssets: FixedAsset[]; bookSchedule?: BookSchedule | null }>({ draws: [], budgetLines: [], invoices: [], fundingSources: [], fixedAssets: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
@@ -190,6 +193,28 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
     depreciable: { id: asset.id, cost: asset.cost, inServiceDate: asset.inServiceDate || effectiveAssumedDate || null, usefulLifeYears: asset.usefulLifeYears },
   })), [data.fixedAssets, effectiveAssumedDate]);
   const landCost = data.fixedAssets.filter((asset) => asset.assetClass === 'land').reduce((total, asset) => total + asset.cost, 0);
+
+  // Companies with combined book financials show the combined books' depreciation for each asset instead of register cost over life.
+  const bookById = useMemo(() => new Map((data.bookSchedule?.assets || []).map((row) => [row.assetId, row])), [data.bookSchedule]);
+  const bookAsOf = data.bookSchedule?.asOfMonth || null;
+  const usesBook = bookById.size > 0;
+  const bookMonths = (id: string, keep: (month: string) => boolean) => Object.entries(bookById.get(id)?.depreciationByMonth || {}).reduce((total, [month, amount]) => total + (keep(month) ? amount : 0), 0);
+  const depreciableOf = (asset: FixedAsset) => ({ id: asset.id, cost: asset.cost, inServiceDate: asset.inServiceDate, usefulLifeYears: asset.assetClass === 'land' ? null : asset.usefulLifeYears });
+  const assetBasis = (asset: FixedAsset) => bookById.get(asset.id)?.bookCost ?? asset.cost;
+  const assetAnnual = (asset: FixedAsset) => bookById.has(asset.id)
+    ? (bookAsOf ? (bookById.get(asset.id)!.depreciationByMonth[bookAsOf] || 0) * 12 : 0)
+    : asset.assetClass === 'land' ? 0 : annualRunRate(depreciableOf(asset));
+  const assetAccumulated = (asset: FixedAsset, date: string) => bookById.has(asset.id)
+    ? bookMonths(asset.id, (month) => month <= date.slice(0, 7))
+    : accumulatedDepreciation(depreciableOf(asset), date);
+  const assetYearDepreciation = (asset: FixedAsset, depreciable: ReturnType<typeof depreciableOf>, year: number) => bookById.has(asset.id)
+    ? bookMonths(asset.id, (month) => month.startsWith(`${year}-`))
+    : depreciationForYear(depreciable, year);
+  const scheduleAccumulated = (row: { asset: FixedAsset; depreciable: ReturnType<typeof depreciableOf> }, date: string) => bookById.has(row.asset.id)
+    ? assetAccumulated(row.asset, date)
+    : accumulatedDepreciation(row.depreciable, date);
+  const registerBasis = data.fixedAssets.reduce((total, asset) => total + assetBasis(asset), 0);
+  const totalAccumulated = (date: string) => data.fixedAssets.reduce((total, asset) => total + assetAccumulated(asset, date), 0);
   const assumedCount = scheduleAssets.filter((row) => row.assumed).length;
 
   const loanSourceNames = new Set(data.fundingSources.filter((source) => !/equity/i.test(source.sourceName)).map((source) => source.sourceName));
@@ -268,11 +293,12 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
       };
     });
   }, [loanYears, quickBooksLines, quickBooksYearEnds]);
+  const accumulatedAtQuickBooks = quickBooksLatest ? totalAccumulated(quickBooksLatest) : 0;
   const fixedAssetComparison = useMemo(() => {
     if (!quickBooksLatest) return null;
     const registerClass = (assetClass: string): FixedAssetClass => (assetClass === 'ffe' ? 'equipment' : assetClass as FixedAssetClass);
     const classes: FixedAssetClass[] = ['land', 'land_improvements', 'building', 'equipment', 'construction_in_progress', 'accumulated_depreciation'];
-    const registerAccumulated = assets.reduce((total, asset) => total + accumulatedDepreciation(asset, quickBooksLatest), 0);
+    const registerAccumulated = accumulatedAtQuickBooks;
     const quickBooksFixed = quickBooksLines.filter((line) => line.reportType === 'BALANCE' && line.periodEnd === quickBooksLatest && accountTypeIs(line, 'fixedasset') && Math.abs(line.amount) >= 0.5);
     const rows = classes.map((assetClass) => ({
       assetClass,
@@ -283,7 +309,7 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
     })).filter((row) => Math.abs(row.register) >= 0.5 || Math.abs(row.quickBooks) >= 0.5);
     const unclassified = quickBooksFixed.filter((line) => !classifyFixedAssetAccount(line.accountName));
     return { asOf: quickBooksLatest, rows, unclassified };
-  }, [quickBooksLatest, quickBooksLines, assets, data.fixedAssets]);
+  }, [quickBooksLatest, quickBooksLines, accumulatedAtQuickBooks, data.fixedAssets]);
 
   const saveAsset = async (id: string) => {
     const draft = drafts[id];
@@ -302,6 +328,7 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
           assetClass: draft.assetClass,
           cost: Number(draft.cost),
           inServiceDate: draft.inServiceDate || null,
+          laterPhaseInServiceDate: draft.assetClass === 'land' ? null : draft.laterPhaseInServiceDate || null,
           usefulLifeYears: draft.assetClass === 'land' || !draft.usefulLifeYears ? null : Number(draft.usefulLifeYears),
           basis: data.fixedAssets.find((asset) => asset.id === id)?.basis || null,
         }),
@@ -548,7 +575,7 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
 
     {activeView === 'fixed-assets' && <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
-        {[['Register Cost', fmt(registerCost)], ['Annual Depreciation', fmt(data.fixedAssets.reduce((total, asset) => total + (asset.assetClass === 'land' ? 0 : annualRunRate({ id: asset.id, cost: asset.cost, inServiceDate: asset.inServiceDate, usefulLifeYears: asset.usefulLifeYears })), 0))], ['Accumulated Depreciation', fmt(assets.reduce((total, asset) => total + accumulatedDepreciation(asset, asOfDate), 0))], ['Net Book Value', fmt(registerCost - assets.reduce((total, asset) => total + accumulatedDepreciation(asset, asOfDate), 0))]].map(([title, value]) => <div key={title} style={card}><div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{title}</div><div style={{ marginTop: 4, fontSize: 22, fontWeight: 800 }}>{value}</div></div>)}
+        {[['Register Cost', fmt(registerCost)], ['Annual Depreciation', fmt(data.fixedAssets.reduce((total, asset) => total + assetAnnual(asset), 0))], ['Accumulated Depreciation', fmt(totalAccumulated(asOfDate))], ['Net Book Value', fmt(registerBasis - totalAccumulated(asOfDate))]].map(([title, value]) => <div key={title} style={card}><div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{title}</div><div style={{ marginTop: 4, fontSize: 22, fontWeight: 800 }}>{value}</div></div>)}
       </div>
       {missingInService > 0 && <div style={{ ...card, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e' }}>{missingInService} asset{missingInService === 1 ? ' needs' : 's need'} an in-service date before depreciation can start. Use the certificate of occupancy date for each building.</div>}
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
@@ -557,25 +584,32 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {assetMessage && <span style={{ fontSize: 12, color: assetMessage === 'Asset saved.' || assetMessage.startsWith('Register rebuilt') ? '#166534' : '#b91c1c' }}>{assetMessage}</span>}
             {quickBooksLatest && <button type="button" style={secondaryButton} disabled={savingId === 'quickbooks'} onClick={rebuildFromQuickBooks}>{savingId === 'quickbooks' ? 'Rebuilding…' : 'Rebuild from QuickBooks'}</button>}
-            <button type="button" style={secondaryButton} disabled={Boolean(drafts.new)} onClick={() => setDrafts((current) => ({ ...current, new: { name: '', assetClass: 'building', cost: '0', inServiceDate: '', usefulLifeYears: '40' } }))}>Add Asset</button>
+            <button type="button" style={secondaryButton} disabled={Boolean(drafts.new)} onClick={() => setDrafts((current) => ({ ...current, new: { name: '', assetClass: 'building', cost: '0', inServiceDate: '', laterPhaseInServiceDate: '', usefulLifeYears: '40' } }))}>Add Asset</button>
           </div>
         </div>
-        <div style={{ overflowX: 'auto', marginTop: 12 }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1220 }}>
-          <thead><tr>{sortableHeader('register', 'name', 'Asset')}{sortableHeader('register', 'class', 'Class')}{sortableHeader('register', 'cost', 'Cost', 'right')}{sortableHeader('register', 'inService', 'In-Service Date')}{sortableHeader('register', 'life', 'Life (Years)')}{sortableHeader('register', 'annual', 'Annual Depreciation', 'right')}{sortableHeader('register', 'accumulated', 'Accumulated', 'right')}{sortableHeader('register', 'nbv', 'Net Book Value', 'right')}<th style={th} /></tr></thead>
+        <p style={{ color: '#64748b', margin: '6px 18px 0', fontSize: 13 }}>
+          {usesBook
+            ? `Annual depreciation, accumulated depreciation and net book value are the combined book (GAAP) amounts in Entity Financials${bookAsOf ? ` through ${formatMonth(bookAsOf)}` : ''}: the combined books' property cost split by this register, each cost depreciated from the month it is in service. Book cost includes capitalized construction interest. Land is shown at register cost.`
+            : 'Annual depreciation is cost over life; accumulated depreciation runs from the in-service month.'}
+          {' '}If buildings were finished in phases, enter the later phase in-service date: cost recorded after the in-service month and before that date is depreciated from the later date, and interest on it is capitalized until then.
+        </p>
+        <div style={{ overflowX: 'auto', marginTop: 12 }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: usesBook ? 1500 : 1360 }}>
+          <thead><tr>{sortableHeader('register', 'name', 'Asset')}{sortableHeader('register', 'class', 'Class')}{sortableHeader('register', 'cost', 'Cost', 'right')}{usesBook && sortableHeader('register', 'bookCost', 'Book Cost', 'right')}{sortableHeader('register', 'inService', 'In-Service Date')}{sortableHeader('register', 'laterPhase', 'Later Phase In Service')}{sortableHeader('register', 'life', 'Life (Years)')}{sortableHeader('register', 'annual', 'Annual Depreciation', 'right')}{sortableHeader('register', 'accumulated', 'Accumulated', 'right')}{sortableHeader('register', 'nbv', 'Net Book Value', 'right')}<th style={th} /></tr></thead>
           <tbody>
             {[...sortRows('register', editableIds.filter((id) => id !== 'new'), (id, key) => {
               const asset = data.fixedAssets.find((item) => item.id === id)!;
-              const depreciable = { id, cost: asset.cost, inServiceDate: asset.inServiceDate, usefulLifeYears: asset.assetClass === 'land' ? null : asset.usefulLifeYears };
               return ({
-                name: asset.name, class: ASSET_CLASS_LABEL[asset.assetClass] || asset.assetClass, cost: asset.cost, inService: asset.inServiceDate || '', life: depreciable.usefulLifeYears ?? 0,
-                annual: annualRunRate(depreciable), accumulated: accumulatedDepreciation(depreciable, asOfDate), nbv: asset.cost - accumulatedDepreciation(depreciable, asOfDate),
+                name: asset.name, class: ASSET_CLASS_LABEL[asset.assetClass] || asset.assetClass, cost: asset.cost, bookCost: assetBasis(asset), inService: asset.inServiceDate || '',
+                laterPhase: asset.laterPhaseInServiceDate || '', life: asset.assetClass === 'land' ? 0 : asset.usefulLifeYears ?? 0,
+                annual: assetAnnual(asset), accumulated: assetAccumulated(asset, asOfDate), nbv: assetBasis(asset) - assetAccumulated(asset, asOfDate),
               } as Record<string, unknown>)[key];
             }), ...editableIds.filter((id) => id === 'new')].map((id) => {
               const draft = drafts[id];
               if (!draft) return null;
               const saved = data.fixedAssets.find((asset) => asset.id === id);
               const depreciable = { id, cost: saved?.cost || 0, inServiceDate: saved?.inServiceDate || null, usefulLifeYears: saved && saved.assetClass !== 'land' ? saved.usefulLifeYears : null };
-              const accumulated = accumulatedDepreciation(depreciable, asOfDate);
+              const accumulated = saved ? assetAccumulated(saved, asOfDate) : 0;
+              const showsDepreciation = Boolean(saved && (bookById.has(saved.id) || isDepreciable(depreciable)));
               const dirty = !saved || JSON.stringify(draftFor(saved)) !== JSON.stringify(draft);
               return <tr key={id} style={{ verticalAlign: 'top' }}>
                 <td style={{ ...td, minWidth: 240 }}><input value={draft.name} onChange={(event) => setDraft(id, { name: event.target.value })} style={cellInput} />{saved?.basis && <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{saved.basis}</div>}</td>
@@ -591,18 +625,20 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
                   onChange={(event) => setDraft(id, { cost: event.target.value.replace(/[$,\s]/g, '') })}
                   style={{ ...cellInput, textAlign: 'right' }}
                 /></td>
+                {usesBook && <td style={num}>{saved ? fmt(assetBasis(saved)) : ''}</td>}
                 <td style={td}><input type="date" value={draft.inServiceDate} onChange={(event) => setDraft(id, { inServiceDate: event.target.value })} style={cellInput} /></td>
+                <td style={td}>{draft.assetClass === 'land' ? '' : <input type="date" value={draft.laterPhaseInServiceDate} onChange={(event) => setDraft(id, { laterPhaseInServiceDate: event.target.value })} style={cellInput} />}</td>
                 <td style={{ ...td, width: 100 }}>{draft.assetClass === 'land' ? <span style={{ color: '#64748b' }}>Not depreciated</span> : <input type="number" step="0.5" min="0.5" value={draft.usefulLifeYears} onChange={(event) => setDraft(id, { usefulLifeYears: event.target.value })} style={{ ...cellInput, textAlign: 'right' }} />}</td>
-                <td style={num}>{saved && depreciable.usefulLifeYears ? fmt(annualRunRate(depreciable)) : ''}</td>
-                <td style={num}>{saved && isDepreciable(depreciable) ? fmt(accumulated) : ''}</td>
-                <td style={num}>{saved ? fmt(saved.cost - accumulated) : ''}</td>
+                <td style={num}>{saved && depreciable.usefulLifeYears ? fmt(assetAnnual(saved)) : ''}</td>
+                <td style={num}>{showsDepreciation ? fmt(accumulated) : ''}</td>
+                <td style={num}>{saved ? fmt(assetBasis(saved) - accumulated) : ''}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   <button type="button" disabled={!dirty || savingId === id} onClick={() => saveAsset(id)} style={{ ...saveButton(!dirty || savingId === id), marginRight: 6 }}>{savingId === id ? 'Saving…' : 'Save'}</button>
                   <button type="button" disabled={savingId === id} onClick={() => deleteAsset(id)} style={{ ...secondaryButton, color: '#b91c1c', borderColor: '#fecaca', background: '#fef2f2' }}>{id === 'new' ? 'Cancel' : 'Delete'}</button>
                 </td>
               </tr>;
             })}
-            <tr style={totalRow}><td style={td}>Total</td><td style={td} /><td style={num}>{fmt(registerCost)}</td><td style={td} /><td style={td} /><td style={num}>{fmt(assets.filter((asset) => asset.usefulLifeYears).reduce((total, asset) => total + annualRunRate(asset), 0))}</td><td style={num}>{fmt(assets.reduce((total, asset) => total + accumulatedDepreciation(asset, asOfDate), 0))}</td><td style={num}>{fmt(registerCost - assets.reduce((total, asset) => total + accumulatedDepreciation(asset, asOfDate), 0))}</td><td style={td} /></tr>
+            <tr style={totalRow}><td style={td}>Total</td><td style={td} /><td style={num}>{fmt(registerCost)}</td>{usesBook && <td style={num}>{fmt(registerBasis)}</td>}<td style={td} /><td style={td} /><td style={td} /><td style={num}>{fmt(data.fixedAssets.reduce((total, asset) => total + assetAnnual(asset), 0))}</td><td style={num}>{fmt(totalAccumulated(asOfDate))}</td><td style={num}>{fmt(registerBasis - totalAccumulated(asOfDate))}</td><td style={td} /></tr>
           </tbody>
         </table></div>
         {!editableIds.length && <div style={{ padding: 18, color: '#64748b' }}>No assets in the register.</div>}
@@ -628,7 +664,7 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
 
       {fixedAssetComparison && <div style={card}>
         <h3 style={{ marginTop: 0 }}>Register compared with QuickBooks</h3>
-        <p style={{ color: '#64748b', margin: '0 0 12px', fontSize: 13 }}>Register cost by class against the QuickBooks Desktop fixed-asset accounts at {formatDate(fixedAssetComparison.asOf)}. Accumulated depreciation is the register&apos;s straight-line amount on the same date.</p>
+        <p style={{ color: '#64748b', margin: '0 0 12px', fontSize: 13 }}>Register cost by class against the QuickBooks Desktop fixed-asset accounts at {formatDate(fixedAssetComparison.asOf)}. Accumulated depreciation is the {usesBook ? 'combined books\u2019' : 'register\u2019s straight-line'} amount on the same date.</p>
         <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 860 }}>
           <thead><tr><th style={th}>Class</th><th style={{ ...th, textAlign: 'right' }}>Register</th><th style={{ ...th, textAlign: 'right' }}>QuickBooks</th><th style={{ ...th, textAlign: 'right' }}>Difference</th></tr></thead>
           <tbody>
@@ -661,29 +697,33 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
         {assumedCount} asset{assumedCount === 1 ? ' has' : 's have'} no in-service date in the Fixed Asset Register, so this schedule assumes {formatDate(effectiveAssumedDate)}. It is an estimate until the certificate of occupancy dates are entered in the register.
       </div>}
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 18px 0' }}><h3 style={{ margin: 0 }}>Depreciation schedule by year</h3><p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>Book depreciation by asset for each calendar year. The {asOfDate.slice(0, 4)} column is the full year. Land ({fmt(landCost)}) is not depreciated.</p></div>
-        {years.length ? <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 + years.length * 120 }}>
-          <thead><tr>{sortableHeader('depreciation', 'name', 'Asset')}{sortableHeader('depreciation', 'inService', 'In-Service Date')}{sortableHeader('depreciation', 'life', 'Life (Years)', 'right')}{sortableHeader('depreciation', 'cost', 'Cost', 'right')}{years.map((year) => sortableHeader('depreciation', String(year), String(year), 'right'))}</tr></thead>
+        <div style={{ padding: '14px 18px 0' }}><h3 style={{ margin: 0 }}>Depreciation schedule by year</h3><p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>{usesBook
+          ? `Combined book (GAAP) depreciation by asset for each calendar year, the same amounts as Entity Financials${bookAsOf ? ` through ${formatMonth(bookAsOf)}` : ''}. Later-phase cost is depreciated from the later phase in-service date. Land (${fmt(landCost)}) is not depreciated.`
+          : `Book depreciation by asset for each calendar year. The ${asOfDate.slice(0, 4)} column is the full year. Land (${fmt(landCost)}) is not depreciated.`}</p></div>
+        {years.length ? <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 + years.length * 120 }}>
+          <thead><tr>{sortableHeader('depreciation', 'name', 'Asset')}{sortableHeader('depreciation', 'inService', 'In-Service Date')}{sortableHeader('depreciation', 'laterPhase', 'Later Phase In Service')}{sortableHeader('depreciation', 'life', 'Life (Years)', 'right')}{sortableHeader('depreciation', 'cost', usesBook ? 'Book Cost' : 'Cost', 'right')}{years.map((year) => sortableHeader('depreciation', String(year), String(year), 'right'))}</tr></thead>
           <tbody>
             {sortRows('depreciation', scheduleAssets, (row, key) => key === 'name' ? row.asset.name
               : key === 'inService' ? row.depreciable.inServiceDate || ''
+              : key === 'laterPhase' ? row.asset.laterPhaseInServiceDate || ''
               : key === 'life' ? row.asset.usefulLifeYears ?? 0
-              : key === 'cost' ? row.asset.cost
-              : depreciationForYear(row.depreciable, Number(key))).map(({ asset, assumed, depreciable }) => <tr key={asset.id}>
+              : key === 'cost' ? assetBasis(row.asset)
+              : assetYearDepreciation(row.asset, row.depreciable, Number(key))).map(({ asset, assumed, depreciable }) => <tr key={asset.id}>
               <td style={{ ...td, fontWeight: 700 }}>{asset.name}</td>
               <td style={{ ...td, whiteSpace: 'nowrap', color: assumed ? '#92400e' : undefined }}>{formatDate(depreciable.inServiceDate)}{assumed ? ' (assumed)' : ''}</td>
+              <td style={{ ...td, whiteSpace: 'nowrap' }}>{asset.laterPhaseInServiceDate ? formatDate(asset.laterPhaseInServiceDate) : ''}</td>
               <td style={num}>{asset.usefulLifeYears ?? ''}</td>
-              <td style={num}>{fmt(asset.cost)}</td>
-              {years.map((year) => <td key={year} style={num}>{isDepreciable(depreciable) ? fmt(depreciationForYear(depreciable, year)) : ''}</td>)}
+              <td style={num}>{fmt(assetBasis(asset))}</td>
+              {years.map((year) => <td key={year} style={num}>{bookById.has(asset.id) || isDepreciable(depreciable) ? fmt(assetYearDepreciation(asset, depreciable, year)) : ''}</td>)}
             </tr>)}
-            <tr style={totalRow}><td style={td}>Total depreciation</td><td style={td} /><td style={td} /><td style={num}>{fmt(scheduleAssets.reduce((total, row) => total + row.asset.cost, 0))}</td>{years.map((year) => <td key={year} style={num}>{fmt(scheduleAssets.reduce((total, row) => total + depreciationForYear(row.depreciable, year), 0))}</td>)}</tr>
-            <tr><td style={{ ...td, fontWeight: 700 }}>Accumulated at year-end</td><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{fmt(scheduleAssets.reduce((total, row) => total + accumulatedDepreciation(row.depreciable, `${year}-12-31`), 0))}</td>)}</tr>
-            <tr><td style={{ ...td, fontWeight: 700 }}>Net book value at year-end (incl. land)</td><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{fmt(registerCost - scheduleAssets.reduce((total, row) => total + accumulatedDepreciation(row.depreciable, `${year}-12-31`), 0))}</td>)}</tr>
+            <tr style={totalRow}><td style={td}>Total depreciation</td><td style={td} /><td style={td} /><td style={td} /><td style={num}>{fmt(scheduleAssets.reduce((total, row) => total + assetBasis(row.asset), 0))}</td>{years.map((year) => <td key={year} style={num}>{fmt(scheduleAssets.reduce((total, row) => total + assetYearDepreciation(row.asset, row.depreciable, year), 0))}</td>)}</tr>
+            <tr><td style={{ ...td, fontWeight: 700 }}>Accumulated at year-end</td><td style={td} /><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{fmt(scheduleAssets.reduce((total, row) => total + scheduleAccumulated(row, `${year}-12-31`), 0))}</td>)}</tr>
+            <tr><td style={{ ...td, fontWeight: 700 }}>Net book value at year-end (incl. land)</td><td style={td} /><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{fmt(registerBasis - scheduleAssets.reduce((total, row) => total + scheduleAccumulated(row, `${year}-12-31`), 0))}</td>)}</tr>
             {quickBooksDepreciation.size > 0 && <>
-              <tr><td style={{ ...td, fontWeight: 700 }}>QuickBooks depreciation booked</td><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{quickBooksDepreciation.has(year) ? fmt(quickBooksDepreciation.get(year)!) : '—'}</td>)}</tr>
-              <tr><td style={{ ...td, fontWeight: 700 }}>Schedule less QuickBooks</td><td style={td} /><td style={td} /><td style={td} />{years.map((year) => {
+              <tr><td style={{ ...td, fontWeight: 700 }}>QuickBooks depreciation booked</td><td style={td} /><td style={td} /><td style={td} /><td style={td} />{years.map((year) => <td key={year} style={num}>{quickBooksDepreciation.has(year) ? fmt(quickBooksDepreciation.get(year)!) : '—'}</td>)}</tr>
+              <tr><td style={{ ...td, fontWeight: 700 }}>Schedule less QuickBooks</td><td style={td} /><td style={td} /><td style={td} /><td style={td} />{years.map((year) => {
                 if (!quickBooksDepreciation.has(year)) return <td key={year} style={num}>—</td>;
-                const difference = scheduleAssets.reduce((total, row) => total + depreciationForYear(row.depreciable, year), 0) - quickBooksDepreciation.get(year)!;
+                const difference = scheduleAssets.reduce((total, row) => total + assetYearDepreciation(row.asset, row.depreciable, year), 0) - quickBooksDepreciation.get(year)!;
                 return <td key={year} style={{ ...num, color: Math.abs(difference) >= 1 ? '#b91c1c' : '#166534' }}>{fmt(difference)}</td>;
               })}</tr>
             </>}
