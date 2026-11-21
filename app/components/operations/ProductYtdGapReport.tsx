@@ -8,6 +8,7 @@ import type {
   YtdGapDataset,
   YtdGapGroup,
   YtdGapLine,
+  YtdGapTotals,
 } from '@/lib/operations/product-ytd-gap';
 
 type ProductYtdGapReportProps = {
@@ -22,11 +23,13 @@ type SortKey =
   | 'forecast'
   | 'adjusted'
   | 'actual'
+  | 'actualQty'
   | 'gapForecast'
   | 'gapAdjusted'
   | 'annualForecast'
   | 'annualAdjusted'
   | 'projectedRevenue'
+  | 'projectedQty'
   | 'gapProjectedForecast'
   | 'gapProjectedAdjusted';
 
@@ -190,6 +193,8 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
       switch (sortKey) {
         case 'label':
           return group.label.toLowerCase();
+        case 'actualQty':
+          return group.actualQty;
         case 'forecast':
           return group.forecast;
         case 'adjusted':
@@ -204,6 +209,8 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
           return group.annualAdjusted;
         case 'projectedRevenue':
           return group.projectedRevenue;
+        case 'projectedQty':
+          return group.projectedQty;
         case 'gapProjectedForecast':
           return group.projectedRevenue - group.annualForecast;
         case 'gapProjectedAdjusted':
@@ -470,12 +477,15 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
             comparisonTarget={comparisonTarget}
             expanded={expanded}
             setExpanded={setExpanded}
+            sortKey={sortKey}
+            sortAsc={sortAsc}
+            onToggleSort={toggleSort}
           />
           <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 620 }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 640 }}>
             <thead>
               <tr>
-                {sortHeader('label', 'Group / Line item', 'left')}
+                {sortHeader('label', 'REVENUE\nGroup / Line item', 'left')}
                 {analysisView === 'ytd' ? (
                   <>
                     {sortHeader('actual', 'YTD\nActuals')}
@@ -605,6 +615,9 @@ function VolumeGapTable({
   comparisonTarget,
   expanded,
   setExpanded,
+  sortKey,
+  sortAsc,
+  onToggleSort,
 }: {
   groups: YtdGapGroup[];
   totals: YtdGapTotals;
@@ -612,6 +625,9 @@ function VolumeGapTable({
   comparisonTarget: ComparisonTarget;
   expanded: Record<string, boolean>;
   setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  sortKey: SortKey;
+  sortAsc: boolean;
+  onToggleSort: (key: SortKey) => void;
 }) {
   const comparisonLabel =
     comparisonTarget === 'baseline' ? 'SGP Baseline' : comparisonTarget === 'forecast' ? 'Forecasted' : 'Forecast - ADJ';
@@ -638,14 +654,27 @@ function VolumeGapTable({
       </>
     );
   };
+  const sortHeader = (key: SortKey, label: string, align: 'left' | 'right' = 'right') => (
+    <th
+      style={{ ...th, textAlign: align, cursor: 'pointer' }}
+      onClick={() => onToggleSort(key)}
+      title="Sort both tables"
+    >
+      {label}
+      {sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : ''}
+    </th>
+  );
 
   return (
     <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 620 }}>
       <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 620 }}>
         <thead>
           <tr>
-            <th style={{ ...th, textAlign: 'left' }}>Group / Line item</th>
-            <th style={th}>{analysisView === 'ytd' ? 'YTD\nActual Volume' : 'Projected\nYear-End Volume'}</th>
+            {sortHeader('label', 'VOLUME\nGroup / Line item', 'left')}
+            {sortHeader(
+              analysisView === 'ytd' ? 'actualQty' : 'projectedQty',
+              analysisView === 'ytd' ? 'YTD\nActual Volume' : 'Projected\nYear-End Volume',
+            )}
             <th style={th}>{analysisView === 'ytd' ? 'YTD\n' : 'Full-Year\n'}{comparisonLabel}</th>
             <th style={th}>{analysisView === 'ytd' ? 'Actual Volume -\n' : 'Projected Volume -\n'}{comparisonLabel}</th>
             <th style={th}>% of\n{comparisonLabel}</th>
