@@ -55,8 +55,10 @@ export type ProductGroupRow = {
   proposedPrice: number | null;
   proposedNetProfit: number | null;
   forecastQty: MonthQtyMap;
+  sgpForecastQty: MonthQtyMap;
   actualQty: MonthQtyMap;
   adjustedQty: MonthQtyMap;
+  sgpEstimated: MonthQtyMap;
   estimated: MonthQtyMap;
   estimatedAdjusted: MonthQtyMap;
   actualRevenue: MonthQtyMap;

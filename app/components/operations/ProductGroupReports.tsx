@@ -22,8 +22,10 @@ import {
   type ProductGroupRow,
 } from '@/lib/operations/product-group-types';
 import ProductYtdGapReport from './ProductYtdGapReport';
+import GroupManagement from './GroupManagement';
 
 export type GroupReportView =
+  | 'groupManagement'
   | 'marginAnalysis'
   | 'monthlyForecast'
   | 'forecastRollup'
@@ -65,6 +67,7 @@ const VIEW_ORDER: Array<{ key: GroupReportView; label: string }> = [
   { key: 'monthlyRevenue', label: 'Monthly Revenue' },
   { key: 'revenueRollup', label: 'Revenue Rollup' },
   { key: 'ytdGap', label: 'YTD Gap Analysis' },
+  { key: 'groupManagement', label: 'Group Management' },
 ];
 
 function currentYear(): number {
@@ -253,6 +256,10 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
   };
 
   const copy: Record<GroupReportView, { title: string; body: string }> = {
+    groupManagement: {
+      title: 'Group Management',
+      body: 'Assign customer groups and the CSR responsible for each customer.',
+    },
     marginAnalysis: {
       title: 'Group Margin Analysis',
       body: 'SGP vs projected economics from Infor CSI, saved product forecast/price tables, Duties & Tariffs, and Freight. Each group total is followed by every SKU in that group. Per-piece fields on the total are volume-weighted.',
@@ -309,6 +316,15 @@ export default function ProductGroupReports({ selectedCompanyId, enabledViews }:
 
   // YTD Gap Analysis owns its own year picker and aggregate, so the shared
   // group/year/month controls and the group dataset fetch below do not apply.
+  if (view === 'groupManagement') {
+    return (
+      <div>
+        {viewSwitcher}
+        <GroupManagement selectedCompanyId={selectedCompanyId} />
+      </div>
+    );
+  }
+
   if (view === 'ytdGap') {
     return (
       <div>

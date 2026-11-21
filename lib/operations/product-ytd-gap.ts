@@ -18,11 +18,21 @@ export type YtdGapLine = {
   customerPartNumber: string;
   customerName: string;
   forecast: number;
+  sgpForecast: number;
   adjusted: number;
   actual: number;
   annualForecast: number;
+  annualSgpForecast: number;
   annualAdjusted: number;
   projectedRevenue: number;
+  forecastQty: number;
+  sgpForecastQty: number;
+  adjustedQty: number;
+  actualQty: number;
+  annualForecastQty: number;
+  annualSgpForecastQty: number;
+  annualAdjustedQty: number;
+  projectedQty: number;
 };
 
 export type YtdGapGroup = YtdGapLine & {
@@ -177,11 +187,21 @@ function toLine(
     customerPartNumber: row.customerPartNumber,
     customerName: row.customerName,
     forecast: sumMonths(row.estimated, months),
+    sgpForecast: sumMonths(row.sgpEstimated, months),
     adjusted: sumMonths(row.estimatedAdjusted, months),
     actual: sumMonths(row.actualRevenue, months),
     annualForecast: sumMonths(row.estimated, FORECAST_MONTHS),
+    annualSgpForecast: sumMonths(row.sgpEstimated, FORECAST_MONTHS),
     annualAdjusted: sumMonths(row.estimatedAdjusted, FORECAST_MONTHS),
     projectedRevenue: sumMonths(row.actualRevenue, months) + sumMonths(row.estimatedAdjusted, remainingMonths),
+    forecastQty: sumMonths(row.forecastQty, months),
+    sgpForecastQty: sumMonths(row.sgpForecastQty, months),
+    adjustedQty: sumMonths(row.adjustedQty, months),
+    actualQty: sumMonths(row.actualQty, months),
+    annualForecastQty: sumMonths(row.forecastQty, FORECAST_MONTHS),
+    annualSgpForecastQty: sumMonths(row.sgpForecastQty, FORECAST_MONTHS),
+    annualAdjustedQty: sumMonths(row.adjustedQty, FORECAST_MONTHS),
+    projectedQty: sumMonths(row.actualQty, months) + sumMonths(row.adjustedQty, remainingMonths),
   };
 }
 
@@ -310,11 +330,21 @@ export async function loadProductYtdGapDataset(params: {
     (acc, group) => ({
       ...acc,
       forecast: acc.forecast + group.forecast,
+      sgpForecast: acc.sgpForecast + group.sgpForecast,
       adjusted: acc.adjusted + group.adjusted,
       actual: acc.actual + group.actual,
       annualForecast: acc.annualForecast + group.annualForecast,
+      annualSgpForecast: acc.annualSgpForecast + group.annualSgpForecast,
       annualAdjusted: acc.annualAdjusted + group.annualAdjusted,
       projectedRevenue: acc.projectedRevenue + group.projectedRevenue,
+      forecastQty: acc.forecastQty + group.forecastQty,
+      sgpForecastQty: acc.sgpForecastQty + group.sgpForecastQty,
+      adjustedQty: acc.adjustedQty + group.adjustedQty,
+      actualQty: acc.actualQty + group.actualQty,
+      annualForecastQty: acc.annualForecastQty + group.annualForecastQty,
+      annualSgpForecastQty: acc.annualSgpForecastQty + group.annualSgpForecastQty,
+      annualAdjustedQty: acc.annualAdjustedQty + group.annualAdjustedQty,
+      projectedQty: acc.projectedQty + group.projectedQty,
     }),
     {
       key: 'totals',
@@ -322,11 +352,21 @@ export async function loadProductYtdGapDataset(params: {
       customerPartNumber: '',
       customerName: '',
       forecast: 0,
+      sgpForecast: 0,
       adjusted: 0,
       actual: 0,
       annualForecast: 0,
+      annualSgpForecast: 0,
       annualAdjusted: 0,
       projectedRevenue: 0,
+      forecastQty: 0,
+      sgpForecastQty: 0,
+      adjustedQty: 0,
+      actualQty: 0,
+      annualForecastQty: 0,
+      annualSgpForecastQty: 0,
+      annualAdjustedQty: 0,
+      projectedQty: 0,
     }
   );
 

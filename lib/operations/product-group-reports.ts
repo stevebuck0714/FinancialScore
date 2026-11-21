@@ -49,10 +49,12 @@ type SerializedRevenueLine = {
   sgpPrice?: number | null;
   contractPrice?: number | null;
   sgpEstimated?: number;
+  sgpForecastEstimated?: MonthQtyMap;
   annualEstimated?: number;
   annualAdjusted?: number;
   annualYtd?: number;
   forecastQty?: MonthQtyMap;
+  sgpForecastQty?: MonthQtyMap;
   actualQty?: MonthQtyMap;
   adjustedQty?: MonthQtyMap;
   actualRevenue?: MonthQtyMap;
@@ -142,8 +144,10 @@ function emptyAccumulator(group: string) {
     proposedNpSum: 0,
     economicsWeight: 0,
     forecastQty: emptyMonthQtyMap(),
+    sgpForecastQty: emptyMonthQtyMap(),
     actualQty: emptyMonthQtyMap(),
     adjustedQty: emptyMonthQtyMap(),
+    sgpEstimated: emptyMonthQtyMap(),
     estimated: emptyMonthQtyMap(),
     estimatedAdjusted: emptyMonthQtyMap(),
     actualRevenue: emptyMonthQtyMap(),
@@ -210,10 +214,12 @@ export async function loadProductGroupDataset(params: {
     if (production === 'MTO') bucket.mtoCount += 1;
 
     const forecastQty = raw.forecastQty || emptyMonthQtyMap();
+    const sgpForecastQty = raw.sgpForecastQty || emptyMonthQtyMap();
     const actualQty = raw.actualQty || emptyMonthQtyMap();
     const adjustedQty = raw.adjustedQty || emptyMonthQtyMap();
     const actualRevenue = raw.actualRevenue || emptyMonthQtyMap();
     addMaps(bucket.forecastQty, forecastQty);
+    addMaps(bucket.sgpForecastQty, sgpForecastQty);
     addMaps(bucket.actualQty, actualQty);
     addMaps(bucket.actualRevenue, actualRevenue);
     for (const month of FORECAST_MONTHS) {
@@ -282,6 +288,7 @@ export async function loadProductGroupDataset(params: {
     }
 
     for (const month of FORECAST_MONTHS) {
+      bucket.sgpEstimated[String(month)] += monthQty(raw.sgpForecastEstimated, month);
       bucket.estimated[String(month)] += estimatedMonthDollars(forecastQty, raw.contractPrice, month);
       bucket.estimatedAdjusted[String(month)] += adjustedEstimatedMonthDollars(
         forecastQty,
@@ -393,8 +400,10 @@ export async function loadProductGroupDataset(params: {
       proposedPrice: null,
       proposedNetProfit: null,
       forecastQty: cloneMap(forecastQty),
+      sgpForecastQty: cloneMap(sgpForecastQty),
       actualQty: cloneMap(actualQty),
       adjustedQty: skuAdjusted,
+      sgpEstimated: cloneMap(raw.sgpForecastEstimated || emptyMonthQtyMap()),
       estimated: skuEstimated,
       estimatedAdjusted: skuEstimatedAdjusted,
       actualRevenue: cloneMap(actualRevenue),
@@ -448,8 +457,10 @@ export async function loadProductGroupDataset(params: {
       proposedPrice: weightedAvg(bucket.proposedPriceSum, bucket.economicsWeight),
       proposedNetProfit: weightedAvg(bucket.proposedNpSum, bucket.economicsWeight),
       forecastQty: bucket.forecastQty,
+      sgpForecastQty: bucket.sgpForecastQty,
       actualQty: bucket.actualQty,
       adjustedQty: bucket.adjustedQty,
+      sgpEstimated: bucket.sgpEstimated,
       estimated: bucket.estimated,
       estimatedAdjusted: bucket.estimatedAdjusted,
       actualRevenue: bucket.actualRevenue,

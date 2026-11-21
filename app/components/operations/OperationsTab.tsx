@@ -10172,6 +10172,7 @@ export default function OperationsTab({
           <ProductGroupReports
             selectedCompanyId={selectedCompanyId}
             enabledViews={{
+              groupManagement: isSectionEnabled('groupsManagement'),
               marginAnalysis: isSectionEnabled('groupsMarginAnalysis'),
               monthlyForecast: isSectionEnabled('groupsMonthlyForecast'),
               forecastRollup: isSectionEnabled('groupsForecastRollup'),

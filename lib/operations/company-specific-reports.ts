@@ -137,6 +137,13 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
     sectorCategories: ['42'],
   },
   {
+    key: 'groupsManagement',
+    label: 'Group Management',
+    tabKey: 'groups',
+    group: 'Group',
+    sectorCategories: ['42'],
+  },
+  {
     key: 'groupsMarginAnalysis',
     label: 'Group Margin Analysis',
     tabKey: 'groups',
@@ -426,6 +433,7 @@ export const COMPANY_REPORT_CATALOG: CompanyReportTemplate[] = [
 ];
 
 const ATLANTIC_ONLY_GROUP_REPORT_KEYS = new Set([
+  'groupsManagement',
   'groupsMarginAnalysis',
   'groupsMonthlyForecast',
   'groupsForecastRollup',

@@ -136,6 +136,7 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'productsPerformance', label: 'Performance', group: 'Products' },
   { key: 'productsReports', label: 'Reports', group: 'Projections' },
   { key: 'productsYtdGap', label: 'YTD Gap Analysis', group: 'Projections' },
+  { key: 'groupsManagement', label: 'Group Management', group: 'Group' },
   { key: 'groupsMarginAnalysis', label: 'Group Margin Analysis', group: 'Group' },
   { key: 'groupsMonthlyForecast', label: 'Monthly Forecast', group: 'Group' },
   { key: 'groupsForecastRollup', label: 'Forecast Rollup', group: 'Group' },
@@ -581,22 +582,31 @@ export default function SiteAdminDashboard(props: any) {
     const loadStandaloneBusinesses = async () => {
       setStandaloneBusinessesLoading(true);
       try {
-        const response = await fetch('/api/siteadmin/businesses', { cache: 'no-store', credentials: 'include' });
-        const data = await response.json();
-        if (cancelled) return;
-        const standalones = (Array.isArray(data?.companies) ? data.companies : [])
-          .filter((company: any) => company?.id)
-          .map((company: any) => ({ ...company, consultantId: null }));
-        setStandaloneBusinesses(standalones);
-        if (typeof setCompanies === 'function' && standalones.length > 0) {
-          setCompanies((prev: any) => {
-            const list = Array.isArray(prev) ? prev : [];
-            const byId = new Map(list.filter((company: any) => company?.id).map((company: any) => [company.id, company]));
-            for (const company of standalones) {
-              byId.set(company.id, { ...byId.get(company.id), ...company, consultantId: null });
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const response = await fetch('/api/siteadmin/businesses', { cache: 'no-store', credentials: 'include' });
+          const data = await response.json().catch(() => ({}));
+          if (response.ok) {
+            if (cancelled) return;
+            const standalones = (Array.isArray(data?.companies) ? data.companies : [])
+              .filter((company: any) => company?.id)
+              .map((company: any) => ({ ...company, consultantId: null }));
+            setStandaloneBusinesses(standalones);
+            if (typeof setCompanies === 'function' && standalones.length > 0) {
+              setCompanies((prev: any) => {
+                const list = Array.isArray(prev) ? prev : [];
+                const byId = new Map(list.filter((company: any) => company?.id).map((company: any) => [company.id, company]));
+                for (const company of standalones) {
+                  byId.set(company.id, { ...byId.get(company.id), ...company, consultantId: null });
+                }
+                return Array.from(byId.values());
+              });
             }
-            return Array.from(byId.values());
-          });
+            return;
+          }
+          if (response.status !== 401 || attempt === 2) {
+            throw new Error(data?.error || `Failed to load standalone businesses (${response.status})`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
         }
       } catch (error) {
         console.error('Failed to load standalone businesses', error);

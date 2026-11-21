@@ -2648,6 +2648,22 @@ model ProductRevenueForecastLine {
   @@index([companyId, year, customerName])
 }
 
+/// Customer-level group and CSR assignments used throughout the Operational
+/// Reporting Group section. These settings are independent of a forecast year.
+model CustomerGroupAssignment {
+  companyId     String
+  customerId    String
+  customerName  String
+  customerGroup String?
+  csr           String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@id([companyId, customerId])
+  @@index([companyId, customerName])
+  @@index([companyId, customerGroup])
+}
+
 model VendorMonthlyForecastSettings {
   companyId String
   year      Int

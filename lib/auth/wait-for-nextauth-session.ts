@@ -1,4 +1,6 @@
-export async function waitForNextAuthSession(attempts = 6, delayMs = 150) {
+// A successful credential sign-in can return before the browser exposes the
+// session cookie to the session endpoint, particularly after a cold deploy.
+export async function waitForNextAuthSession(attempts = 10, delayMs = 250) {
   const { getSession } = await import('next-auth/react');
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {

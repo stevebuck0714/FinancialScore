@@ -1477,7 +1477,9 @@ function FinancialScorePage() {
       return;
     }
 
-    const getSessionWithRetry = async (attempts = 3, delayMs = 300) => {
+    // Do not discard a valid local login because a freshly loaded production
+    // session endpoint briefly returns null while its cookie is settling.
+    const getSessionWithRetry = async (attempts = 6, delayMs = 500) => {
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         try {
           const session = await nextAuthGetSession();
@@ -1642,7 +1644,7 @@ function FinancialScorePage() {
       }
     };
 
-    const getSessionWithRetry = async (attempts = 3, delayMs = 300) => {
+    const getSessionWithRetry = async (attempts = 6, delayMs = 500) => {
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         try {
           const session = await nextAuthGetSession();
@@ -6916,7 +6918,20 @@ function FinancialScorePage() {
       if (!currentUser || String(currentUser.role || '').toLowerCase() !== 'siteadmin') return;
       
       try {
-        const consultantsData = await consultantsApi.getAll();
+        let consultantsData: any = null;
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            consultantsData = await consultantsApi.getAll();
+            break;
+          } catch (error) {
+            lastError = error;
+            if (attempt < 2) {
+              await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+            }
+          }
+        }
+        if (!consultantsData) throw lastError || new Error('Failed to load consultants');
         const loadedConsultants = consultantsData?.consultants;
         // Map the user data to consultant level for easier access in the UI
         const mappedConsultants = (loadedConsultants || []).map((c: any) => ({

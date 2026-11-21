@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
       companyId,
       // Cache the expensive three-year comparison separately from the normal
       // YTD/annual payload so it is calculated only when its tab is opened.
-      // v6/v3 use posted Infor invoice-line facts for actual revenue.
-      keyParts: [includeComparison ? 'ytd-comparison-v3' : 'ytd-gap-v6', year],
+      // v7 adds SGP and actual volume data to the paired YTD comparison tables.
+      keyParts: [includeComparison ? 'ytd-comparison-v3' : 'ytd-gap-v7', year],
       refresh,
       dataVersion: () => buildProductYtdGapDataVersion(companyId),
       build: async () => {

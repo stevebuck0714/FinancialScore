@@ -16,6 +16,7 @@ type ProductYtdGapReportProps = {
 };
 
 type AnalysisView = 'ytd' | 'annual' | 'comparison';
+type ComparisonTarget = 'baseline' | 'forecast' | 'adjusted';
 type SortKey =
   | 'label'
   | 'forecast'
@@ -46,6 +47,17 @@ function fmtSignedMoney(value: number | null | undefined): string {
   const rounded = Math.round(value);
   if (rounded === 0) return '$0';
   return `${rounded > 0 ? '+' : '-'}${fmtMoney(Math.abs(rounded))}`;
+}
+
+function fmtQty(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  return Math.round(value).toLocaleString('en-US');
+}
+
+function fmtSignedQty(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  const rounded = Math.round(value);
+  return `${rounded > 0 ? '+' : ''}${rounded.toLocaleString('en-US')}`;
 }
 
 function fmtAttainment(actual: number, plan: number): string {
@@ -106,6 +118,7 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [sortKey, setSortKey] = useState<SortKey>('actual');
   const [sortAsc, setSortAsc] = useState(false);
+  const [comparisonTarget, setComparisonTarget] = useState<ComparisonTarget>('adjusted');
 
   const load = useCallback(
     async (refresh = false) => {
@@ -220,17 +233,28 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
   };
 
   const totals = dataset?.totals || null;
-  const goals = analysisView === 'ytd' ? totals?.goals || null : totals?.annualGoals || null;
+  const comparisonLabel =
+    comparisonTarget === 'baseline'
+      ? 'SGP Baseline'
+      : comparisonTarget === 'forecast'
+        ? 'Forecasted'
+        : 'Forecast - ADJ';
+  const comparisonValue = (row: YtdGapLine | YtdGapGroup | YtdGapTotals): number | null => {
+    if (comparisonTarget === 'baseline') {
+      return analysisView === 'ytd' ? row.sgpForecast : row.annualSgpForecast;
+    }
+    if (analysisView === 'ytd') return comparisonTarget === 'forecast' ? row.forecast : row.adjusted;
+    return comparisonTarget === 'forecast' ? row.annualForecast : row.annualAdjusted;
+  };
+  const actualValue = (row: YtdGapLine | YtdGapGroup | YtdGapTotals): number =>
+    analysisView === 'ytd' ? row.actual : row.projectedRevenue;
+  const comparisonVariance = (row: YtdGapLine | YtdGapGroup | YtdGapTotals): number | null => {
+    const target = comparisonValue(row);
+    return target === null ? null : actualValue(row) - target;
+  };
   const windowLabel = dataset?.throughMonthLabel
     ? `January–${dataset.throughMonthLabel} ${dataset.year}`
     : `${dataset?.year ?? year}`;
-  const projectedVariance = totals ? totals.projectedRevenue - totals.annualForecast : null;
-  const projectedGapHint =
-    projectedVariance == null || Math.round(projectedVariance) === 0
-      ? 'On forecast'
-      : projectedVariance > 0
-      ? 'Above forecast'
-      : 'Below forecast';
   const projectedRevenueHint = dataset?.throughMonthLabel
     ? `YTD Actuals + Forecast - ADJ after ${dataset.throughMonthLabel}`
     : 'YTD Actuals + Forecast - ADJ';
@@ -282,9 +306,9 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
           </div>
           <div style={{ marginTop: 4, fontSize: 12, color: '#64748b', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
             {analysisView === 'ytd'
-              ? 'Year-to-date revenue dollars per line item, comparing the adjusted forecast against booked actuals through the last complete month.'
+              ? 'Year-to-date revenue dollars per line item, comparing booked actuals against the selected target through the last complete month.'
               : analysisView === 'annual'
-              ? 'Projected full-year revenue: booked actuals through the last complete month plus Forecast - ADJ for the remaining months.'
+              ? 'Projected full-year revenue: booked actuals through the last complete month plus Forecast - ADJ for the remaining months, compared with the selected target.'
               : 'Compare matching year-to-date actual revenue across the current year and the prior two years.'}
           </div>
         </div>
@@ -301,6 +325,20 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
               </option>
             ))}
           </select>
+          {analysisView !== 'comparison' ? (
+            <>
+              <label style={{ fontSize: 12, color: '#334155', fontWeight: 700 }}>Compare actuals to</label>
+              <select
+                value={comparisonTarget}
+                onChange={(event) => setComparisonTarget(event.target.value as ComparisonTarget)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: 6, padding: '5px 8px', fontSize: 12, color: '#0f172a' }}
+              >
+                <option value="baseline">SGP Baseline</option>
+                <option value="forecast">Forecasted</option>
+                <option value="adjusted">Forecast - ADJ</option>
+              </select>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => void (analysisView === 'comparison' ? loadComparison(true) : load(true))}
@@ -378,7 +416,7 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
         </div>
       ) : null}
 
-      {analysisView !== 'comparison' && totals && goals ? (
+      {analysisView !== 'comparison' && totals ? (
         <div
           style={{
             display: 'flex',
@@ -393,48 +431,16 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
           {analysisView === 'ytd' ? (
             <>
               <Metric label="YTD Actuals" value={fmtMoney(totals.actual)} />
-              <Metric label="YTD Forecasted" value={fmtMoney(totals.forecast)} />
-              <Metric
-                label="YTD vs Forecasted"
-                value={fmtSignedMoney(totals.actual - totals.forecast)}
-                hint={fmtAttainment(totals.actual, totals.forecast)}
-                color={gapColor(totals.actual - totals.forecast)}
-              />
-              <Metric label="YTD Forecast - ADJ" value={fmtMoney(totals.adjusted)} />
-              <Metric
-                label="YTD vs Forecast - ADJ"
-                value={fmtSignedMoney(totals.actual - totals.adjusted)}
-                hint={fmtAttainment(totals.actual, totals.adjusted)}
-                color={gapColor(totals.actual - totals.adjusted)}
-              />
+              <Metric label={`YTD ${comparisonLabel}`} value={fmtMoney(comparisonValue(totals))} />
+              <Metric label={`YTD Actuals vs ${comparisonLabel}`} value={fmtSignedMoney(comparisonVariance(totals))} hint={comparisonValue(totals) === null ? 'not available' : fmtAttainment(totals.actual, comparisonValue(totals)!)} color={gapColor(comparisonVariance(totals) ?? 0)} />
             </>
           ) : (
             <>
               <Metric label="Projected Year-End Revenue" value={fmtMoney(totals.projectedRevenue)} hint={projectedRevenueHint} />
-              <Metric label="Full-Year Forecasted" value={fmtMoney(totals.annualForecast)} />
-              <Metric
-                label="vs Full-Year Forecasted"
-                value={fmtSignedMoney(projectedVariance)}
-                hint={`${projectedGapHint} · ${fmtAttainment(totals.projectedRevenue, totals.annualForecast)}`}
-                color={gapColor(projectedVariance ?? 0)}
-              />
+              <Metric label={`Full-Year ${comparisonLabel}`} value={fmtMoney(comparisonValue(totals))} />
+              <Metric label={`vs Full-Year ${comparisonLabel}`} value={fmtSignedMoney(comparisonVariance(totals))} hint={comparisonValue(totals) === null ? 'not available' : fmtAttainment(totals.projectedRevenue, comparisonValue(totals)!)} color={gapColor(comparisonVariance(totals) ?? 0)} />
             </>
           )}
-          {(['baseline', 'growth', 'stretch'] as const).map((key) => {
-            const goal = goals[key];
-            const label = key === 'baseline' ? 'vs SGP Baseline' : key === 'growth' ? 'vs SGP Growth' : 'vs SGP Stretch';
-            if (goal == null) return <Metric key={key} label={label} value="—" hint="no goal saved" />;
-            const value = analysisView === 'ytd' ? totals.actual : totals.projectedRevenue;
-            return (
-              <Metric
-                key={key}
-                label={label}
-                value={fmtSignedMoney(value - goal)}
-                hint={fmtAttainment(value, goal)}
-                color={gapColor(value - goal)}
-              />
-            );
-          })}
         </div>
       ) : null}
 
@@ -456,30 +462,33 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
           </div>
         ) : null
       ) : (
-        <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 620 }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 940 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, alignItems: 'start' }}>
+          <VolumeGapTable
+            groups={sortedGroups}
+            totals={totals}
+            analysisView={analysisView}
+            comparisonTarget={comparisonTarget}
+            expanded={expanded}
+            setExpanded={setExpanded}
+          />
+          <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 620 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 640 }}>
             <thead>
               <tr>
                 {sortHeader('label', 'Group / Line item', 'left')}
                 {analysisView === 'ytd' ? (
                   <>
                     {sortHeader('actual', 'YTD\nActuals')}
-                    {sortHeader('forecast', 'YTD\nForecasted')}
-                    {sortHeader('gapForecast', 'YTD Actuals -\nForecasted')}
-                    <th style={th}>{'% of\nForecasted'}</th>
-                    {sortHeader('adjusted', 'YTD\nForecast - ADJ')}
-                    {sortHeader('gapAdjusted', 'YTD Actuals -\nForecast - ADJ')}
-                    <th style={th}>{'% of\nForecast - ADJ'}</th>
+                    <th style={th}>YTD\n{comparisonLabel}</th>
+                    <th style={th}>YTD Actuals -\n{comparisonLabel}</th>
+                    <th style={th}>% of\n{comparisonLabel}</th>
                   </>
                 ) : (
                   <>
                     {sortHeader('projectedRevenue', 'Projected\nYear-End Revenue')}
-                    {sortHeader('annualForecast', 'Full-Year\nForecasted')}
-                    {sortHeader('gapProjectedForecast', 'vs Full-Year\nForecasted')}
-                    <th style={th}>{'% of Full-Year\nForecasted'}</th>
-                    {sortHeader('annualAdjusted', 'Full-Year\nForecast - ADJ')}
-                    {sortHeader('gapProjectedAdjusted', 'vs Full-Year\nForecast - ADJ')}
-                    <th style={th}>{'% of Full-Year\nForecast - ADJ'}</th>
+                    <th style={th}>Full-Year\n{comparisonLabel}</th>
+                    <th style={th}>Projected Revenue -\n{comparisonLabel}</th>
+                    <th style={th}>% of Full-Year\n{comparisonLabel}</th>
                   </>
                 )}
               </tr>
@@ -517,30 +526,16 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
                       {analysisView === 'ytd' ? (
                         <>
                           <td style={{ ...td, fontWeight: 700 }}>{fmtMoney(group.actual)}</td>
-                          <td style={td}>{fmtMoney(group.forecast)}</td>
-                          <td style={{ ...td, color: gapColor(group.actual - group.forecast), fontWeight: 700 }}>
-                            {fmtSignedMoney(group.actual - group.forecast)}
-                          </td>
-                          <td style={td}>{fmtAttainment(group.actual, group.forecast)}</td>
-                          <td style={td}>{fmtMoney(group.adjusted)}</td>
-                          <td style={{ ...td, color: gapColor(group.actual - group.adjusted), fontWeight: 700 }}>
-                            {fmtSignedMoney(group.actual - group.adjusted)}
-                          </td>
-                          <td style={td}>{fmtAttainment(group.actual, group.adjusted)}</td>
+                          <td style={td}>{fmtMoney(comparisonValue(group))}</td>
+                          <td style={{ ...td, color: gapColor(comparisonVariance(group) ?? 0), fontWeight: 700 }}>{fmtSignedMoney(comparisonVariance(group))}</td>
+                          <td style={td}>{comparisonValue(group) === null ? '—' : fmtAttainment(group.actual, comparisonValue(group)!)}</td>
                         </>
                       ) : (
                         <>
                           <td style={{ ...td, fontWeight: 700 }}>{fmtMoney(group.projectedRevenue)}</td>
-                          <td style={td}>{fmtMoney(group.annualForecast)}</td>
-                          <td style={{ ...td, color: gapColor(group.projectedRevenue - group.annualForecast), fontWeight: 700 }}>
-                            {fmtSignedMoney(group.projectedRevenue - group.annualForecast)}
-                          </td>
-                          <td style={td}>{fmtAttainment(group.projectedRevenue, group.annualForecast)}</td>
-                          <td style={td}>{fmtMoney(group.annualAdjusted)}</td>
-                          <td style={{ ...td, color: gapColor(group.projectedRevenue - group.annualAdjusted), fontWeight: 700 }}>
-                            {fmtSignedMoney(group.projectedRevenue - group.annualAdjusted)}
-                          </td>
-                          <td style={td}>{fmtAttainment(group.projectedRevenue, group.annualAdjusted)}</td>
+                          <td style={td}>{fmtMoney(comparisonValue(group))}</td>
+                          <td style={{ ...td, color: gapColor(comparisonVariance(group) ?? 0), fontWeight: 700 }}>{fmtSignedMoney(comparisonVariance(group))}</td>
+                          <td style={td}>{comparisonValue(group) === null ? '—' : fmtAttainment(group.projectedRevenue, comparisonValue(group)!)}</td>
                         </>
                       )}
                     </tr>
@@ -556,30 +551,16 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
                             {analysisView === 'ytd' ? (
                               <>
                                 <td style={td}>{fmtMoney(line.actual)}</td>
-                                <td style={td}>{fmtMoney(line.forecast)}</td>
-                                <td style={{ ...td, color: gapColor(line.actual - line.forecast) }}>
-                                  {fmtSignedMoney(line.actual - line.forecast)}
-                                </td>
-                                <td style={td}>{fmtAttainment(line.actual, line.forecast)}</td>
-                                <td style={td}>{fmtMoney(line.adjusted)}</td>
-                                <td style={{ ...td, color: gapColor(line.actual - line.adjusted) }}>
-                                  {fmtSignedMoney(line.actual - line.adjusted)}
-                                </td>
-                                <td style={td}>{fmtAttainment(line.actual, line.adjusted)}</td>
+                                <td style={td}>{fmtMoney(comparisonValue(line))}</td>
+                                <td style={{ ...td, color: gapColor(comparisonVariance(line) ?? 0) }}>{fmtSignedMoney(comparisonVariance(line))}</td>
+                                <td style={td}>{comparisonValue(line) === null ? '—' : fmtAttainment(line.actual, comparisonValue(line)!)}</td>
                               </>
                             ) : (
                               <>
                                 <td style={td}>{fmtMoney(line.projectedRevenue)}</td>
-                                <td style={td}>{fmtMoney(line.annualForecast)}</td>
-                                <td style={{ ...td, color: gapColor(line.projectedRevenue - line.annualForecast) }}>
-                                  {fmtSignedMoney(line.projectedRevenue - line.annualForecast)}
-                                </td>
-                                <td style={td}>{fmtAttainment(line.projectedRevenue, line.annualForecast)}</td>
-                                <td style={td}>{fmtMoney(line.annualAdjusted)}</td>
-                                <td style={{ ...td, color: gapColor(line.projectedRevenue - line.annualAdjusted) }}>
-                                  {fmtSignedMoney(line.projectedRevenue - line.annualAdjusted)}
-                                </td>
-                                <td style={td}>{fmtAttainment(line.projectedRevenue, line.annualAdjusted)}</td>
+                                <td style={td}>{fmtMoney(comparisonValue(line))}</td>
+                                <td style={{ ...td, color: gapColor(comparisonVariance(line) ?? 0) }}>{fmtSignedMoney(comparisonVariance(line))}</td>
+                                <td style={td}>{comparisonValue(line) === null ? '—' : fmtAttainment(line.projectedRevenue, comparisonValue(line)!)}</td>
                               </>
                             )}
                           </tr>
@@ -594,38 +575,120 @@ export default function ProductYtdGapReport({ selectedCompanyId, onOpenInfo }: P
                   {analysisView === 'ytd' ? (
                     <>
                       <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.actual)}</td>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.forecast)}</td>
-                      <td style={{ ...td, fontWeight: 800, color: gapColor(totals.actual - totals.forecast) }}>
-                        {fmtSignedMoney(totals.actual - totals.forecast)}
-                      </td>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtAttainment(totals.actual, totals.forecast)}</td>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.adjusted)}</td>
-                      <td style={{ ...td, fontWeight: 800, color: gapColor(totals.actual - totals.adjusted) }}>
-                        {fmtSignedMoney(totals.actual - totals.adjusted)}
-                      </td>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtAttainment(totals.actual, totals.adjusted)}</td>
+                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(comparisonValue(totals))}</td>
+                      <td style={{ ...td, fontWeight: 800, color: gapColor(comparisonVariance(totals) ?? 0) }}>{fmtSignedMoney(comparisonVariance(totals))}</td>
+                      <td style={{ ...td, fontWeight: 800 }}>{comparisonValue(totals) === null ? '—' : fmtAttainment(totals.actual, comparisonValue(totals)!)}</td>
                     </>
                   ) : (
                     <>
                       <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.projectedRevenue)}</td>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.annualForecast)}</td>
-                      <td style={{ ...td, fontWeight: 800, color: gapColor(totals.projectedRevenue - totals.annualForecast) }}>
-                        {fmtSignedMoney(totals.projectedRevenue - totals.annualForecast)}
-                      </td>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtAttainment(totals.projectedRevenue, totals.annualForecast)}</td>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(totals.annualAdjusted)}</td>
-                      <td style={{ ...td, fontWeight: 800, color: gapColor(totals.projectedRevenue - totals.annualAdjusted) }}>
-                        {fmtSignedMoney(totals.projectedRevenue - totals.annualAdjusted)}
-                      </td>
-                      <td style={{ ...td, fontWeight: 800 }}>{fmtAttainment(totals.projectedRevenue, totals.annualAdjusted)}</td>
+                      <td style={{ ...td, fontWeight: 800 }}>{fmtMoney(comparisonValue(totals))}</td>
+                      <td style={{ ...td, fontWeight: 800, color: gapColor(comparisonVariance(totals) ?? 0) }}>{fmtSignedMoney(comparisonVariance(totals))}</td>
+                      <td style={{ ...td, fontWeight: 800 }}>{comparisonValue(totals) === null ? '—' : fmtAttainment(totals.projectedRevenue, comparisonValue(totals)!)}</td>
                     </>
                   )}
                 </tr>
               ) : null}
             </tbody>
           </table>
+          </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function VolumeGapTable({
+  groups,
+  totals,
+  analysisView,
+  comparisonTarget,
+  expanded,
+  setExpanded,
+}: {
+  groups: YtdGapGroup[];
+  totals: YtdGapTotals;
+  analysisView: Exclude<AnalysisView, 'comparison'>;
+  comparisonTarget: ComparisonTarget;
+  expanded: Record<string, boolean>;
+  setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+}) {
+  const comparisonLabel =
+    comparisonTarget === 'baseline' ? 'SGP Baseline' : comparisonTarget === 'forecast' ? 'Forecasted' : 'Forecast - ADJ';
+  const actual = (row: YtdGapLine | YtdGapGroup | YtdGapTotals) =>
+    analysisView === 'ytd' ? row.actualQty : row.projectedQty;
+  const target = (row: YtdGapLine | YtdGapGroup | YtdGapTotals): number | null => {
+    if (comparisonTarget === 'baseline') {
+      return analysisView === 'ytd' ? row.sgpForecastQty : row.annualSgpForecastQty;
+    }
+    if (analysisView === 'ytd') return comparisonTarget === 'forecast' ? row.forecastQty : row.adjustedQty;
+    return comparisonTarget === 'forecast' ? row.annualForecastQty : row.annualAdjustedQty;
+  };
+  const cells = (row: YtdGapLine | YtdGapGroup | YtdGapTotals, emphasize = false) => {
+    const actualValue = actual(row);
+    const targetValue = target(row);
+    const variance = targetValue === null ? null : actualValue - targetValue;
+    const cellStyle = emphasize ? { ...td, fontWeight: 800 } : td;
+    return (
+      <>
+        <td style={cellStyle}>{fmtQty(actualValue)}</td>
+        <td style={cellStyle}>{fmtQty(targetValue)}</td>
+        <td style={{ ...cellStyle, color: gapColor(variance ?? 0) }}>{fmtSignedQty(variance)}</td>
+        <td style={cellStyle}>{targetValue === null ? '—' : fmtAttainment(actualValue, targetValue)}</td>
+      </>
+    );
+  };
+
+  return (
+    <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, maxHeight: 620 }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 620 }}>
+        <thead>
+          <tr>
+            <th style={{ ...th, textAlign: 'left' }}>Group / Line item</th>
+            <th style={th}>{analysisView === 'ytd' ? 'YTD\nActual Volume' : 'Projected\nYear-End Volume'}</th>
+            <th style={th}>{analysisView === 'ytd' ? 'YTD\n' : 'Full-Year\n'}{comparisonLabel}</th>
+            <th style={th}>{analysisView === 'ytd' ? 'Actual Volume -\n' : 'Projected Volume -\n'}{comparisonLabel}</th>
+            <th style={th}>% of\n{comparisonLabel}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((group) => {
+            const isOpen = Boolean(expanded[group.key]);
+            return (
+              <React.Fragment key={`volume:${group.key}`}>
+                <tr style={{ background: '#ffffff' }}>
+                  <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>
+                    <button
+                      type="button"
+                      onClick={() => setExpanded((previous) => ({ ...previous, [group.key]: !previous[group.key] }))}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', font: 'inherit', color: '#0f172a', display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0 }}
+                      aria-expanded={isOpen}
+                    >
+                      <span style={{ color: '#64748b', fontSize: 11, width: 10 }}>{isOpen ? '▼' : '▶'}</span>
+                      {group.label}
+                      <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: 11 }}>{group.lines.length} {group.lines.length === 1 ? 'line' : 'lines'}</span>
+                    </button>
+                  </td>
+                  {cells(group, true)}
+                </tr>
+                {isOpen && group.lines.map((line) => (
+                  <tr key={`volume:${group.key}:${line.key}`} style={{ background: '#f8fafc' }}>
+                    <td style={{ ...td, textAlign: 'left', paddingLeft: 34, color: '#334155' }}>
+                      <div style={{ fontWeight: 600 }}>{lineLabel(line)}</div>
+                      {line.customerName ? <div style={{ fontSize: 11, color: '#64748b' }}>{line.customerName}</div> : null}
+                    </td>
+                    {cells(line)}
+                  </tr>
+                ))}
+              </React.Fragment>
+            );
+          })}
+          <tr style={{ background: '#fffbeb', borderTop: '2px solid #f59e0b' }}>
+            <td style={{ ...td, textAlign: 'left', fontWeight: 800 }}>Company total</td>
+            {cells(totals, true)}
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
