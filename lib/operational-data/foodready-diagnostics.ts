@@ -56,6 +56,48 @@ async function countFoodReadyRecords(
   }
 }
 
+const COST_SAMPLE_ENDPOINTS = [
+  { label: 'Purchase Order Lines', endpoint: PURCHASE_ORDER_LINES_ENDPOINT },
+  { label: 'Supplier Items', endpoint: '/api/supplierItems/search' },
+  { label: 'Items, Ingredients & Units', endpoint: '/api/itemPackaging/search' },
+  { label: 'Finished Goods Lots', endpoint: '/api/moBatchOutput/search' },
+];
+const COST_FIELD = /(cost|price|amount|value)/i;
+
+/**
+ * What FoodReady actually sends in cost fields on one page of each cost-bearing endpoint: how many
+ * records carry a positive number, zero, text, another shape, or nothing, plus every cost-like key seen.
+ */
+async function sampleFoodReadyCostFields(credentials: FoodReadyCredentials) {
+  const samples = [];
+  for (const target of COST_SAMPLE_ENDPOINTS) {
+    try {
+      const rows = rowsFromPayload(
+        await foodReadyApiRequest<unknown>(credentials, target.endpoint, { ...(CURRENT_STATE_QUERY[target.endpoint] || {}), from: 0, size: PAGE_SIZE }),
+      );
+      const fields = new Map<string, { positive: number; zero: number; text: number; other: number; examples: string[] }>();
+      for (const row of rows) {
+        for (const [key, value] of Object.entries(row)) {
+          if (!COST_FIELD.test(key)) continue;
+          const tally = fields.get(key) || { positive: 0, zero: 0, text: 0, other: 0, examples: [] };
+          if (typeof value === 'number') tally[value > 0 ? 'positive' : 'zero'] += 1;
+          else if (typeof value === 'string') tally.text += 1;
+          else tally.other += 1;
+          if (typeof value !== 'number' && value !== null && value !== undefined && tally.examples.length < 3) {
+            tally.examples.push(JSON.stringify(value).slice(0, 80));
+          }
+          fields.set(key, tally);
+        }
+      }
+      samples.push({ ...target, records: rows.length, fields: Object.fromEntries(fields) });
+    } catch (error) {
+      samples.push({ ...target, records: 0, fields: {}, error: error instanceof Error ? error.message : String(error) });
+    }
+    await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+  }
+  return samples;
+}
+
 async function storedCountsBySourceObject(companyId: string): Promise<Map<string, number>> {
   const rows = await prisma.$queryRaw<Array<{ sourceObject: string | null; count: bigint }>>`
     SELECT r."dimensions"->>'sourceObject' AS "sourceObject", COUNT(*) AS "count"
@@ -121,6 +163,8 @@ export async function diagnoseFoodReadyCosts(companyId: string, credentials: Foo
     }
     endpoints.push(row);
   }
+
+  const costFields = await sampleFoodReadyCostFields(credentials);
 
   const supplierItems = new Map(
     (await storedRows(companyId, '/api/supplierItems/search')).map((row) => {
@@ -195,6 +239,7 @@ export async function diagnoseFoodReadyCosts(companyId: string, credentials: Foo
       : null,
     syncRecordCap: MAX_PAGES * PAGE_SIZE,
     endpoints,
+    costFields,
     purchasedLots: { inHand: purchasedLotsInHand, unlinked: unlinkedReasons, listed: unlinkedLots },
     zeroCostLots: {
       snapshotDate: latest ? latest.snapshotDate.toISOString().slice(0, 10) : null,

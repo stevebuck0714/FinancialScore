@@ -275,6 +275,13 @@ type Diagnostic = {
   lastSync: { at: string | null; status: string | null; message: string | null } | null;
   syncRecordCap: number;
   endpoints: { dataDomain: string; endpoint: string; currentState: boolean; foodReady: number | null; foodReadyComplete: boolean; stored: number; error?: string }[];
+  costFields?: {
+    label: string;
+    endpoint: string;
+    records: number;
+    error?: string;
+    fields: Record<string, { positive: number; zero: number; text: number; other: number; examples: string[] }>;
+  }[];
   purchasedLots: {
     inHand: number;
     unlinked: { noPoItemOnLot: number; poLineNotStored: number; supplierItemNotStored: number; supplierItemWithoutItem: number };
@@ -306,6 +313,14 @@ function formatDiagnostic(report: Diagnostic): string {
       const scope = row.currentState ? 'current' : 'all dates in FoodReady, synced window stored';
       return `- ${row.dataDomain} (${row.endpoint}) [${scope}]: stored ${n(row.stored)} · FoodReady ${foodReady}${gap}${capped}`;
     }),
+    '',
+    'COST FIELDS FOODREADY SENDS (first page of each endpoint)',
+    ...(report.costFields || []).flatMap((sample) => [
+      `- ${sample.label} (${sample.endpoint}): ${sample.error ? `error: ${sample.error}` : `${n(sample.records)} record(s)`}`,
+      ...Object.entries(sample.fields).map(([field, tally]) =>
+        `  · ${field}: ${n(tally.positive)} above $0, ${n(tally.zero)} at $0, ${n(tally.text)} text, ${n(tally.other)} other${tally.examples.length ? ` (e.g. ${tally.examples.join(', ')})` : ''}`),
+      ...(!sample.error && !Object.keys(sample.fields).length ? ['  · no cost or price fields on these records'] : []),
+    ]),
     '',
     `PURCHASED LOTS LEFT OUT OF THE INVENTORY SNAPSHOT: ${n(unlinkedTotal)} of ${n(report.purchasedLots.inHand)} stored lots in hand`,
     ...Object.entries(report.purchasedLots.unlinked).map(([reason, count]) => `- ${UNLINKED_REASONS[reason]}: ${n(count)}`),
