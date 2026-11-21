@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from 'react';
 import StatementTrendPopup from './StatementTrendPopup';
 import TopScrollContainer from './TopScrollContainer';
 import { aggregateMappedAmounts, buildPropertyBookSummary, buildPropertyIncomeStatement } from '@/lib/real-estate/property-income-statement';
+import { buildCombinedIncomeStatement } from '@/lib/real-estate/combined-income-statement';
 
 export type EntityScope = 'BGAH' | 'SLN' | 'COMBINED';
 
@@ -16,6 +17,8 @@ type Props = {
   /** Ordered period columns and the column each source month (YYYY-MM) rolls into. */
   columns: string[];
   monthToColumn: (month: string) => string | null;
+  /** Combined BGAH + SLN book-basis activity lines; when present, Combined shows the book-basis statement built from them. */
+  consolidatedLines?: any[] | null;
 };
 
 const statementNumber = (value: number | null | undefined) => {
@@ -25,16 +28,18 @@ const statementNumber = (value: number | null | undefined) => {
   return rounded < 0 ? `(${text})` : text;
 };
 
-export default function PropertyIncomeStatementTable({ lines, mappings, scope, variant = 'property', columns, monthToColumn }: Props) {
+export default function PropertyIncomeStatementTable({ lines, mappings, scope, variant = 'property', columns, monthToColumn, consolidatedLines }: Props) {
+  const consolidated = scope === 'COMBINED' && Array.isArray(consolidatedLines);
   const [hideEmptyLines, setHideEmptyLines] = useState(false);
 
   const { statement, unmapped } = useMemo(() => {
+    if (consolidated) return { statement: buildCombinedIncomeStatement(columns, monthToColumn, consolidatedLines!), unmapped: [] };
     const mapped = aggregateMappedAmounts(lines, mappings, scope, monthToColumn);
     return {
       statement: variant === 'book' ? buildPropertyBookSummary(columns, mapped) : buildPropertyIncomeStatement(columns, mapped.amounts),
       unmapped: mapped.unmapped,
     };
-  }, [lines, mappings, scope, variant, columns, monthToColumn]);
+  }, [consolidated, consolidatedLines, lines, mappings, scope, variant, columns, monthToColumn]);
 
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const trendColumns = [...columns].sort();
@@ -107,7 +112,7 @@ export default function PropertyIncomeStatementTable({ lines, mappings, scope, v
       {selectedRow && (
         <StatementTrendPopup
           label={selectedRow.label}
-          subtitle={`${scope === 'COMBINED' ? 'Combined BGAH + SLN' : scope} · ${trendColumns[0]}${trendColumns.length > 1 ? ` – ${trendColumns[trendColumns.length - 1]}` : ''}`}
+          subtitle={`${scope === 'COMBINED' ? (consolidated ? 'Combined BGAH + SLN · Book basis (GAAP)' : 'Combined BGAH + SLN') : scope} · ${trendColumns[0]}${trendColumns.length > 1 ? ` – ${trendColumns[trendColumns.length - 1]}` : ''}`}
           columns={trendColumns}
           values={selectedRow.values}
           onClose={() => setSelectedRowIndex(null)}

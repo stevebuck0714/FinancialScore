@@ -21,6 +21,17 @@ const CONTRIBUTED_LAND: Record<string, ContributedLand> = {
   cmvzrhzis0000kw08conjfsll: { bookValue: 3_600_000, fromMonth: '2022-06' },
 };
 
+/**
+ * GAAP amortization of debt issuance costs (ASC 835-30): the costs are carried
+ * as a reduction of the loan and amortized into interest expense straight-line
+ * through the last month of the loan term.
+ */
+export type DebtIssuanceTerm = { termEndMonth: string; source: string };
+const DEBT_ISSUANCE: Record<string, DebtIssuanceTerm> = {
+  // Virginia Housing loan fees: 420 months from January 2024 (2024 Form 4562, Part VI).
+  cmvzrhzis0000kw08conjfsll: { termEndMonth: '2058-12', source: '420-month loan term from January 2024 (2024 Form 4562, Part VI)' },
+};
+
 export const CONSOLIDATED_FINANCIALS_SOURCE = 'consolidated-entity-financials';
 
 export const isConsolidatedReportingCompany = (companyId: string | null | undefined) =>
@@ -28,3 +39,6 @@ export const isConsolidatedReportingCompany = (companyId: string | null | undefi
 
 export const contributedLand = (companyId: string | null | undefined): ContributedLand | null =>
   CONTRIBUTED_LAND[String(companyId || '')] ?? null;
+
+export const debtIssuanceTerm = (companyId: string | null | undefined): DebtIssuanceTerm | null =>
+  DEBT_ISSUANCE[String(companyId || '')] ?? null;

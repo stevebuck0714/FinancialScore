@@ -5,6 +5,7 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { ensureRealEstateConstructionTables } from '@/lib/real-estate/construction-tables';
 import { classifyFixedAssetAccount } from '@/lib/real-estate/quickbooks-report-lines';
+import { republishConsolidatedFinancials } from '@/lib/real-estate/consolidated-financials';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,7 @@ async function rebuildFromQuickBooks(companyId: string) {
       );
     }),
   ]);
+  await republishConsolidatedFinancials(companyId, 'fixed-asset-register');
   return NextResponse.json({ ok: true, assets: assets.length, asOf: assets[0].periodEnd });
 }
 
@@ -128,6 +130,7 @@ export async function POST(request: NextRequest) {
     if (kind === 'fixed-asset-delete') {
       if (!id) return NextResponse.json({ error: 'Asset ID is required.' }, { status: 400 });
       await prisma.$executeRawUnsafe('DELETE FROM "RealEstateFixedAsset" WHERE "id"=$1 AND "companyId"=$2', id, companyId);
+      await republishConsolidatedFinancials(companyId, 'fixed-asset-register');
       return NextResponse.json({ ok: true });
     }
     if (kind === 'fixed-assets-from-quickbooks') return rebuildFromQuickBooks(companyId);
@@ -159,6 +162,7 @@ export async function POST(request: NextRequest) {
         randomUUID(), companyId, name, assetClass, Math.round(cost * 100) / 100, inServiceDate, lifeForClass, basis,
       );
     }
+    await republishConsolidatedFinancials(companyId, 'fixed-asset-register');
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: 'Failed to save the fixed asset', details: String(error?.message || error) }, { status: 500 });

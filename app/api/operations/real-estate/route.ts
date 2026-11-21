@@ -12,14 +12,15 @@ import { buildConsolidatedMonthlyRows, loadConsolidationInput, publishConsolidat
 import { applyInvestorLedgerCorrections } from '@/lib/real-estate/investor-ledger-corrections';
 import { CONSOLIDATED_FINANCIALS_SOURCE, isConsolidatedReportingCompany } from '@/lib/real-estate/consolidated-reporting-companies';
 import { ensureRealEstateTaxReconciliationTables } from '@/lib/real-estate/tax-reconciliation-tables';
+import { ensureRealEstateStatementNotesTable } from '@/lib/real-estate/statement-notes-table';
 
 export const dynamic = 'force-dynamic';
 
 async function authorize(companyId: string, action: string) {
-  await requireAuth();
-  if (await validateCompanyAccess(companyId)) return true;
+  const user = await requireAuth();
+  if (await validateCompanyAccess(companyId)) return user;
   await auditForbiddenAccess('Company', companyId, action);
-  return false;
+  return null;
 }
 
 async function ensureTables() {
@@ -136,8 +137,24 @@ export async function GET(request: NextRequest) {
     const { lines: reportLines, mappings: reportMappings, quickBooksLines, savedQuickBooksMappings, bgahFromQuickBooks } = buildEntityReportLines(allLines, mappings);
     let consolidatedReporting = null;
     let consolidatedBalanceLines = null;
+    let consolidatedActivityLines = null;
+    let consolidatedNotes = null;
+    let consolidatedBookDepreciation = null;
+    let statementNotes: any[] = [];
     if (isConsolidatedReportingCompany(companyId)) {
-      if (bgahFromQuickBooks) consolidatedBalanceLines = buildConsolidatedMonthlyRows(await loadConsolidationInput(companyId)).balanceLines;
+      if (bgahFromQuickBooks) {
+        const built = buildConsolidatedMonthlyRows(await loadConsolidationInput(companyId));
+        consolidatedBalanceLines = built.balanceLines;
+        consolidatedActivityLines = built.activityLines;
+        consolidatedNotes = built.notes;
+        consolidatedBookDepreciation = built.bookDepreciation;
+      }
+      await ensureRealEstateStatementNotesTable();
+      statementNotes = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT "id", "period", "body", "createdBy", "updatedBy", "createdAt", "updatedAt"
+         FROM "RealEstateStatementNote" WHERE "companyId"=$1 ORDER BY "period" NULLS FIRST, "createdAt"`,
+        companyId,
+      );
       const [latest] = await prisma.$queryRawUnsafe<any[]>(
         `SELECT "createdAt", "rawData"->'payload'->'metadata' AS metadata FROM "FinancialRecord"
          WHERE "companyId"=$1 AND "rawData"->>'source'=$2 ORDER BY "createdAt" DESC LIMIT 1`,
@@ -158,6 +175,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       consolidatedReporting,
       consolidatedBalanceLines,
+      consolidatedActivityLines,
+      consolidatedNotes,
+      consolidatedBookDepreciation,
+      statementNotes,
       lines: reportLines, cashFlowLines, quickBooksLines, quickBooksMappings: savedQuickBooksMappings, bgahSource: bgahFromQuickBooks ? 'QUICKBOOKS' : 'WORKBOOK',
       investors, occupancy, cashActivities, operationalMetrics, mappings: reportMappings, waterfallSettings, aliases,
       taxReturns, taxDepreciationRecords,
@@ -171,13 +192,44 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const companyId = String(body?.companyId || '').trim();
   const kind = String(body?.kind || '').trim();
-  if (!companyId || !['occupancy', 'investor', 'ledger-entry', 'waterfall-settings', 'distribution-batch', 'publish-consolidated'].includes(kind)) {
+  if (!companyId || !['occupancy', 'investor', 'ledger-entry', 'waterfall-settings', 'distribution-batch', 'publish-consolidated', 'statement-note', 'statement-note-delete'].includes(kind)) {
     return NextResponse.json({ error: 'Company ID and a supported record type are required.' }, { status: 400 });
   }
-  if (!(await authorize(companyId, 'OPERATIONS_REAL_ESTATE_WRITE'))) {
+  const user = await authorize(companyId, 'OPERATIONS_REAL_ESTATE_WRITE');
+  if (!user) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   try {
+    if (kind === 'statement-note' || kind === 'statement-note-delete') {
+      if (!isConsolidatedReportingCompany(companyId)) {
+        return NextResponse.json({ error: 'Combined statement notes are not enabled for this company.' }, { status: 400 });
+      }
+      await ensureRealEstateStatementNotesTable();
+      const id = String(body.id || '').trim();
+      if (kind === 'statement-note-delete') {
+        if (!id) return NextResponse.json({ error: 'Note ID is required.' }, { status: 400 });
+        await prisma.$executeRawUnsafe('DELETE FROM "RealEstateStatementNote" WHERE "id"=$1 AND "companyId"=$2', id, companyId);
+        return NextResponse.json({ ok: true });
+      }
+      const noteBody = String(body.body || '').trim();
+      const period = String(body.period || '').trim() || null;
+      if (!noteBody || noteBody.length > 5000 || (period && !/^\d{4}(-(0[1-9]|1[0-2]))?$/.test(period))) {
+        return NextResponse.json({ error: 'Enter the note (up to 5,000 characters) and, optionally, a year (YYYY) or month (YYYY-MM).' }, { status: 400 });
+      }
+      if (id) {
+        const updated = await prisma.$executeRawUnsafe(
+          `UPDATE "RealEstateStatementNote" SET "body"=$3, "period"=$4, "updatedBy"=$5, "updatedAt"=NOW() WHERE "id"=$1 AND "companyId"=$2`,
+          id, companyId, noteBody, period, user.email,
+        );
+        if (!updated) return NextResponse.json({ error: 'Note was not found for this company.' }, { status: 404 });
+      } else {
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO "RealEstateStatementNote" ("id","companyId","period","body","createdBy","updatedBy","updatedAt") VALUES ($1,$2,$3,$4,$5,$5,NOW())`,
+          randomUUID(), companyId, period, noteBody, user.email,
+        );
+      }
+      return NextResponse.json({ ok: true });
+    }
     if (kind === 'publish-consolidated') {
       if (!isConsolidatedReportingCompany(companyId)) {
         return NextResponse.json({ error: 'Consolidated financial reporting is not enabled for this company.' }, { status: 400 });

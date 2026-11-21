@@ -11,7 +11,7 @@ type Props = {
   /** Ordered period columns and the source month (YYYY-MM) whose balances each column shows. */
   columns: string[];
   balanceMonthByColumn: Record<string, string>;
-  /** Consolidated SLN + BGAH balance lines; when present, Combined shows these instead of adding the two entities. */
+  /** Combined SLN + BGAH book-basis balance lines; when present, Combined shows these instead of adding the two entities. */
   consolidatedLines?: any[] | null;
 };
 
@@ -257,7 +257,7 @@ export default function PropertyBalanceSheetTable({ lines, scope, columns, balan
       {selectedRow && (
         <StatementTrendPopup
           label={selectedRow.label}
-          subtitle={`${scope === 'COMBINED' ? (consolidated ? 'Consolidated BGAH + SLN' : 'Combined BGAH + SLN') : scope} · Balance as of period end · ${trendColumns[0]}${trendColumns.length > 1 ? ` – ${trendColumns[trendColumns.length - 1]}` : ''}`}
+          subtitle={`${scope === 'COMBINED' ? (consolidated ? 'Combined BGAH + SLN · Book basis (GAAP)' : 'Combined BGAH + SLN') : scope} · Balance as of period end · ${trendColumns[0]}${trendColumns.length > 1 ? ` – ${trendColumns[trendColumns.length - 1]}` : ''}`}
           columns={trendColumns}
           values={selectedRow.values}
           onClose={() => setSelectedRowIndex(null)}

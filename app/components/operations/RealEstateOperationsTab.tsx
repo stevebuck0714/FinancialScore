@@ -16,6 +16,8 @@ import { aggregateMappedAmounts, buildPropertyIncomeStatement } from '@/lib/real
 import { accountTypeIs, activityByYear, balanceAt, isAmortizationExpense, isDepreciationExpense, toReportLines, yearEndPeriods } from '@/lib/real-estate/quickbooks-report-lines';
 import BooksIntegrityPanel from '@/app/components/operations/BooksIntegrityPanel';
 import MemberCapitalReports from '@/app/components/operations/MemberCapitalReports';
+import CombinedStatementNotes from '@/app/components/financial/CombinedStatementNotes';
+import type { BookDepreciationYear, ConsolidationNote } from '@/lib/real-estate/consolidated-financials';
 
 type Props = {
   selectedCompanyId: string;
@@ -51,7 +53,7 @@ const monthEnd = (month: string) => {
 
 export default function RealEstateOperationsTab({ selectedCompanyId, mode, operationalHubSections }: Props) {
   const money = useCompanyMoneyFormatter(selectedCompanyId);
-  const [data, setData] = useState<{ lines: any[]; cashFlowLines?: any[]; quickBooksLines?: any[]; quickBooksMappings?: any[]; bgahSource?: 'QUICKBOOKS' | 'WORKBOOK'; investors: any[]; occupancy: any[]; cashActivities: any[]; operationalMetrics: any[]; mappings?: any[]; waterfallSettings?: WaterfallSettings; aliases?: Array<{ alias: string; investorId: string }>; taxReturns?: any[]; taxDepreciationRecords?: any[]; consolidatedReporting?: { publishedAt: string | null; firstMonth: string | null; lastMonth: string | null; partialMonths: string[]; latestCombinedMonth: string | null; latestUnreconciled: number | null; unmappedSlnAccounts: number } | null; consolidatedBalanceLines?: any[] | null }>({ lines: [], investors: [], occupancy: [], cashActivities: [], operationalMetrics: [], mappings: [], taxReturns: [], taxDepreciationRecords: [] });
+  const [data, setData] = useState<{ lines: any[]; cashFlowLines?: any[]; quickBooksLines?: any[]; quickBooksMappings?: any[]; bgahSource?: 'QUICKBOOKS' | 'WORKBOOK'; investors: any[]; occupancy: any[]; cashActivities: any[]; operationalMetrics: any[]; mappings?: any[]; waterfallSettings?: WaterfallSettings; aliases?: Array<{ alias: string; investorId: string }>; taxReturns?: any[]; taxDepreciationRecords?: any[]; consolidatedReporting?: { publishedAt: string | null; firstMonth: string | null; lastMonth: string | null; partialMonths: string[]; latestCombinedMonth: string | null; latestUnreconciled: number | null; unmappedSlnAccounts: number } | null; consolidatedBalanceLines?: any[] | null; consolidatedActivityLines?: any[] | null; consolidatedNotes?: ConsolidationNote[] | null; consolidatedBookDepreciation?: BookDepreciationYear[] | null; statementNotes?: any[] }>({ lines: [], investors: [], occupancy: [], cashActivities: [], operationalMetrics: [], mappings: [], taxReturns: [], taxDepreciationRecords: [] });
   const [reloadKey, setReloadKey] = useState(0);
   const [publishingConsolidated, setPublishingConsolidated] = useState(false);
   const [consolidatedPublishError, setConsolidatedPublishError] = useState('');
@@ -331,21 +333,27 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     const quickBooksYearEnds = yearEndPeriods(quickBooksReportLines);
     const quickBooksDepreciation = activityByYear(quickBooksReportLines, (line) => isDepreciationExpense(line) || isAmortizationExpense(line));
     const taxReturnByYear = new Map((data.taxReturns || []).map((taxReturn) => [Number(taxReturn.taxYear), taxReturn]));
+    const combinedBookByYear = new Map((data.consolidatedBookDepreciation || []).map((row) => [row.year, row]));
     const years = [...new Set([...taxReturnByYear.keys(), ...quickBooksDepreciation.keys()])].sort((a, b) => a - b);
     return years.map((year) => {
       const taxReturn = taxReturnByYear.get(year);
       const yearPrefix = `${year}-`;
       const importedLines = data.lines.filter((line) => String(line.periodEnd).startsWith(yearPrefix));
       const hasQuickBooks = quickBooksDepreciation.has(year) || quickBooksYearEnds.has(year);
-      const bookDepreciation = hasQuickBooks
-        ? quickBooksDepreciation.get(year) || 0
-        : importedLines
-          .filter((line) => String(line.reportType).toUpperCase() === 'ACTIVITY' && /depreciation|amortization/i.test(String(line.accountName)))
-          .reduce((total, line) => total + Math.abs(Number(line.amount || 0)), 0);
+      const combinedBook = combinedBookByYear.get(year);
+      const bookDepreciation = combinedBook
+        ? combinedBook.depreciation + combinedBook.loanFeeAmortization
+        : hasQuickBooks
+          ? quickBooksDepreciation.get(year) || 0
+          : importedLines
+            .filter((line) => String(line.reportType).toUpperCase() === 'ACTIVITY' && /depreciation|amortization/i.test(String(line.accountName)))
+            .reduce((total, line) => total + Math.abs(Number(line.amount || 0)), 0);
       const yearEnd = quickBooksYearEnds.get(year);
-      const bookFixedAssets = hasQuickBooks && yearEnd
-        ? balanceAt(quickBooksReportLines, yearEnd, (line) => accountTypeIs(line, 'fixedasset') && !/due to|due from/i.test(line.accountName))
-        : null;
+      const bookFixedAssets = combinedBook
+        ? combinedBook.netFixedAssets
+        : hasQuickBooks && yearEnd
+          ? balanceAt(quickBooksReportLines, yearEnd, (line) => accountTypeIs(line, 'fixedasset') && !/due to|due from/i.test(line.accountName))
+          : null;
       const taxRecords = (data.taxDepreciationRecords || []).filter((record) => Number(record.taxYear) === year);
       const taxDeduction = taxRecords.reduce((total, record) => total + Number(record.deduction || 0), 0);
       return {
@@ -357,11 +365,11 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
         taxRecordCount: taxRecords.length,
         bookDepreciation,
         bookFixedAssets,
-        bookSource: hasQuickBooks ? 'QuickBooks Desktop' : importedLines.length ? 'Imported book financials' : 'Not loaded',
+        bookSource: combinedBook ? 'Combined book statements' : hasQuickBooks ? 'QuickBooks Desktop' : importedLines.length ? 'Imported book financials' : 'Not loaded',
         variance: bookDepreciation > 0 && taxDeduction > 0 ? bookDepreciation - taxDeduction : null,
       };
     });
-  }, [data.lines, data.taxDepreciationRecords, data.taxReturns, quickBooksReportLines]);
+  }, [data.lines, data.taxDepreciationRecords, data.taxReturns, data.consolidatedBookDepreciation, quickBooksReportLines]);
 
   const propertyMonths = useMemo(() => {
     const latest = months[months.length - 1] || '';
@@ -484,7 +492,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
         return <div style={{ ...card, display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <div style={{ display: 'grid', gap: 4 }}>
             <h3 style={{ margin: 0 }}>Financial Reporting source</h3>
-            <p style={{ color: '#475569', margin: 0, fontSize: 13 }}>Financial Reporting pages and reports use the consolidated SLN + BGAH financials. SLN supplies property operations and working capital; BGAH (QuickBooks Desktop) supplies owner-level assets, the loan, depreciation and non-property items. The Due to/from SLN balance is eliminated. Republished automatically after a QuickBooks Desktop sync or a mapping change.</p>
+            <p style={{ color: '#475569', margin: 0, fontSize: 13 }}>Financial Reporting pages and reports use the combined SLN + BGAH book-basis (GAAP) financials. SLN supplies property operations and working capital; BGAH (QuickBooks Desktop) supplies owner-level assets, the loan and non-property items. The Due to/from SLN balance is eliminated, and GAAP adjustments (book depreciation, capitalized interest, loan fees, accruals) are added as labelled lines explained in the Notes. Republished automatically after a QuickBooks Desktop sync, a mapping change or a fixed-asset register change.</p>
             <div style={{ color: '#64748b', fontSize: 12 }}>
               {status.publishedAt
                 ? <>Last published {formatEstDateTime(status.publishedAt)} · {status.firstMonth ? formatMonthLabel(status.firstMonth) : '—'} to {status.lastMonth ? formatMonthLabel(status.lastMonth) : '—'}</>
@@ -521,7 +529,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
         <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#475569' }}>Display As<select value={entityStatementDisplay} onChange={(event) => setEntityStatementDisplay(event.target.value as any)} style={{ minWidth: 120, padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: 6 }}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select></label>
       </div>
       {entityView === 'statement' && (entityColumns.length
-        ? <PropertyIncomeStatementTable lines={data.lines} mappings={data.mappings || []} scope={entityScope} columns={entityColumns} monthToColumn={entityMonthToColumn} />
+        ? <PropertyIncomeStatementTable lines={data.lines} mappings={data.mappings || []} scope={entityScope} columns={entityColumns} monthToColumn={entityMonthToColumn} consolidatedLines={data.consolidatedActivityLines} />
         : <div style={{ ...card, color: '#64748b' }}>No income-statement activity is available for this entity and period.</div>)}
       {entityView === 'balance' && (entityColumns.length
         ? <PropertyBalanceSheetTable lines={data.lines} scope={entityScope} columns={entityColumns} balanceMonthByColumn={entityBalanceMonthByColumn} consolidatedLines={data.consolidatedBalanceLines} />
@@ -529,6 +537,14 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
       {entityView === 'cashflow' && entityScope === 'SLN' && (entityColumns.length && (data.cashFlowLines || []).some((line) => entityMonthToColumn(String(line.periodEnd).slice(0, 7)))
         ? <PropertyCashFlowTable lines={(data.cashFlowLines || []).filter((line) => line.sourceEntity === 'SLN')} columns={entityColumns} monthToColumn={entityMonthToColumn} />
         : <div style={{ ...card, color: '#64748b' }}>No cash flow data is available for SLN in this period. It is loaded from the Cash Flow Summary on the SLN monthly income statements.</div>)}
+      {entityScope === 'COMBINED' && entityView !== 'cashflow' && data.consolidatedNotes && data.consolidatedNotes.length > 0 && <CombinedStatementNotes
+        companyId={selectedCompanyId}
+        notes={data.consolidatedNotes}
+        statementNotes={data.statementNotes || []}
+        visibleMonths={entitySelectedMonths}
+        fmt={fmt}
+        onChanged={() => setReloadKey((key) => key + 1)}
+      />}
       {reportEnabled('entityBookToTaxReconciliation') && <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
@@ -554,7 +570,8 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
         {!taxReconciliationRows.length && <p style={{ color: '#64748b', marginBottom: 0 }}>Tax-return facts have not been imported for this company.</p>}
         <div style={{ display: 'grid', gap: 6, marginTop: 14, fontSize: 12, color: '#64748b' }}>
           {taxReconciliationRows.filter((row) => row.sourceDocument || row.taxNotes).map((row) => <div key={`${row.year}-source`}><strong style={{ color: '#475569' }}>{row.year}:</strong> {[row.sourceDocument, row.taxNotes].filter(Boolean).join(' · ')}</div>)}
-          {quickBooksReportLines.length > 0 && <div><strong style={{ color: '#475569' }}>Book source:</strong> Book depreciation and amortization are the QuickBooks Desktop expense accounts for each year; fixed assets are the year-end QuickBooks fixed-asset accounts net of accumulated depreciation, excluding the Due to/from SLN balance QuickBooks types as a fixed asset. Where QuickBooks depreciation equals the return, the books are recording tax depreciation rather than a separate book method.</div>}
+          {(data.consolidatedBookDepreciation || []).length > 0 && <div><strong style={{ color: '#475569' }}>Book source:</strong> Book depreciation is the combined BGAH + SLN book-basis depreciation from the fixed-asset register plus loan-fee amortization (including amounts capitalized before the in-service date); fixed assets are the combined year-end property net of accumulated book depreciation. See Notes to the Financial Statements under Combined BGAH + SLN.</div>}
+          {!(data.consolidatedBookDepreciation || []).length && quickBooksReportLines.length > 0 && <div><strong style={{ color: '#475569' }}>Book source:</strong> Book depreciation and amortization are the QuickBooks Desktop expense accounts for each year; fixed assets are the year-end QuickBooks fixed-asset accounts net of accumulated depreciation, excluding the Due to/from SLN balance QuickBooks types as a fixed asset. Where QuickBooks depreciation equals the return, the books are recording tax depreciation rather than a separate book method.</div>}
           <div><strong style={{ color: '#475569' }}>Open items:</strong> the CPA fixed-asset/cost-segregation schedule and confirmation that the 2025 return is final.</div>
         </div>
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
