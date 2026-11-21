@@ -67,11 +67,12 @@ export default function GroupManagement({ selectedCompanyId }: { selectedCompany
 
   const visibleCustomers = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return customers;
-    const filtered = customers.filter((row) =>
-      [row.customerId, row.customerName, drafts[row.customerId]?.customerGroup, drafts[row.customerId]?.csr]
-        .some((value) => String(value || '').toLowerCase().includes(query)),
-    );
+    const filtered = query
+      ? customers.filter((row) =>
+          [row.customerId, row.customerName, drafts[row.customerId]?.customerGroup, drafts[row.customerId]?.csr]
+            .some((value) => String(value || '').toLowerCase().includes(query)),
+        )
+      : customers;
     return filtered.sort((left, right) => {
       const leftValue = String(sort.key === 'customerGroup' || sort.key === 'csr'
         ? drafts[left.customerId]?.[sort.key] || ''
