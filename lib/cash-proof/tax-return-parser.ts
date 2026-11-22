@@ -14,6 +14,14 @@ export type ParsedTaxReturn = {
   ambiguity: string | null;
 };
 
+// Form titles. A personal return mentions "Form 1120-S" in K-1 instructions, so titles win over mentions.
+const FORM_TITLES: Array<[TaxReturnForm, RegExp]> = [
+  ['1120S', /income\s+tax\s+return\s+for\s+an\s+s\s+corporation/i],
+  ['1065', /return\s+of\s+partnership\s+income/i],
+  ['1120', /u\.?s\.?\s+corporation\s+income\s+tax\s+return/i],
+  ['SCHEDULE_C', /profit\s+or\s+loss\s+from\s+business/i],
+];
+
 const FORM_PATTERNS: Array<[TaxReturnForm, RegExp]> = [
   ['1120S', /form\s+1120-?\s?s\b|income\s+tax\s+return\s+for\s+an\s+s\s+corporation/i],
   ['1065', /form\s+1065\b|return\s+of\s+partnership\s+income/i],
@@ -24,6 +32,8 @@ const FORM_PATTERNS: Array<[TaxReturnForm, RegExp]> = [
 // Tax returns are in whole dollars. A comma or five digits keeps years, line numbers, and ZIP+4 out.
 const AMOUNT = /(?<![\d.,/$-])\(?-?\$?\s?(?:\d{1,3}(?:,\d{3})+|\d{5,})(?:\.\d{2})?\)?(?![\d/%]|,\d)/;
 const TAIL = 320;
+// Some software (TurboTax) prints a page's labels first and every value in one block below them.
+const SECTION = 5000;
 
 const GROSS_LABEL = /gross\s+receipts\s+or\s+sales/gi;
 const RETURNS_LABEL = /returns\s+and\s+allowances/gi;
@@ -56,8 +66,44 @@ function amountsAfter(text: string, label: RegExp, stop: RegExp): number[] {
 }
 
 function detectForm(text: string): TaxReturnForm | null {
+  for (const [form, pattern] of FORM_TITLES) if (pattern.test(text)) return form;
   for (const [form, pattern] of FORM_PATTERNS) if (pattern.test(text)) return form;
   return null;
+}
+
+const lettersOnly = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
+
+/**
+ * Reads gross receipts from a page whose values are printed apart from their labels: the largest amount
+ * that the page splits into two other amounts (gross receipts − cost of goods sold = gross profit).
+ * Returns and allowances cannot be told apart from cost of goods sold this way, so they are left blank.
+ */
+function detachedRevenue(section: string): { gross: number; returns: null } | null {
+  const amounts = [...new Set([...section.matchAll(new RegExp(AMOUNT.source, 'g'))].map((m) => toAmount(m[0])).filter((n) => n > 0))];
+  const has = (n: number) => amounts.some((a) => Math.abs(a - n) <= 1);
+  const gross = [...amounts].sort((a, b) => b - a).find((g) => amounts.some((part) => part < g && has(g - part)));
+  return gross === undefined ? null : { gross, returns: null };
+}
+
+type RevenueSection = { gross: number; returns: number | null; net: number | null; text: string };
+
+/** One entry per page that carries a gross receipts line (one per business on a personal return). */
+function revenueSections(text: string): RevenueSection[] {
+  const starts = [...text.matchAll(GROSS_LABEL)].map((m) => m.index!);
+  const sections: RevenueSection[] = [];
+  starts.forEach((start, i) => {
+    const section = text.slice(start, Math.min(starts[i + 1] ?? text.length, start + SECTION));
+    const gross = amountsAfter(section, GROSS_LABEL, GROSS_STOP)[0];
+    if (gross !== undefined) {
+      const returns = amountsAfter(section, RETURNS_LABEL, RETURNS_STOP)[0] ?? null;
+      const net = amountsAfter(section, NET_LABEL, NET_STOP)[0] ?? null;
+      sections.push({ gross, returns, net, text: section });
+      return;
+    }
+    const detached = detachedRevenue(section);
+    if (detached) sections.push({ ...detached, net: null, text: section });
+  });
+  return sections;
 }
 
 function detectYears(text: string, fileName: string) {
@@ -82,24 +128,35 @@ function detectYears(text: string, fileName: string) {
   return { taxYear, endingYear, endingMonth };
 }
 
-/** Reads page 1 revenue lines from the text of a business income tax return. */
-export function parseTaxReturn(text: string, fileName = ''): ParsedTaxReturn {
+/**
+ * Reads page 1 revenue lines from the text of a business income tax return.
+ * When the file reports more than one business (several Schedule Cs), `businessName` picks the one that names it.
+ */
+export function parseTaxReturn(text: string, fileName = '', businessName = ''): ParsedTaxReturn {
   const form = detectForm(text);
   const years = detectYears(text, fileName);
-  const grossValues = [...new Set(amountsAfter(text, GROSS_LABEL, GROSS_STOP))];
-  const returnsValues = [...new Set(amountsAfter(text, RETURNS_LABEL, RETURNS_STOP))];
-  const netValues = [...new Set(amountsAfter(text, NET_LABEL, NET_STOP))];
+  let sections = revenueSections(text);
+  const distinct = (list: RevenueSection[]) => [...new Set(list.map((s) => s.gross))];
+  const name = lettersOnly(businessName.replace(/[_\s-]*\d+$/, ''));
+  if (distinct(sections).length > 1 && name.length >= 4) {
+    const named = sections.filter((s) => lettersOnly(s.text).includes(name));
+    if (distinct(named).length === 1) sections = named;
+  }
+  const grossValues = distinct(sections);
+  const chosen = grossValues.length === 1 ? sections[0] : null;
 
-  const grossReceipts = grossValues.length === 1 ? grossValues[0] : null;
-  let returnsAllowances = returnsValues.length === 1 ? returnsValues[0] : null;
-  const netReceipts = netValues.length === 1 ? netValues[0] : null;
+  const grossReceipts = chosen?.gross ?? null;
+  let returnsAllowances = chosen?.returns ?? null;
+  const netReceipts = chosen?.net ?? null;
   if (grossReceipts !== null && netReceipts !== null && returnsAllowances === null) {
     returnsAllowances = round2(grossReceipts - netReceipts);
   }
 
   let ambiguity: string | null = null;
   if (grossValues.length > 1) {
-    ambiguity = `The file has ${grossValues.length} different gross receipts figures (more than one return or business).`;
+    ambiguity = `The file has ${grossValues.length} different gross receipts figures (${grossValues
+      .map((n) => `$${n.toLocaleString('en-US')}`)
+      .join(', ')}), so it holds more than one return or business.`;
   } else if (
     grossReceipts !== null &&
     netReceipts !== null &&

@@ -68,6 +68,7 @@ export async function scanTaxReturns(companyId: string, engagementId: string): P
   const periodKeys = completeFiscalYearKeys(engagement.periodStartMonth, engagement.periodEndMonth, engagement.fiscalYearEndMonth);
   const entries = { ...((engagement.taxReturns as Record<string, TaxReturnEntry> | null) || {}) };
   const docs = await listTaxFolderDocuments(companyId);
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { name: true } });
   const results: TaxReturnScanResult[] = [];
 
   for (const doc of docs) {
@@ -88,7 +89,7 @@ export async function scanTaxReturns(companyId: string, engagementId: string): P
         results.push({ ...base, status: 'NO_TEXT', message: 'No readable text. This looks like a scanned image; enter the figures by hand.' });
         continue;
       }
-      parsed = parseTaxReturn(extracted.text, doc.originalFileName);
+      parsed = parseTaxReturn(extracted.text, doc.originalFileName, company?.name || '');
     } catch (e) {
       results.push({ ...base, status: 'FAILED', message: e instanceof Error ? e.message : String(e) });
       continue;

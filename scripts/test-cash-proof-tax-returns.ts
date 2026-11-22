@@ -55,6 +55,41 @@ assert.match(String(parseTaxReturn(twoBusinesses).ambiguity), /2 different gross
 
 assert.equal(parseTaxReturn('Form 941 Employer’s QUARTERLY Federal Tax Return 2024 wages 125,000').form, null);
 
+// TurboTax prints every label first and the page's values in one block below them.
+const turboTaxScheduleC = (business: string, values: string[]) => `
+SCHEDULE C (Form 1040) 2025 Profit or Loss From Business (Sole Proprietorship)
+C Business name. If no separate business name, leave blank. D Employer ID number (EIN) (see instr.)
+Part I Income
+1 Gross receipts or sales. See instructions for line 1 and check the box if this income was reported to you on
+Form W-2 and the “Statutory employee” box on that form was checked . . . . . . . . . 1
+2 Returns and allowances . . . . . . . . . . . . 2
+3 Subtract line 2 from line 1 . . . . . . . . . . 3
+4 Cost of goods sold (from line 42) . . . . . . . 4
+5 Gross profit. Subtract line 4 from line 3 . . . 5
+28 Total expenses before expenses for business use of home. Add lines 8 through 27b . . 28
+31 Net profit or (loss). Subtract line 30 from line 29. 31
+Schedule C (Form 1040) 2025 Created 4/3/25
+Used merchandise retailers 4 5 9 5 1 0
+${business} 1 2 3 4 5 6 7 8 9
+100 Main St
+Springfield, WA 99216
+${values.join('\n')}
+`;
+const personalReturn = `
+Form 1040 U.S. Individual Income Tax Return 2025
+Schedule K-1 (Form 1120-S), box 17, code V. Form 1120-S, Schedule K, line 9.
+${turboTaxScheduleC('Wiseware Exchange DBA Plato\'s Closet, Spokane Valley', ['18,814.', '6,670.', '211,029.', '847,821.', '345,816.', '502,005.', '502,005.', '478,150.', '23,855.', '23,855.', '847,821.'])}
+${turboTaxScheduleC('Lakeside Consulting', ['18,175.', '106,771.', '106,771.', '106,771.', '32,197.', '74,574.', '73,674.'])}
+`;
+const turbo = parseTaxReturn(personalReturn, '2025TurboTaxReturn.pdf', 'PlatosCloset_80957');
+assert.equal(turbo.form, 'SCHEDULE_C');
+assert.equal(turbo.taxYear, 2025);
+assert.equal(turbo.grossReceipts, 847821);
+assert.equal(turbo.returnsAllowances, null);
+assert.equal(turbo.ambiguity, null);
+assert.equal(parseTaxReturn(personalReturn, '2025TurboTaxReturn.pdf', 'Lakeside Consulting').grossReceipts, 106771);
+assert.match(String(parseTaxReturn(personalReturn, '2025TurboTaxReturn.pdf').ambiguity), /\$847,821, \$106,771/);
+
 // Comparison.
 const period = (key: string, adjustedDeposits: number, reportedRevenue: number | null): RevenueReconciliationPeriod => ({
   key,
