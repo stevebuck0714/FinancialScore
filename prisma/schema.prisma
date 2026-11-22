@@ -644,6 +644,8 @@ model CashProofEngagement {
   balanceTolerance   Float     @default(1)
   revenueTolerancePct Float    @default(2)
   revenuePeriodNotes Json? // { [periodKey]: explanation for a deposits-to-revenue variance }
+  taxReturns         Json? // { [periodKey]: income tax return revenue for a fiscal year, see TaxReturnEntry }
+  taxReturnScan      Json? // last Read Tax Returns run: { scannedAt, results[] }
   statementScan      Json? // last Read Statements run: { scannedAt, results[] }
   transactionMatch   Json? // last book-to-bank matching run: { runAt, settings, accounts[], totals }
   status             String    @default("DRAFT") // DRAFT | SAMPLED | LOCKED

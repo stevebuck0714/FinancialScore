@@ -16,6 +16,7 @@ import {
 import { buttonStyle, cardStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
 import CashProofDepositsPanel from './CashProofDepositsPanel';
 import CashProofStatementScanCard from './CashProofStatementScanCard';
+import CashProofTaxReturnCard from './CashProofTaxReturnCard';
 import CashProofTransactionMatchCard from './CashProofTransactionMatchCard';
 import StatementAccountPicker from './StatementAccountPicker';
 import { linkedStatementAccount, statementAccountLabel } from '@/lib/bank-statements/account-match';
@@ -147,7 +148,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
 
   const downloadRequestList = () => {
     if (!data) return;
-    const rows = [['Bank', 'Account', 'Last 4', 'Statement Month', 'Used For', 'Status']];
+    const rows = [['Bank', 'Account', 'Last 4', 'Period', 'Used For', 'Status']];
     for (const account of data.accounts.filter((a) => a.included)) {
       for (const month of data.months) {
         const s = samplesByCell.get(`${account.id}|${month}`);
@@ -161,11 +162,21 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
         ]);
       }
     }
+    for (const year of data.taxReturns) {
+      rows.push([
+        '',
+        'Business income tax return (Form 1120-S, 1120, 1065, or Schedule C), as filed',
+        '',
+        year.label,
+        'Revenue tie to tax return. Upload to the Data Room Tax folder.',
+        year.entry?.grossReceipts != null ? 'Entered' : year.entry?.dataRoomDocumentId ? 'Received' : 'Requested',
+      ]);
+    }
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Bank Statement Request - ${formatEstDate()}.csv`;
+    link.download = `Cash Proof Request - ${formatEstDate()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -192,9 +203,10 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
         <p style={{ fontSize: '13px', color: '#475569', margin: '6px 0 0', lineHeight: 1.5 }}>
           SBA cash verification. Month-end book cash for each bank account comes from the accounting system, and a
           sample of months is tied to bank statements uploaded to the Data Room <strong>Bank Statements</strong> folder.
-          Deposits from every statement are then reconciled to reported revenue. Read Statements fills in the figures from
-          the files in that folder, then matches every book entry to the bank transactions to find differences. Link each
-          account to its statements with the Statement Account dropdown.
+          Deposits from every statement are then reconciled to reported revenue and to the income tax return. Read
+          Statements fills in the figures from the files in that folder, then matches every book entry to the bank
+          transactions to find differences. Read Tax Returns reads gross receipts from returns in the <strong>Tax</strong>{' '}
+          folder. Link each account to its statements with the Statement Account dropdown.
         </p>
       </div>
       {engagement && (
@@ -213,6 +225,14 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
             onClick={() => run('scan', { action: 'scan-statements', engagementId: engagement.id })}
           >
             {busy === 'scan' ? `Reading ${data?.bankStatementDocuments.length ?? ''} statements…` : 'Read Statements'}
+          </button>
+          <button
+            style={buttonStyle('secondary', !canEdit || !!busy || !data?.taxReturnDocuments.length)}
+            disabled={!canEdit || !!busy || !data?.taxReturnDocuments.length}
+            title="Read every file in the Data Room Tax folder and fill in each fiscal year's gross receipts that are still blank"
+            onClick={() => run('scan-tax', { action: 'scan-tax-returns', engagementId: engagement.id })}
+          >
+            {busy === 'scan-tax' ? 'Reading tax returns…' : 'Read Tax Returns'}
           </button>
           <button
             style={buttonStyle('secondary', !canEdit || !!busy || !data?.accounts.some((a) => a.included))}
@@ -334,6 +354,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
   const summary = data!.summary;
   const outstanding = summary.requested + summary.received;
   const revenuePeriods = data?.revenueReconciliation?.periods || [];
+  const taxYears = data?.taxReturns || [];
   const docName = (id: string | null) =>
     (id && data?.bankStatementDocuments.find((d) => d.id === id)?.originalFileName) || null;
 
@@ -355,6 +376,11 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
       value: `${revenuePeriods.filter((p) => p.status === 'RECONCILED' || p.status === 'EXPLAINED').length} of ${revenuePeriods.length} years`,
       alert: revenuePeriods.some((p) => p.status === 'VARIANCE'),
     },
+    {
+      label: 'Tax Return Revenue',
+      value: `${taxYears.filter((y) => y.status === 'RECONCILED' || y.status === 'EXPLAINED').length} of ${taxYears.length} years`,
+      alert: taxYears.some((y) => y.status === 'VARIANCE'),
+    },
   ];
 
   return (
@@ -362,7 +388,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
       <div style={cardStyle}>
         {header}
         {error && <div style={{ marginTop: '12px', color: '#b91c1c', fontSize: '12px' }}>{error}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: '10px', marginTop: '14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, minmax(0, 1fr))', gap: '10px', marginTop: '14px' }}>
           {metricCards.map((card) => (
             <div
               key={card.label}
@@ -905,6 +931,10 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
           requestAnimationFrame(() => samplePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
         }}
       />
+
+      {data!.revenueReconciliation && (
+        <CashProofTaxReturnCard data={data!} canEdit={canEdit} busy={busy} run={run} money={money} />
+      )}
     </>
   );
 }

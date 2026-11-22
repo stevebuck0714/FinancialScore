@@ -31,6 +31,7 @@
     "test:infor-security": "tsx scripts/test-infor-security.ts",
     "test:operational-data": "tsx scripts/test-operational-data-store.ts",
     "test:cash-proof-matching": "tsx scripts/test-cash-proof-matching.ts",
+    "test:cash-proof-tax-returns": "tsx scripts/test-cash-proof-tax-returns.ts",
     "ops:chart-readiness": "tsx scripts/check-operational-chart-readiness.ts",
     "worker:sync": "tsx lib/workers/sync-drain.ts"
   },

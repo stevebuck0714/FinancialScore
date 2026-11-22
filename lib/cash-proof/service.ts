@@ -22,6 +22,16 @@ import {
 } from './revenue-reconciliation';
 import { selectExpansionMonths, selectSampleMonths, type SampleSelectionReason } from './sampling';
 import { scanBankStatements, type StatementScan } from './statement-scan';
+import {
+  TAX_RETURN_FORMS,
+  TAX_RETURN_BASIS_LABELS,
+  computeTaxReturnComparison,
+  type TaxReturnBasis,
+  type TaxReturnComparison,
+  type TaxReturnEntry,
+  type TaxReturnForm,
+} from './tax-return';
+import { completeFiscalYearKeys, listTaxFolderDocuments, scanTaxReturns, type TaxReturnScan } from './tax-return-scan';
 import type { DetectedStatementAccount } from '@/lib/bank-statements/account-match';
 import { loadDetectedStatementAccounts } from '@/lib/bank-statements/detected-accounts';
 import { computeTieOut, type CashProofSampleStatus, type TieOutResult } from './tie-out';
@@ -130,6 +140,10 @@ export type CashProofState = {
   samples: CashProofSampleView[];
   revenueAdjustments: CashProofRevenueAdjustmentView[];
   revenueReconciliation: RevenueReconciliation | null;
+  /** Complete fiscal years compared with the income tax return. */
+  taxReturns: TaxReturnComparison[];
+  taxReturnScan: TaxReturnScan | null;
+  taxReturnDocuments: Array<{ id: string; originalFileName: string; createdAt: string }>;
   statementScan: StatementScan | null;
   transactionMatch: TransactionMatchSummary | null;
   transactionExceptions: CashProofTransactionExceptionView[];
@@ -149,6 +163,8 @@ export type CashProofState = {
     netDifference: number;
     depositMonthsMissing: number;
     revenuePeriodsOpen: number;
+    taxReturnsMissing: number;
+    taxReturnPeriodsOpen: number;
     transactionExceptionsOpen: number;
   };
 };
@@ -210,12 +226,18 @@ async function loadBankStatementDocuments(companyId: string) {
 }
 
 export async function loadCashProofState(companyId: string): Promise<CashProofState> {
-  const [engagement, latestFinancialMonth, bankStatementDocuments, statementAccounts] = await Promise.all([
+  const [engagement, latestFinancialMonth, bankStatementDocuments, statementAccounts, taxDocs] = await Promise.all([
     latestEngagement(companyId),
     resolveLatestFinancialMonth(companyId),
     loadBankStatementDocuments(companyId),
     loadDetectedStatementAccounts(companyId),
+    listTaxFolderDocuments(companyId),
   ]);
+  const taxReturnDocuments = taxDocs.map((d) => ({
+    id: d.id,
+    originalFileName: d.originalFileName,
+    createdAt: d.createdAt.toISOString(),
+  }));
 
   const emptySummary = {
     sampledMonths: 0,
@@ -228,6 +250,8 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     netDifference: 0,
     depositMonthsMissing: 0,
     revenuePeriodsOpen: 0,
+    taxReturnsMissing: 0,
+    taxReturnPeriodsOpen: 0,
     transactionExceptionsOpen: 0,
   };
   if (!engagement) {
@@ -239,6 +263,9 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
       samples: [],
       revenueAdjustments: [],
       revenueReconciliation: null,
+      taxReturns: [],
+      taxReturnScan: null,
+      taxReturnDocuments,
       statementScan: null,
       transactionMatch: null,
       transactionExceptions: [],
@@ -349,6 +376,8 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
       Math.round(counted.reduce((sum, s) => sum + (s.tieOut.difference ?? 0), 0) * 100) / 100,
     depositMonthsMissing: 0,
     revenuePeriodsOpen: 0,
+    taxReturnsMissing: 0,
+    taxReturnPeriodsOpen: 0,
     transactionExceptionsOpen: 0,
   };
 
@@ -406,6 +435,13 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
   summary.revenuePeriodsOpen = revenueReconciliation.periods.filter(
     (p) => p.status === 'VARIANCE' || p.status === 'INCOMPLETE',
   ).length;
+  const taxReturns = computeTaxReturnComparison(
+    revenueReconciliation.periods,
+    (engagement.taxReturns as Record<string, TaxReturnEntry> | null) || {},
+    engagement.revenueTolerancePct,
+  );
+  summary.taxReturnsMissing = taxReturns.filter((t) => t.status === 'NOT_PROVIDED').length;
+  summary.taxReturnPeriodsOpen = taxReturns.filter((t) => t.status === 'VARIANCE').length;
 
   return {
     engagement: {
@@ -427,6 +463,9 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     samples,
     revenueAdjustments,
     revenueReconciliation,
+    taxReturns,
+    taxReturnScan: (engagement.taxReturnScan as unknown as TaxReturnScan | null) ?? null,
+    taxReturnDocuments,
     statementScan: (engagement.statementScan as unknown as StatementScan | null) ?? null,
     transactionMatch: (engagement.transactionMatch as unknown as TransactionMatchSummary | null) ?? null,
     transactionExceptions,
@@ -588,6 +627,18 @@ export type CashProofAction =
     }
   | { action: 'delete-revenue-adjustment'; engagementId: string; adjustmentId: string }
   | { action: 'set-revenue-period-note'; engagementId: string; periodKey: string; note: string | null }
+  | {
+      action: 'set-tax-return';
+      engagementId: string;
+      periodKey: string;
+      form?: TaxReturnForm | null;
+      basis?: TaxReturnBasis;
+      grossReceipts?: number | string | null;
+      returnsAllowances?: number | string | null;
+      dataRoomDocumentId?: string | null;
+      note?: string | null;
+    }
+  | { action: 'scan-tax-returns'; engagementId: string }
   | { action: 'scan-statements'; engagementId: string }
   | { action: 'match-transactions'; engagementId: string }
   | { action: 'update-transaction-exception'; engagementId: string; exceptionId: string; resolutionNote?: string | null; clear?: boolean }
@@ -932,6 +983,61 @@ export async function runCashProofAction(companyId: string, userId: string, inpu
       await prisma.cashProofEngagement.update({ where: { id: engagement.id }, data: { revenuePeriodNotes: notes } });
       return;
     }
+    case 'set-tax-return': {
+      const engagement = await requireEngagement(companyId, input.engagementId);
+      const key = String(input.periodKey || '');
+      if (!completeFiscalYearKeys(engagement.periodStartMonth, engagement.periodEndMonth, engagement.fiscalYearEndMonth).has(key)) {
+        throw new CashProofError('Tax returns can only be entered for complete fiscal years in the review period');
+      }
+      const entries = { ...((engagement.taxReturns as Record<string, TaxReturnEntry> | null) || {}) };
+      const current: TaxReturnEntry = entries[key] ?? {
+        form: null,
+        basis: 'ACCRUAL',
+        grossReceipts: null,
+        returnsAllowances: null,
+        dataRoomDocumentId: null,
+        source: 'entered',
+        note: null,
+        updatedAt: new Date().toISOString(),
+      };
+      const next: TaxReturnEntry = { ...current, updatedAt: new Date().toISOString() };
+      if ('form' in input) {
+        const form = optionalText(input.form, 20);
+        if (form && !(form in TAX_RETURN_FORMS)) throw new CashProofError('Choose a tax form');
+        next.form = (form as TaxReturnForm | null) ?? null;
+      }
+      if ('basis' in input) {
+        if (!(String(input.basis) in TAX_RETURN_BASIS_LABELS)) throw new CashProofError('Choose cash or accrual');
+        next.basis = input.basis as TaxReturnBasis;
+      }
+      for (const field of ['grossReceipts', 'returnsAllowances'] as const) {
+        if (!(field in input)) continue;
+        const value = optionalNumber(input[field]);
+        if (value !== null && value < 0) throw new CashProofError('Tax return amounts cannot be negative');
+        next[field] = value;
+        next.source = 'entered';
+      }
+      if ('dataRoomDocumentId' in input) {
+        const docId = optionalText(input.dataRoomDocumentId, 100);
+        if (docId) {
+          const doc = await prisma.dataRoomDocument.findFirst({ where: { id: docId, companyId }, select: { id: true } });
+          if (!doc) throw new CashProofError('Document not found in this company Data Room');
+        }
+        next.dataRoomDocumentId = docId;
+      }
+      if ('note' in input) next.note = optionalText(input.note, 2000);
+      const empty =
+        next.grossReceipts === null && next.returnsAllowances === null && !next.form && !next.dataRoomDocumentId && !next.note;
+      if (empty) delete entries[key];
+      else entries[key] = next;
+      await prisma.cashProofEngagement.update({ where: { id: engagement.id }, data: { taxReturns: entries } });
+      return;
+    }
+    case 'scan-tax-returns': {
+      const engagement = await requireEngagement(companyId, input.engagementId);
+      await scanTaxReturns(companyId, engagement.id);
+      return;
+    }
     case 'scan-statements': {
       const engagement = await requireEngagement(companyId, input.engagementId);
       await scanBankStatements(companyId, engagement.id, userId);
@@ -999,6 +1105,12 @@ export async function runCashProofAction(companyId: string, userId: string, inpu
       if (summary.revenuePeriodsOpen > 0) {
         throw new CashProofError(
           `${summary.revenuePeriodsOpen} fiscal period(s) in Deposits to Revenue are not reconciled or explained`,
+          409,
+        );
+      }
+      if (summary.taxReturnPeriodsOpen > 0) {
+        throw new CashProofError(
+          `${summary.taxReturnPeriodsOpen} fiscal year(s) differ from the tax return with no explanation`,
           409,
         );
       }

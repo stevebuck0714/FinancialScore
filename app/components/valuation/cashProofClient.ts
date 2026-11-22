@@ -3,6 +3,8 @@ import type { TransactionExceptionSeverity } from '@/lib/cash-proof/transaction-
 import type { CashProofSampleStatus } from '@/lib/cash-proof/tie-out';
 import type { RevenueReconciliationLine, RevenueReconciliationStatus } from '@/lib/cash-proof/revenue-reconciliation';
 import type { StatementScanStatus } from '@/lib/cash-proof/statement-scan';
+import type { TaxReturnStatus } from '@/lib/cash-proof/tax-return';
+import type { TaxReturnScanStatus } from '@/lib/cash-proof/tax-return-scan';
 
 export type CashProofResponse = CashProofState & {
   companyId: string;
@@ -54,6 +56,26 @@ export const SCAN_STATUS: Record<StatementScanStatus, { label: string; colors: {
   NO_TEXT: { label: 'Scanned Image', colors: STATUS_COLORS.REQUESTED },
   FAILED: { label: 'Failed', colors: STATUS_COLORS.EXCEPTION },
   PENDING_SCAN: { label: 'Awaiting Virus Scan', colors: STATUS_COLORS.REQUESTED },
+};
+
+export const TAX_RETURN_STATUS_COLORS: Record<TaxReturnStatus, { bg: string; fg: string; border: string }> = {
+  NOT_PROVIDED: STATUS_COLORS.REQUESTED,
+  INCOMPLETE: STATUS_COLORS.REQUESTED,
+  RECONCILED: STATUS_COLORS.TIED,
+  EXPLAINED: STATUS_COLORS.CLEARED,
+  VARIANCE: STATUS_COLORS.EXCEPTION,
+};
+
+export const TAX_SCAN_STATUS: Record<TaxReturnScanStatus, { label: string; colors: { bg: string; fg: string; border: string } }> = {
+  APPLIED: SCAN_STATUS.APPLIED,
+  VERIFIED: SCAN_STATUS.VERIFIED,
+  CONFLICT: SCAN_STATUS.CONFLICT,
+  NEEDS_REVIEW: SCAN_STATUS.NEEDS_REVIEW,
+  OUT_OF_PERIOD: { label: 'Outside Period', colors: STATUS_COLORS.REQUESTED },
+  NOT_A_RETURN: { label: 'Not a Return', colors: STATUS_COLORS.REQUESTED },
+  NO_TEXT: SCAN_STATUS.NO_TEXT,
+  FAILED: SCAN_STATUS.FAILED,
+  PENDING_SCAN: SCAN_STATUS.PENDING_SCAN,
 };
 
 export type ReconciliationRow = {

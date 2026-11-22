@@ -10,11 +10,13 @@ import {
   REVENUE_STATUS_LABELS,
 } from '@/lib/cash-proof/revenue-reconciliation';
 import { TRANSACTION_EXCEPTION_ORDER, TRANSACTION_EXCEPTION_TYPES } from '@/lib/cash-proof/transaction-match';
+import { TAX_RETURN_BASIS_LABELS, TAX_RETURN_FORMS, TAX_RETURN_STATUS_LABELS } from '@/lib/cash-proof/tax-return';
 import {
   REVENUE_STATUS_COLORS,
   SEVERITY_COLORS,
   SEVERITY_LABELS,
   STATUS_COLORS,
+  TAX_RETURN_STATUS_COLORS,
   fetchCashProof,
   formatMonthLabel,
   formatPercent,
@@ -172,6 +174,25 @@ export default function CashProofReportSection({
       return `${incomplete.map((p) => p.label).join(', ')} could not be reconciled because reported revenue or opening balances are missing from the books.`;
     }
     return `Bank deposits, after removing non-revenue deposits and adjusting for the change in receivables, support reported revenue within ${recon.tolerancePct}% for every fiscal period reviewed${explained.length ? ` (${explained.map((p) => p.label).join(', ')} after documented explanations)` : ''}. Across the review period, implied revenue of ${money(recon.total.impliedRevenue)} compares with reported revenue of ${money(recon.total.reportedRevenue)}.`;
+  })();
+
+  const taxYears = data?.taxReturns ?? [];
+  const taxConclusion = (() => {
+    if (taxYears.length === 0) return '';
+    const provided = taxYears.filter((y) => y.status !== 'NOT_PROVIDED');
+    const missing = taxYears.filter((y) => y.status === 'NOT_PROVIDED');
+    const missingText = missing.length
+      ? ` No income tax return was provided for ${missing.map((y) => y.label).join(', ')}.`
+      : '';
+    if (provided.length === 0) return `Income tax returns were not provided, so revenue was not compared with the returns.${missingText}`;
+    const variances = provided.filter((y) => y.status === 'VARIANCE');
+    if (variances.length > 0) {
+      return `Revenue differs from the income tax return by more than ${recon?.tolerancePct ?? ''}% in ${variances.map((y) => y.label).join(', ')} with no explanation.${missingText}`;
+    }
+    const explained = provided.filter((y) => y.status === 'EXPLAINED');
+    const incomplete = provided.filter((y) => y.status === 'INCOMPLETE');
+    const supported = provided.filter((y) => y.status === 'RECONCILED' || y.status === 'EXPLAINED');
+    return `${supported.length ? `Gross receipts on the income tax return agree with revenue within ${recon?.tolerancePct ?? ''}% for ${supported.map((y) => y.label).join(', ')}${explained.length ? ` (${explained.map((y) => y.label).join(', ')} after documented explanations)` : ''}.` : ''}${incomplete.length ? ` ${incomplete.map((y) => y.label).join(', ')} could not be compared because revenue or deposits are incomplete.` : ''}${missingText}`.trim();
   })();
 
   const isLoading = Boolean(companyId) && !data && !error;
@@ -509,6 +530,75 @@ export default function CashProofReportSection({
                   </div>
                 )}
                 <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '10px 0 0' }}>{revenueConclusion}</p>
+
+                {taxYears.length > 0 && (
+                  <>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', margin: '14px 0 6px' }}>Tax Return Revenue</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ ...th, textAlign: 'left' }} />
+                          {taxYears.map((y) => (
+                            <th key={y.key} style={th}>
+                              {y.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(
+                          [
+                            ['Form', (y) => (y.entry?.form ? TAX_RETURN_FORMS[y.entry.form].label : '—'), false],
+                            ['Accounting Method', (y) => (y.entry ? TAX_RETURN_BASIS_LABELS[y.entry.basis] : '—'), false],
+                            ['Gross Receipts or Sales', (y) => money(y.entry?.grossReceipts), false],
+                            ['Less: Returns and Allowances', (y) => money(y.entry?.returnsAllowances === null || y.entry?.returnsAllowances === undefined ? null : -y.entry.returnsAllowances), false],
+                            ['Tax Return Revenue', (y) => money(y.taxRevenue), true],
+                            ['Reported Revenue (Books)', (y) => money(y.reportedRevenue), false],
+                            ['Difference (Books − Tax Return)', (y) => money(y.bookDifference), true],
+                            ['Customer Receipts (Bank Deposits)', (y) => money(y.customerReceipts), false],
+                            ['Difference (Deposits − Tax Return)', (y) => money(y.depositsDifference), true],
+                            [
+                              'Variance (Tested)',
+                              (y) => formatPercent(y.comparedTo === 'DEPOSITS' ? y.depositsVariancePct : y.bookVariancePct),
+                              false,
+                            ],
+                          ] as Array<[string, (y: (typeof taxYears)[number]) => string, boolean]>
+                        ).map(([label, value, emphasis]) => (
+                          <tr key={label}>
+                            <td style={{ ...td, textAlign: 'left', fontWeight: emphasis ? 700 : 400 }}>{label}</td>
+                            {taxYears.map((y) => (
+                              <td key={y.key} style={{ ...td, fontWeight: emphasis ? 700 : 400 }}>
+                                {y.status === 'NOT_PROVIDED' && label !== 'Reported Revenue (Books)' && label !== 'Customer Receipts (Bank Deposits)'
+                                  ? '—'
+                                  : value(y)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                        <tr>
+                          <td style={{ ...td, textAlign: 'left' }}>Status</td>
+                          {taxYears.map((y) => (
+                            <td key={y.key} style={td}>
+                              <span style={badge(TAX_RETURN_STATUS_COLORS[y.status])}>{TAX_RETURN_STATUS_LABELS[y.status]}</span>
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                    {taxYears.some((y) => y.entry?.note && y.status !== 'NOT_PROVIDED') && (
+                      <div style={{ marginTop: '10px', display: 'grid', gap: '6px' }}>
+                        {taxYears
+                          .filter((y) => y.entry?.note && y.status !== 'NOT_PROVIDED')
+                          .map((y) => (
+                            <p key={y.key} style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: 0 }}>
+                              <strong>{y.label} tax return:</strong> {y.entry!.note}
+                            </p>
+                          ))}
+                      </div>
+                    )}
+                    <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '10px 0 0' }}>{taxConclusion}</p>
+                  </>
+                )}
               </div>
             )}
 
@@ -541,6 +631,16 @@ export default function CashProofReportSection({
                   year, with differences over {recon?.tolerancePct ?? engagement.revenueTolerancePct}% of reported revenue
                   requiring a documented explanation.
                 </p>
+                {taxYears.some((y) => y.status !== 'NOT_PROVIDED') && (
+                  <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '8px 0 0' }}>
+                    For each complete fiscal year, gross receipts less returns and allowances from the business income tax
+                    return (Form 1120-S, 1120, or 1065 lines 1a through 1c, or Schedule C lines 1 through 3) were compared with
+                    both revenue reported in the books and customer receipts from the bank statements. Returns filed on the
+                    cash method were tested against customer receipts and returns filed on the accrual method against book
+                    revenue, with differences over {recon?.tolerancePct ?? engagement.revenueTolerancePct}% of tax return
+                    revenue requiring a documented explanation.
+                  </p>
+                )}
                 {transactionMatch && (
                   <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '8px 0 0' }}>
                     Where the client provided bank transaction detail (a bank connection report or a reviewed transaction
