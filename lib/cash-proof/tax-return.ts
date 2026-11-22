@@ -48,6 +48,8 @@ export type TaxReturnComparison = {
   bookVariancePct: number | null;
   depositsDifference: number | null;
   depositsVariancePct: number | null;
+  /** Bank statements in the fiscal year with no deposits entered; the deposits test waits for all of them. */
+  missingDeposits: number;
   /** Cash-basis returns are judged against customer receipts, accrual-basis returns against book revenue. */
   comparedTo: 'BOOKS' | 'DEPOSITS';
   status: TaxReturnStatus;
@@ -93,6 +95,7 @@ export function computeTaxReturnComparison(
         bookVariancePct: bookDifference === null ? null : pct(bookDifference, taxRevenue!),
         depositsDifference,
         depositsVariancePct: depositsDifference === null ? null : pct(depositsDifference, taxRevenue!),
+        missingDeposits: p.missingDeposits,
         comparedTo,
         status,
       };

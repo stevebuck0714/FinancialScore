@@ -192,7 +192,18 @@ export default function CashProofTaxReturnCard({
     },
     {
       label: 'Status',
-      cell: (y) => <Badge colors={TAX_RETURN_STATUS_COLORS[y.status]} label={TAX_RETURN_STATUS_LABELS[y.status]} />,
+      cell: (y) => (
+        <>
+          <Badge colors={TAX_RETURN_STATUS_COLORS[y.status]} label={TAX_RETURN_STATUS_LABELS[y.status]} />
+          {y.status === 'INCOMPLETE' && (
+            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', maxWidth: 220, whiteSpace: 'normal', lineHeight: 1.4 }}>
+              {y.comparedTo === 'DEPOSITS'
+                ? `${y.missingDeposits} statement${y.missingDeposits === 1 ? '' : 's'} in ${y.label} still missing deposits. Enter them in Deposits to Revenue, or set the method to Accrual if the return was filed on the accrual basis.`
+                : `No revenue in the books for ${y.label}. Refresh Book Balances, or set the method to Cash if the return was filed on the cash basis.`}
+            </div>
+          )}
+        </>
+      ),
     },
     {
       label: 'Return',
