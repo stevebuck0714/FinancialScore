@@ -8,6 +8,9 @@ import ValuationBalanceSheetQualityPreview from './ValuationBalanceSheetQualityP
 import { formatMoneyCompact, getCurrencySymbol } from '@/lib/format/currency';
 import type { QoeSummaryBucket } from '@/lib/sde/qoe-adjustment-summary';
 import QoeAdjustmentSummary from './QoeAdjustmentSummary';
+import { useEffect, useState } from 'react';
+import { taxReturnConclusion } from '@/lib/cash-proof/tax-return';
+import { fetchCashProof } from './cashProofClient';
 
 const LineChart = dynamic(() => import('@/app/components/charts/Charts').then((mod) => mod.LineChart), { ssr: false });
 
@@ -28,7 +31,37 @@ type Props = {
   variant?: 'sde' | 'qoe';
   /** Per-adjustment breakdown shown after the Quality of Earnings charts. */
   adjustmentSummary?: QoeSummaryBucket[];
+  /** QoE only: Revenue Quality cites the Cash Proof tax return comparison for this company. */
+  companyId?: string | null;
 };
+
+/** The Cash Proof's tax return conclusion, or nothing when no returns are in the cash proof. */
+function TaxReturnRevenueNote({ companyId }: { companyId: string }) {
+  const [result, setResult] = useState<{ companyId: string; text: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchCashProof(companyId)
+      .then((data) => {
+        const years = data.taxReturns ?? [];
+        const tolerance = data.revenueReconciliation?.tolerancePct ?? data.engagement?.revenueTolerancePct ?? 0;
+        const text = years.some((y) => y.status !== 'NOT_PROVIDED') ? taxReturnConclusion(years, tolerance) : '';
+        if (!cancelled) setResult({ companyId, text });
+      })
+      .catch(() => {
+        if (!cancelled) setResult({ companyId, text: '' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+  if (!result || result.companyId !== companyId) return <div data-report-loading="true" />;
+  if (!result.text) return null;
+  return (
+    <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '10px' }}>
+      <strong>Tax returns:</strong> {result.text}
+    </p>
+  );
+}
 
 const sectionTitle = (title: string) => (
   <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', margin: '16px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
@@ -247,7 +280,7 @@ function QoeWaterfallChart({
 }
 
 export default function ValuationSdeSection5Preview(props: Props) {
-  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale, variant = 'sde', adjustmentSummary } = props;
+  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale, variant = 'sde', adjustmentSummary, companyId } = props;
   const isQoe = variant === 'qoe';
   const fmt = model.formatDollars;
   const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
@@ -712,6 +745,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
             <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '10px' }}>
               {isQoe ? 'Buyer-focused revenue reliability checks.' : 'Buyer-focused revenue reliability checks (same signals as SDE module).'}
             </p>
+            {isQoe && companyId && <TaxReturnRevenueNote companyId={companyId} />}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ fontSize: '12px', color: '#64748b' }}>Top Revenue Bucket % (proxy)</div>

@@ -58,6 +58,49 @@ export type TaxReturnComparison = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const pct = (difference: number, base: number) => (base !== 0 ? (difference / Math.abs(base)) * 100 : null);
 
+const joinLabels = (years: TaxReturnComparison[]) => years.map((y) => y.label).join(', ');
+
+/** One-paragraph conclusion on the tax return comparison, shared by the Cash Proof and QoE Summary reports. */
+export function taxReturnConclusion(years: TaxReturnComparison[], tolerancePct: number): string {
+  if (years.length === 0) return '';
+  const provided = years.filter((y) => y.status !== 'NOT_PROVIDED');
+  const missing = years.filter((y) => y.status === 'NOT_PROVIDED');
+  const missingText = missing.length ? `No income tax return was provided for ${joinLabels(missing)}.` : '';
+  if (provided.length === 0) return `Income tax returns were not provided, so revenue was not compared with the returns. ${missingText}`.trim();
+
+  const variances = provided.filter((y) => y.status === 'VARIANCE');
+  const explained = provided.filter((y) => y.status === 'EXPLAINED');
+  const supported = provided.filter((y) => y.status === 'RECONCILED' || y.status === 'EXPLAINED');
+  const incomplete = provided.filter((y) => y.status === 'INCOMPLETE');
+  const pendingDeposits = incomplete.filter((y) => y.comparedTo === 'DEPOSITS');
+  const booksAgree = pendingDeposits.filter((y) => y.bookVariancePct !== null && Math.abs(y.bookVariancePct) <= tolerancePct);
+  const booksDiffer = pendingDeposits.filter((y) => !booksAgree.includes(y));
+  const noBooks = incomplete.filter((y) => y.comparedTo === 'BOOKS');
+
+  const parts = [
+    variances.length
+      ? `Revenue differs from the income tax return by more than ${tolerancePct}% in ${joinLabels(variances)} with no explanation.`
+      : '',
+    supported.length
+      ? `Gross receipts on the income tax return agree with revenue within ${tolerancePct}% for ${joinLabels(supported)}${
+          explained.length ? ` (${joinLabels(explained)} after documented explanations)` : ''
+        }.`
+      : '',
+    booksAgree.length
+      ? `Gross receipts on the cash-basis return${booksAgree.length === 1 ? '' : 's'} for ${joinLabels(booksAgree)} agree with book revenue within ${tolerancePct}%; the test against bank deposits is pending because deposits have not been entered for every statement.`
+      : '',
+    booksDiffer.length
+      ? `${joinLabels(booksDiffer)} could not be tested against bank deposits because deposits have not been entered for every statement${booksDiffer
+          .filter((y) => y.bookVariancePct !== null)
+          .map((y) => `; book revenue differs from the ${y.label} return by ${Math.abs(y.bookVariancePct!).toFixed(1)}%`)
+          .join('')}.`
+      : '',
+    noBooks.length ? `${joinLabels(noBooks)} could not be compared because the books have no revenue for the year.` : '',
+    missingText,
+  ];
+  return parts.filter(Boolean).join(' ');
+}
+
 /** Tax returns cover whole years, so only complete fiscal years are compared. */
 export function computeTaxReturnComparison(
   periods: RevenueReconciliationPeriod[],

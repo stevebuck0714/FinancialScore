@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { parseTaxReturn, taxReturnPeriodKey } from '../lib/cash-proof/tax-return-parser';
-import { computeTaxReturnComparison } from '../lib/cash-proof/tax-return';
+import { computeTaxReturnComparison, taxReturnConclusion } from '../lib/cash-proof/tax-return';
 import type { RevenueReconciliationPeriod } from '../lib/cash-proof/revenue-reconciliation';
 
 const sCorp = `
@@ -178,5 +178,26 @@ assert.deepEqual(
 );
 assert.equal(result[1].bookDifference, 195000);
 assert.equal(computeTaxReturnComparison([period('FY2023', 1_000_000, 1_200_000)], { FY2023: entry(1_000_000, 'ACCRUAL') }, 2)[0].status, 'VARIANCE');
+
+// Cash-basis returns waiting on deposits still report agreement with the books.
+const pending = computeTaxReturnComparison(
+  [
+    { ...period('FY2024', 0, 18_216.93), missingDeposits: 12 },
+    { ...period('FY2025', 0, 1_000_000), missingDeposits: 3 },
+  ],
+  { FY2024: entry(18_566, 'CASH'), FY2025: entry(847_821, 'CASH') },
+  2,
+);
+assert.deepEqual(
+  pending.map((r) => [r.key, r.status, r.missingDeposits]),
+  [
+    ['FY2024', 'INCOMPLETE', 12],
+    ['FY2025', 'INCOMPLETE', 3],
+  ],
+);
+const pendingText = taxReturnConclusion(pending, 2);
+assert.match(pendingText, /cash-basis return for FY2024 agree with book revenue within 2%; the test against bank deposits is pending/);
+assert.match(pendingText, /FY2025 could not be tested against bank deposits .*book revenue differs from the FY2025 return by 17\.9%/);
+assert.match(taxReturnConclusion(result, 2), /agree with revenue within 2% for FY2022, FY2023, FY2024 \(FY2024 after documented explanations\)\. No income tax return was provided for FY2025\./);
 
 console.log('cash proof tax return tests passed');

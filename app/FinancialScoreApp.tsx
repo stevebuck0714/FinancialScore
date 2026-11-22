@@ -1846,6 +1846,7 @@ function FinancialScorePage() {
     qoeCash_tieOutDetail: true,
     qoeCash_exceptions: true,
     qoeCash_depositsToRevenue: true,
+    qoeCash_taxReturns: true,
     qoeCash_methodology: true,
     ebitda_revenueQuality: true,
     ebitda_customerMixConcentration: true,
@@ -12404,6 +12405,7 @@ function FinancialScorePage() {
           { key: 'qoeCash_tieOutDetail', label: 'Tie-Out Detail' },
           { key: 'qoeCash_exceptions', label: 'Exceptions' },
           { key: 'qoeCash_depositsToRevenue', label: 'Deposits to Revenue' },
+          { key: 'qoeCash_taxReturns', label: 'Tax Return Revenue' },
           { key: 'qoeCash_methodology', label: 'Methodology' },
         ],
       },
@@ -22428,6 +22430,7 @@ function FinancialScorePage() {
                   model={sdeValuationReportPreviewModel}
                   monthly={monthly as MonthlyDataRow[]}
                   selections={qoeSummarySelections}
+                  companyId={selectedCompanyId}
                   companyName={companyName || ''}
                   latestFinancialSource={latestFinancialSource}
                   sdeExecutiveSummaryApi={sdeExecutiveSummaryApi}
@@ -22464,6 +22467,7 @@ function FinancialScorePage() {
                   tieOutDetail: !!valuationBuilderSelections.qoeCash_tieOutDetail,
                   exceptions: !!valuationBuilderSelections.qoeCash_exceptions,
                   depositsToRevenue: valuationBuilderSelections.qoeCash_depositsToRevenue !== false,
+                  taxReturns: valuationBuilderSelections.qoeCash_taxReturns !== false,
                   methodology: !!valuationBuilderSelections.qoeCash_methodology,
                 }}
               />
