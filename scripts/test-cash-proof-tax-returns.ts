@@ -90,6 +90,34 @@ assert.equal(turbo.ambiguity, null);
 assert.equal(parseTaxReturn(personalReturn, '2025TurboTaxReturn.pdf', 'Lakeside Consulting').grossReceipts, 106771);
 assert.match(String(parseTaxReturn(personalReturn, '2025TurboTaxReturn.pdf').ambiguity), /\$847,821, \$106,771/);
 
+// Embedded fonts can leave a page's labels unreadable; the values follow the business name.
+const garbledLabels = `
+Form 1040 U.S. Individual Income Tax Return 2024
+Schedule K-1 (Form 1120-S), box 17. Income or Loss From Partnerships and S Corporations
+D7;9J:; 6<<M%u'"&j"&e A6:F7Aw@=7\`G67
+Retail
+458110
+Wiseware Exchange, LLC DBA Plato's Closet
+332069101
+18,566.
+9,920.
+9,920.
+-5,699.
+-5,699.
+15,619.
+6,389.
+8,646.8,646.
+18,566.
+REV 03/20/25 Intuit.cg.cfp.sp
+Wiseware Exchange, LLC DBA Plato's Closet33-2069101
+-5,699.
+REV 03/20/25 Intuit.cg.cfp.sp
+`;
+const garbled = parseTaxReturn(garbledLabels, '2024_TaxReturn (1).pdf', 'PlatosCloset_80957');
+assert.equal(garbled.form, 'SCHEDULE_C');
+assert.equal(garbled.grossReceipts, 18566);
+assert.equal(garbled.ambiguity, null);
+
 // Comparison.
 const period = (key: string, adjustedDeposits: number, reportedRevenue: number | null): RevenueReconciliationPeriod => ({
   key,

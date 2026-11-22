@@ -637,6 +637,8 @@ export type CashProofAction =
       returnsAllowances?: number | string | null;
       dataRoomDocumentId?: string | null;
       note?: string | null;
+      /** Clears the year's form, figures, linked return, and explanation so Read Tax Returns can fill it again. */
+      reset?: boolean;
     }
   | { action: 'scan-tax-returns'; engagementId: string }
   | { action: 'scan-statements'; engagementId: string }
@@ -1000,6 +1002,24 @@ export async function runCashProofAction(companyId: string, userId: string, inpu
         note: null,
         updatedAt: new Date().toISOString(),
       };
+      if (input.reset) {
+        // The accounting method is not read from the return, so it survives a reset.
+        if (current.basis === 'ACCRUAL') delete entries[key];
+        else {
+          entries[key] = {
+            form: null,
+            basis: current.basis,
+            grossReceipts: null,
+            returnsAllowances: null,
+            dataRoomDocumentId: null,
+            source: 'entered',
+            note: null,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        await prisma.cashProofEngagement.update({ where: { id: engagement.id }, data: { taxReturns: entries } });
+        return;
+      }
       const next: TaxReturnEntry = { ...current, updatedAt: new Date().toISOString() };
       if ('form' in input) {
         const form = optionalText(input.form, 20);

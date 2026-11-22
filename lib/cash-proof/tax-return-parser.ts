@@ -20,12 +20,15 @@ const FORM_TITLES: Array<[TaxReturnForm, RegExp]> = [
   ['1065', /return\s+of\s+partnership\s+income/i],
   ['1120', /u\.?s\.?\s+corporation\s+income\s+tax\s+return/i],
   ['SCHEDULE_C', /profit\s+or\s+loss\s+from\s+business/i],
+  // Business income on a personal return is reported on Schedule C, even when that page's labels are unreadable.
+  ['SCHEDULE_C', /u\.?s\.?\s+individual\s+income\s+tax\s+return/i],
 ];
 
+// "(Form 1120-S)" is a cross-reference to another form, not the form itself.
 const FORM_PATTERNS: Array<[TaxReturnForm, RegExp]> = [
-  ['1120S', /form\s+1120-?\s?s\b|income\s+tax\s+return\s+for\s+an\s+s\s+corporation/i],
-  ['1065', /form\s+1065\b|return\s+of\s+partnership\s+income/i],
-  ['1120', /form\s+1120\b(?!-?\s?s\b)|u\.?s\.?\s+corporation\s+income\s+tax\s+return/i],
+  ['1120S', /(?<!\(\s*)form\s+1120-?\s?s\b/i],
+  ['1065', /(?<!\(\s*)form\s+1065\b/i],
+  ['1120', /(?<!\(\s*)form\s+1120\b(?!-?\s?s\b)/i],
   ['SCHEDULE_C', /schedule\s+c\s*\(form\s+1040\)|profit\s+or\s+loss\s+from\s+business/i],
 ];
 
@@ -106,6 +109,25 @@ function revenueSections(text: string): RevenueSection[] {
   return sections;
 }
 
+const PAGE_FOOTER = /REV\s+\d{2}\/\d{2}\/\d{2}\s+Intuit|Intuit\.cg\./i;
+
+/**
+ * For pages whose labels the PDF's fonts leave unreadable: the business name sits at the top of
+ * the page's value block, so read from it to the end of the page.
+ */
+function namedSections(text: string, name: string): RevenueSection[] {
+  const pattern = new RegExp(name.split('').join('[^a-z]{0,3}'), 'gi');
+  const sections: RevenueSection[] = [];
+  for (const match of text.matchAll(pattern)) {
+    let section = text.slice(match.index! + match[0].length, match.index! + match[0].length + SECTION);
+    const end = section.search(PAGE_FOOTER);
+    if (end >= 0) section = section.slice(0, end);
+    const detached = detachedRevenue(section);
+    if (detached) sections.push({ ...detached, net: null, text: match[0] + section });
+  }
+  return sections;
+}
+
 function detectYears(text: string, fileName: string) {
   let taxYear: number | null = null;
   const calendar = text.match(/for\s+calendar\s+year\s+(20\d{2})/i);
@@ -135,9 +157,10 @@ function detectYears(text: string, fileName: string) {
 export function parseTaxReturn(text: string, fileName = '', businessName = ''): ParsedTaxReturn {
   const form = detectForm(text);
   const years = detectYears(text, fileName);
-  let sections = revenueSections(text);
-  const distinct = (list: RevenueSection[]) => [...new Set(list.map((s) => s.gross))];
   const name = lettersOnly(businessName.replace(/[_\s-]*\d+$/, ''));
+  let sections = revenueSections(text);
+  if (sections.length === 0 && name.length >= 4) sections = namedSections(text, name);
+  const distinct = (list: RevenueSection[]) => [...new Set(list.map((s) => s.gross))];
   if (distinct(sections).length > 1 && name.length >= 4) {
     const named = sections.filter((s) => lettersOnly(s.text).includes(name));
     if (distinct(named).length === 1) sections = named;

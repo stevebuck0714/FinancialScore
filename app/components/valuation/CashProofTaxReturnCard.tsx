@@ -225,6 +225,28 @@ export default function CashProofTaxReturnCard({
         );
       },
     },
+    ...(canEdit
+      ? [
+          {
+            label: 'Reset',
+            topBorder: true,
+            cell: (y: TaxReturnComparison) => (
+              <button
+                style={{ ...buttonStyle(), padding: '3px 10px' }}
+                disabled={!!busy || !y.entry}
+                title="Clears this year's form, figures, linked return, and explanation. The accounting method is kept. Then press Read Tax Returns to read the return again."
+                onClick={() => {
+                  if (window.confirm(`Reset ${y.label}? Its form, figures, linked return, and explanation are cleared.`)) {
+                    save(y.key, { reset: true });
+                  }
+                }}
+              >
+                Reset {y.label}
+              </button>
+            ),
+          },
+        ]
+      : []),
   ];
 
   const notePeriods = years.filter((y) => y.status === 'VARIANCE' || y.status === 'EXPLAINED' || y.status === 'INCOMPLETE');
@@ -368,7 +390,8 @@ export default function CashProofTaxReturnCard({
               <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                 {scan.results.length} file{scan.results.length === 1 ? '' : 's'} read {formatEstDateTime(scan.scannedAt)}.{' '}
                 {attention > 0 ? `${attention} need${attention === 1 ? 's' : ''} attention.` : 'Nothing needs attention.'} Figures
-                already entered are never overwritten.
+                already entered are never overwritten. Change a year&apos;s form in the Form row above; to read a year again, press
+                its Reset button above, then Read Tax Returns.
               </div>
             </div>
             <button style={{ ...buttonStyle(), padding: '3px 10px' }} onClick={() => setShowAllFiles(!showAllFiles)}>
@@ -381,7 +404,7 @@ export default function CashProofTaxReturnCard({
                 <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
                   <tr>
                     <th style={{ ...thStyle, textAlign: 'left' }}>File</th>
-                    <th style={{ ...thStyle, textAlign: 'left' }}>Form</th>
+                    <th style={{ ...thStyle, textAlign: 'left' }}>Form Read</th>
                     <th style={{ ...thStyle, textAlign: 'left' }}>Fiscal Year</th>
                     <th style={thStyle}>Gross Receipts</th>
                     <th style={thStyle}>Returns and Allowances</th>

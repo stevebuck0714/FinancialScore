@@ -342,7 +342,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
     );
   }
 
-  const months = data?.months || [];
+  const months = [...(data?.months || [])].reverse();
   const accounts = data?.accounts || [];
   const statementAccounts = data?.statementAccounts || [];
   const linkedBy = new Map<string, string>();

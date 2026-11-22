@@ -62,7 +62,7 @@ export default function CashProofDepositsPanel({
 }) {
   const engagement = data.engagement!;
   const recon = data.revenueReconciliation;
-  const months = data.months;
+  const months = useMemo(() => [...data.months].reverse(), [data.months]);
   const accounts = useMemo(() => data.accounts.filter((a) => a.included), [data]);
   const accountLabel = (id: string | null) => {
     const a = id ? data.accounts.find((x) => x.id === id) : null;
