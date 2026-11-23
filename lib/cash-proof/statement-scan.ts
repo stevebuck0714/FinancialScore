@@ -3,7 +3,7 @@ import { extractTextFromArrayBuffer } from '@/lib/company-documents/extract-text
 import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import { readDataRoomBlob } from '@/lib/dataroom/blob-storage';
-import { parseBankActivity } from '@/lib/bank-statements/providers';
+import { isAggregatorSource, parseBankActivity } from '@/lib/bank-statements/providers';
 import { matchStatementAccount } from '@/lib/bank-statements/account-match';
 import { detectBankName } from './bank-names';
 import { shiftMonth } from './book-balances';
@@ -117,9 +117,8 @@ async function readDocument(doc: Doc): Promise<DocumentRead> {
       };
     }
     const parsed = parseBankStatement(extracted.text, doc.originalFileName);
-    // A saved account number wins over the text: it came from the bank connector, an earlier read, or a
-    // reviewer's correction, and statement text can name several accounts.
-    if (doc.statementAccountLast4) parsed.last4 = doc.statementAccountLast4;
+    // The account number from a bank connector is authoritative; statement text can name several accounts.
+    if (isAggregatorSource(doc.statementSource) && doc.statementAccountLast4) parsed.last4 = doc.statementAccountLast4;
     return { parsed: [parsed], bankName: detectBankName(extracted.text) };
   } catch (e) {
     return { parsed: [], failure: { ...base, status: 'FAILED', message: e instanceof Error ? e.message : String(e) } };
