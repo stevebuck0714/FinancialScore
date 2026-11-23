@@ -182,6 +182,7 @@ model Company {
   creditCardImports               CreditCardImport[]
   creditCardTransactions          CreditCardTransaction[]
   cashProofEngagements            CashProofEngagement[]
+  qoeEngagementTracker            QoeEngagementTracker?
   documentChunks                  CompanyDocumentChunk[]
   loans                           Loan[]
   xeroTransactions                XeroTransaction[]
@@ -266,6 +267,7 @@ model User {
   askThreadSharesSent        AskThreadShare[]    @relation("AskThreadShareSender")
   askThreadEmailsSent        AskThreadEmail[]    @relation("AskThreadEmailSender")
   sectionViews               SectionView[]
+  qoeEngagementAssignments   QoeEngagementTracker[] @relation("QoeEngagementAccountManager")
 
   @@index([email])
   @@index([companyId])
@@ -663,6 +665,122 @@ model CashProofEngagement {
   transactionExceptions CashProofTransactionException[]
 
   @@index([companyId, createdAt])
+}
+
+// Internal Account Manager coordination record for a Quality of Earnings engagement.
+// Evidence itself remains in the Data Room; this tracks requests, ownership, and review.
+model QoeEngagementTracker {
+  id                   String   @id @default(cuid())
+  companyId            String   @unique
+  engagementType       String?
+  reviewPeriodStart    String?
+  reviewPeriodEnd      String?
+  fiscalYearEndMonth   Int?
+  reportDueDate        DateTime?
+  accountManagerName   String?
+  accountManagerUserId String?
+  lenderId             String?
+  corelyticsAccountant String?
+  teamLeadName         String?
+  lenderName           String?
+  loanOfficerName      String?
+  buyerOrBrokerName    String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  company              Company                          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accountManager       User?                            @relation("QoeEngagementAccountManager", fields: [accountManagerUserId], references: [id], onDelete: SetNull)
+  lender               QoeLender?                       @relation(fields: [lenderId], references: [id], onDelete: SetNull)
+  contacts             QoeEngagementTrackerContact[]
+  bankAccounts         QoeEngagementTrackerBankAccount[]
+  documentRequirements QoeEngagementDocumentRequirement[]
+
+  @@index([accountManagerUserId])
+  @@index([lenderId])
+}
+
+// Shared Corelytics lender directory. Engagements select a lender from here
+// instead of repeatedly entering unvalidated names and addresses.
+model QoeLender {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  address1  String?
+  address2  String?
+  city      String?
+  state     String?
+  zip       String?
+  country   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  engagements QoeEngagementTracker[]
+}
+
+model QoeEngagementTrackerContact {
+  id                     String   @id @default(cuid())
+  trackerId              String
+  contactType            String
+  name                   String?
+  role                   String?
+  email                  String?
+  phone                  String?
+  preferredContactMethod String?
+  notes                  String?
+  sortOrder              Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tracker QoeEngagementTracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+
+  @@index([trackerId, sortOrder])
+}
+
+model QoeEngagementTrackerBankAccount {
+  id                       String   @id @default(cuid())
+  trackerId                String
+  institution              String?
+  accountName              String?
+  accountType              String?
+  last4                    String?
+  legalEntity              String?
+  purpose                  String?
+  receivesCustomerPayments Boolean  @default(false)
+  statementsNeeded         Boolean  @default(true)
+  statementsFromMonth      String?
+  statementsThroughMonth   String?
+  bankContactName          String?
+  status                   String   @default("IDENTIFIED")
+  notes                    String?
+  sortOrder                Int      @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  tracker QoeEngagementTracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+
+  @@index([trackerId, sortOrder])
+}
+
+model QoeEngagementDocumentRequirement {
+  id             String   @id @default(cuid())
+  trackerId      String
+  category       String
+  requirement    String
+  required       Boolean  @default(true)
+  status         String   @default("NOT_REQUESTED")
+  owner          String?
+  requestedDate  DateTime?
+  dueDate        DateTime?
+  receivedDate   DateTime?
+  dataRoomFolder String?
+  notes          String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tracker QoeEngagementTracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+
+  @@index([trackerId, sortOrder])
+  @@index([trackerId, status])
 }
 
 model CashProofBankAccount {

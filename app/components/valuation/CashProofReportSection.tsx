@@ -15,8 +15,11 @@ import {
   REVENUE_STATUS_COLORS,
   SEVERITY_COLORS,
   SEVERITY_LABELS,
+  SCAN_STATUS,
   STATUS_COLORS,
+  TAX_SCAN_STATUS,
   TAX_RETURN_STATUS_COLORS,
+  TRANSACTION_EXCEPTION_STATUS_LABELS,
   fetchCashProof,
   formatMonthLabel,
   formatPercent,
@@ -159,6 +162,11 @@ export default function CashProofReportSection({
   const reconColumns = recon ? [...recon.periods, recon.total] : [];
   const reconRows = recon ? reconciliationRows(reconColumns) : [];
   const usedCategories = REVENUE_ADJUSTMENT_CATEGORY_ORDER.filter((c) => reconColumns.some((p) => (p.byCategory[c] || 0) !== 0));
+  const reportMonths = [...(data?.months || [])].reverse();
+  const statementScanRows = data?.statementScan?.results || [];
+  const transactionAccounts = (transactionMatch?.accounts || []).filter((account) =>
+    includedAccounts.some((included) => included.id === account.bankAccountId),
+  );
   const revenueConclusion = (() => {
     if (!recon || recon.periods.length === 0) return '';
     const missing = recon.total.missingDeposits;
@@ -264,11 +272,16 @@ export default function CashProofReportSection({
                         <th style={{ ...th, textAlign: 'left' }}>Account</th>
                         <th style={{ ...th, textAlign: 'left' }}>Month</th>
                         <th style={{ ...th, textAlign: 'left' }}>Selection</th>
-                        <th style={th}>Book Balance</th>
+                        <th style={th}>Statement Beginning</th>
+                        <th style={th}>Statement Deposits</th>
+                        <th style={th}>Statement Withdrawals</th>
                         <th style={th}>Statement Ending</th>
                         <th style={th}>Reconciling Items</th>
+                        <th style={th}>Book Balance</th>
                         <th style={th}>Difference</th>
                         <th style={{ ...th, textAlign: 'center' }}>Status</th>
+                        <th style={{ ...th, textAlign: 'left' }}>Supporting Statement</th>
+                        <th style={{ ...th, textAlign: 'left' }}>Exception / Resolution</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -277,9 +290,12 @@ export default function CashProofReportSection({
                           <td style={{ ...td, textAlign: 'left' }}>{accountName(s.bankAccountId)}</td>
                           <td style={{ ...td, textAlign: 'left' }}>{formatMonthLabel(s.month)}</td>
                           <td style={{ ...td, textAlign: 'left' }}>{SAMPLE_SELECTION_LABELS[s.selectionReason]}</td>
-                          <td style={td}>{money(s.tieOut.bookBalance)}</td>
+                          <td style={td}>{money(s.statementBeginning)}</td>
+                          <td style={td}>{money(s.statementDeposits)}</td>
+                          <td style={td}>{money(s.statementWithdrawals)}</td>
                           <td style={td}>{money(s.statementEnding)}</td>
                           <td style={td}>{money(s.reconcilingItems)}</td>
+                          <td style={td}>{money(s.tieOut.bookBalance)}</td>
                           <td style={{ ...td, fontWeight: 700 }}>{money(s.tieOut.difference)}</td>
                           <td style={{ ...td, textAlign: 'center' }}>
                             <span
@@ -296,10 +312,86 @@ export default function CashProofReportSection({
                               {SAMPLE_STATUS_LABELS[s.status]}
                             </span>
                           </td>
+                          <td style={{ ...td, textAlign: 'left' }}>
+                            {data!.bankStatementDocuments.find((document) => document.id === s.dataRoomDocumentId)?.originalFileName || '—'}
+                          </td>
+                          <td style={{ ...td, textAlign: 'left' }}>
+                            {s.status === 'CLEARED' ? s.resolutionNote || 'Cleared' : s.exceptionNote || '—'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                )}
+
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', margin: '16px 0 6px' }}>Month-End Book Cash by Account</div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...th, textAlign: 'left' }}>Account</th>
+                        {reportMonths.map((month) => <th key={month} style={th}>{formatMonthLabel(month)}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {includedAccounts.map((account) => (
+                        <tr key={account.id}>
+                          <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>{accountName(account.id)}</td>
+                          {reportMonths.map((month) => <td key={month} style={td}>{money(account.balances[month]?.value)}</td>)}
+                        </tr>
+                      ))}
+                      {([
+                        ['Total Book Cash', 'bookTotal'],
+                        ['Balance Sheet Cash', 'balanceSheetCash'],
+                        ['Difference', 'difference'],
+                      ] as const).map(([label, key]) => (
+                        <tr key={key}>
+                          <td style={{ ...td, textAlign: 'left', fontWeight: 700, borderTop: key === 'bookTotal' ? '2px solid #e2e8f0' : undefined }}>{label}</td>
+                          {reportMonths.map((month) => (
+                            <td key={month} style={{ ...td, fontWeight: 700, borderTop: key === 'bookTotal' ? '2px solid #e2e8f0' : undefined }}>
+                              {money(data!.completeness[month]?.[key])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {statementScanRows.length > 0 && (
+                  <>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', margin: '16px 0 6px' }}>Statement Reading</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ ...th, textAlign: 'left' }}>File</th>
+                          <th style={{ ...th, textAlign: 'left' }}>Account</th>
+                          <th style={{ ...th, textAlign: 'left' }}>Month</th>
+                          <th style={th}>Beginning</th>
+                          <th style={th}>Deposits</th>
+                          <th style={th}>Withdrawals</th>
+                          <th style={th}>Ending</th>
+                          <th style={{ ...th, textAlign: 'center' }}>Result</th>
+                          <th style={{ ...th, textAlign: 'left' }}>Detail</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {statementScanRows.map((result) => (
+                          <tr key={result.documentId}>
+                            <td style={{ ...td, textAlign: 'left' }}>{result.fileName}</td>
+                            <td style={{ ...td, textAlign: 'left' }}>{result.bankAccountId ? accountName(result.bankAccountId) : '—'}</td>
+                            <td style={{ ...td, textAlign: 'left' }}>{result.month ? formatMonthLabel(result.month) : '—'}</td>
+                            <td style={td}>{money(result.parsed?.beginning)}</td>
+                            <td style={td}>{money(result.parsed?.deposits)}</td>
+                            <td style={td}>{money(result.parsed?.withdrawals)}</td>
+                            <td style={td}>{money(result.parsed?.ending)}</td>
+                            <td style={{ ...td, textAlign: 'center' }}><span style={badge(SCAN_STATUS[result.status].colors)}>{SCAN_STATUS[result.status].label}</span></td>
+                            <td style={{ ...td, textAlign: 'left' }}>{result.message}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
                 )}
               </div>
             )}
@@ -338,6 +430,34 @@ export default function CashProofReportSection({
                   <>
                     <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', margin: '14px 0 6px' }}>Transaction Testing</div>
                     <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '0 0 8px' }}>{transactionConclusion}</p>
+                    {transactionAccounts.length > 0 && (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '10px' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...th, textAlign: 'left' }}>Account</th>
+                            <th style={th}>Months With Bank Detail</th>
+                            <th style={th}>Bank Transactions</th>
+                            <th style={th}>Matched</th>
+                            <th style={th}>Bank Dollars Matched</th>
+                            <th style={th}>Not Yet Cleared</th>
+                            <th style={th}>Months Totals-Tested</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {transactionAccounts.map((account) => (
+                            <tr key={account.bankAccountId}>
+                              <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>{accountName(account.bankAccountId)}</td>
+                              <td style={td}>{account.bankMonths.length}</td>
+                              <td style={td}>{account.bankLines.toLocaleString()}</td>
+                              <td style={td}>{account.matchedBankLines.toLocaleString()}</td>
+                              <td style={td}>{account.bankDollars > 0 ? `${((account.matchedBankDollars / account.bankDollars) * 100).toFixed(1)}%` : '—'}</td>
+                              <td style={td}>{account.outstandingBookLines.toLocaleString()}</td>
+                              <td style={td}>{account.totalsTestedMonths}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                     {transactionTypeTotals.length > 0 && (
                       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '10px' }}>
                         <thead>
@@ -372,6 +492,7 @@ export default function CashProofReportSection({
                             <th style={{ ...th, textAlign: 'left' }}>Date</th>
                             <th style={th}>Amount</th>
                             <th style={{ ...th, textAlign: 'left' }}>Exception</th>
+                            <th style={{ ...th, textAlign: 'center' }}>Status</th>
                             <th style={{ ...th, textAlign: 'left' }}>Resolution</th>
                           </tr>
                         </thead>
@@ -389,7 +510,8 @@ export default function CashProofReportSection({
                               <td style={{ ...td, textAlign: 'left' }}>
                                 <strong>{TRANSACTION_EXCEPTION_TYPES[e.type]?.label || e.type}.</strong> {e.description}
                               </td>
-                              <td style={{ ...td, textAlign: 'left' }}>{e.status === 'CLEARED' ? e.resolutionNote : 'Open'}</td>
+                              <td style={{ ...td, textAlign: 'center' }}>{TRANSACTION_EXCEPTION_STATUS_LABELS[e.status]}</td>
+                              <td style={{ ...td, textAlign: 'left' }}>{e.status === 'CLEARED' ? e.resolutionNote || 'Cleared' : '—'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -403,6 +525,28 @@ export default function CashProofReportSection({
             {selections.depositsToRevenue && recon && (
               <div>
                 <div style={sectionTitle}>Deposits to Revenue</div>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', margin: '0 0 6px' }}>Statement Deposits by Account</div>
+                <div style={{ overflowX: 'auto', marginBottom: '14px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...th, textAlign: 'left' }}>Account</th>
+                        {reportMonths.map((month) => <th key={month} style={th}>{formatMonthLabel(month)}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {includedAccounts.map((account) => (
+                        <tr key={account.id}>
+                          <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>
+                            {accountName(account.id)}
+                            {account.depositsCategory ? ` — all deposits treated as ${REVENUE_ADJUSTMENT_CATEGORIES[account.depositsCategory].label.toLowerCase()}` : ''}
+                          </td>
+                          {reportMonths.map((month) => <td key={month} style={td}>{money(account.deposits[month]?.value)}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
@@ -570,6 +714,21 @@ export default function CashProofReportSection({
                       {taxYears.map((y) => (
                         <td key={y.key} style={td}>
                           <span style={badge(TAX_RETURN_STATUS_COLORS[y.status])}>{TAX_RETURN_STATUS_LABELS[y.status]}</span>
+                          {y.status === 'INCOMPLETE' && (
+                            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
+                              {y.comparedTo === 'DEPOSITS'
+                                ? `${y.missingDeposits} statement${y.missingDeposits === 1 ? '' : 's'} still missing deposits.`
+                                : 'Reported revenue is missing from the books.'}
+                            </div>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td style={{ ...td, textAlign: 'left' }}>Return</td>
+                      {taxYears.map((y) => (
+                        <td key={y.key} style={{ ...td, textAlign: 'left' }}>
+                          {data!.taxReturnDocuments.find((document) => document.id === y.entry?.dataRoomDocumentId)?.originalFileName || '—'}
                         </td>
                       ))}
                     </tr>
@@ -587,6 +746,37 @@ export default function CashProofReportSection({
                   </div>
                 )}
                 <p style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, margin: '10px 0 0' }}>{taxConclusion}</p>
+                {(data!.taxReturnScan?.results || []).length > 0 && (
+                  <>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', margin: '16px 0 6px' }}>Tax Return Reading</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ ...th, textAlign: 'left' }}>File</th>
+                          <th style={{ ...th, textAlign: 'left' }}>Fiscal Year</th>
+                          <th style={{ ...th, textAlign: 'left' }}>Form Read</th>
+                          <th style={th}>Gross Receipts or Sales</th>
+                          <th style={th}>Returns and Allowances</th>
+                          <th style={{ ...th, textAlign: 'center' }}>Result</th>
+                          <th style={{ ...th, textAlign: 'left' }}>Detail</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data!.taxReturnScan!.results.map((result) => (
+                          <tr key={result.documentId}>
+                            <td style={{ ...td, textAlign: 'left' }}>{result.fileName}</td>
+                            <td style={{ ...td, textAlign: 'left' }}>{result.periodKey ? taxYears.find((year) => year.key === result.periodKey)?.label || result.periodKey : '—'}</td>
+                            <td style={{ ...td, textAlign: 'left' }}>{result.parsed?.form ? TAX_RETURN_FORMS[result.parsed.form].label : '—'}</td>
+                            <td style={td}>{money(result.parsed?.grossReceipts)}</td>
+                            <td style={td}>{result.parsed?.returnsAllowances == null ? '—' : money(-result.parsed.returnsAllowances)}</td>
+                            <td style={{ ...td, textAlign: 'center' }}><span style={badge(TAX_SCAN_STATUS[result.status].colors)}>{TAX_SCAN_STATUS[result.status].label}</span></td>
+                            <td style={{ ...td, textAlign: 'left' }}>{result.message}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
               </div>
             )}
 

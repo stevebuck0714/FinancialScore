@@ -218,6 +218,7 @@ const SdeAdjustedIncomeStatement = dynamic(
   { ssr: false, loading: ReportChunkLoading },
 );
 const CashProofWorkspace = dynamic(() => import('./components/valuation/CashProofWorkspace'), { ssr: false });
+const QoeEngagementTracker = dynamic(() => import('./components/valuation/QoeEngagementTracker'), { ssr: false, loading: ReportChunkLoading });
 const BankStatementsWorkspace = dynamic(() => import('./components/valuation/BankStatementsWorkspace'), { ssr: false });
 const CreditCardReviewWorkspace = dynamic(() => import('./components/valuation/CreditCardReviewWorkspace'), { ssr: false });
 const CashProofReportSection = dynamic(() => import('./components/valuation/CashProofReportSection'), { ssr: false, loading: ReportChunkLoading });
@@ -1207,6 +1208,10 @@ const getCashFlowQualityExecutiveNarrative = (params: {
  *  A separate chunk for the old import was resolving to `/_next/undefined` in dev (ChunkLoadError). */
 const INACTIVITY_LOGOUT_TIMEOUT_MS = 30 * 60 * 1000;
 const INACTIVITY_LOGOUT_THROTTLE_MS = 30 * 1000;
+/** Last user activity in any tab. The session cookie is shared, so idleness must be too. */
+const SHARED_ACTIVITY_KEY = 'fs_lastActivityAt';
+/** Set when any tab signs out, so other tabs leave the app instead of calling APIs with no session. */
+const LOGGED_OUT_AT_KEY = 'fs_loggedOutAt';
 
 type InactivityLogoutProps = {
   isLoggedIn: boolean;
@@ -1240,25 +1245,48 @@ function InactivityLogout({ isLoggedIn, userEmail, onLogout }: InactivityLogoutP
 
     isInitializedRef.current = true;
 
+    const sharedLastActivity = () => {
+      const stored = Number(window.localStorage.getItem(SHARED_ACTIVITY_KEY));
+      return Math.max(Number.isFinite(stored) ? stored : 0, lastActivityRef.current);
+    };
+
+    // Wall-clock check: timers do not advance while the computer sleeps, and
+    // another tab may have been in use the whole time.
+    const checkIdle = () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      const idleMs = Date.now() - sharedLastActivity();
+      if (idleMs < INACTIVITY_LOGOUT_TIMEOUT_MS) {
+        timeoutRef.current = setTimeout(checkIdle, INACTIVITY_LOGOUT_TIMEOUT_MS - idleMs);
+        return;
+      }
+      // No blocking alert first: in a background tab it would hold the sign-out
+      // until the tab is opened, by which time the user may have signed in again.
+      onLogoutRef.current();
+    };
+
     const resetTimer = () => {
       const now = Date.now();
       if (now - lastActivityRef.current < INACTIVITY_LOGOUT_THROTTLE_MS) {
         return;
       }
       lastActivityRef.current = now;
+      window.localStorage.setItem(SHARED_ACTIVITY_KEY, String(now));
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      timeoutRef.current = setTimeout(() => {
-        alert('You have been logged out due to 30 minutes of inactivity.');
-        onLogoutRef.current();
-      }, INACTIVITY_LOGOUT_TIMEOUT_MS);
+      timeoutRef.current = setTimeout(checkIdle, INACTIVITY_LOGOUT_TIMEOUT_MS);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') checkIdle();
     };
 
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'] as const;
     events.forEach((event) => {
       window.addEventListener(event, resetTimer, { passive: true });
     });
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    lastActivityRef.current = 0;
     resetTimer();
 
     return () => {
@@ -1268,6 +1296,7 @@ function InactivityLogout({ isLoggedIn, userEmail, onLogout }: InactivityLogoutP
       events.forEach((event) => {
         window.removeEventListener(event, resetTimer);
       });
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       isInitializedRef.current = false;
     };
   }, [isLoggedIn, userEmail]);
@@ -1703,13 +1732,21 @@ function FinancialScorePage() {
       }
     };
 
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === LOGGED_OUT_AT_KEY && event.newValue) {
+        clearExpiredClientSession();
+      }
+    };
+
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('storage', handleStorage);
 
     return () => {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorage);
     };
   }, [currentUser]);
   
@@ -2915,6 +2952,8 @@ function FinancialScorePage() {
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'user-access' | 'affiliates' | 'default-pricing' | 'billing' | 'traffic' | 'siteadmins'>('consultants');
   const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
+  const [siteAdminLoadError, setSiteAdminLoadError] = useState<string | null>(null);
+  const [siteAdminReloadKey, setSiteAdminReloadKey] = useState(0);
 
   const normalizeFinancialSourceLabel = (value: unknown): string | null => {
     const raw = String(value || '').trim().toLowerCase();
@@ -3898,7 +3937,7 @@ function FinancialScorePage() {
   const [competitorSearchScopes, setCompetitorSearchScopes] = useState<CompetitorSearchScope[]>(DEFAULT_COMPETITOR_SEARCH_SCOPES);
   const [researchSourcesText, setResearchSourcesText] = useState('');
   const [businessContextLastUpdatedAt, setBusinessContextLastUpdatedAt] = useState<string | null>(null);
-  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'cash-proof' | 'bank-statements' | 'credit-card-review' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
+  const [sdeModuleTab, setSdeModuleTab] = useState<'engagement-tracker' | 'ebitda-adjustments' | 'cash-proof' | 'bank-statements' | 'credit-card-review' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
   const [sdeIncomeStatementRefreshKey, setSdeIncomeStatementRefreshKey] = useState(0);
   const [ebitdaAnalysisTab, setEbitdaAnalysisTab] = useState<'revenue-quality' | 'customer-mix' | 'cash-flow-quality' | 'balance-sheet-quality'>('revenue-quality');
   const [dcfAnalysisTab, setDcfAnalysisTab] = useState<'working-capital' | 'cash-flow-quality' | 'revenue-durability' | 'balance-sheet-quality'>('working-capital');
@@ -6915,24 +6954,40 @@ function FinancialScorePage() {
 
   // Load consultants + all companies for site admin
   useEffect(() => {
+    let cancelled = false;
     const loadConsultants = async () => {
       if (!currentUser || String(currentUser.role || '').toLowerCase() !== 'siteadmin') return;
       
+      setSiteAdminBusinessesLoading(true);
+      setSiteAdminLoadError(null);
       try {
         let consultantsData: any = null;
         let lastError: unknown = null;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
+        const attempts = 5;
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
           try {
             consultantsData = await consultantsApi.getAll();
             break;
           } catch (error) {
             lastError = error;
-            if (attempt < 2) {
-              await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+            if (attempt < attempts - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
             }
           }
+          if (cancelled) return;
         }
-        if (!consultantsData) throw lastError || new Error('Failed to load consultants');
+        if (cancelled) return;
+        if (!consultantsData) {
+          const status = lastError instanceof ApiError ? lastError.status : 0;
+          if (status === 401 || status === 403) {
+            const session = await nextAuthGetSession().catch(() => null);
+            if (!session || (session as any)?.user?.mfaPending) {
+              void handleLogout('inactivity');
+              return;
+            }
+          }
+          throw lastError || new Error('Failed to load consultants');
+        }
         const loadedConsultants = consultantsData?.consultants;
         // Map the user data to consultant level for easier access in the UI
         const mappedConsultants = (loadedConsultants || []).map((c: any) => ({
@@ -6963,11 +7018,19 @@ function FinancialScorePage() {
         }
       } catch (error) {
         console.error('Error loading consultants:', error);
+        if (!cancelled) {
+          setSiteAdminLoadError(error instanceof Error && error.message ? error.message : 'Request failed');
+        }
+      } finally {
+        if (!cancelled) setSiteAdminBusinessesLoading(false);
       }
     };
     
     loadConsultants();
-  }, [currentUser?.id, currentUser?.role]);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, currentUser?.role, siteAdminReloadKey]);
 
   // Load financial data when company is selected
   useEffect(() => {
@@ -7930,9 +7993,10 @@ function FinancialScorePage() {
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogout = async (reason?: unknown) => {
     // Sign out from NextAuth
     await nextAuthSignOut({ redirect: false });
+    localStorage.setItem(LOGGED_OUT_AT_KEY, String(Date.now()));
     
     // Clear application state
     setCurrentUser(null);
@@ -7957,7 +8021,7 @@ function FinancialScorePage() {
     setSiteAdminViewingAs(null);
     setSiteAdminSessionUser(null);
     if (typeof window !== 'undefined') {
-      window.location.assign('/login');
+      window.location.assign(reason === 'inactivity' ? '/login?sessionExpired=1' : '/login');
     }
   };
 
@@ -15022,7 +15086,7 @@ function FinancialScorePage() {
       <InactivityLogout 
         isLoggedIn={isLoggedIn}
         userEmail={currentUser?.email}
-        onLogout={handleLogout}
+        onLogout={() => handleLogout('inactivity')}
       />
       <style>{`
         @media print {
@@ -15394,7 +15458,7 @@ function FinancialScorePage() {
                 <h3
                   onClick={() => {
                     setValuationMethodTab('sde');
-                    setSdeModuleTab('ebitda-adjustments');
+                    setSdeModuleTab('engagement-tracker');
                     handleNavigation('quality-of-earnings');
                   }}
                   style={{
@@ -15933,6 +15997,8 @@ function FinancialScorePage() {
               showAddSiteAdminForm={showAddSiteAdminForm}
               setShowAddSiteAdminForm={setShowAddSiteAdminForm}
               businessesLoading={siteAdminBusinessesLoading}
+              loadError={siteAdminLoadError}
+              onRetryLoad={() => setSiteAdminReloadKey((key) => key + 1)}
             />
           )}
 
@@ -21955,6 +22021,7 @@ function FinancialScorePage() {
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', whiteSpace: 'nowrap', borderTop: '1px solid #e2e8f0' }}>
               {[
+                { id: 'engagement-tracker', label: 'Engagement Tracker' },
                 { id: 'ebitda-adjustments', label: 'Quality of Earnings' },
                 { id: 'income-statement', label: 'Income Statement' },
                 { id: 'cash-proof', label: 'Cash Proof' },
@@ -24956,6 +25023,14 @@ function FinancialScorePage() {
                 )}
                 {sdeModuleTab === 'cash-proof' && (
                   <CashProofWorkspace key={selectedCompanyId || 'none'} companyId={selectedCompanyId || null} />
+                )}
+                {sdeModuleTab === 'engagement-tracker' && (
+                  <QoeEngagementTracker
+                    key={selectedCompanyId || 'none'}
+                    companyId={selectedCompanyId || null}
+                    onOpenBankStatements={() => setSdeModuleTab('bank-statements')}
+                    onOpenCashProof={() => setSdeModuleTab('cash-proof')}
+                  />
                 )}
                 {sdeModuleTab === 'bank-statements' && (
                   <BankStatementsWorkspace key={selectedCompanyId || 'none'} companyId={selectedCompanyId || null} />

@@ -531,9 +531,16 @@ export default function SiteAdminDashboard(props: any) {
     showAddSiteAdminForm, setShowAddSiteAdminForm
   } = props;
   const businessesLoading = Boolean(props.businessesLoading);
+  const loadError: string | null = props.loadError || null;
   const [referralPartners, setReferralPartners] = React.useState<any[]>([]);
   const [standaloneBusinesses, setStandaloneBusinesses] = React.useState<any[]>([]);
   const [standaloneBusinessesLoading, setStandaloneBusinessesLoading] = React.useState(false);
+  const [standaloneLoadError, setStandaloneLoadError] = React.useState<string | null>(null);
+  const [standaloneReloadKey, setStandaloneReloadKey] = React.useState(0);
+  const retrySiteAdminLoad = () => {
+    props.onRetryLoad?.();
+    setStandaloneReloadKey((key) => key + 1);
+  };
   const [businessSort, setBusinessSort] = React.useState<{ key: 'name' | 'sectorCode' | 'sectorName'; dir: 'asc' | 'desc' }>({
     key: 'name',
     dir: 'asc',
@@ -581,8 +588,10 @@ export default function SiteAdminDashboard(props: any) {
     let cancelled = false;
     const loadStandaloneBusinesses = async () => {
       setStandaloneBusinessesLoading(true);
+      setStandaloneLoadError(null);
+      const attempts = 5;
       try {
-        for (let attempt = 0; attempt < 3; attempt += 1) {
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
           const response = await fetch('/api/siteadmin/businesses', { cache: 'no-store', credentials: 'include' });
           const data = await response.json().catch(() => ({}));
           if (response.ok) {
@@ -603,13 +612,16 @@ export default function SiteAdminDashboard(props: any) {
             }
             return;
           }
-          if (response.status !== 401 || attempt === 2) {
-            throw new Error(data?.error || `Failed to load standalone businesses (${response.status})`);
+          const retryable = response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500;
+          if (!retryable || attempt === attempts - 1) {
+            throw new Error(data?.message || data?.error || `Failed to load standalone businesses (${response.status})`);
           }
-          await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+          await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+          if (cancelled) return;
         }
       } catch (error) {
         console.error('Failed to load standalone businesses', error);
+        if (!cancelled) setStandaloneLoadError(error instanceof Error && error.message ? error.message : 'Request failed');
       } finally {
         if (!cancelled) setStandaloneBusinessesLoading(false);
       }
@@ -618,7 +630,7 @@ export default function SiteAdminDashboard(props: any) {
     return () => {
       cancelled = true;
     };
-  }, [setCompanies]);
+  }, [setCompanies, standaloneReloadKey]);
   const getReferralPartnerName = React.useCallback(
     (referralPartnerId?: string | null) => {
       if (!referralPartnerId) return 'None';
@@ -7158,6 +7170,25 @@ export default function SiteAdminDashboard(props: any) {
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
       <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Site Administration</h1>
+      {(loadError || standaloneLoadError) && !businessesLoading && !standaloneBusinessesLoading && (
+        <div style={{ marginBottom: '16px', padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: '700', color: '#991b1b', marginBottom: '4px' }}>
+              Consultants and businesses did not load
+            </div>
+            <div style={{ fontSize: '12px', color: '#7f1d1d' }}>
+              The lists below may be incomplete. {loadError || standaloneLoadError}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={retrySiteAdminLoad}
+            style={{ padding: '6px 14px', background: '#991b1b', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {aiUsageAlertCompanies.length > 0 && (
         <div style={{ marginBottom: '16px', padding: '10px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px' }}>
           <div style={{ fontSize: '13px', fontWeight: '700', color: '#9a3412', marginBottom: '4px' }}>
@@ -7461,7 +7492,11 @@ export default function SiteAdminDashboard(props: any) {
                     Total Consultants: {consultants.filter(c => c.type !== 'business').length}
                   </div>
 
-                  {consultants.filter(c => c.type !== 'business').length === 0 ? (
+                  {consultants.filter(c => c.type !== 'business').length === 0 && businessesLoading ? (
+                    <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                      <div style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Loading consultants...</div>
+                    </div>
+                  ) : consultants.filter(c => c.type !== 'business').length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '36px', marginBottom: '12px' }}>👥</div>
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No Consultants</h3>

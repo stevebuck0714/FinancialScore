@@ -470,7 +470,9 @@ export async function proxy(request: NextRequest) {
   }
 
   const response = NextResponse.next({ request: { headers: headersWithoutIdentity(request) } })
-  if (token && !DISABLE_IDLE_TIMEOUT) {
+  // A sign-in request carries no token yet; reset the idle clock so a stale
+  // timestamp from the previous session cannot expire the new one.
+  if ((token || pathname.startsWith('/api/auth/callback')) && !DISABLE_IDLE_TIMEOUT) {
     applyIdleActivityCookie(response)
   }
   
