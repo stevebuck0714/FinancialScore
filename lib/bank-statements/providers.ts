@@ -49,6 +49,8 @@ export function isAggregatorSource(source: string | null | undefined): boolean {
 export type BankActivityMonth = {
   last4: string | null;
   accountName: string | null;
+  /** Set by transaction file review; other sources use the file's institution. */
+  bankName?: string | null;
   month: string; // YYYY-MM
   beginning: number | null;
   deposits: number;

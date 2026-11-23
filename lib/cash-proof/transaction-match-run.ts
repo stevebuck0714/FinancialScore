@@ -101,7 +101,7 @@ async function loadBankLines(
   // Months each account's line-level bank data fully covers, from the files that carry the lines.
   for (const doc of docs) {
     for (const activity of parseBankActivity(doc.bankActivity)) {
-      const { account } = matchStatementAccount(accounts, activity.last4, doc.statementInstitution);
+      const { account } = matchStatementAccount(accounts, activity.last4, activity.bankName ?? doc.statementInstitution);
       if (account) monthsByAccount.get(account.id)!.add(activity.month);
     }
   }

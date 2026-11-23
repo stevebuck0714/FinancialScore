@@ -4,7 +4,8 @@ import { acceptStatementExport, rejectStatementExport } from '@/lib/bank-stateme
 import type { ConfirmedAccount, TransactionFileMapping } from '@/lib/bank-statements/transaction-file';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+// Accepting runs Read Statements and book-to-bank matching for the Cash Proof.
+export const maxDuration = 300;
 
 type ReviewBody = {
   companyId?: string;

@@ -4,9 +4,9 @@ import type { BankActivityMonth } from './providers';
 
 /** Bank transaction exports (CSV / Excel) uploaded by clients for months the bank connection cannot reach. */
 
-export type ColumnRole = 'date' | 'description' | 'amount' | 'debit' | 'credit' | 'checkNumber' | 'account';
+export type ColumnRole = 'date' | 'description' | 'amount' | 'debit' | 'credit' | 'checkNumber' | 'account' | 'balance';
 
-export const COLUMN_ROLES: ColumnRole[] = ['date', 'description', 'amount', 'debit', 'credit', 'checkNumber', 'account'];
+export const COLUMN_ROLES: ColumnRole[] = ['date', 'description', 'amount', 'debit', 'credit', 'checkNumber', 'account', 'balance'];
 
 export type TransactionFileMapping = {
   sheet: string | null;
@@ -28,6 +28,8 @@ export type ParsedFileTransaction = {
   amount: number;
   checkNumber: string | null;
   account: string;
+  /** Running balance after this transaction, when the file has one. */
+  balance: number | null;
 };
 
 export type TransactionFileMonth = {
@@ -88,6 +90,7 @@ const HEADER_PATTERNS: Record<ColumnRole, RegExp[]> = {
   credit: [/^(credits?|deposits?|money in|receipts?|paid in|(credit|deposit) amount|amount credit)$/],
   checkNumber: [/^(check|cheque|chk)( (#|no\.?|num|number))?$/, /^(check|cheque) ?#$/, /^(check|cheque) or slip( (#|no\.?|number))?$/],
   account: [/^(account|acct)( (#|no\.?|number|name))?$/],
+  balance: [/^(running |ledger |account |current )?balance$/, /^balance after( transaction)?$/],
 };
 
 function roleForHeader(header: string): ColumnRole | null {
@@ -223,6 +226,7 @@ export function parseTransactions(
       amount,
       checkNumber: cell(row, 'checkNumber') || null,
       account: cell(row, 'account'),
+      balance: columns.balance === undefined ? null : parseAmount(cell(row, 'balance')),
     });
   }
   return { transactions, skippedRows };
@@ -309,11 +313,45 @@ export function buildPreview(file: TransactionFileSheet, fileName: string, mappi
   };
 }
 
-export type ConfirmedAccount = { value: string; last4: string; name: string | null };
+export type ConfirmedAccount = {
+  value: string;
+  last4: string;
+  name: string | null;
+  bankName: string | null;
+  /** The Cash Proof account the reviewer chose; it is given this bank and last 4 when it has none. */
+  bankAccountId?: string | null;
+};
 
 /**
- * Turns a reviewed file into saved transactions and deposits-only monthly figures
- * (exports carry no balances) for the months the reviewer kept.
+ * Month-end balances from a running balance column, per account value and month. A month is kept
+ * only when its first balance, deposits, withdrawals, and last balance foot, so a file whose
+ * same-day rows are out of order loses the balance rather than reporting a wrong one.
+ */
+function monthBalances(transactions: ParsedFileTransaction[]): Map<string, { beginning: number; ending: number }> {
+  const out = new Map<string, { beginning: number; ending: number }>();
+  for (const account of new Set(transactions.map((t) => t.account))) {
+    const rows = transactions.filter((t) => t.account === account);
+    if (rows.length === 0 || rows.some((t) => t.balance === null)) continue;
+    // Exports list newest first or oldest first; same-day rows follow the file's direction.
+    const newestFirst = rows[0].date > rows[rows.length - 1].date;
+    const ordered = [...rows].sort((a, b) => a.date.localeCompare(b.date) || (newestFirst ? b.rowIndex - a.rowIndex : a.rowIndex - b.rowIndex));
+    const byMonth = new Map<string, ParsedFileTransaction[]>();
+    for (const t of ordered) byMonth.set(t.date.slice(0, 7), [...(byMonth.get(t.date.slice(0, 7)) ?? []), t]);
+    for (const [month, list] of byMonth) {
+      const first = list[0];
+      const last = list[list.length - 1];
+      const beginning = round2(first.balance! - first.amount);
+      const net = list.reduce((s, t) => s + t.amount, 0);
+      if (Math.abs(beginning + net - last.balance!) > 0.01) continue;
+      out.set(`${account}|${month}`, { beginning, ending: round2(last.balance!) });
+    }
+  }
+  return out;
+}
+
+/**
+ * Turns a reviewed file into saved transactions and monthly figures for the months the reviewer
+ * kept. Beginning and ending balances come from a running balance column when the file has one.
  */
 export function buildConfirmedImport(
   file: TransactionFileSheet,
@@ -322,24 +360,28 @@ export function buildConfirmedImport(
   range: { fromMonth: string | null; toMonth: string | null },
 ): { activity: BankActivityMonth[]; transactions: BankTransactionInput[] } {
   const byValue = new Map(accounts.map((a) => [a.value, a]));
-  const kept = parseTransactions(file, mapping).transactions.filter((t) => {
+  const all = parseTransactions(file, mapping).transactions.filter((t) => byValue.has(t.account));
+  const balances = monthBalances(all);
+  const kept = all.filter((t) => {
     const month = t.date.slice(0, 7);
-    return byValue.has(t.account) && (!range.fromMonth || month >= range.fromMonth) && (!range.toMonth || month <= range.toMonth);
+    return (!range.fromMonth || month >= range.fromMonth) && (!range.toMonth || month <= range.toMonth);
   });
-  // Several account values in the file can be confirmed as the same bank account.
+  // Several account values in the file can be confirmed as the same bank account; their balances cannot be combined.
   const merged = new Map<string, BankActivityMonth>();
   for (const m of monthlyTotals(kept)) {
     const account = byValue.get(m.account)!;
     const key = `${account.last4}|${m.month}`;
     const prior = merged.get(key);
+    const balance = prior ? null : balances.get(`${m.account}|${m.month}`);
     merged.set(key, {
       last4: account.last4,
       accountName: prior?.accountName ?? account.name,
+      bankName: prior?.bankName ?? account.bankName,
       month: m.month,
-      beginning: null,
+      beginning: prior ? null : balance?.beginning ?? null,
       deposits: round2((prior?.deposits ?? 0) + m.deposits),
       withdrawals: round2((prior?.withdrawals ?? 0) + m.withdrawals),
-      ending: null,
+      ending: prior ? null : balance?.ending ?? null,
     });
   }
   const activity = [...merged.values()];
@@ -347,7 +389,7 @@ export function buildConfirmedImport(
     const account = byValue.get(t.account)!;
     return {
       externalId: `row-${t.rowIndex}`,
-      institution: null,
+      institution: account.bankName,
       accountLast4: account.last4,
       accountName: account.name,
       date: t.date,

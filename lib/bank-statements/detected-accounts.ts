@@ -52,7 +52,7 @@ export async function loadDetectedStatementAccounts(companyId: string): Promise<
     if (doc.statementSource === 'UPLOAD_EXPORT' && doc.reviewStatus !== 'ACCEPTED') continue;
     const activity = parseBankActivity(doc.bankActivity);
     if (activity.length > 0) {
-      for (const a of activity) add(doc.statementInstitution, a.last4, a.accountName, a.month, doc.id);
+      for (const a of activity) add(a.bankName ?? doc.statementInstitution, a.last4, a.accountName, a.month, doc.id);
     } else {
       add(doc.statementInstitution, doc.statementAccountLast4, null, doc.statementMonth, doc.id);
     }

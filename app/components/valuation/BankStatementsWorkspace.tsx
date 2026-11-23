@@ -263,8 +263,9 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
             Transaction Files{summary.pendingReview > 0 ? ` · ${summary.pendingReview} Need Review` : ''}
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-            Client CSV / Excel transaction exports. Confirm the columns and bank account, then accept to add the monthly deposits and
-            withdrawals to the coverage grid and Read Statements. Bank connection figures win when they disagree.
+            Client CSV / Excel transaction exports. Confirm the columns, then choose the Cash Proof account and enter its bank and last
+            4. Accepting adds the monthly deposits and withdrawals (and month-end balances when the file has a balance column) to the
+            coverage grid, then runs Read Statements and Match Transactions. Bank connection figures win when they disagree.
           </div>
           {reviewMessage && <div style={{ marginTop: '8px', fontSize: '12px', color: '#047857' }}>{reviewMessage}</div>}
           <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginTop: '10px' }}>

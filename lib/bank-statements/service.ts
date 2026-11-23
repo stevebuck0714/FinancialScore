@@ -16,6 +16,7 @@ import {
   type BankStatementSource,
 } from './providers';
 import { matchStatementAccount } from './account-match';
+import type { StatementScan } from '@/lib/cash-proof/statement-scan';
 
 /**
  * BANK_DATA: monthly figures from bank transactions and balances (Plaid asset report), no statement PDF.
@@ -106,6 +107,7 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
           select: {
             id: true,
             periodEndMonth: true,
+            statementScan: true,
             bankAccounts: {
               where: { included: true },
               orderBy: [{ sortOrder: 'asc' }, { accountName: 'asc' }],
@@ -164,6 +166,15 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     if (link.dataRoomDocumentId) linked.set(link.dataRoomDocumentId, { bankAccountId: link.bankAccountId, month: link.month });
   }
 
+  // The last Read Statements result per file explains why a file is off the grid better than a guess from its fields.
+  const scanById = new Map(
+    ((engagement?.statementScan as unknown as StatementScan | null)?.results ?? []).map((r) => [r.documentId, r]),
+  );
+  const notPlaced = (documentId: string, fallback: string) => {
+    const r = scanById.get(documentId);
+    return r && r.status !== 'APPLIED' && r.status !== 'VERIFIED' ? `Read Statements: ${r.message}` : fallback;
+  };
+
   const activityById = new Map(rows.map((d) => [d.id, parseBankActivity(d.bankActivity)]));
   const documents: BankStatementDocumentView[] = rows.map((d) => {
     const activity = activityById.get(d.id) ?? [];
@@ -207,7 +218,7 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     }
     if (base.source === 'PLAID_ASSETS') return { ...base, bankAccountId: null, unplacedReason: null };
     if (!d.statementMonth || !d.statementAccountLast4) {
-      return { ...base, bankAccountId: null, unplacedReason: 'Not read yet. Run Read Statements on the Cash Proof tab.' };
+      return { ...base, bankAccountId: null, unplacedReason: notPlaced(d.id, 'Not read yet. Run Read Statements on the Cash Proof tab.') };
     }
     const { account, candidates } = matchStatementAccount(accounts, d.statementAccountLast4, d.statementInstitution);
     if (!account) {
@@ -240,7 +251,7 @@ export async function loadBankStatementsState(companyId: string): Promise<BankSt
     if (engagement && activity.length > 0 && (doc.source !== 'UPLOAD_EXPORT' || doc.reviewStatus === 'ACCEPTED')) {
       let placed = 0;
       for (const entry of activity) {
-        const { account } = matchStatementAccount(accounts, entry.last4, doc.institution);
+        const { account } = matchStatementAccount(accounts, entry.last4, entry.bankName ?? doc.institution);
         if (!account || !monthSet.has(entry.month)) continue;
         place(account.id, entry.month, doc);
         const key = `${account.id}|${entry.month}`;

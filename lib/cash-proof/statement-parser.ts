@@ -32,7 +32,7 @@ const WITHDRAWAL_LABELS = [
   /withdrawals\s*(?:and|&)\s*(?:other\s+)?(?:debits|subtractions)/i,
   /withdrawals\s*\/\s*debits/i,
   /total\s+(?:debits|subtractions)/i,
-  /checks\s*(?:and|&)\s*(?:other\s+)?debits/i,
+  /checks\s*(?:and|&|\/)\s*(?:other\s+)?debits/i,
   /\bwithdrawals\b/i,
 ];
 const ENDING_LABELS = [/(?:ending|closing|new)\s+(?:statement\s+)?balance/i, /balance\s+(?:this|end\s+of)\s+statement/i];

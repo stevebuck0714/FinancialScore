@@ -6,8 +6,8 @@ import type { ColumnRole, TransactionFileMapping } from '@/lib/bank-statements/t
 import { formatMonthLabel } from '../valuation/cashProofClient';
 import { buttonStyle, inputStyle, tdStyle, thStyle } from '../valuation/cashProofStyles';
 
-type CashProofAccount = { id: string; accountName: string; accountLast4: string | null };
-type AccountEntry = { last4: string; name: string };
+type CashProofAccount = { id: string; accountName: string; bankName: string | null; accountLast4: string | null };
+type AccountEntry = { bankAccountId: string; bankName: string; last4: string };
 
 const ROLE_LABELS: Record<ColumnRole, string> = {
   date: 'Date',
@@ -17,8 +17,9 @@ const ROLE_LABELS: Record<ColumnRole, string> = {
   credit: 'Deposits (Credit)',
   checkNumber: 'Check Number',
   account: 'Account',
+  balance: 'Balance',
 };
-const ROLES: ColumnRole[] = ['date', 'description', 'amount', 'debit', 'credit', 'checkNumber', 'account'];
+const ROLES: ColumnRole[] = ['date', 'description', 'amount', 'debit', 'credit', 'checkNumber', 'account', 'balance'];
 
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
 
@@ -33,12 +34,15 @@ async function postPreview(companyId: string, documentId: string, body: { sheet?
   return json as ExportPreviewResponse;
 }
 
-function defaultAccounts(preview: ExportPreviewResponse): Record<string, AccountEntry> {
+function defaultAccounts(preview: ExportPreviewResponse, cashProofAccounts: CashProofAccount[]): Record<string, AccountEntry> {
   const saved = new Map((preview.saved?.accounts ?? []).map((a) => [a.value, a]));
   return Object.fromEntries(
     preview.accounts.map((a) => {
       const prior = saved.get(a.value);
-      return [a.value, { last4: prior?.last4 ?? a.suggestedLast4 ?? preview.detectedLast4 ?? '', name: prior?.name ?? '' }];
+      const last4 = prior?.last4 ?? a.suggestedLast4 ?? preview.detectedLast4 ?? '';
+      const match = last4 ? cashProofAccounts.filter((c) => c.accountLast4 === last4) : [];
+      const account = cashProofAccounts.find((c) => c.id === prior?.bankAccountId) ?? (match.length === 1 ? match[0] : null);
+      return [a.value, { bankAccountId: account?.id ?? '', bankName: prior?.bankName ?? account?.bankName ?? '', last4 }];
     }),
   );
 }
@@ -74,7 +78,7 @@ export default function ExportReviewPanel({
   const apply = (next: ExportPreviewResponse, resetDefaults: boolean) => {
     setPreview(next);
     setAccounts((prev) => {
-      const defaults = defaultAccounts(next);
+      const defaults = defaultAccounts(next, cashProofAccounts);
       return resetDefaults ? defaults : Object.fromEntries(Object.entries(defaults).map(([k, v]) => [k, prev[k] ?? v]));
     });
     if (resetDefaults) setRange(defaultRange(next));
@@ -86,7 +90,7 @@ export default function ExportReviewPanel({
       .then((next) => {
         if (cancelled) return;
         setPreview(next);
-        setAccounts(defaultAccounts(next));
+        setAccounts(defaultAccounts(next, cashProofAccounts));
         setRange(defaultRange(next));
       })
       .catch((e) => {
@@ -97,7 +101,17 @@ export default function ExportReviewPanel({
     };
   }, [companyId, documentId]);
 
-  const cashProofMatch = (last4: string) => cashProofAccounts.find((c) => c.accountLast4 && c.accountLast4 === last4.trim());
+  const chosenAccount = (entry: AccountEntry) => cashProofAccounts.find((c) => c.id === entry.bankAccountId) ?? null;
+  /** Why an account entry cannot be accepted, or null when it can. */
+  const entryProblem = (entry: AccountEntry): string | null => {
+    if (!/^\d{4}$/.test(entry.last4.trim())) return 'Last 4 must be four digits.';
+    if (!entry.bankName.trim()) return 'Enter the bank.';
+    const chosen = chosenAccount(entry);
+    if (chosen?.accountLast4 && chosen.accountLast4 !== entry.last4.trim()) {
+      return `${chosen.accountName} is set to last 4 ${chosen.accountLast4}.`;
+    }
+    return null;
+  };
 
   const refresh = async (body: { sheet?: string | null; mapping?: TransactionFileMapping | null }, resetDefaults = false) => {
     setBusy(true);
@@ -126,8 +140,8 @@ export default function ExportReviewPanel({
 
   const monthOptions = useMemo(() => [...new Set((preview?.months ?? []).map((m) => m.month))].sort(), [preview]);
   const keptAccounts = Object.entries(accounts).filter(([, a]) => a.last4.trim());
-  const badLast4 = keptAccounts.some(([, a]) => !/^\d{4}$/.test(a.last4.trim()));
-  const canAccept = Boolean(preview) && !busy && preview!.issues.length === 0 && keptAccounts.length > 0 && !badLast4;
+  const accountProblems = keptAccounts.some(([, a]) => entryProblem(a) !== null);
+  const canAccept = Boolean(preview) && !busy && preview!.issues.length === 0 && keptAccounts.length > 0 && !accountProblems;
 
   const submit = async (action: 'accept' | 'reject') => {
     if (!preview) return;
@@ -146,7 +160,9 @@ export default function ExportReviewPanel({
                 accounts: keptAccounts.map(([value, a]) => ({
                   value,
                   last4: a.last4.trim(),
-                  name: a.name.trim() || cashProofMatch(a.last4)?.accountName || null,
+                  bankName: a.bankName.trim(),
+                  name: chosenAccount(a)?.accountName ?? null,
+                  bankAccountId: a.bankAccountId || null,
                 })),
                 fromMonth: range.from || null,
                 toMonth: range.to || null,
@@ -158,7 +174,9 @@ export default function ExportReviewPanel({
       onDone(
         action === 'reject'
           ? `Returned ${preview.fileName} to the client.`
-          : `Accepted ${preview.fileName}: ${Number(json.transactions).toLocaleString('en-US')} transactions, ${json.accountMonths} account-months.`,
+          : `Accepted ${preview.fileName}: ${Number(json.transactions).toLocaleString('en-US')} transactions, ${json.accountMonths} account-months.${
+              json.readStatements ? ' Read Statements and Match Transactions ran on the Cash Proof.' : ''
+            }`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -302,36 +320,63 @@ export default function ExportReviewPanel({
             Bank Account{preview.accounts.length > 1 ? 's (leave Last 4 blank to skip an account)' : ''}
           </div>
           <div style={{ display: 'grid', gap: '6px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) minmax(180px, 1.5fr) minmax(140px, 1fr) 80px', gap: '8px' }}>
+              <div style={label}>In File</div>
+              <div style={label}>Cash Proof Account</div>
+              <div style={label}>Bank</div>
+              <div style={label}>Last 4</div>
+            </div>
             {preview.accounts.map((a) => {
-              const entry = accounts[a.value] ?? { last4: '', name: '' };
-              const match = cashProofMatch(entry.last4);
+              const entry = accounts[a.value] ?? { bankAccountId: '', bankName: '', last4: '' };
               const update = (patch: Partial<AccountEntry>) => setAccounts((prev) => ({ ...prev, [a.value]: { ...entry, ...patch } }));
+              const chosen = chosenAccount(entry);
+              const problem = entry.last4.trim() ? entryProblem(entry) : null;
               return (
-                <div key={a.value} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) 90px minmax(160px, 1.5fr)', gap: '8px', alignItems: 'center' }}>
-                  <div style={{ fontSize: '12px', color: '#334155' }}>
-                    {a.value || 'All rows'} <span style={{ color: '#64748b' }}>({a.count.toLocaleString('en-US')})</span>
-                  </div>
-                  <input
-                    style={inputStyle}
-                    placeholder="Last 4"
-                    maxLength={4}
-                    value={entry.last4}
-                    onChange={(e) => update({ last4: e.target.value.replace(/\D/g, '') })}
-                  />
-                  <div>
+                <div key={a.value}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) minmax(180px, 1.5fr) minmax(140px, 1fr) 80px', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ fontSize: '12px', color: '#334155' }}>
+                      {a.value || 'All rows'} <span style={{ color: '#64748b' }}>({a.count.toLocaleString('en-US')})</span>
+                    </div>
+                    <select
+                      style={inputStyle}
+                      value={entry.bankAccountId}
+                      onChange={(e) => {
+                        const next = cashProofAccounts.find((c) => c.id === e.target.value);
+                        update({
+                          bankAccountId: e.target.value,
+                          ...(next?.bankName ? { bankName: next.bankName } : {}),
+                          ...(next?.accountLast4 ? { last4: next.accountLast4 } : {}),
+                        });
+                      }}
+                    >
+                      <option value="">Not in the Cash Proof</option>
+                      {cashProofAccounts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.accountName}
+                          {c.accountLast4 ? ` · x${c.accountLast4}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <input style={inputStyle} placeholder="Bank" value={entry.bankName} onChange={(e) => update({ bankName: e.target.value })} />
                     <input
                       style={inputStyle}
-                      placeholder={match?.accountName ?? 'Account name'}
-                      value={entry.name}
-                      onChange={(e) => update({ name: e.target.value })}
+                      placeholder="Last 4"
+                      maxLength={4}
+                      value={entry.last4}
+                      onChange={(e) => update({ last4: e.target.value.replace(/\D/g, '') })}
                     />
-                    <div style={{ fontSize: '10px', color: match ? '#047857' : '#b45309', marginTop: '2px' }}>
-                      {entry.last4.length === 4
-                        ? match
-                          ? `Matches Cash Proof account ${match.accountName}`
-                          : 'No Cash Proof account has this last 4 yet.'
-                        : ''}
-                    </div>
+                  </div>
+                  <div style={{ fontSize: '10px', color: problem ? '#b45309' : '#047857', marginTop: '2px' }}>
+                    {problem ??
+                      (chosen && !chosen.accountLast4 && entry.last4.length === 4
+                        ? `${chosen.accountName} will be set to ${entry.bankName.trim()} x${entry.last4} in the Cash Proof.`
+                        : chosen
+                          ? `Feeds ${chosen.accountName} in the Cash Proof.`
+                          : entry.last4.length === 4
+                            ? cashProofAccounts.some((c) => c.accountLast4 === entry.last4)
+                              ? `Feeds ${cashProofAccounts.find((c) => c.accountLast4 === entry.last4)!.accountName} by last 4.`
+                              : 'No Cash Proof account has this last 4; it will be listed as statements for an account not in the cash proof.'
+                            : '')}
                   </div>
                 </div>
               );
@@ -427,7 +472,7 @@ export default function ExportReviewPanel({
           <button style={buttonStyle()} disabled={busy} onClick={() => setRejecting(true)}>
             Reject
           </button>
-          {badLast4 && <span style={{ fontSize: '11px', color: '#b91c1c' }}>Last 4 must be four digits.</span>}
+          {accountProblems && <span style={{ fontSize: '11px', color: '#b91c1c' }}>Enter the bank and a four-digit last 4 for each account.</span>}
         </div>
       )}
     </div>
