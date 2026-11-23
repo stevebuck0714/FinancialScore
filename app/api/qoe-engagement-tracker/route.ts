@@ -226,6 +226,7 @@ export async function POST(request: NextRequest) {
           state: text(body.state),
           zip: text(body.zip),
           country: text(body.country),
+          website: text(body.website),
         },
       });
       await prisma.qoeEngagementTracker.updateMany({ where: { lenderId }, data: { lenderName: name } });
@@ -242,6 +243,7 @@ export async function POST(request: NextRequest) {
           state: text(body.state),
           zip: text(body.zip),
           country: text(body.country),
+          website: text(body.website),
         },
         update: {},
       });

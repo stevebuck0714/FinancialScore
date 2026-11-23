@@ -6147,6 +6147,20 @@ function FinancialScorePage() {
     setCurrentView(resolveCompanyLandingView(currentUser));
   }, [currentUser, currentView, isLoggedIn, selectedCompanyId]);
 
+  // Site admins and consultants can land on a company page with no company
+  // (back button into a pre-logout URL, restored view after re-login). The
+  // grace period lets the saved company restore before redirecting.
+  useEffect(() => {
+    if (!sessionRestoreComplete || !isLoggedIn || !currentUser || selectedCompanyId) return;
+    const role = String(currentUser.role || '').toLowerCase();
+    if (role !== 'siteadmin' && role !== 'consultant') return;
+    if (['admin', 'consultant-dashboard', 'siteadmin', 'login'].includes(currentView) || currentView.startsWith('ma-')) return;
+    const timer = window.setTimeout(() => {
+      setCurrentView(role === 'siteadmin' ? 'siteadmin' : 'consultant-dashboard');
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [currentUser, currentView, isLoggedIn, selectedCompanyId, sessionRestoreComplete]);
+
   // Load company-specific data from API when company is selected
   useEffect(() => {
     const loadCompanyData = async () => {
@@ -21455,6 +21469,9 @@ function FinancialScorePage() {
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company from the Consultant Dashboard to continue.</p>
           {currentUser?.role === 'consultant' && (
             <button onClick={() => setCurrentView('consultant-dashboard')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to Consultant Dashboard</button>
+          )}
+          {currentUser?.role === 'siteadmin' && (
+            <button onClick={() => setCurrentView('siteadmin')} style={{ padding: '12px 24px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Go to Site Admin</button>
           )}
         </div>
       )}

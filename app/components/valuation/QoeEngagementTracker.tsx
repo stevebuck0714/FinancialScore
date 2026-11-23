@@ -42,7 +42,7 @@ const BANK_STATUSES = ['IDENTIFIED', 'CONNECTION_PLANNED', 'CONNECTED', 'STATEME
 const statusLabel = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const asDate = (value: string | null | undefined) => (value ? value.slice(0, 10) : '');
 
-const LENDER_FIELDS = ['name', 'address1', 'address2', 'city', 'state', 'zip', 'country'] as const;
+const LENDER_FIELDS = ['name', 'address1', 'address2', 'city', 'state', 'zip', 'country', 'website'] as const;
 type LenderDraft = Record<(typeof LENDER_FIELDS)[number], string>;
 const fieldLabel: React.CSSProperties = { fontSize: '11px', fontWeight: 600, color: '#475569' };
 
@@ -67,7 +67,7 @@ function LenderFields({ initial, submitLabel, disabled, onSubmit }: {
         {field('address1', 'Address line 1')}
         {field('address2', 'Address line 2')}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) 170px 110px minmax(150px, 1fr) auto', gap: '8px', marginTop: '8px', alignItems: 'end' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) 170px 100px minmax(130px, 0.8fr) minmax(200px, 1.3fr) auto', gap: '8px', marginTop: '8px', alignItems: 'end' }}>
         {field('city', 'City')}
         <label style={fieldLabel}>
           State
@@ -81,6 +81,7 @@ function LenderFields({ initial, submitLabel, disabled, onSubmit }: {
         </label>
         {field('zip', 'ZIP')}
         {field('country', 'Country')}
+        {field('website', 'Website')}
         <button type="button" disabled={blocked} onClick={() => void onSubmit(draft)} style={{ ...button, opacity: blocked ? 0.55 : 1 }}>
           {submitLabel}
         </button>

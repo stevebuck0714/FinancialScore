@@ -1,0 +1,1 @@
+ALTER TABLE "QoeLender" ADD COLUMN "website" TEXT;
