@@ -59,6 +59,8 @@ export type CashProofAccountView = {
   included: boolean;
   exclusionReason: string | null;
   isManual: boolean;
+  /** Another row in the cash proof is for the same book account, so this one can be deleted. */
+  isDuplicate: boolean;
   depositsCategory: RevenueAdjustmentCategory | null;
   balances: Record<string, { value: number; source: BookBalanceSource }>;
   /** Statement deposits per month; `sample` values live on the sampled statement. */
@@ -299,6 +301,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     included: a.included,
     exclusionReason: a.exclusionReason,
     isManual: a.isManual,
+    isDuplicate: engagement.bankAccounts.some((o) => sameBookAccount(a, o)),
     depositsCategory: (a.depositsCategory as RevenueAdjustmentCategory | null) ?? null,
     balances: Object.fromEntries(
       a.bookBalances.map((b) => [b.month, { value: b.endingBalance, source: b.source as BookBalanceSource }]),
@@ -523,6 +526,16 @@ async function requireBankAccount(engagementId: string, bankAccountId: string) {
   return account;
 }
 
+type BookAccountKeys = { id: string; accountMappingId: string | null; sourceAccountId: string | null };
+
+/** Two cash proof rows for the same book account: the same mapping, or the same account in the accounting system. */
+function sameBookAccount(a: BookAccountKeys, b: BookAccountKeys) {
+  if (a.id === b.id) return false;
+  if (a.accountMappingId && a.accountMappingId === b.accountMappingId) return true;
+  const source = String(a.sourceAccountId || '').trim();
+  return Boolean(source) && source === String(b.sourceAccountId || '').trim();
+}
+
 /** Pull mapped cash accounts and their month-end balances from the accounting source. */
 async function refreshBookBalances(companyId: string, engagementId: string) {
   const engagement = await prisma.cashProofEngagement.findUniqueOrThrow({
@@ -530,12 +543,22 @@ async function refreshBookBalances(companyId: string, engagementId: string) {
     include: { bankAccounts: true },
   });
   const mappings = await listCashAccountMappings(companyId);
+  const mappingIds = new Set(mappings.map((m) => m.id));
   const existingByMapping = new Map(
     engagement.bankAccounts.filter((a) => a.accountMappingId).map((a) => [a.accountMappingId!, a]),
   );
   let sortOrder = engagement.bankAccounts.length;
   for (const mapping of mappings) {
     if (existingByMapping.has(mapping.id)) continue;
+    // A second Cash mapping for a book account already in the cash proof must not add a duplicate row.
+    const source = String(mapping.accountId || mapping.accountCode || '').trim();
+    const sameSource = source
+      ? engagement.bankAccounts.find((a) => String(a.sourceAccountId || '').trim() === source)
+      : undefined;
+    if (sameSource) {
+      if (!sameSource.accountMappingId || !mappingIds.has(sameSource.accountMappingId)) existingByMapping.set(mapping.id, sameSource);
+      continue;
+    }
     const created = await prisma.cashProofBankAccount.create({
       data: {
         engagementId,
@@ -597,6 +620,7 @@ export type CashProofAction =
       depositsCategory?: RevenueAdjustmentCategory | null;
     }
   | { action: 'add-manual-account'; engagementId: string; accountName: string; bankName?: string | null; accountLast4?: string | null }
+  | { action: 'delete-account'; engagementId: string; bankAccountId: string }
   | { action: 'set-book-balance'; engagementId: string; bankAccountId: string; month: string; endingBalance: number | null }
   | { action: 'generate-sample'; engagementId: string; regenerate?: boolean }
   | { action: 'expand-sample'; engagementId: string }
@@ -762,6 +786,26 @@ export async function runCashProofAction(companyId: string, userId: string, inpu
           sortOrder: count,
         },
       });
+      return;
+    }
+    case 'delete-account': {
+      await requireEngagement(companyId, input.engagementId);
+      const account = await requireBankAccount(input.engagementId, input.bankAccountId);
+      const siblings = await prisma.cashProofBankAccount.findMany({
+        where: { engagementId: input.engagementId, id: { not: account.id } },
+        select: { id: true, accountMappingId: true, sourceAccountId: true, included: true },
+        orderBy: { sortOrder: 'asc' },
+      });
+      const duplicates = siblings.filter((s) => sameBookAccount(account, s));
+      if (duplicates.length === 0) {
+        throw new CashProofError('Only a duplicate of another account in the cash proof can be deleted. Untick Include to leave an account out.', 409);
+      }
+      const kept = duplicates.find((d) => d.included) ?? duplicates[0];
+      // Only cash proof rows change; the account mappings and the books are left as they are.
+      await prisma.$transaction([
+        prisma.cashProofRevenueAdjustment.updateMany({ where: { bankAccountId: account.id }, data: { bankAccountId: kept.id } }),
+        prisma.cashProofBankAccount.delete({ where: { id: account.id } }),
+      ]);
       return;
     }
     case 'set-book-balance': {

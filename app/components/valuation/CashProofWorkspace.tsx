@@ -597,6 +597,24 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
                             Excluded: {account.exclusionReason}
                           </div>
                         )}
+                        {canEdit && account.isDuplicate && (
+                          <button
+                            style={{ ...buttonStyle('secondary', !!busy), padding: '2px 8px', fontSize: '10px', marginTop: '4px' }}
+                            disabled={!!busy}
+                            title="Another row is for the same book account. Deletes only this cash proof row; account mapping and the books are unchanged."
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Delete this duplicate ${account.accountName} row? The other ${account.accountName} row stays. This row's balances, sampled statements, and deposits are removed from the cash proof; account mapping and the books are unchanged.`,
+                                )
+                              ) {
+                                void run('delete-account', { action: 'delete-account', engagementId: engagement.id, bankAccountId: account.id });
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'left', minWidth: 250 }}>
                         <StatementAccountPicker
