@@ -526,44 +526,72 @@ async function requireBankAccount(engagementId: string, bankAccountId: string) {
   return account;
 }
 
-type BookAccountKeys = { id: string; accountMappingId: string | null; sourceAccountId: string | null };
+type BookAccountKeys = {
+  id: string;
+  accountMappingId: string | null;
+  sourceAccountId: string | null;
+  accountName: string;
+  bookBalances: MonthBalance[];
+};
 
-/** Two cash proof rows for the same book account: the same mapping, or the same account in the accounting system. */
+type MonthBalance = { month: string; endingBalance: number };
+
+const accountNameKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** The same month-end balance in every month, with at least one month not zero. */
+function sameBalances(a: MonthBalance[], b: MonthBalance[]) {
+  if (a.length === 0 || a.length !== b.length || a.every((x) => Math.abs(x.endingBalance) < 0.005)) return false;
+  const other = new Map(b.map((x) => [x.month, x.endingBalance]));
+  return a.every((x) => other.has(x.month) && Math.abs(other.get(x.month)! - x.endingBalance) < 0.005);
+}
+
+/**
+ * Two cash proof rows for the same book account: the same mapping, the same account in the
+ * accounting system, or the same account name with the same balance in every month (a second
+ * Cash mapping that found its balances by name).
+ */
 function sameBookAccount(a: BookAccountKeys, b: BookAccountKeys) {
   if (a.id === b.id) return false;
   if (a.accountMappingId && a.accountMappingId === b.accountMappingId) return true;
   const source = String(a.sourceAccountId || '').trim();
-  return Boolean(source) && source === String(b.sourceAccountId || '').trim();
+  if (source && source === String(b.sourceAccountId || '').trim()) return true;
+  return accountNameKey(a.accountName) === accountNameKey(b.accountName) && sameBalances(a.bookBalances, b.bookBalances);
 }
 
 /** Pull mapped cash accounts and their month-end balances from the accounting source. */
 async function refreshBookBalances(companyId: string, engagementId: string) {
   const engagement = await prisma.cashProofEngagement.findUniqueOrThrow({
     where: { id: engagementId },
-    include: { bankAccounts: true },
+    include: { bankAccounts: { include: { bookBalances: { select: { month: true, endingBalance: true } } } } },
   });
   const mappings = await listCashAccountMappings(companyId);
   const mappingIds = new Set(mappings.map((m) => m.id));
-  const existingByMapping = new Map(
+  const months = monthRange(engagement.periodStartMonth, engagement.periodEndMonth);
+  const { source, balances } = await loadCashBookBalances(companyId, mappings, months);
+  const existingByMapping = new Map<string, { id: string }>(
     engagement.bankAccounts.filter((a) => a.accountMappingId).map((a) => [a.accountMappingId!, a]),
   );
   let sortOrder = engagement.bankAccounts.length;
   for (const mapping of mappings) {
     if (existingByMapping.has(mapping.id)) continue;
     // A second Cash mapping for a book account already in the cash proof must not add a duplicate row.
-    const source = String(mapping.accountId || mapping.accountCode || '').trim();
-    const sameSource = source
-      ? engagement.bankAccounts.find((a) => String(a.sourceAccountId || '').trim() === source)
-      : undefined;
-    if (sameSource) {
-      if (!sameSource.accountMappingId || !mappingIds.has(sameSource.accountMappingId)) existingByMapping.set(mapping.id, sameSource);
+    const candidate: BookAccountKeys = {
+      id: '',
+      accountMappingId: mapping.id,
+      sourceAccountId: mapping.accountId || mapping.accountCode || null,
+      accountName: mapping.accountName,
+      bookBalances: [...(balances.get(mapping.id) ?? new Map<string, number>())].map(([month, endingBalance]) => ({ month, endingBalance })),
+    };
+    const same = engagement.bankAccounts.find((a) => sameBookAccount(candidate, a));
+    if (same) {
+      if (!same.accountMappingId || !mappingIds.has(same.accountMappingId)) existingByMapping.set(mapping.id, same);
       continue;
     }
     const created = await prisma.cashProofBankAccount.create({
       data: {
         engagementId,
         accountMappingId: mapping.id,
-        sourceAccountId: mapping.accountId || mapping.accountCode || null,
+        sourceAccountId: candidate.sourceAccountId,
         accountName: mapping.accountName,
         sortOrder: sortOrder++,
       },
@@ -571,8 +599,6 @@ async function refreshBookBalances(companyId: string, engagementId: string) {
     existingByMapping.set(mapping.id, created);
   }
 
-  const months = monthRange(engagement.periodStartMonth, engagement.periodEndMonth);
-  const { source, balances } = await loadCashBookBalances(companyId, mappings, months);
   if (source === 'manual') return;
 
   const accountIds = [...existingByMapping.values()].map((a) => a.id);
@@ -790,13 +816,14 @@ export async function runCashProofAction(companyId: string, userId: string, inpu
     }
     case 'delete-account': {
       await requireEngagement(companyId, input.engagementId);
-      const account = await requireBankAccount(input.engagementId, input.bankAccountId);
-      const siblings = await prisma.cashProofBankAccount.findMany({
-        where: { engagementId: input.engagementId, id: { not: account.id } },
-        select: { id: true, accountMappingId: true, sourceAccountId: true, included: true },
+      await requireBankAccount(input.engagementId, input.bankAccountId);
+      const rows = await prisma.cashProofBankAccount.findMany({
+        where: { engagementId: input.engagementId },
+        include: { bookBalances: { select: { month: true, endingBalance: true } } },
         orderBy: { sortOrder: 'asc' },
       });
-      const duplicates = siblings.filter((s) => sameBookAccount(account, s));
+      const account = rows.find((r) => r.id === input.bankAccountId)!;
+      const duplicates = rows.filter((s) => sameBookAccount(account, s));
       if (duplicates.length === 0) {
         throw new CashProofError('Only a duplicate of another account in the cash proof can be deleted. Untick Include to leave an account out.', 409);
       }
@@ -804,6 +831,15 @@ export async function runCashProofAction(companyId: string, userId: string, inpu
       // Only cash proof rows change; the account mappings and the books are left as they are.
       await prisma.$transaction([
         prisma.cashProofRevenueAdjustment.updateMany({ where: { bankAccountId: account.id }, data: { bankAccountId: kept.id } }),
+        // The statement link (bank and last 4) moves to the row that stays when it has none.
+        ...(!kept.accountLast4 && account.accountLast4
+          ? [
+              prisma.cashProofBankAccount.update({
+                where: { id: kept.id },
+                data: { bankName: kept.bankName || account.bankName, accountLast4: account.accountLast4 },
+              }),
+            ]
+          : []),
         prisma.cashProofBankAccount.delete({ where: { id: account.id } }),
       ]);
       return;
