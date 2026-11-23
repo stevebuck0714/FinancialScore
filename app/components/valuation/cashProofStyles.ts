@@ -8,6 +8,8 @@ export const cardStyle: CSSProperties = {
   boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
 };
 
+export const cardTitleStyle: CSSProperties = { fontSize: '21px', fontWeight: 600, color: '#1e293b' };
+
 export const buttonStyle = (variant: 'primary' | 'secondary' = 'secondary', disabled = false): CSSProperties => ({
   padding: '7px 12px',
   borderRadius: '6px',

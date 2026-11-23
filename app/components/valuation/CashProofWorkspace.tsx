@@ -13,7 +13,7 @@ import {
   postCashProof,
   type CashProofResponse,
 } from './cashProofClient';
-import { buttonStyle, cardStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
+import { buttonStyle, cardStyle, cardTitleStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
 import CashProofDepositsPanel from './CashProofDepositsPanel';
 import CashProofStatementScanCard from './CashProofStatementScanCard';
 import CashProofTaxReturnCard from './CashProofTaxReturnCard';
@@ -69,7 +69,13 @@ function StatusBadge({ status }: { status: CashProofSampleView['status'] }) {
   );
 }
 
-export default function CashProofWorkspace({ companyId }: { companyId: string | null }) {
+export default function CashProofWorkspace({
+  companyId,
+  onReviewTransactionFile,
+}: {
+  companyId: string | null;
+  onReviewTransactionFile?: (documentId: string) => void;
+}) {
   const [data, setData] = useState<CashProofResponse | null>(null);
   const [loading, setLoading] = useState(Boolean(companyId));
   const [busy, setBusy] = useState<string | null>(null);
@@ -413,7 +419,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
         </div>
       </div>
 
-      <CashProofStatementScanCard data={data!} money={money} />
+      <CashProofStatementScanCard data={data!} money={money} onReviewFile={onReviewTransactionFile} />
 
       <div ref={matchCardRef}>
         <CashProofTransactionMatchCard
@@ -430,7 +436,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
       <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
         <div style={{ ...cardStyle, flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px', flexWrap: 'wrap' }}>
-            <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>Month-End Book Cash by Account</div>
+            <div style={cardTitleStyle}>Month-End Book Cash by Account</div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               {canEdit && data!.samples.length > 0 && (
                 <>
@@ -764,7 +770,7 @@ export default function CashProofWorkspace({ companyId }: { companyId: string | 
           <div ref={samplePanelRef} style={{ ...cardStyle, width: 340, flexShrink: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{selectedAccount.accountName}</div>
+                <div style={cardTitleStyle}>{selectedAccount.accountName}</div>
                 <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
                   {formatMonthLabel(selectedSample.month)} · {SAMPLE_SELECTION_LABELS[selectedSample.selectionReason]}
                 </div>

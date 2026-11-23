@@ -94,7 +94,7 @@ async function readDocument(doc: Doc): Promise<DocumentRead> {
   if (doc.statementSource === 'UPLOAD_EXPORT') {
     if (doc.reviewStatus === 'REJECTED') return { parsed: [] };
     if (doc.reviewStatus !== 'ACCEPTED') {
-      return { parsed: [], failure: { ...base, status: 'NEEDS_REVIEW', message: 'Transaction file is awaiting review by the Corelytics team.' } };
+      return { parsed: [], failure: { ...base, status: 'NEEDS_REVIEW', message: 'Transaction file has not been reviewed yet. Click Review to confirm its columns and bank account.' } };
     }
     return { parsed: bankActivityStatements(doc) };
   }

@@ -16,7 +16,7 @@ import {
   reconciliationRows,
   type CashProofResponse,
 } from './cashProofClient';
-import { buttonStyle, cardStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
+import { buttonStyle, cardStyle, cardTitleStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
 
 type Money = (value: number | null | undefined) => string;
 type Run = (label: string, body: Record<string, unknown>) => Promise<boolean>;
@@ -41,7 +41,7 @@ function RevenueStatusBadge({ status }: { status: RevenueReconciliationPeriod['s
   );
 }
 
-const sectionHeading: CSSProperties = { fontSize: '14px', fontWeight: 600, color: '#1e293b' };
+const sectionHeading: CSSProperties = cardTitleStyle;
 const NON_REVENUE_CATEGORIES = REVENUE_ADJUSTMENT_CATEGORY_ORDER.filter((c) => REVENUE_ADJUSTMENT_CATEGORIES[c].sign < 0);
 const emptyAdjustment = { month: '', bankAccountId: '', category: '' as RevenueAdjustmentCategory | '', amount: '', description: '' };
 

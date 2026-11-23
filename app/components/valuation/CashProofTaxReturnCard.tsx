@@ -11,13 +11,13 @@ import {
 } from '@/lib/cash-proof/tax-return';
 import type { TaxReturnScanStatus } from '@/lib/cash-proof/tax-return-scan';
 import { TAX_RETURN_STATUS_COLORS, TAX_SCAN_STATUS, formatPercent, type CashProofResponse } from './cashProofClient';
-import { buttonStyle, cardStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
+import { buttonStyle, cardStyle, cardTitleStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
 
 type Money = (value: number | null | undefined) => string;
 type Run = (label: string, body: Record<string, unknown>) => Promise<boolean>;
 type AmountField = 'grossReceipts' | 'returnsAllowances';
 
-const sectionHeading: CSSProperties = { fontSize: '14px', fontWeight: 600, color: '#1e293b' };
+const sectionHeading: CSSProperties = cardTitleStyle;
 const NEEDS_ATTENTION = new Set<TaxReturnScanStatus>(['CONFLICT', 'FAILED', 'NEEDS_REVIEW', 'NO_TEXT']);
 const SCAN_ORDER: TaxReturnScanStatus[] = [
   'CONFLICT',

@@ -3938,6 +3938,10 @@ function FinancialScorePage() {
   const [researchSourcesText, setResearchSourcesText] = useState('');
   const [businessContextLastUpdatedAt, setBusinessContextLastUpdatedAt] = useState<string | null>(null);
   const [sdeModuleTab, setSdeModuleTab] = useState<'engagement-tracker' | 'ebitda-adjustments' | 'cash-proof' | 'bank-statements' | 'credit-card-review' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
+  const [bankStatementsReviewId, setBankStatementsReviewId] = useState<string | null>(null);
+  useEffect(() => {
+    if (sdeModuleTab !== 'bank-statements') setBankStatementsReviewId(null);
+  }, [sdeModuleTab]);
   const [sdeIncomeStatementRefreshKey, setSdeIncomeStatementRefreshKey] = useState(0);
   const [ebitdaAnalysisTab, setEbitdaAnalysisTab] = useState<'revenue-quality' | 'customer-mix' | 'cash-flow-quality' | 'balance-sheet-quality'>('revenue-quality');
   const [dcfAnalysisTab, setDcfAnalysisTab] = useState<'working-capital' | 'cash-flow-quality' | 'revenue-durability' | 'balance-sheet-quality'>('working-capital');
@@ -25039,7 +25043,14 @@ function FinancialScorePage() {
                 </>
                 )}
                 {sdeModuleTab === 'cash-proof' && (
-                  <CashProofWorkspace key={selectedCompanyId || 'none'} companyId={selectedCompanyId || null} />
+                  <CashProofWorkspace
+                    key={selectedCompanyId || 'none'}
+                    companyId={selectedCompanyId || null}
+                    onReviewTransactionFile={(documentId) => {
+                      setBankStatementsReviewId(documentId);
+                      setSdeModuleTab('bank-statements');
+                    }}
+                  />
                 )}
                 {sdeModuleTab === 'engagement-tracker' && (
                   <QoeEngagementTracker
@@ -25050,7 +25061,11 @@ function FinancialScorePage() {
                   />
                 )}
                 {sdeModuleTab === 'bank-statements' && (
-                  <BankStatementsWorkspace key={selectedCompanyId || 'none'} companyId={selectedCompanyId || null} />
+                  <BankStatementsWorkspace
+                    key={selectedCompanyId || 'none'}
+                    companyId={selectedCompanyId || null}
+                    initialReviewId={bankStatementsReviewId}
+                  />
                 )}
                 {sdeModuleTab === 'credit-card-review' && (
                   <CreditCardReviewWorkspace key={selectedCompanyId || 'none'} companyId={selectedCompanyId || null} />

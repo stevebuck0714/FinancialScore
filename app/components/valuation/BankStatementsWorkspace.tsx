@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
 import { BANK_STATEMENT_SOURCE_LABELS } from '@/lib/bank-statements/providers';
 import type { BankStatementDocumentView, BankStatementsState, CoverageStatus } from '@/lib/bank-statements/service';
@@ -83,12 +83,22 @@ function Badge({ status }: { status: CoverageStatus }) {
   );
 }
 
-export default function BankStatementsWorkspace({ companyId }: { companyId: string | null }) {
+export default function BankStatementsWorkspace({
+  companyId,
+  initialReviewId = null,
+}: {
+  companyId: string | null;
+  initialReviewId?: string | null;
+}) {
   const [data, setData] = useState<BankStatementsResponse | null>(null);
   const [loading, setLoading] = useState(Boolean(companyId));
   const [error, setError] = useState<string | null>(null);
-  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewingId, setReviewingId] = useState<string | null>(initialReviewId);
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const reviewMessageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (reviewMessage) reviewMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [reviewMessage]);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -267,7 +277,22 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
             4. Accepting adds the monthly deposits and withdrawals (and month-end balances when the file has a balance column) to the
             coverage grid, then runs Read Statements and Match Transactions. Bank connection figures win when they disagree.
           </div>
-          {reviewMessage && <div style={{ marginTop: '8px', fontSize: '12px', color: '#047857' }}>{reviewMessage}</div>}
+          {reviewMessage && (
+            <div
+              ref={reviewMessageRef}
+              style={{
+                marginTop: '10px',
+                fontSize: '13px',
+                color: '#047857',
+                background: '#ecfdf5',
+                border: '1px solid #6ee7b7',
+                borderRadius: '6px',
+                padding: '8px 10px',
+              }}
+            >
+              Saved. {reviewMessage}
+            </div>
+          )}
           <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginTop: '10px' }}>
             <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
               <thead>

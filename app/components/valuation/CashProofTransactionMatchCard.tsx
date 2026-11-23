@@ -11,7 +11,7 @@ import {
   formatMonthLabel,
   type CashProofResponse,
 } from './cashProofClient';
-import { buttonStyle, cardStyle, inputStyle, tdStyle, thStyle } from './cashProofStyles';
+import { buttonStyle, cardStyle, cardTitleStyle, inputStyle, tdStyle, thStyle } from './cashProofStyles';
 import CashProofTransactionDrilldown from './CashProofTransactionDrilldown';
 
 type Money = (value: number | null | undefined) => string;
@@ -100,7 +100,7 @@ export default function CashProofTransactionMatchCard({
     <div style={cardStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>Book-to-Bank Matching</div>
+          <div style={cardTitleStyle}>Book-to-Bank Matching</div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', lineHeight: 1.5 }}>
             Matched {formatEstDateTime(match.runAt)}. {match.totals.matchedBankLines.toLocaleString()} of{' '}
             {match.totals.bankLines.toLocaleString()} bank transactions matched to the books

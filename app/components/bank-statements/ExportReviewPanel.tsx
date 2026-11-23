@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ExportPreviewResponse } from '@/lib/bank-statements/export-review';
 import type { ColumnRole, TransactionFileMapping } from '@/lib/bank-statements/transaction-file';
 import { formatMonthLabel } from '../valuation/cashProofClient';
@@ -74,6 +74,11 @@ export default function ExportReviewPanel({
   const [rejecting, setRejecting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   const apply = (next: ExportPreviewResponse, resetDefaults: boolean) => {
     setPreview(next);
@@ -141,7 +146,16 @@ export default function ExportReviewPanel({
   const monthOptions = useMemo(() => [...new Set((preview?.months ?? []).map((m) => m.month))].sort(), [preview]);
   const keptAccounts = Object.entries(accounts).filter(([, a]) => a.last4.trim());
   const accountProblems = keptAccounts.some(([, a]) => entryProblem(a) !== null);
-  const canAccept = Boolean(preview) && !busy && preview!.issues.length === 0 && keptAccounts.length > 0 && !accountProblems;
+  const acceptBlocker = !preview
+    ? null
+    : preview.issues.length > 0
+      ? 'Fix the column issues above first.'
+      : keptAccounts.length === 0
+        ? 'Choose the Cash Proof account and enter the bank and last 4 under Bank Account above.'
+        : accountProblems
+          ? 'Enter the bank and a four-digit last 4 for each account.'
+          : null;
+  const canAccept = Boolean(preview) && !busy && !acceptBlocker;
 
   const submit = async (action: 'accept' | 'reject') => {
     if (!preview) return;
@@ -186,13 +200,26 @@ export default function ExportReviewPanel({
 
   if (!preview) {
     return (
-      <div style={{ marginTop: '10px', fontSize: '12px', color: error ? '#b91c1c' : '#475569' }}>
-        {error || 'Reading the file…'}{' '}
-        {error && (
-          <button style={buttonStyle()} onClick={onClose}>
-            Close
-          </button>
-        )}
+      <div
+        ref={panelRef}
+        style={{
+          marginTop: '10px',
+          border: `1px solid ${error ? '#fca5a5' : '#e2e8f0'}`,
+          background: error ? '#fef2f2' : '#f8fafc',
+          borderRadius: '8px',
+          padding: '12px',
+          fontSize: '13px',
+          color: error ? '#b91c1c' : '#475569',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '10px',
+        }}
+      >
+        <span>{error ? `Could not open the review: ${error}` : 'Reading the file… a full year of transactions can take a minute.'}</span>
+        <button style={buttonStyle()} onClick={onClose}>
+          Close
+        </button>
       </div>
     );
   }
@@ -202,7 +229,7 @@ export default function ExportReviewPanel({
   const hasAccountColumn = preview.mapping.columns.account !== undefined;
 
   return (
-    <div style={{ marginTop: '10px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', display: 'grid', gap: '12px' }}>
+    <div ref={panelRef} style={{ marginTop: '10px', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', display: 'grid', gap: '12px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
           Review {preview.fileName}
@@ -449,7 +476,11 @@ export default function ExportReviewPanel({
         </div>
       )}
 
-      {error && <div style={{ fontSize: '12px', color: '#b91c1c' }}>{error}</div>}
+      {error && (
+        <div style={{ fontSize: '13px', color: '#b91c1c', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '8px 10px' }}>
+          Not saved: {error}
+        </div>
+      )}
 
       {rejecting ? (
         <div style={{ display: 'grid', gap: '6px' }}>
@@ -472,7 +503,14 @@ export default function ExportReviewPanel({
           <button style={buttonStyle()} disabled={busy} onClick={() => setRejecting(true)}>
             Reject
           </button>
-          {accountProblems && <span style={{ fontSize: '11px', color: '#b91c1c' }}>Enter the bank and a four-digit last 4 for each account.</span>}
+          {busy && !rejecting ? (
+            <span style={{ fontSize: '12px', color: '#475569' }}>
+              Importing {preview.totals.transactions.toLocaleString('en-US')} transactions, then running Read Statements and Match
+              Transactions. This can take a couple of minutes; keep this page open.
+            </span>
+          ) : (
+            acceptBlocker && <span style={{ fontSize: '11px', color: '#b91c1c' }}>{acceptBlocker}</span>
+          )}
         </div>
       )}
     </div>
