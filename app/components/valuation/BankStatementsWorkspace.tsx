@@ -8,7 +8,7 @@ import BankStatementUploader from '../bank-statements/BankStatementUploader';
 import ExportReviewPanel from '../bank-statements/ExportReviewPanel';
 import { useBankConnect } from '../bank-statements/useBankConnect';
 import { STATUS_COLORS, formatMonthLabel } from './cashProofClient';
-import { buttonStyle, cardStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
+import { buttonStyle, cardStyle, inputStyle, stickyCol, tdStyle, thStyle } from './cashProofStyles';
 
 type BankStatementsResponse = BankStatementsState & {
   companyId: string;
@@ -89,6 +89,9 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
   const [error, setError] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [accountEdit, setAccountEdit] = useState<{ id: string; last4: string; bankName: string } | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [savingAccount, setSavingAccount] = useState(false);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -119,6 +122,27 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
   }, [companyId]);
 
   const bank = useBankConnect(companyId || '', load);
+
+  const saveAccount = async () => {
+    if (!companyId || !accountEdit) return;
+    setSavingAccount(true);
+    setAccountError(null);
+    try {
+      const res = await fetch(`/api/bank-statements/documents/${accountEdit.id}/account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, last4: accountEdit.last4.trim(), bankName: accountEdit.bankName.trim() || null }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || `The account could not be saved (${res.status})`);
+      setAccountEdit(null);
+      await load();
+    } catch (e) {
+      setAccountError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingAccount(false);
+    }
+  };
 
   const uploadOnly = useMemo(() => new Set(data?.uploadOnlyMonths || []), [data]);
   const accountName = (id: string | null) => (id && data?.accounts.find((a) => a.id === id)?.accountName) || '—';
@@ -430,12 +454,55 @@ export default function BankStatementsWorkspace({ companyId }: { companyId: stri
                       </a>
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'left' }}>
-                      {d.coveredLast4s.length > 0 ? (
+                      {accountEdit?.id === d.id ? (
+                        <div style={{ display: 'grid', gap: '4px' }}>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <input
+                              value={accountEdit.bankName}
+                              placeholder="Bank"
+                              disabled={savingAccount}
+                              onChange={(e) => setAccountEdit({ ...accountEdit, bankName: e.target.value })}
+                              style={{ ...inputStyle, width: 140 }}
+                            />
+                            <input
+                              value={accountEdit.last4}
+                              placeholder="Last 4"
+                              maxLength={4}
+                              disabled={savingAccount}
+                              onChange={(e) => setAccountEdit({ ...accountEdit, last4: e.target.value.replace(/\D/g, '') })}
+                              style={{ ...inputStyle, width: 64 }}
+                            />
+                            <button
+                              style={buttonStyle('primary', savingAccount || accountEdit.last4.length !== 4)}
+                              disabled={savingAccount || accountEdit.last4.length !== 4}
+                              onClick={() => void saveAccount()}
+                            >
+                              Save
+                            </button>
+                            <button style={buttonStyle()} disabled={savingAccount} onClick={() => setAccountEdit(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                          {accountError && <div style={{ fontSize: '10px', color: '#b91c1c', whiteSpace: 'normal' }}>{accountError}</div>}
+                        </div>
+                      ) : d.coveredLast4s.length > 0 ? (
                         d.coveredLast4s.map((l) => `x${l}`).join(', ')
                       ) : (
                         <>
                           {accountName(d.bankAccountId)}
                           {d.accountLast4 ? <span style={{ color: '#64748b' }}> · x{d.accountLast4}</span> : null}
+                          {data.canReview && d.source === 'UPLOAD' && (
+                            <button
+                              style={{ ...buttonStyle(), padding: '1px 6px', fontSize: '10px', marginLeft: '6px' }}
+                              title="Correct the bank account this statement belongs to. Read Statements keeps the corrected account."
+                              onClick={() => {
+                                setAccountError(null);
+                                setAccountEdit({ id: d.id, last4: d.accountLast4 || '', bankName: d.institution || '' });
+                              }}
+                            >
+                              Edit
+                            </button>
+                          )}
                         </>
                       )}
                     </td>

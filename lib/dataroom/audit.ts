@@ -22,6 +22,7 @@ export type DataRoomAuditEvent = {
     | 'permissions_updated'
     | 'statements_imported'
     | 'statement_export_reviewed'
+    | 'statement_account_corrected'
     | 'credit_card_activity_imported';
   companyId: string;
   userId: string;

@@ -117,10 +117,11 @@ async function recordReview(
   ctx: ReviewContext,
   documentId: string,
   details: Record<string, unknown>,
+  action: 'statement_export_reviewed' | 'statement_account_corrected' = 'statement_export_reviewed',
 ) {
   const updated = appendDataRoomAuditEvents(upsertDataRoomState(userDefinedAllocations, {}), [
     await buildDataRoomAuditEvent({
-      action: 'statement_export_reviewed',
+      action,
       companyId,
       userId: ctx.userId,
       userEmail: ctx.email,
@@ -200,6 +201,72 @@ export async function acceptStatementExport(params: {
     accountMonths: activity.length,
   });
   return { transactions: transactions.length, accountMonths: activity.length };
+}
+
+/**
+ * Corrects the bank account an uploaded PDF statement was read as. Read Statements keeps the
+ * saved account from then on. Bank-connected files keep the bank's account; transaction files
+ * are corrected by reviewing them again.
+ */
+export async function correctStatementAccount(params: {
+  companyId: string;
+  documentId: string;
+  last4: string;
+  bankName: string | null;
+  ctx: ReviewContext;
+}) {
+  const last4 = String(params.last4 || '').trim();
+  if (!LAST4.test(last4)) throw new BankStatementsAccessError('Account last 4 must be four digits.', 400);
+  const bankName = params.bankName ? String(params.bankName).trim().slice(0, 120) || null : null;
+
+  const [doc, company] = await Promise.all([
+    prisma.dataRoomDocument.findUnique({
+      where: { id: params.documentId },
+      select: { id: true, companyId: true, statementSource: true, statementAccountLast4: true, statementInstitution: true },
+    }),
+    prisma.company.findUnique({ where: { id: params.companyId }, select: { userDefinedAllocations: true } }),
+  ]);
+  const inFolder = (getDataRoomState(company?.userDefinedAllocations).documentIndex as Array<Record<string, unknown>>).some(
+    (e) => String(e?.documentId || '') === params.documentId && String(e?.folderId || '') === DATAROOM_BANK_STATEMENTS_FOLDER_ID,
+  );
+  if (!doc || doc.companyId !== params.companyId || !inFolder) {
+    throw new BankStatementsAccessError('Statement not found for this company.', 404);
+  }
+  if (doc.statementSource && doc.statementSource !== 'UPLOAD') {
+    throw new BankStatementsAccessError(
+      doc.statementSource === 'UPLOAD_EXPORT'
+        ? 'Correct a transaction file by reviewing it again.'
+        : 'Files from a bank connection keep the account the bank reported.',
+      409,
+    );
+  }
+  const [samples, deposits] = await Promise.all([
+    prisma.cashProofSample.count({ where: { dataRoomDocumentId: doc.id } }),
+    prisma.cashProofDeposit.count({ where: { dataRoomDocumentId: doc.id } }),
+  ]);
+  if (samples + deposits > 0) {
+    throw new BankStatementsAccessError(
+      'Figures from this file are already entered in the Cash Proof. Clear them there first, then correct the account.',
+      409,
+    );
+  }
+
+  await prisma.dataRoomDocument.update({
+    where: { id: doc.id },
+    data: { statementAccountLast4: last4, ...(bankName ? { statementInstitution: bankName } : {}) },
+  });
+  await recordReview(
+    params.companyId,
+    company?.userDefinedAllocations,
+    params.ctx,
+    doc.id,
+    {
+      fromLast4: doc.statementAccountLast4,
+      toLast4: last4,
+      ...(bankName ? { fromBank: doc.statementInstitution, toBank: bankName } : {}),
+    },
+    'statement_account_corrected',
+  );
 }
 
 export async function rejectStatementExport(params: { companyId: string; documentId: string; note: string; ctx: ReviewContext }) {
