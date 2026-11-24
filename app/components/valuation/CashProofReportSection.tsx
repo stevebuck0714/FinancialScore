@@ -9,7 +9,7 @@ import {
   REVENUE_ADJUSTMENT_CATEGORY_ORDER,
   REVENUE_STATUS_LABELS,
 } from '@/lib/cash-proof/revenue-reconciliation';
-import { TRANSACTION_EXCEPTION_ORDER, TRANSACTION_EXCEPTION_TYPES } from '@/lib/cash-proof/transaction-match';
+import { ACCOUNT_LEVEL_EXCEPTIONS, TRANSACTION_EXCEPTION_ORDER, TRANSACTION_EXCEPTION_TYPES } from '@/lib/cash-proof/transaction-match';
 import { TAX_RETURN_BASIS_LABELS, TAX_RETURN_FORMS, TAX_RETURN_STATUS_LABELS, taxReturnConclusion } from '@/lib/cash-proof/tax-return';
 import {
   REVENUE_STATUS_COLORS,
@@ -474,7 +474,7 @@ export default function CashProofReportSection({
                               <td style={{ ...td, textAlign: 'left' }}>{TRANSACTION_EXCEPTION_TYPES[t.type].label}</td>
                               <td style={td}>{t.count}</td>
                               <td style={{ ...td, fontWeight: t.open ? 700 : 400 }}>{t.open}</td>
-                              <td style={td}>{t.type === 'UNDISCLOSED_BANK_ACCOUNT' ? '—' : money(t.dollars)}</td>
+                              <td style={td}>{ACCOUNT_LEVEL_EXCEPTIONS.has(t.type) ? '—' : money(t.dollars)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -506,7 +506,7 @@ export default function CashProofReportSection({
                               <td style={{ ...td, textAlign: 'left', whiteSpace: 'nowrap' }}>
                                 {e.date ? `${Number(e.date.slice(5, 7))}/${Number(e.date.slice(8, 10))}/${e.date.slice(0, 4)}` : '—'}
                               </td>
-                              <td style={td}>{e.type === 'UNDISCLOSED_BANK_ACCOUNT' ? '—' : money(e.amount)}</td>
+                              <td style={td}>{ACCOUNT_LEVEL_EXCEPTIONS.has(e.type) ? '—' : money(e.amount)}</td>
                               <td style={{ ...td, textAlign: 'left' }}>
                                 <strong>{TRANSACTION_EXCEPTION_TYPES[e.type]?.label || e.type}.</strong> {e.description}
                               </td>

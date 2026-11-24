@@ -30,11 +30,15 @@ export type TransactionExceptionType =
   | 'AMOUNT_MISMATCH'
   | 'TOTALS_MISMATCH'
   | 'UNDISCLOSED_BANK_ACCOUNT'
+  | 'SHARED_BOOK_ACCOUNT'
+  | 'NO_BOOK_ENTRIES'
   | 'RECON_CONFLICT'
   | 'BANK_FEES_INTEREST';
 
 export const TRANSACTION_EXCEPTION_TYPES: Record<TransactionExceptionType, { label: string; severity: TransactionExceptionSeverity }> = {
   UNDISCLOSED_BANK_ACCOUNT: { label: 'Bank account not in the books', severity: 'CRITICAL' },
+  SHARED_BOOK_ACCOUNT: { label: 'Two rows use one book account', severity: 'CRITICAL' },
+  NO_BOOK_ENTRIES: { label: 'No book entries for this account', severity: 'CRITICAL' },
   BOOK_ONLY_DEPOSIT: { label: 'Deposit in books, not in bank', severity: 'CRITICAL' },
   BANK_ONLY_DEPOSIT: { label: 'Deposit in bank, not in books', severity: 'HIGH' },
   BANK_ONLY_WITHDRAWAL: { label: 'Withdrawal in bank, not in books', severity: 'HIGH' },
@@ -44,6 +48,9 @@ export const TRANSACTION_EXCEPTION_TYPES: Record<TransactionExceptionType, { lab
   RECON_CONFLICT: { label: 'Reconciling items differ', severity: 'MEDIUM' },
   BANK_FEES_INTEREST: { label: 'Bank fees / interest not booked', severity: 'LOW' },
 };
+
+/** Exceptions about a whole account rather than one transaction; they carry no amount. */
+export const ACCOUNT_LEVEL_EXCEPTIONS = new Set<string>(['UNDISCLOSED_BANK_ACCOUNT', 'SHARED_BOOK_ACCOUNT', 'NO_BOOK_ENTRIES']);
 
 export const SEVERITY_ORDER: TransactionExceptionSeverity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 export const TRANSACTION_EXCEPTION_ORDER = Object.keys(TRANSACTION_EXCEPTION_TYPES) as TransactionExceptionType[];

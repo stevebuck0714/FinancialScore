@@ -81,6 +81,7 @@ export default function CashProofDepositsPanel({
 
   if (!recon) return null;
   const monthLines = months.map((m) => recon.months[m]);
+  const monthHasDeposits = months.map((m) => accounts.some((a) => a.deposits[m]));
   const rows = reconciliationRows([...monthLines, ...recon.periods, recon.total]);
   const notePeriods = recon.periods.filter(
     (p) => p.status === 'VARIANCE' || p.status === 'EXPLAINED' || (p.status === 'INCOMPLETE' && p.missingDeposits === 0),
@@ -94,11 +95,27 @@ export default function CashProofDepositsPanel({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
           <div>
             <div style={sectionHeading}>Deposits to Revenue</div>
-            <p style={{ fontSize: '12px', color: '#475569', margin: '6px 0 0', lineHeight: 1.5 }}>
-              Total deposits from every bank statement in the period, less deposits that are not customer payments, adjusted for
-              the change in receivables, compared with revenue reported in the books. Sampled months use the deposits entered on
-              the sampled statement.
+            <p style={{ fontSize: '12px', color: '#475569', margin: '6px 0 0', lineHeight: 1.5, maxWidth: 820 }}>
+              Do the bank deposits support the revenue in the books? Each account&apos;s monthly deposits come from its statements.
+              Deposits that are not customer payments (transfers between company accounts, loans, owner money) are removed in
+              Non-Revenue Deposits and Adjustments below. A fiscal year passes when the remaining customer receipts, adjusted for
+              receivables, are within {recon.tolerancePct}% of reported revenue.
             </p>
+            <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginTop: '8px', fontSize: '12px', color: '#334155' }}>
+              {recon.periods.map((p) => (
+                <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <strong>{p.label}</strong>
+                  <RevenueStatusBadge status={p.status} />
+                  <span style={{ color: '#64748b' }}>
+                    {p.missingDeposits > 0
+                      ? `${p.missingDeposits} statement(s) missing`
+                      : p.variancePct !== null
+                        ? `${formatPercent(p.variancePct)} difference`
+                        : ''}
+                  </span>
+                </span>
+              ))}
+            </div>
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap' }}>
             Tolerance {recon.tolerancePct}% of reported revenue per fiscal year.
@@ -129,6 +146,14 @@ export default function CashProofDepositsPanel({
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={account.accountName}>
                         {account.accountName}
                       </div>
+                      {Object.keys(account.deposits).length === 0 && (
+                        <div style={{ fontSize: '10px', fontWeight: 400, color: '#b45309', whiteSpace: 'normal', marginTop: '2px' }}>
+                          {account.accountLast4
+                            ? `No statement figures for x${account.accountLast4} yet.`
+                            : 'No bank statements for this account. If it is cash on hand, exclude it in Month-End Book Cash by Account.'}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '10px', fontWeight: 400, color: '#64748b', marginTop: '4px' }}>Deposits in this account are:</div>
                       <select
                         value={account.depositsCategory || ''}
                         disabled={!canEdit || !!busy}
@@ -141,9 +166,9 @@ export default function CashProofDepositsPanel({
                             depositsCategory: e.target.value || null,
                           })
                         }
-                        style={{ ...inputStyle, marginTop: '4px', padding: '3px 6px', fontSize: '11px', fontWeight: 400 }}
+                        style={{ ...inputStyle, marginTop: '2px', padding: '3px 6px', fontSize: '11px', fontWeight: 400 }}
                       >
-                        <option value="">Deposits: customer receipts and other</option>
+                        <option value="">Customer receipts (remove exceptions below)</option>
                         {NON_REVENUE_CATEGORIES.map((c) => (
                           <option key={c} value={c}>
                             All non-revenue: {REVENUE_ADJUSTMENT_CATEGORIES[c].label}
@@ -237,7 +262,9 @@ export default function CashProofDepositsPanel({
                           borderTop: row.topBorder ? '2px solid #e2e8f0' : undefined,
                         }}
                       >
-                        {row.key === 'bankDeposits' && line.missingDeposits > 0 ? (
+                        {!monthHasDeposits[i] ? (
+                          <span style={{ color: '#94a3b8' }}>—</span>
+                        ) : row.key === 'bankDeposits' && line.missingDeposits > 0 ? (
                           <span style={{ color: '#b45309' }} title={`${line.missingDeposits} statement(s) missing`}>
                             {money(line.bankDeposits)}*
                           </span>

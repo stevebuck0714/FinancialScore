@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
-import { SEVERITY_ORDER, TRANSACTION_EXCEPTION_TYPES, type TransactionExceptionSeverity } from '@/lib/cash-proof/transaction-match';
+import { ACCOUNT_LEVEL_EXCEPTIONS, SEVERITY_ORDER, TRANSACTION_EXCEPTION_TYPES, type TransactionExceptionSeverity } from '@/lib/cash-proof/transaction-match';
 import type { CashProofTransactionExceptionView, TransactionExceptionStatus } from '@/lib/cash-proof/service';
 import {
   SEVERITY_COLORS,
@@ -322,7 +322,7 @@ export default function CashProofTransactionMatchCard({
                       '—'
                     )}
                   </td>
-                  <td style={tdStyle}>{e.type === 'UNDISCLOSED_BANK_ACCOUNT' ? '—' : money(e.amount)}</td>
+                  <td style={tdStyle}>{ACCOUNT_LEVEL_EXCEPTIONS.has(e.type) ? '—' : money(e.amount)}</td>
                   <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal', minWidth: 320 }}>{e.description}</td>
                   <td style={{ ...tdStyle, textAlign: 'left', minWidth: 260 }}>
                     {e.status === 'AUTO_RESOLVED' ? (

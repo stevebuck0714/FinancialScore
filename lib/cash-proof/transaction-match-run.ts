@@ -141,11 +141,16 @@ export async function runTransactionMatch(companyId: string, engagementId: strin
   });
   const settings = DEFAULT_MATCH_SETTINGS;
   const included = engagement.bankAccounts.filter((a) => a.included);
+  const accountName = (id: string) => {
+    const a = engagement.bankAccounts.find((b) => b.id === id);
+    if (!a) return 'another row';
+    return a.accountLast4 ? `${a.accountName} (x${a.accountLast4})` : `${a.accountName} (no last 4)`;
+  };
   const periodStart = `${engagement.periodStartMonth}-01`;
   const periodEnd = lastDayOfMonth(engagement.periodEndMonth);
   const windowStart = addEstCalendarDays(periodStart, -WINDOW_DAYS);
 
-  const [{ linesByAccount: bookByAccount, coverageStart }, { linesByAccount: bankByAccount, monthsByAccount }, detected] =
+  const [{ linesByAccount: bookByAccount, coverageStart, sharedBookAccounts }, { linesByAccount: bankByAccount, monthsByAccount }, detected] =
     await Promise.all([
       loadBookBankLines(companyId, included, windowStart, periodEnd),
       loadBankLines(companyId, engagement.bankAccounts, windowStart, addEstCalendarDays(periodEnd, WINDOW_DAYS)),
@@ -176,7 +181,27 @@ export async function runTransactionMatch(companyId: string, engagementId: strin
       bankMonths,
       settings,
     });
-    exceptions.push(...result.exceptions);
+    const periodBank = bank.filter((l) => l.date >= periodStart && l.date <= periodEnd);
+    if (periodBank.length > 0 && book.length === 0) {
+      // Every bank line would be "not in books"; one exception names the real problem instead.
+      exceptions.push(...result.exceptions.filter((e) => e.type !== 'BANK_ONLY_DEPOSIT' && e.type !== 'BANK_ONLY_WITHDRAWAL'));
+      const shared = sharedBookAccounts.find((s) => s.otherIds.includes(account.id));
+      exceptions.push({
+        type: 'NO_BOOK_ENTRIES',
+        severity: TRANSACTION_EXCEPTION_TYPES.NO_BOOK_ENTRIES.severity,
+        fingerprint: `NO_BOOK_ENTRIES|${account.id}`,
+        bankAccountId: account.id,
+        month: null,
+        date: null,
+        amount: 0,
+        description: shared
+          ? `${periodBank.length.toLocaleString('en-US')} bank transactions have nothing to match because the book account ${shared.bookAccount} is matched to another row, ${accountName(shared.ownerId)}. Delete the duplicate row in Month-End Book Cash by Account, then run Match Transactions.`
+          : `${periodBank.length.toLocaleString('en-US')} bank transactions have nothing to match: no book entries were found for ${account.accountName} in the review period. Check that this row is linked to the book account that records this bank's activity.`,
+        detail: { bankLines: periodBank.length, sharedWith: shared?.ownerId ?? null },
+      });
+    } else {
+      exceptions.push(...result.exceptions);
+    }
     for (const m of result.matches) {
       matchRows.push({
         engagementId,
@@ -260,6 +285,22 @@ export async function runTransactionMatch(companyId: string, engagementId: strin
       ...result.stats,
       totalsTestedMonths: months.filter((m) => !lineLevelMonths.has(m) && statementTotals.has(m)).length,
     });
+  }
+
+  for (const s of sharedBookAccounts) {
+    for (const otherId of s.otherIds) {
+      exceptions.push({
+        type: 'SHARED_BOOK_ACCOUNT',
+        severity: TRANSACTION_EXCEPTION_TYPES.SHARED_BOOK_ACCOUNT.severity,
+        fingerprint: `SHARED_BOOK_ACCOUNT|${otherId}`,
+        bankAccountId: otherId,
+        month: null,
+        date: null,
+        amount: 0,
+        description: `${accountName(otherId)} and ${accountName(s.ownerId)} both use the book account ${s.bookAccount}. Its entries are matched to ${accountName(s.ownerId)} only. Delete the duplicate row in Month-End Book Cash by Account.`,
+        detail: { bookAccount: s.bookAccount, ownerId: s.ownerId },
+      });
+    }
   }
 
   // Bank accounts in the Data Room with no account in the books.
