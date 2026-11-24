@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { Fragment, useMemo, useState, type CSSProperties } from 'react';
 import {
   REVENUE_ADJUSTMENT_CATEGORIES,
   REVENUE_ADJUSTMENT_CATEGORY_ORDER,
@@ -78,6 +78,7 @@ export default function CashProofDepositsPanel({
   const [editing, setEditing] = useState<{ accountId: string; month: string; value: string } | null>(null);
   const [adjustment, setAdjustment] = useState(emptyAdjustment);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [openBookKey, setOpenBookKey] = useState<string | null>(null);
 
   if (!recon) return null;
   const monthLines = months.map((m) => recon.months[m]);
@@ -289,10 +290,94 @@ export default function CashProofDepositsPanel({
 
       <div style={cardStyle}>
         <div style={sectionHeading}>Non-Revenue Deposits and Adjustments</div>
-        <p style={{ fontSize: '12px', color: '#475569', margin: '6px 0 10px', lineHeight: 1.5 }}>
-          Record every deposit that is not a customer payment (transfers, loans, owner money, client funds, sales tax) and any
-          customer receipts that never reached the tested accounts.
+        <p style={{ fontSize: '12px', color: '#475569', margin: '6px 0 10px', lineHeight: 1.5, maxWidth: 820 }}>
+          {data.bookDeposits.supported
+            ? 'Every deposit into these accounts is traced in the books to the account it was posted against. Transfers between company accounts, loans, owner money, sales tax, and other non-revenue deposits are removed automatically, and card fees netted from deposits are added back. Enter something by hand only when the books do not show it, such as cash sales kept in the safe.'
+            : 'These books do not show the other side of each deposit, so record every deposit that is not a customer payment (transfers, loans, owner money, client funds, sales tax) and any customer receipts that never reached the tested accounts.'}
         </p>
+
+        {data.bookDeposits.supported && (
+          <>
+            <div style={{ ...sectionHeading, fontSize: '13px', marginBottom: '6px' }}>Calculated from the Books</div>
+            {data.bookDeposits.adjustments.length === 0 ? (
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
+                No transfers, loans, owner money, or other non-revenue deposits were found in the books for these accounts.
+              </div>
+            ) : (
+              <div style={{ overflow: 'auto', maxHeight: 420, border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '14px' }}>
+                <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                    <tr>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Month</th>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Account</th>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Category</th>
+                      <th style={thStyle}>Amount</th>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Transactions</th>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...data.bookDeposits.adjustments].reverse().map((adj) => {
+                      const def = REVENUE_ADJUSTMENT_CATEGORIES[adj.category];
+                      const key = `${adj.bankAccountId}|${adj.month}|${adj.category}`;
+                      const open = openBookKey === key;
+                      return (
+                        <Fragment key={key}>
+                          <tr style={{ opacity: adj.applied ? 1 : 0.55 }}>
+                            <td style={{ ...tdStyle, textAlign: 'left' }}>{formatMonthLabel(adj.month)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'left' }}>{accountLabel(adj.bankAccountId)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'left' }}>{def.label}</td>
+                            <td style={tdStyle}>{money(def.sign < 0 ? -adj.amount : adj.amount)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'left' }}>
+                              <button
+                                style={{ background: 'none', border: 'none', padding: 0, color: '#2751d0', cursor: 'pointer', fontSize: '12px' }}
+                                onClick={() => setOpenBookKey(open ? null : key)}
+                              >
+                                {open ? '▾' : '▸'} {adj.transactions.length} transaction{adj.transactions.length === 1 ? '' : 's'}
+                              </button>
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: 'left', color: adj.applied ? '#047857' : '#64748b' }}>
+                              {adj.applied ? 'Applied' : 'Applies once this month’s statement is in'}
+                            </td>
+                          </tr>
+                          {open && (
+                            <tr>
+                              <td colSpan={6} style={{ padding: '6px 12px 10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
+                                      <th style={{ ...thStyle, textAlign: 'left' }}>Type</th>
+                                      <th style={{ ...thStyle, textAlign: 'left' }}>Posted Against</th>
+                                      <th style={{ ...thStyle, textAlign: 'left' }}>Name / Memo</th>
+                                      <th style={thStyle}>Amount</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {adj.transactions.map((t, i) => (
+                                      <tr key={`${t.date}-${i}`}>
+                                        <td style={{ ...tdStyle, textAlign: 'left' }}>{`${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}/${t.date.slice(0, 4)}`}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'left' }}>{t.type || '—'}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'left' }}>{t.offsetAccount}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal', minWidth: 260 }}>{t.description || '—'}</td>
+                                        <td style={tdStyle}>{money(t.amount)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{ ...sectionHeading, fontSize: '13px', marginBottom: '6px' }}>Entered by Hand</div>
+          </>
+        )}
         {canEdit && (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '10px' }}>
             <label style={{ fontSize: '11px', color: '#475569', width: 120 }}>
@@ -377,7 +462,7 @@ export default function CashProofDepositsPanel({
           </div>
         )}
         {data.revenueAdjustments.length === 0 ? (
-          <div style={{ fontSize: '12px', color: '#64748b' }}>No non-revenue deposits recorded yet.</div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>Nothing entered by hand.</div>
         ) : (
           <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
             <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>

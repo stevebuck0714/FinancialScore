@@ -138,6 +138,7 @@ export default function BankStatementsWorkspace({
   if (!data) return <div style={{ ...cardStyle, color: '#b91c1c' }}>{error || 'Bank statements are unavailable.'}</div>;
 
   const { summary } = data;
+  const newestFirstMonths = [...data.months].reverse();
   const canConnect = data.dataRoomReady && data.canUpload;
   const unplaced = data.documents.filter((d) => d.unplacedReason);
   const REVIEW_ORDER: Record<string, number> = { PENDING: 0, REJECTED: 1, ACCEPTED: 2 };
@@ -389,7 +390,7 @@ export default function BankStatementsWorkspace({
               <thead>
                 <tr>
                   <th style={{ ...thStyle, ...stickyCol(220), background: '#f8fafc', zIndex: 2 }}>Account</th>
-                  {data.months.map((m) => (
+                  {newestFirstMonths.map((m) => (
                     <th key={m} style={{ ...thStyle, textAlign: 'center', background: uploadOnly.has(m) ? '#f1f5f9' : '#f8fafc' }}>
                       {formatMonthLabel(m)}
                     </th>
@@ -403,7 +404,7 @@ export default function BankStatementsWorkspace({
                       {a.accountName}
                       {a.accountLast4 ? <span style={{ color: '#64748b' }}> · x{a.accountLast4}</span> : null}
                     </td>
-                    {data.months.map((m) => {
+                    {newestFirstMonths.map((m) => {
                       const cell = data.coverage[`${a.id}|${m}`];
                       const docId = cell?.documentIds[0];
                       return (
