@@ -120,6 +120,8 @@ Each company manages its own users from Manage Users. Internal users and externa
 
 Company Admins, consultants, and site admins can add internal users. The administrator sets a temporary password and the user receives a welcome email. The password is never included in the email; it is shared separately. Each user's role (user or Company Admin), sidebar sections, and Operational Dashboard pages are set per company.
 
+Quality of Earnings is its own section in the user access table, separate from Valuation. It is off for every user except Company Admins until it is checked. Checking it gives the whole top row of the Quality of Earnings menu and ticks all six second-row pages (Engagement Tracker, Quality of Earnings, Income Statement, Cash Proof, Bank Statements, and Credit Card Review). Unticking pages limits the user to the ones still ticked, and unticking all six removes Quality of Earnings access. The Cash Proof, Bank Statements, and Credit Card Review APIs enforce the same rule.
+
 #### External Users
 
 External users are added from the Invite External User form in Manage Users. They can be added by:

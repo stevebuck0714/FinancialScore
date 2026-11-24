@@ -8,6 +8,14 @@ import {
   getEnabledOperationalDashboardModulesForCompany,
   normalizeOperationalDashboardAccess,
 } from "@/lib/operations/operational-dashboard-access";
+import {
+  QOE_SECTION,
+  QOE_TABS,
+  allowedQoeTabs,
+  isQoeTabAccessKey,
+  qoeTabAccessKey,
+  type QoeTabId,
+} from "@/lib/qoe/access";
 
 interface User {
   id: string;
@@ -60,6 +68,7 @@ export const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
   { id: "standard-reports", label: "Standard Reports" },
   { id: "valuation", label: "Valuation" },
   { id: "valuation-reports", label: "Valuation Report (CIM)" },
+  { id: QOE_SECTION, label: "Quality of Earnings" },
   { id: "expert-analysis", label: "Expert Analysis" },
   { id: "management-assessment", label: "Team Assessment" },
   { id: "dataroom", label: "Data Room" },
@@ -67,7 +76,8 @@ export const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
   { id: "custom-reports", label: "Custom Reports" },
 ];
 
-export const DEFAULT_ALLOWED_SECTIONS = ACCESSIBLE_SECTIONS.map((s) => s.id);
+// Quality of Earnings is granted user by user, so it is never part of the default access.
+export const DEFAULT_ALLOWED_SECTIONS = ACCESSIBLE_SECTIONS.map((s) => s.id).filter((id) => id !== QOE_SECTION);
 
 const DATAROOM_CAPABILITIES: Array<{
   id: "view" | "download" | "upload" | "share" | "manage";
@@ -551,9 +561,13 @@ export default function CompanyDetailsTab({
   const toggleAllowedSection = (userId: string, section: string) => {
     setUserPermissions((prev) => {
       const currentAllowed = prev[userId]?.sidebarAccess || DEFAULT_ALLOWED_SECTIONS;
-      const updatedAllowed = currentAllowed.includes(section)
+      let updatedAllowed = currentAllowed.includes(section)
         ? currentAllowed.filter((s) => s !== section)
         : [...currentAllowed, section];
+      if (section === QOE_SECTION) {
+        updatedAllowed = updatedAllowed.filter((s) => !isQoeTabAccessKey(s));
+        if (updatedAllowed.includes(QOE_SECTION)) updatedAllowed.push(...QOE_TABS.map((t) => qoeTabAccessKey(t.id)));
+      }
 
       return {
         ...prev,
@@ -583,6 +597,18 @@ export default function CompanyDetailsTab({
           operationalDashboardAccess: updatedAllowed,
         },
       };
+    });
+  };
+
+  const toggleQoeTab = (userId: string, tab: QoeTabId) => {
+    setUserPermissions((prev) => {
+      const currentAllowed = prev[userId]?.sidebarAccess || DEFAULT_ALLOWED_SECTIONS;
+      const tabs = allowedQoeTabs(currentAllowed);
+      const nextTabs = tabs.includes(tab) ? tabs.filter((t) => t !== tab) : [...tabs, tab];
+      const rest = currentAllowed.filter((s) => s !== QOE_SECTION && !isQoeTabAccessKey(s));
+      const updatedAllowed =
+        nextTabs.length === 0 ? rest : [...rest, QOE_SECTION, ...nextTabs.map(qoeTabAccessKey)];
+      return { ...prev, [userId]: { ...prev[userId], sidebarAccess: updatedAllowed } };
     });
   };
 
@@ -1820,6 +1846,65 @@ export default function CompanyDetailsTab({
                                                         );
                                                       },
                                                     )}
+                                                  </div>
+                                                )}
+
+                                                {section.id === QOE_SECTION && isAllowed && (
+                                                  <div
+                                                    style={{
+                                                      margin: "6px 0 0 20px",
+                                                      paddingLeft: "10px",
+                                                      borderLeft:
+                                                        "2px solid #e2e8f0",
+                                                      display: "grid",
+                                                      gap: "6px",
+                                                    }}
+                                                  >
+                                                    <div
+                                                      style={{
+                                                        color: "#64748b",
+                                                        fontSize: "11px",
+                                                        fontWeight: "600",
+                                                      }}
+                                                    >
+                                                      Quality of Earnings pages
+                                                    </div>
+                                                    {QOE_TABS.map((tab) => {
+                                                      const tabAllowed =
+                                                        isAdmin ||
+                                                        allowedQoeTabs(
+                                                          selectedAllowedSections,
+                                                        ).includes(tab.id);
+                                                      return (
+                                                        <label
+                                                          key={tab.id}
+                                                          style={{
+                                                            display: "flex",
+                                                            alignItems:
+                                                              "center",
+                                                            gap: "6px",
+                                                            color: "#334155",
+                                                            fontWeight: "600",
+                                                            cursor: isAdmin
+                                                              ? "not-allowed"
+                                                              : "pointer",
+                                                          }}
+                                                        >
+                                                          <input
+                                                            type="checkbox"
+                                                            checked={tabAllowed}
+                                                            disabled={isAdmin}
+                                                            onChange={() =>
+                                                              toggleQoeTab(
+                                                                selectedUser.id,
+                                                                tab.id,
+                                                              )
+                                                            }
+                                                          />
+                                                          <span>{tab.label}</span>
+                                                        </label>
+                                                      );
+                                                    })}
                                                   </div>
                                                 )}
 

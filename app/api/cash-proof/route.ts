@@ -10,6 +10,7 @@ import {
   runCashProofAction,
   type CashProofAction,
 } from '@/lib/cash-proof/service';
+import { canUseQoeTab } from '@/lib/qoe/server-access';
 
 export const dynamic = 'force-dynamic';
 // Read Statements downloads and parses every file in the Bank Statements folder, then runs book-to-bank matching.
@@ -38,6 +39,9 @@ export async function GET(request: NextRequest) {
     if (!(await validateCompanyAccess(companyId))) {
       await auditForbiddenAccess('CashProof', companyId, 'READ');
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (!(await canUseQoeTab(companyId, 'cash-proof'))) {
+      return NextResponse.json({ error: 'Forbidden: Cash Proof access required' }, { status: 403 });
     }
 
     if (request.nextUrl.searchParams.get('view') === 'transactions') {

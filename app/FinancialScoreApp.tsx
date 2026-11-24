@@ -4,6 +4,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useLayoutEffect, ChangeEvent, useRef } from 'react';
 import { formatEstDateTime } from '@/lib/time/eastern';
 import { viewToTrafficSection } from '@/lib/traffic/sections';
+import { QOE_SECTION, QOE_TABS, allowedQoeTabs } from '@/lib/qoe/access';
 import { useSectionTracking } from '@/lib/traffic/useSectionTracking';
 import {
   elementToWordSection,
@@ -2204,7 +2205,7 @@ function FinancialScorePage() {
     if (view === 'custom-print') return 'standard-reports';
     if (isValuationReportView(view)) return 'valuation-reports';
     if (view === 'valuation') return 'valuation';
-    if (view === 'quality-of-earnings' || view === 'qoe-report') return 'valuation';
+    if (view === 'quality-of-earnings' || view === 'qoe-report') return QOE_SECTION;
     if (view.startsWith('pa-')) return 'expert-analysis';
     if (view === 'dataroom') return 'dataroom';
     if (view === 'custom-reports') return 'custom-reports';
@@ -2225,6 +2226,14 @@ function FinancialScorePage() {
     return false;
   };
   const isQualityOfEarningsView = currentView === 'quality-of-earnings' || currentView === 'qoe-report';
+  const allowedQoeTabIds = useMemo(
+    () =>
+      hasSiteAdminOverride || !isCompanyUser || isCompanyAdmin
+        ? QOE_TABS.map((t) => t.id)
+        : allowedQoeTabs(allowedSectionsForCompanyUser),
+    [hasSiteAdminOverride, isCompanyUser, isCompanyAdmin, allowedSectionsForCompanyUser],
+  );
+  const firstQoeTab = allowedQoeTabIds[0] || 'revenue-quality';
 
   useEffect(() => {
     if (currentView === 'valuation' || isValuationReportView(currentView)) {
@@ -3939,6 +3948,11 @@ function FinancialScorePage() {
   const [businessContextLastUpdatedAt, setBusinessContextLastUpdatedAt] = useState<string | null>(null);
   const [sdeModuleTab, setSdeModuleTab] = useState<'engagement-tracker' | 'ebitda-adjustments' | 'cash-proof' | 'bank-statements' | 'credit-card-review' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
   const [bankStatementsReviewId, setBankStatementsReviewId] = useState<string | null>(null);
+  useEffect(() => {
+    if (currentView !== 'quality-of-earnings' || valuationMethodTab !== 'sde') return;
+    const isQoeTab = QOE_TABS.some((t) => t.id === sdeModuleTab);
+    if (isQoeTab && !allowedQoeTabIds.includes(sdeModuleTab)) setSdeModuleTab(firstQoeTab);
+  }, [currentView, valuationMethodTab, sdeModuleTab, allowedQoeTabIds, firstQoeTab]);
   useEffect(() => {
     if (sdeModuleTab !== 'bank-statements') setBankStatementsReviewId(null);
   }, [sdeModuleTab]);
@@ -15472,11 +15486,11 @@ function FinancialScorePage() {
                   {(currentView === 'valuation' || isValuationReportView(currentView)) && '› '}VALUATION
                 </h3>
               )}
-              {hasCompanySectionAccess('valuation') && isQualityOfEarningsEnabledByAdmin && (
+              {hasCompanySectionAccess(QOE_SECTION) && isQualityOfEarningsEnabledByAdmin && (
                 <h3
                   onClick={() => {
                     setValuationMethodTab('sde');
-                    setSdeModuleTab('engagement-tracker');
+                    setSdeModuleTab(firstQoeTab);
                     handleNavigation('quality-of-earnings');
                   }}
                   style={{
@@ -21981,7 +21995,7 @@ function FinancialScorePage() {
         </div>
       )}
 
-      {isQualityOfEarningsView && selectedCompanyId && hasCompanySectionAccess('valuation') && isQualityOfEarningsEnabledByAdmin && (
+      {isQualityOfEarningsView && selectedCompanyId && hasCompanySectionAccess(QOE_SECTION) && isQualityOfEarningsEnabledByAdmin && (
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
           <nav aria-label="Quality of Earnings" style={{ borderBottom: '1px solid #cbd5e1' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
@@ -22041,14 +22055,7 @@ function FinancialScorePage() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', overflowX: 'auto', whiteSpace: 'nowrap', borderTop: '1px solid #e2e8f0' }}>
-              {[
-                { id: 'engagement-tracker', label: 'Engagement Tracker' },
-                { id: 'ebitda-adjustments', label: 'Quality of Earnings' },
-                { id: 'income-statement', label: 'Income Statement' },
-                { id: 'cash-proof', label: 'Cash Proof' },
-                { id: 'bank-statements', label: 'Bank Statements' },
-                { id: 'credit-card-review', label: 'Credit Card Review' },
-              ].map((tab) => {
+              {QOE_TABS.filter((tab) => allowedQoeTabIds.includes(tab.id)).map((tab) => {
                 const active = currentView === 'quality-of-earnings' && valuationMethodTab === 'sde' && sdeModuleTab === tab.id;
                 return (
                   <button
@@ -25046,10 +25053,14 @@ function FinancialScorePage() {
                   <CashProofWorkspace
                     key={selectedCompanyId || 'none'}
                     companyId={selectedCompanyId || null}
-                    onReviewTransactionFile={(documentId) => {
-                      setBankStatementsReviewId(documentId);
-                      setSdeModuleTab('bank-statements');
-                    }}
+                    onReviewTransactionFile={
+                      allowedQoeTabIds.includes('bank-statements')
+                        ? (documentId) => {
+                            setBankStatementsReviewId(documentId);
+                            setSdeModuleTab('bank-statements');
+                          }
+                        : undefined
+                    }
                   />
                 )}
                 {sdeModuleTab === 'engagement-tracker' && (

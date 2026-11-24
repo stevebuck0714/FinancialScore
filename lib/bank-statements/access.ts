@@ -3,6 +3,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { DATAROOM_BANK_STATEMENTS_FOLDER_ID, DATAROOM_CREDIT_CARD_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
+import { canUseQoeTab } from '@/lib/qoe/server-access';
 
 export class BankStatementsAccessError extends Error {
   constructor(
@@ -33,6 +34,9 @@ export async function requireStatementUploadAccess(companyId: string) {
   const context = await requireAuth();
   if (!companyId) throw new BankStatementsAccessError('companyId is required', 400);
   if (!(await validateCompanyAccess(companyId))) throw new BankStatementsAccessError('Forbidden', 403);
+  if (!(await canUseQoeTab(companyId, 'bank-statements'))) {
+    throw new BankStatementsAccessError('Forbidden: Bank Statements access required', 403);
+  }
 
   const company = await prisma.company.findUnique({ where: { id: companyId }, select: { userDefinedAllocations: true } });
   const ready = getDataRoomState(company?.userDefinedAllocations).folders.some(
@@ -58,6 +62,9 @@ export async function requireCreditCardUploadAccess(companyId: string) {
   const context = await requireAuth();
   if (!companyId) throw new BankStatementsAccessError('companyId is required', 400);
   if (!(await validateCompanyAccess(companyId))) throw new BankStatementsAccessError('Forbidden', 403);
+  if (!(await canUseQoeTab(companyId, 'credit-card-review'))) {
+    throw new BankStatementsAccessError('Forbidden: Credit Card Review access required', 403);
+  }
 
   const company = await prisma.company.findUnique({ where: { id: companyId }, select: { userDefinedAllocations: true } });
   const ready = getDataRoomState(company?.userDefinedAllocations).folders.some(

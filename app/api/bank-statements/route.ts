@@ -8,6 +8,7 @@ import { getDataRoomState } from '@/lib/dataroom/state';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
 import { loadBankStatementsState } from '@/lib/bank-statements/service';
 import { canReviewStatementExports } from '@/lib/bank-statements/access';
+import { canUseQoeTab } from '@/lib/qoe/server-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,9 @@ export async function GET(request: NextRequest) {
     if (!(await validateCompanyAccess(companyId))) {
       await auditForbiddenAccess('BankStatements', companyId, 'READ');
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (!(await canUseQoeTab(companyId, 'bank-statements'))) {
+      return NextResponse.json({ error: 'Forbidden: Bank Statements access required' }, { status: 403 });
     }
 
     const company = await prisma.company.findUnique({ where: { id: companyId }, select: { userDefinedAllocations: true } });

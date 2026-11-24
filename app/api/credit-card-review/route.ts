@@ -4,6 +4,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { DATAROOM_CREDIT_CARD_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
+import { canUseQoeTab } from '@/lib/qoe/server-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,9 @@ export async function GET(request: NextRequest) {
     const companyId = String(request.nextUrl.searchParams.get('companyId') || '').trim();
     if (!companyId) return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
     if (!(await validateCompanyAccess(companyId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!(await canUseQoeTab(companyId, 'credit-card-review'))) {
+      return NextResponse.json({ error: 'Forbidden: Credit Card Review access required' }, { status: 403 });
+    }
 
     const company = await prisma.company.findUnique({ where: { id: companyId }, select: { userDefinedAllocations: true } });
     const capabilities = await resolveDataRoomCapabilities({
