@@ -43,7 +43,8 @@ export async function loadQbdBalanceSheetRows(companyId: string): Promise<QbdBal
   });
 }
 
-export type QbdGlDetailRow = QbdGlRow & { txnType: string; num: string; name: string; memo: string };
+/** `split` is the other account of a two-line transaction, or "-SPLIT-" when there are several. */
+export type QbdGlDetailRow = QbdGlRow & { txnType: string; num: string; name: string; memo: string; split: string };
 
 /**
  * General Ledger postings in [startDate, endDate] with their transaction
@@ -51,7 +52,7 @@ export type QbdGlDetailRow = QbdGlRow & { txnType: string; num: string; name: st
  * as loadQbdGeneralLedgerRows so they tie to the balances walked from it.
  */
 export async function loadQbdGeneralLedgerDetailRows(companyId: string, startDate: string, endDate: string): Promise<QbdGlDetailRow[]> {
-  const rows = await prisma.$queryRaw<Array<{ account: string; txnDate: string; amount: string | null; txnType: string | null; num: string | null; name: string | null; memo: string | null }>>`
+  const rows = await prisma.$queryRaw<Array<{ account: string; txnDate: string; amount: string | null; txnType: string | null; num: string | null; name: string | null; memo: string | null; split: string | null }>>`
     WITH parsed AS (
       SELECT
         COALESCE(NULLIF(TRIM(x->>'accountName'), ''), NULLIF(TRIM(x->>'rowValue'), '')) AS account,
@@ -78,7 +79,9 @@ export async function loadQbdGeneralLedgerDetailRows(companyId: string, startDat
         (SELECT c->>'value' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
           WHERE c->>'colID' = '5' LIMIT 1) AS name,
         (SELECT c->>'value' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
-          WHERE c->>'colID' = '6' LIMIT 1) AS memo
+          WHERE c->>'colID' = '6' LIMIT 1) AS memo,
+        (SELECT c->>'value' FROM jsonb_array_elements(CASE WHEN jsonb_typeof(cols) = 'array' THEN cols ELSE '[]'::jsonb END) c
+          WHERE c->>'colID' = '7' LIMIT 1) AS split
       FROM parsed
     ),
     latest_batch_by_date AS (
@@ -86,7 +89,7 @@ export async function loadQbdGeneralLedgerDetailRows(companyId: string, startDat
       FROM (SELECT "txnDate", "batchId", MAX("createdAt") AS "lastSeen" FROM cells WHERE "txnDate" IS NOT NULL GROUP BY "txnDate", "batchId") b
       ORDER BY "txnDate", "lastSeen" DESC
     )
-    SELECT d.account, d."txnDate", d.amount, d."txnType", d.num, d.name, d.memo
+    SELECT d.account, d."txnDate", d.amount, d."txnType", d.num, d.name, d.memo, d.split
     FROM cells d
     JOIN latest_batch_by_date l ON l."txnDate" = d."txnDate" AND l."batchId" IS NOT DISTINCT FROM d."batchId"
     WHERE d.account IS NOT NULL
@@ -102,6 +105,7 @@ export async function loadQbdGeneralLedgerDetailRows(companyId: string, startDat
       num: String(row.num || '').trim(),
       name: String(row.name || '').trim(),
       memo: String(row.memo || '').trim(),
+      split: String(row.split || '').trim(),
     }))
     .filter((row) => Number.isFinite(row.amount) && Math.abs(row.amount) >= 0.005);
 }

@@ -37,6 +37,7 @@ import { loadDetectedStatementAccounts } from '@/lib/bank-statements/detected-ac
 import { computeTieOut, type CashProofSampleStatus, type TieOutResult } from './tie-out';
 import { runTransactionMatch, type TransactionMatchSummary } from './transaction-match-run';
 import { loadBookDepositAdjustments, type BookDepositAdjustment } from './book-deposit-classification';
+import { bankSuggestionNote, loadBankDepositClassification, type BankDepositSuggestion } from './bank-deposit-classification';
 import {
   SEVERITY_ORDER,
   lastDayOfMonth,
@@ -145,6 +146,14 @@ export type CashProofState = {
   revenueAdjustments: CashProofRevenueAdjustmentView[];
   /** Non-revenue deposits read from the books; `applied` is false until that account-month has statement deposits. */
   bookDeposits: { supported: boolean; adjustments: Array<BookDepositAdjustment & { applied: boolean }> };
+  /**
+   * Non-revenue deposits read from the bank transactions, for account-months the books do not cover.
+   * Suggestions change nothing until added as a hand entry (`note` is that entry's description).
+   */
+  bankDeposits: {
+    adjustments: Array<BookDepositAdjustment & { applied: boolean }>;
+    suggestions: Array<BankDepositSuggestion & { added: boolean; note: string }>;
+  };
   revenueReconciliation: RevenueReconciliation | null;
   /** Complete fiscal years compared with the income tax return. */
   taxReturns: TaxReturnComparison[];
@@ -269,6 +278,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
       samples: [],
       revenueAdjustments: [],
       bookDeposits: { supported: false, adjustments: [] },
+      bankDeposits: { adjustments: [], suggestions: [] },
       revenueReconciliation: null,
       taxReturns: [],
       taxReturnScan: null,
@@ -285,7 +295,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
   }
 
   const months = monthRange(engagement.periodStartMonth, engagement.periodEndMonth);
-  const [balanceSheetCash, revenueBasis, bookDepositResult] = await Promise.all([
+  const [balanceSheetCash, revenueBasis, bookDepositResult, bankDepositResult] = await Promise.all([
     loadBalanceSheetCashByMonth(companyId, engagement.periodStartMonth, engagement.periodEndMonth),
     loadRevenueBasisByMonth(companyId, shiftMonth(engagement.periodStartMonth, -1), engagement.periodEndMonth),
     loadBookDepositAdjustments(
@@ -295,7 +305,16 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
       lastDayOfMonth(engagement.periodEndMonth),
     ).catch((e) => {
       console.error('Cash proof book deposit classification failed:', e);
-      return { supported: false, adjustments: [] as BookDepositAdjustment[] };
+      return { supported: false, adjustments: [] as BookDepositAdjustment[], covered: [] as string[] };
+    }),
+    loadBankDepositClassification(
+      companyId,
+      engagement.bankAccounts,
+      `${engagement.periodStartMonth}-01`,
+      lastDayOfMonth(engagement.periodEndMonth),
+    ).catch((e) => {
+      console.error('Cash proof bank deposit classification failed:', e);
+      return { adjustments: [] as BookDepositAdjustment[], suggestions: [] as BankDepositSuggestion[] };
     }),
   ]);
 
@@ -430,12 +449,28 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     description: r.description,
     createdAt: r.createdAt.toISOString(),
   }));
+  const appliesTo = (adj: BookDepositAdjustment) => {
+    const account = accountById.get(adj.bankAccountId);
+    return Boolean(account && !account.depositsCategory && account.deposits[adj.month]);
+  };
   const bookDeposits: CashProofState['bookDeposits'] = {
     supported: bookDepositResult.supported,
-    adjustments: bookDepositResult.adjustments.map((adj) => {
-      const account = accountById.get(adj.bankAccountId);
-      return { ...adj, applied: Boolean(account && !account.depositsCategory && account.deposits[adj.month]) };
-    }),
+    adjustments: bookDepositResult.adjustments.map((adj) => ({ ...adj, applied: appliesTo(adj) })),
+  };
+  // The books win wherever they show the account-month's deposits.
+  const bookCovered = new Set(bookDepositResult.supported ? bookDepositResult.covered : []);
+  const notInBooks = (a: { bankAccountId: string; month: string }) => !bookCovered.has(`${a.bankAccountId}|${a.month}`);
+  const bankDeposits: CashProofState['bankDeposits'] = {
+    adjustments: bankDepositResult.adjustments.filter(notInBooks).map((adj) => ({ ...adj, applied: appliesTo(adj) })),
+    suggestions: bankDepositResult.suggestions
+      .filter((s) => notInBooks(s) && accountById.get(s.bankAccountId)?.included && !accountById.get(s.bankAccountId)?.depositsCategory)
+      .map((s) => {
+        const note = bankSuggestionNote(s);
+        const added = revenueAdjustments.some(
+          (r) => r.bankAccountId === s.bankAccountId && r.month === s.month && r.description === note && Math.abs(r.amount - s.amount) < 0.005,
+        );
+        return { ...s, note, added };
+      }),
   };
   const revenueReconciliation = computeRevenueReconciliation({
     months,
@@ -447,6 +482,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     adjustments: [
       ...revenueAdjustments.filter((r) => !r.bankAccountId || includedIds.has(r.bankAccountId)),
       ...bookDeposits.adjustments.filter((a) => a.applied),
+      ...bankDeposits.adjustments.filter((a) => a.applied),
       ...includedAccounts
         .filter((a) => a.depositsCategory && REVENUE_ADJUSTMENT_CATEGORIES[a.depositsCategory]?.sign === -1)
         .flatMap((a) =>
@@ -488,6 +524,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     samples,
     revenueAdjustments,
     bookDeposits,
+    bankDeposits,
     revenueReconciliation,
     taxReturns,
     taxReturnScan: (engagement.taxReturnScan as unknown as TaxReturnScan | null) ?? null,

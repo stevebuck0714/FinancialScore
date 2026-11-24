@@ -7,7 +7,8 @@ import { isAggregatorSource, parseBankActivity } from '@/lib/bank-statements/pro
 import { matchStatementAccount } from '@/lib/bank-statements/account-match';
 import { detectBankName } from './bank-names';
 import { shiftMonth } from './book-balances';
-import { parseBankStatement, type ParsedStatement } from './statement-parser';
+import { findPeriod, parseBankStatement, type ParsedStatement } from './statement-parser';
+import { readStatementTransactions, type StatementTransactionsRead } from './statement-transactions';
 import { computeTieOut } from './tie-out';
 
 export type StatementScanStatus =
@@ -67,7 +68,17 @@ type Doc = {
   scanStatus: string;
 };
 
-type DocumentRead = { parsed: ParsedStatement[]; bankName?: string | null; failure?: StatementScanResult };
+type DocumentRead = {
+  parsed: ParsedStatement[];
+  bankName?: string | null;
+  failure?: StatementScanResult;
+  /** Transaction lines read from a statement PDF. */
+  lines?: StatementTransactionsRead;
+};
+
+/** Bank transactions read from statement PDFs carry this source. */
+export const STATEMENT_PDF_SOURCE = 'STATEMENT_PDF';
+const TRANSACTION_BATCH = 1000;
 
 /** Bank data reports and reviewed transaction files carry their monthly figures; they are used as-is. */
 function bankActivityStatements(doc: Doc): ParsedStatement[] {
@@ -119,7 +130,9 @@ async function readDocument(doc: Doc): Promise<DocumentRead> {
     const parsed = parseBankStatement(extracted.text, doc.originalFileName);
     // The account number from a bank connector is authoritative; statement text can name several accounts.
     if (isAggregatorSource(doc.statementSource) && doc.statementAccountLast4) parsed.last4 = doc.statementAccountLast4;
-    return { parsed: [parsed], bankName: detectBankName(extracted.text) };
+    const period = findPeriod(extracted.text.replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' '), doc.originalFileName);
+    const lines = readStatementTransactions(extracted.text, parsed, period);
+    return { parsed: [parsed], bankName: detectBankName(extracted.text), lines };
   } catch (e) {
     return { parsed: [], failure: { ...base, status: 'FAILED', message: e instanceof Error ? e.message : String(e) } };
   }
@@ -215,12 +228,48 @@ export async function scanBankStatements(companyId: string, engagementId: string
       const last4 = doc.statementAccountLast4 || parsed?.last4 || null;
       const institution = doc.statementInstitution || reads[i].bankName || null;
       if (month === doc.statementMonth && last4 === doc.statementAccountLast4 && institution === doc.statementInstitution) return null;
+      doc.statementMonth = month;
+      doc.statementAccountLast4 = last4;
       doc.statementInstitution = institution;
       return prisma.dataRoomDocument.update({
         where: { id: doc.id },
         data: { statementMonth: month, statementAccountLast4: last4, statementInstitution: institution },
       });
     }),
+  );
+
+  // Statement PDF lines become bank transactions for Match Transactions; each read replaces the last.
+  const linesNote = new Map<string, string>();
+  await mapLimit(
+    docs.map((doc, i) => ({ doc, lines: reads[i].lines })).filter((d) => d.lines),
+    CONCURRENCY,
+    async ({ doc, lines: read }) => {
+      const lines = read!;
+      const usable = 'lines' in lines && doc.statementAccountLast4 ? lines.lines : [];
+      if ('reason' in lines) linesNote.set(doc.id, `Transactions not read: ${lines.reason}.`);
+      else if (usable.length > 0) linesNote.set(doc.id, `Read ${usable.length.toLocaleString('en-US')} transactions.`);
+      await prisma.$transaction(async (tx) => {
+        await tx.bankTransaction.deleteMany({ where: { dataRoomDocumentId: doc.id, source: STATEMENT_PDF_SOURCE } });
+        for (let i = 0; i < usable.length; i += TRANSACTION_BATCH) {
+          await tx.bankTransaction.createMany({
+            data: usable.slice(i, i + TRANSACTION_BATCH).map((l, j) => ({
+              companyId,
+              dataRoomDocumentId: doc.id,
+              source: STATEMENT_PDF_SOURCE,
+              externalId: `line-${i + j + 1}`,
+              institution: doc.statementInstitution,
+              accountLast4: doc.statementAccountLast4,
+              date: l.date,
+              amount: l.amount,
+              description: l.description || null,
+              checkNumber: l.checkNumber,
+              category: [],
+            })),
+            skipDuplicates: true,
+          });
+        }
+      });
+    },
   );
 
   const samples = new Map(engagement.samples.map((s) => [`${s.bankAccountId}|${s.month}`, s]));
@@ -343,6 +392,10 @@ export async function scanBankStatements(companyId: string, engagementId: string
     result('APPLIED', `Entered deposits of ${fmt(parsed.deposits)}.`, account.id);
   }
 
+  for (const r of results) {
+    const note = linesNote.get(r.documentId);
+    if (note) r.message = `${r.message} ${note}`;
+  }
   const scan: StatementScan = { scannedAt: new Date().toISOString(), results };
   await prisma.cashProofEngagement.update({ where: { id: engagementId }, data: { statementScan: scan } });
   return scan;

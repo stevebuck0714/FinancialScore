@@ -128,8 +128,13 @@ function monthIndex(name: string): number {
 
 const monthKey = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
 /** The statement month is the month holding most of the period, so 09/03–10/02 is September. */
-function findPeriod(text: string, fileName: string): { month: string | null; label: string | null } {
+export function findPeriod(
+  text: string,
+  fileName: string,
+): { month: string | null; label: string | null; start?: string; end?: string } {
   const sep = '\\s*(?:-|–|—|to|through|thru)\\s*';
   const numeric = text.match(new RegExp(`(\\d{1,2})/(\\d{1,2})/(\\d{2,4})${sep}(\\d{1,2})/(\\d{1,2})/(\\d{2,4})`, 'i'));
   const named = text.match(
@@ -148,14 +153,15 @@ function findPeriod(text: string, fileName: string): { month: string | null; lab
     label = named[0];
   }
   if (start && end && end >= start) {
-    return { month: monthKey(new Date((start.getTime() + end.getTime()) / 2)), label };
+    return { month: monthKey(new Date((start.getTime() + end.getTime()) / 2)), label, start: isoDay(start), end: isoDay(end) };
   }
   const single = text.match(/statement\s+(?:date|ending|closing\s+date)\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
   if (single) {
     const d = toDate(Number(single[3]), Number(single[1]), Number(single[2]));
     if (d) {
+      const end = isoDay(d);
       if (d.getUTCDate() <= 5) d.setUTCMonth(d.getUTCMonth() - 1);
-      return { month: monthKey(d), label: single[0] };
+      return { month: monthKey(d), label: single[0], end };
     }
   }
   const fromName = fileName.match(/(20\d{2})[-_ .](0[1-9]|1[0-2])(?!\d)/);

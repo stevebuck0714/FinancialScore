@@ -42,6 +42,100 @@ function RevenueStatusBadge({ status }: { status: RevenueReconciliationPeriod['s
 }
 
 const sectionHeading: CSSProperties = cardTitleStyle;
+const subHeading: CSSProperties = { ...cardTitleStyle, fontSize: '13px', marginBottom: '6px' };
+const linkButton: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#2751d0', cursor: 'pointer', fontSize: '12px' };
+const shortDate = (iso: string) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}/${iso.slice(0, 4)}`;
+
+type AutoAdjustment = CashProofResponse['bookDeposits']['adjustments'][number];
+
+/** Non-revenue deposits found automatically, one row per account-month and category, expandable to its transactions. */
+function AutoAdjustmentsTable({
+  adjustments,
+  emptyText,
+  reasonLabel,
+  showType,
+  accountLabel,
+  money,
+}: {
+  adjustments: AutoAdjustment[];
+  emptyText: string;
+  reasonLabel: string;
+  showType: boolean;
+  accountLabel: (id: string) => string;
+  money: Money;
+}) {
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  if (adjustments.length === 0) return <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>{emptyText}</div>;
+  return (
+    <div style={{ overflow: 'auto', maxHeight: 420, border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '14px' }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
+        <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+          <tr>
+            <th style={{ ...thStyle, textAlign: 'left' }}>Month</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>Account</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>Category</th>
+            <th style={thStyle}>Amount</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>Transactions</th>
+            <th style={{ ...thStyle, textAlign: 'left' }}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...adjustments].reverse().map((adj) => {
+            const def = REVENUE_ADJUSTMENT_CATEGORIES[adj.category];
+            const key = `${adj.bankAccountId}|${adj.month}|${adj.category}`;
+            const open = openKey === key;
+            return (
+              <Fragment key={key}>
+                <tr style={{ opacity: adj.applied ? 1 : 0.55 }}>
+                  <td style={{ ...tdStyle, textAlign: 'left' }}>{formatMonthLabel(adj.month)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'left' }}>{accountLabel(adj.bankAccountId)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'left' }}>{def.label}</td>
+                  <td style={tdStyle}>{money(def.sign < 0 ? -adj.amount : adj.amount)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'left' }}>
+                    <button style={linkButton} onClick={() => setOpenKey(open ? null : key)}>
+                      {open ? '▾' : '▸'} {adj.transactions.length} transaction{adj.transactions.length === 1 ? '' : 's'}
+                    </button>
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'left', color: adj.applied ? '#047857' : '#64748b' }}>
+                    {adj.applied ? 'Applied' : 'Applies once this month’s statement is in'}
+                  </td>
+                </tr>
+                {open && (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '6px 12px 10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                      <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
+                            {showType && <th style={{ ...thStyle, textAlign: 'left' }}>Type</th>}
+                            <th style={{ ...thStyle, textAlign: 'left' }}>{reasonLabel}</th>
+                            <th style={{ ...thStyle, textAlign: 'left' }}>Name / Memo</th>
+                            <th style={thStyle}>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adj.transactions.map((t, i) => (
+                            <tr key={`${t.date}-${i}`}>
+                              <td style={{ ...tdStyle, textAlign: 'left' }}>{shortDate(t.date)}</td>
+                              {showType && <td style={{ ...tdStyle, textAlign: 'left' }}>{t.type || '—'}</td>}
+                              <td style={{ ...tdStyle, textAlign: 'left' }}>{t.offsetAccount}</td>
+                              <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal', minWidth: 260 }}>{t.description || '—'}</td>
+                              <td style={tdStyle}>{money(t.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 const NON_REVENUE_CATEGORIES = REVENUE_ADJUSTMENT_CATEGORY_ORDER.filter((c) => REVENUE_ADJUSTMENT_CATEGORIES[c].sign < 0);
 const emptyAdjustment = { month: '', bankAccountId: '', category: '' as RevenueAdjustmentCategory | '', amount: '', description: '' };
 
@@ -78,7 +172,7 @@ export default function CashProofDepositsPanel({
   const [editing, setEditing] = useState<{ accountId: string; month: string; value: string } | null>(null);
   const [adjustment, setAdjustment] = useState(emptyAdjustment);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
-  const [openBookKey, setOpenBookKey] = useState<string | null>(null);
+  const [suggestionCategory, setSuggestionCategory] = useState<Record<string, RevenueAdjustmentCategory>>({});
 
   if (!recon) return null;
   const monthLines = months.map((m) => recon.months[m]);
@@ -292,92 +386,118 @@ export default function CashProofDepositsPanel({
         <div style={sectionHeading}>Non-Revenue Deposits and Adjustments</div>
         <p style={{ fontSize: '12px', color: '#475569', margin: '6px 0 10px', lineHeight: 1.5, maxWidth: 820 }}>
           {data.bookDeposits.supported
-            ? 'Every deposit into these accounts is traced in the books to the account it was posted against. Transfers between company accounts, loans, owner money, sales tax, and other non-revenue deposits are removed automatically, and card fees netted from deposits are added back. Enter something by hand only when the books do not show it, such as cash sales kept in the safe.'
-            : 'These books do not show the other side of each deposit, so record every deposit that is not a customer payment (transfers, loans, owner money, client funds, sales tax) and any customer receipts that never reached the tested accounts.'}
+            ? 'Every deposit into these accounts is traced in the books to the account it was posted against. Transfers between company accounts, loans, owner money, sales tax, and other non-revenue deposits are removed automatically, and card fees netted from deposits are added back. Months the books do not cover are read from the bank transactions instead. Enter something by hand only when neither shows it, such as cash sales kept in the safe.'
+            : 'These books do not show the other side of each deposit, so deposits are read from the bank transactions. A deposit that matches a withdrawal from another company account, loan money, bank interest, and refunds are removed automatically; owner money and unusually large deposits are listed under Suggested for you to confirm. Enter by hand what the bank cannot show: card fees netted from deposits, sales tax, client funds, and customer receipts that never reached the tested accounts.'}
         </p>
 
         {data.bookDeposits.supported && (
           <>
-            <div style={{ ...sectionHeading, fontSize: '13px', marginBottom: '6px' }}>Calculated from the Books</div>
-            {data.bookDeposits.adjustments.length === 0 ? (
-              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-                No transfers, loans, owner money, or other non-revenue deposits were found in the books for these accounts.
-              </div>
-            ) : (
-              <div style={{ overflow: 'auto', maxHeight: 420, border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '14px' }}>
-                <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                    <tr>
-                      <th style={{ ...thStyle, textAlign: 'left' }}>Month</th>
-                      <th style={{ ...thStyle, textAlign: 'left' }}>Account</th>
-                      <th style={{ ...thStyle, textAlign: 'left' }}>Category</th>
-                      <th style={thStyle}>Amount</th>
-                      <th style={{ ...thStyle, textAlign: 'left' }}>Transactions</th>
-                      <th style={{ ...thStyle, textAlign: 'left' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...data.bookDeposits.adjustments].reverse().map((adj) => {
-                      const def = REVENUE_ADJUSTMENT_CATEGORIES[adj.category];
-                      const key = `${adj.bankAccountId}|${adj.month}|${adj.category}`;
-                      const open = openBookKey === key;
-                      return (
-                        <Fragment key={key}>
-                          <tr style={{ opacity: adj.applied ? 1 : 0.55 }}>
-                            <td style={{ ...tdStyle, textAlign: 'left' }}>{formatMonthLabel(adj.month)}</td>
-                            <td style={{ ...tdStyle, textAlign: 'left' }}>{accountLabel(adj.bankAccountId)}</td>
-                            <td style={{ ...tdStyle, textAlign: 'left' }}>{def.label}</td>
-                            <td style={tdStyle}>{money(def.sign < 0 ? -adj.amount : adj.amount)}</td>
-                            <td style={{ ...tdStyle, textAlign: 'left' }}>
-                              <button
-                                style={{ background: 'none', border: 'none', padding: 0, color: '#2751d0', cursor: 'pointer', fontSize: '12px' }}
-                                onClick={() => setOpenBookKey(open ? null : key)}
-                              >
-                                {open ? '▾' : '▸'} {adj.transactions.length} transaction{adj.transactions.length === 1 ? '' : 's'}
-                              </button>
-                            </td>
-                            <td style={{ ...tdStyle, textAlign: 'left', color: adj.applied ? '#047857' : '#64748b' }}>
-                              {adj.applied ? 'Applied' : 'Applies once this month’s statement is in'}
-                            </td>
-                          </tr>
-                          {open && (
-                            <tr>
-                              <td colSpan={6} style={{ padding: '6px 12px 10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
-                                  <thead>
-                                    <tr>
-                                      <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
-                                      <th style={{ ...thStyle, textAlign: 'left' }}>Type</th>
-                                      <th style={{ ...thStyle, textAlign: 'left' }}>Posted Against</th>
-                                      <th style={{ ...thStyle, textAlign: 'left' }}>Name / Memo</th>
-                                      <th style={thStyle}>Amount</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {adj.transactions.map((t, i) => (
-                                      <tr key={`${t.date}-${i}`}>
-                                        <td style={{ ...tdStyle, textAlign: 'left' }}>{`${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}/${t.date.slice(0, 4)}`}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'left' }}>{t.type || '—'}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'left' }}>{t.offsetAccount}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal', minWidth: 260 }}>{t.description || '—'}</td>
-                                        <td style={tdStyle}>{money(t.amount)}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div style={{ ...sectionHeading, fontSize: '13px', marginBottom: '6px' }}>Entered by Hand</div>
+            <div style={subHeading}>Calculated from the Books</div>
+            <AutoAdjustmentsTable
+              adjustments={data.bookDeposits.adjustments}
+              emptyText="No transfers, loans, owner money, or other non-revenue deposits were found in the books for these accounts."
+              reasonLabel="Posted Against"
+              showType
+              accountLabel={accountLabel}
+              money={money}
+            />
           </>
         )}
+        {(!data.bookDeposits.supported || data.bankDeposits.adjustments.length > 0) && (
+          <>
+            <div style={subHeading}>Calculated from Bank Transactions</div>
+            <AutoAdjustmentsTable
+              adjustments={data.bankDeposits.adjustments}
+              emptyText="No transfers, loans, interest, or refunds were found in the bank transactions. Bank transactions come from the bank connection, statement PDFs, and reviewed transaction files in Bank Statements."
+              reasonLabel="Why"
+              showType={false}
+              accountLabel={accountLabel}
+              money={money}
+            />
+          </>
+        )}
+        {data.bankDeposits.suggestions.length > 0 && (
+          <>
+            <div style={subHeading}>Suggested from Bank Transactions</div>
+            <div style={{ fontSize: '12px', color: '#475569', marginBottom: '6px' }}>
+              These may not be customer payments. Nothing changes until you add one; it is then listed under Entered by Hand.
+            </div>
+            <div style={{ overflow: 'auto', maxHeight: 360, border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '14px' }}>
+              <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                  <tr>
+                    <th style={{ ...thStyle, textAlign: 'left' }}>Date</th>
+                    <th style={{ ...thStyle, textAlign: 'left' }}>Account</th>
+                    <th style={{ ...thStyle, textAlign: 'left' }}>Name / Memo</th>
+                    <th style={{ ...thStyle, textAlign: 'left' }}>Why</th>
+                    <th style={thStyle}>Amount</th>
+                    <th style={{ ...thStyle, textAlign: 'left' }}>Category</th>
+                    <th style={thStyle} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...data.bankDeposits.suggestions].reverse().map((s) => {
+                    const category = suggestionCategory[s.key] ?? s.category;
+                    const label = `add-suggestion-${s.key}`;
+                    return (
+                      <tr key={s.key} style={{ opacity: s.added ? 0.55 : 1 }}>
+                        <td style={{ ...tdStyle, textAlign: 'left' }}>{shortDate(s.date)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'left' }}>{accountLabel(s.bankAccountId)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal', minWidth: 240 }}>{s.description || '—'}</td>
+                        <td style={{ ...tdStyle, textAlign: 'left', whiteSpace: 'normal' }}>{s.reason}</td>
+                        <td style={tdStyle}>{money(s.amount)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'left' }}>
+                          {s.added ? (
+                            REVENUE_ADJUSTMENT_CATEGORIES[s.category].label
+                          ) : (
+                            <select
+                              value={category}
+                              disabled={!canEdit}
+                              onChange={(e) => setSuggestionCategory({ ...suggestionCategory, [s.key]: e.target.value as RevenueAdjustmentCategory })}
+                              style={{ ...inputStyle, width: 240 }}
+                            >
+                              {NON_REVENUE_CATEGORIES.map((c) => (
+                                <option key={c} value={c}>
+                                  {REVENUE_ADJUSTMENT_CATEGORIES[c].label}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'left' }}>
+                          {s.added ? (
+                            <span style={{ color: '#047857' }}>Added</span>
+                          ) : (
+                            canEdit && (
+                              <button
+                                style={buttonStyle('secondary', !!busy)}
+                                disabled={!!busy}
+                                onClick={() =>
+                                  run(label, {
+                                    action: 'add-revenue-adjustment',
+                                    engagementId: engagement.id,
+                                    month: s.month,
+                                    bankAccountId: s.bankAccountId,
+                                    category,
+                                    amount: s.amount,
+                                    description: s.note,
+                                  })
+                                }
+                              >
+                                {busy === label ? 'Adding…' : 'Add'}
+                              </button>
+                            )
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+        <div style={subHeading}>Entered by Hand</div>
         {canEdit && (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '10px' }}>
             <label style={{ fontSize: '11px', color: '#475569', width: 120 }}>

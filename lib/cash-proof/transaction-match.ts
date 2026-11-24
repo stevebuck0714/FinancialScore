@@ -4,7 +4,16 @@
  */
 
 export type BookLine = { key: string; date: string; type: string; num: string; name: string; amount: number };
-export type BankLine = { id: string; externalId: string; date: string; description: string; checkNumber: string | null; amount: number };
+export type BankLine = {
+  id: string;
+  externalId: string;
+  date: string;
+  description: string;
+  checkNumber: string | null;
+  amount: number;
+  /** Bank connection category path, such as "Transfer > Internal Account Transfer". */
+  category?: string | null;
+};
 
 export type MatchRule = 'CHECK_NUMBER' | 'EXACT' | 'LATE_CLEARING' | 'BATCHED_DEPOSIT' | 'SPLIT_WITHDRAWAL';
 

@@ -8,6 +8,7 @@ import { loadDetectedStatementAccounts } from '@/lib/bank-statements/detected-ac
 import { addEstCalendarDays } from '@/lib/time/eastern';
 import { shiftMonth } from './book-balances';
 import { loadBookBankLines } from './book-lines';
+import { STATEMENT_PDF_SOURCE } from './statement-scan';
 import { computeTieOut } from './tie-out';
 import {
   DEFAULT_MATCH_SETTINGS,
@@ -58,7 +59,7 @@ const BATCH = 500;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Bank transactions from the Data Room Bank Statements folder, assigned to cash proof accounts. */
-async function loadBankLines(
+export async function loadBankLines(
   companyId: string,
   accounts: Array<{ id: string; bankName: string | null; accountLast4: string | null }>,
   startDate: string,
@@ -76,12 +77,14 @@ async function loadBankLines(
   const [docs, rows] = await Promise.all([
     prisma.dataRoomDocument.findMany({
       where: { companyId, id: { in: ids }, bankTransactions: { some: {} } },
-      select: { id: true, statementInstitution: true, bankActivity: true },
+      select: { id: true, statementInstitution: true, statementAccountLast4: true, statementMonth: true, bankActivity: true },
+      orderBy: { createdAt: 'asc' },
     }),
     prisma.bankTransaction.findMany({
       where: { companyId, dataRoomDocumentId: { in: ids }, date: { gte: startDate, lte: endDate } },
       select: {
         id: true,
+        dataRoomDocumentId: true,
         externalId: true,
         source: true,
         institution: true,
@@ -93,29 +96,44 @@ async function loadBankLines(
         payer: true,
         payee: true,
         checkNumber: true,
+        category: true,
       },
       orderBy: [{ date: 'asc' }, { id: 'asc' }],
     }),
   ]);
 
   // Months each account's line-level bank data fully covers, from the files that carry the lines.
+  // A statement PDF covers its statement month; the same month uploaded twice counts once.
+  const pdfDocByAccountMonth = new Map<string, string>();
   for (const doc of docs) {
-    for (const activity of parseBankActivity(doc.bankActivity)) {
-      const { account } = matchStatementAccount(accounts, activity.last4, activity.bankName ?? doc.statementInstitution);
-      if (account) monthsByAccount.get(account.id)!.add(activity.month);
+    const activity = parseBankActivity(doc.bankActivity);
+    for (const a of activity) {
+      const { account } = matchStatementAccount(accounts, a.last4, a.bankName ?? doc.statementInstitution);
+      if (account) monthsByAccount.get(account.id)!.add(a.month);
     }
+    if (activity.length > 0 || !doc.statementMonth) continue;
+    const { account } = matchStatementAccount(accounts, doc.statementAccountLast4, doc.statementInstitution);
+    const key = account ? `${account.id}|${doc.statementMonth}` : null;
+    if (!account || !key || pdfDocByAccountMonth.has(key)) continue;
+    pdfDocByAccountMonth.set(key, doc.id);
+    monthsByAccount.get(account.id)!.add(doc.statementMonth);
   }
+  const usedPdfDocs = new Set(pdfDocByAccountMonth.values());
 
-  // When a bank connection and a transaction file both cover an account-month, the bank connection wins.
+  // One source per account-month: the bank connection, then the statement PDF, then a transaction file.
   const assigned = rows.flatMap((row) => {
+    if (row.source === STATEMENT_PDF_SOURCE && !usedPdfDocs.has(row.dataRoomDocumentId)) return [];
     const { account } = matchStatementAccount(accounts, row.accountLast4, row.institution);
     return account ? [{ accountId: account.id, row }] : [];
   });
-  const plaidMonths = new Set(
-    assigned.filter((a) => a.row.source === 'PLAID_ASSETS').map((a) => `${a.accountId}|${a.row.date.slice(0, 7)}`),
-  );
+  const monthsFrom = (source: string) =>
+    new Set(assigned.filter((a) => a.row.source === source).map((a) => `${a.accountId}|${a.row.date.slice(0, 7)}`));
+  const plaidMonths = monthsFrom('PLAID_ASSETS');
+  const pdfMonths = monthsFrom(STATEMENT_PDF_SOURCE);
   for (const { accountId, row } of assigned) {
-    if (row.source !== 'PLAID_ASSETS' && plaidMonths.has(`${accountId}|${row.date.slice(0, 7)}`)) continue;
+    const month = `${accountId}|${row.date.slice(0, 7)}`;
+    if (row.source !== 'PLAID_ASSETS' && plaidMonths.has(month)) continue;
+    if (row.source !== 'PLAID_ASSETS' && row.source !== STATEMENT_PDF_SOURCE && pdfMonths.has(month)) continue;
     const description = [row.description || row.merchantName, row.payer || row.payee].filter(Boolean).join(' · ');
     linesByAccount.get(accountId)!.push({
       id: row.id,
@@ -124,6 +142,7 @@ async function loadBankLines(
       description,
       checkNumber: row.checkNumber,
       amount: round2(row.amount),
+      category: row.category.length ? row.category.join(' > ') : null,
     });
   }
   return { linesByAccount, monthsByAccount };
