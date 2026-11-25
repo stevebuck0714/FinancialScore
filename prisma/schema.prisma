@@ -673,10 +673,20 @@ model QoeEngagementTracker {
   id                   String   @id @default(cuid())
   companyId            String   @unique
   engagementType       String?
+  preparedFor          String?
+  proposedBorrower     String?
+  transactionType      String?
+  businessPurchasePrice String?
+  preparedUnder        String?
   reviewPeriodStart    String?
   reviewPeriodEnd      String?
   fiscalYearEndMonth   Int?
   reportDueDate        DateTime?
+  engagementLetterDate DateTime?
+  sbaLoanNumber        String?
+  sellerDocumentsComplete Boolean @default(false)
+  modulesEngaged       String?
+  engagementPartner    String?
   accountManagerName   String?
   accountManagerUserId String?
   lenderId             String?

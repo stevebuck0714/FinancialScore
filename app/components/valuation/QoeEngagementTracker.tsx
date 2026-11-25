@@ -41,6 +41,9 @@ const DOCUMENT_STATUSES = ['NOT_REQUESTED', 'REQUESTED', 'RECEIVED', 'FILED', 'R
 const BANK_STATUSES = ['IDENTIFIED', 'CONNECTION_PLANNED', 'CONNECTED', 'STATEMENTS_REQUESTED', 'COVERAGE_COMPLETE'] as const;
 const statusLabel = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const asDate = (value: string | null | undefined) => (value ? value.slice(0, 10) : '');
+type Section = 'overview' | 'contacts' | 'banks' | 'documents';
+const ACCOUNTING_SYSTEM_ROW = 'accounting-system';
+const OVERVIEW_ROW = 'tracker';
 
 const LENDER_FIELDS = ['name', 'address1', 'address2', 'city', 'state', 'zip', 'country', 'website'] as const;
 type LenderDraft = Record<(typeof LENDER_FIELDS)[number], string>;
@@ -96,6 +99,8 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [addingLender, setAddingLender] = useState(false);
+  const [pending, setPending] = useState<Partial<Record<Section, Record<string, Record<string, unknown>>>>>({});
+  const [savedSection, setSavedSection] = useState<Section | null>(null);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -118,8 +123,8 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const run = async (label: string, body: Record<string, unknown>) => {
-    if (!companyId) return;
+  const run = async (label: string, body: Record<string, unknown>): Promise<boolean> => {
+    if (!companyId) return false;
     setSaving(label);
     try {
       const response = await fetch('/api/qoe-engagement-tracker', {
@@ -131,11 +136,62 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
       if (!response.ok) throw new Error(json.error || 'Failed to save engagement tracker');
       setData(json);
       setError(null);
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
     } finally {
       setSaving(null);
     }
+  };
+
+  const editRow = (section: Section, id: string, patch: Record<string, unknown>) =>
+    setPending((current) => ({ ...current, [section]: { ...current[section], [id]: { ...current[section]?.[id], ...patch } } }));
+  const pendingValue = (section: Section, row: any, field: string) => {
+    const patch = pending[section]?.[row.id];
+    return patch && field in patch ? patch[field] : row[field];
+  };
+  const hasPending = (section: Section) => Object.keys(pending[section] || {}).length > 0;
+  const saveSection = async (section: Section) => {
+    const edits = pending[section] || {};
+    const currentTracker = data?.tracker;
+    if (!currentTracker) return;
+    let ok = true;
+    for (const [id, patch] of Object.entries(edits)) {
+      if (section === 'overview') {
+        ok = (await run('overview', { action: 'update-tracker', ...currentTracker, ...patch })) && ok;
+      } else if (section === 'contacts') {
+        const contact = currentTracker.contacts.find((item: any) => item.id === id);
+        if (contact) ok = (await run('contacts', { action: 'update-contact', ...contact, ...patch })) && ok;
+      } else if (section === 'banks') {
+        const account = currentTracker.bankAccounts.find((item: any) => item.id === id);
+        if (account) ok = (await run('banks', { action: 'update-bank-account', ...account, ...patch })) && ok;
+      } else if (id === ACCOUNTING_SYSTEM_ROW) {
+        ok = (await run('documents', { action: 'update-accounting-system', accountingSystem: patch.accountingSystem })) && ok;
+      } else {
+        const document = (currentTracker.documentRequirements || []).find((item: any) => item.id === id);
+        if (document) ok = (await run('documents', { action: 'update-document-requirement', ...document, ...patch })) && ok;
+      }
+    }
+    if (!ok) return;
+    setPending((current) => ({ ...current, [section]: {} }));
+    setSavedSection(section);
+    window.setTimeout(() => setSavedSection((current) => (current === section ? null : current)), 2500);
+  };
+  const saveButton = (section: Section) => {
+    const dirty = hasPending(section);
+    const busy = saving === section;
+    const label = busy ? 'Saving…' : dirty ? 'Save' : savedSection === section ? 'Saved' : 'Save';
+    return (
+      <button
+        type="button"
+        disabled={!dirty || Boolean(saving)}
+        onClick={() => void saveSection(section)}
+        style={{ ...button, background: savedSection === section && !dirty ? '#15803d' : button.background, opacity: !dirty && savedSection !== section ? 0.55 : 1, cursor: !dirty || saving ? 'default' : 'pointer' }}
+      >
+        {label}
+      </button>
+    );
   };
 
   const tracker = data?.tracker;
@@ -150,11 +206,30 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
   if (loading && !data) return <div style={CARD}>Loading QoE Engagement Tracker…</div>;
   if (!tracker) return <div style={CARD}>{error || 'Unable to load the QoE Engagement Tracker.'}</div>;
 
-  const saveTracker = (patch: Record<string, unknown>) => run('engagement', { action: 'update-tracker', ...tracker, ...patch, reportDueDate: asDate(patch.reportDueDate ?? tracker.reportDueDate) });
-  const updateContact = (contact: any, patch: Record<string, unknown>) => run(`contact-${contact.id}`, { action: 'update-contact', ...contact, ...patch });
-  const updateBank = (account: any, patch: Record<string, unknown>) => run(`bank-${account.id}`, { action: 'update-bank-account', ...account, ...patch });
-  const updateDocument = (document: any, patch: Record<string, unknown>) => run(`document-${document.id}`, { action: 'update-document-requirement', ...document, ...patch });
-  const updateAccountingSystem = (accountingSystem: string) => run('accounting-system', { action: 'update-accounting-system', accountingSystem });
+  const saveTracker = (patch: Record<string, unknown>) => run('engagement', { action: 'update-tracker', ...tracker, ...patch });
+  const overviewRow = { ...tracker, id: OVERVIEW_ROW };
+  const overview = (field: string) => pendingValue('overview', overviewRow, field);
+  const editOverview = (patch: Record<string, unknown>) => editRow('overview', OVERVIEW_ROW, patch);
+  const contactValue = (contact: any, field: string) => pendingValue('contacts', contact, field);
+  const editContact = (contact: any, patch: Record<string, unknown>) => editRow('contacts', contact.id, patch);
+  const bankValue = (account: any, field: string) => pendingValue('banks', account, field);
+  const editBank = (account: any, patch: Record<string, unknown>) => editRow('banks', account.id, patch);
+  const documentValue = (document: any, field: string) => pendingValue('documents', document, field);
+  const editDocument = (document: any, patch: Record<string, unknown>) => editRow('documents', document.id, patch);
+  const accountingSystemValue = String(pending.documents?.[ACCOUNTING_SYSTEM_ROW]?.accountingSystem ?? data.company?.accountingSystem ?? '');
+  const sectionHeader = (title: string, description: string | null, section: Section, extra?: React.ReactNode) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+      <div style={{ minWidth: 0 }}>
+        <h3 style={{ margin: 0, color: '#1e293b', fontSize: '15px' }}>{title}</h3>
+        {description && <div style={{ color: '#64748b', fontSize: '11px', marginTop: '3px' }}>{description}</div>}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        {hasPending(section) && <span style={{ color: '#b45309', fontSize: '11px', fontWeight: 600 }}>Unsaved changes</span>}
+        {extra}
+        {saveButton(section)}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ display: 'grid', gap: '14px' }}>
@@ -189,10 +264,57 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
       </div>
 
       <section style={{ ...CARD, display: 'flex', flexDirection: 'column' }}>
-        <h3 style={{ order: -2, margin: '0 0 10px', color: '#1e293b', fontSize: '15px' }}>Engagement Overview</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(180px, 1fr))', gap: '10px', order: 0 }}>
+        <div style={{ order: -2 }}>{sectionHeader('Engagement Overview', null, 'overview')}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(max(180px, calc((100% - 40px) / 5)), 1fr))', gap: '10px', order: 0 }}>
+          <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+            Engagement type
+            <select
+              value={overview('engagementType') || ''}
+              onChange={(event) => editOverview({ engagementType: event.target.value })}
+              style={{ ...input, marginTop: '4px', cursor: 'pointer' }}
+            >
+              <option value="">Select Engagement Type</option>
+              {tracker.engagementType && !ENGAGEMENT_TYPES.includes(tracker.engagementType) && <option value={tracker.engagementType}>{tracker.engagementType}</option>}
+              {ENGAGEMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+          </label>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(max(180px, calc((100% - 20px) / 3)), 1fr))', gap: '10px', order: 0, marginTop: '10px' }}>
           {[
-            ['Engagement type', 'engagementType', ''],
+            ['Prepared For', 'preparedFor', 'Lender or requesting party'],
+            ['Proposed Borrower', 'proposedBorrower', 'Borrower legal entity'],
+            ['Transaction Type', 'transactionType', 'Acquisition, refinance, etc.'],
+            ['Business Purchase Price', 'businessPurchasePrice', 'e.g., $1,250,000'],
+            ['Prepared under', 'preparedUnder', 'Engagement or engagement standard'],
+          ].map(([label, key, placeholder]) => (
+            <Fragment key={key}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+                {label}
+                <input
+                  type="text"
+                  value={overview(key) || ''}
+                  placeholder={placeholder}
+                  onChange={(event) => editOverview({ [key]: event.target.value })}
+                  style={{ ...input, marginTop: '4px' }}
+                />
+              </label>
+              {key === 'preparedFor' && (
+                <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+                  Subject Business
+                  <input
+                    type="text"
+                    value={data.company?.name || ''}
+                    readOnly
+                    aria-readonly="true"
+                    style={{ ...input, marginTop: '4px', background: '#f8fafc', color: '#475569', cursor: 'default' }}
+                  />
+                </label>
+              )}
+            </Fragment>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(max(180px, calc((100% - 40px) / 5)), 1fr))', gap: '10px', order: 0, marginTop: '10px' }}>
+          {[
             ['Review period start', 'reviewPeriodStart', 'YYYY-MM'],
             ['Review period end', 'reviewPeriodEnd', 'YYYY-MM'],
             ['Fiscal year-end month', 'fiscalYearEndMonth', '1–12'],
@@ -205,20 +327,10 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
           ].map(([label, key, placeholder]) => (
             <label key={key} style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
               {label}
-              {key === 'engagementType' ? (
+              {key === 'accountManagerName' ? (
                 <select
-                  value={tracker.engagementType || ''}
-                  onChange={(event) => void saveTracker({ engagementType: event.target.value })}
-                  style={{ ...input, marginTop: '4px', cursor: 'pointer' }}
-                >
-                  <option value="">Select Engagement Type</option>
-                  {tracker.engagementType && !ENGAGEMENT_TYPES.includes(tracker.engagementType) && <option value={tracker.engagementType}>{tracker.engagementType}</option>}
-                  {ENGAGEMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-                </select>
-              ) : key === 'accountManagerName' ? (
-                <select
-                  value={tracker.accountManagerUserId || ''}
-                  onChange={(event) => void saveTracker({ accountManagerUserId: event.target.value })}
+                  value={overview('accountManagerUserId') || ''}
+                  onChange={(event) => editOverview({ accountManagerUserId: event.target.value })}
                   style={{ ...input, marginTop: '4px' }}
                 >
                   <option value="">Select Account Manager</option>
@@ -229,12 +341,58 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
               ) : (
                 <input
                   type={key === 'reportDueDate' ? 'date' : key === 'reviewPeriodStart' || key === 'reviewPeriodEnd' ? 'month' : 'text'}
-                  defaultValue={key === 'reportDueDate' ? asDate(tracker[key]) : tracker[key] || ''}
+                  value={key === 'reportDueDate' ? asDate(overview(key)) : overview(key) ?? ''}
                   placeholder={placeholder}
-                  onBlur={(event) => void saveTracker({ [key]: event.target.value })}
+                  onChange={(event) => editOverview({ [key]: event.target.value })}
                   style={{ ...input, marginTop: '4px' }}
                 />
               )}
+            </label>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(max(180px, calc((100% - 40px) / 5)), 1fr))', gap: '10px', order: 0, marginTop: '10px' }}>
+          <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+            Engagement letter date
+            <input
+              type="date"
+              value={asDate(overview('engagementLetterDate'))}
+              onChange={(event) => editOverview({ engagementLetterDate: event.target.value })}
+              style={{ ...input, marginTop: '4px' }}
+            />
+          </label>
+          <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+            SBA loan number
+            <input
+              type="text"
+              value={overview('sbaLoanNumber') || ''}
+              onChange={(event) => editOverview({ sbaLoanNumber: event.target.value })}
+              style={{ ...input, marginTop: '4px' }}
+            />
+          </label>
+          <label style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+            Complete seller documents received
+            <span style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '8px', fontWeight: 400, color: '#1e293b' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(overview('sellerDocumentsComplete'))}
+                onChange={(event) => editOverview({ sellerDocumentsComplete: event.target.checked })}
+              />
+              Yes
+            </span>
+          </label>
+          {[
+            ['Modules engaged', 'modulesEngaged', 'e.g., QoE, Cash Proof'],
+            ['Engagement partner', 'engagementPartner', 'Name'],
+          ].map(([label, key, placeholder]) => (
+            <label key={key} style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
+              {label}
+              <input
+                type="text"
+                value={overview(key) || ''}
+                placeholder={placeholder}
+                onChange={(event) => editOverview({ [key]: event.target.value })}
+                style={{ ...input, marginTop: '4px' }}
+              />
             </label>
           ))}
         </div>
@@ -279,19 +437,16 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
       </section>
 
       <section style={CARD}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
-          <div><h3 style={{ margin: 0, color: '#1e293b', fontSize: '15px' }}>Client and Bank Contacts</h3><div style={{ color: '#64748b', fontSize: '11px', marginTop: '3px' }}>Capture the people who can authorize access and explain accounting or cash activity.</div></div>
-          <button type="button" style={button} disabled={Boolean(saving)} onClick={() => void run('new-contact', { action: 'create-contact' })}>Add contact</button>
-        </div>
+        {sectionHeader('Client and Bank Contacts', 'Capture the people who can authorize access and explain accounting or cash activity.', 'contacts', <button type="button" style={button} disabled={Boolean(saving)} onClick={() => void run('new-contact', { action: 'create-contact' })}>Add contact</button>)}
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['Contact type', 'Name', 'Role', 'Email', 'Phone', 'Preferred contact', 'Notes', ''].map((label) => <th key={label} style={th}>{label}</th>)}</tr></thead>
             <tbody>
               {tracker.contacts.map((contact: any) => (
                 <tr key={contact.id}>
-                  <td style={td}><select value={contact.contactType} onChange={(event) => void updateContact(contact, { contactType: event.target.value })} style={input}>{Object.entries(CONTACT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
-                  {(['name', 'role', 'email', 'phone', 'preferredContactMethod'] as const).map((field) => <td key={field} style={td}><input defaultValue={contact[field] || ''} onBlur={(event) => void updateContact(contact, { [field]: event.target.value })} style={input} /></td>)}
-                  <td style={td}><textarea defaultValue={contact.notes || ''} onBlur={(event) => void updateContact(contact, { notes: event.target.value })} rows={2} style={{ ...input, resize: 'vertical', minWidth: 180 }} /></td>
+                  <td style={td}><select value={contactValue(contact, 'contactType')} onChange={(event) => editContact(contact, { contactType: event.target.value })} style={input}>{Object.entries(CONTACT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
+                  {(['name', 'role', 'email', 'phone', 'preferredContactMethod'] as const).map((field) => <td key={field} style={td}><input value={contactValue(contact, field) || ''} onChange={(event) => editContact(contact, { [field]: event.target.value })} style={input} /></td>)}
+                  <td style={td}><textarea value={contactValue(contact, 'notes') || ''} onChange={(event) => editContact(contact, { notes: event.target.value })} rows={2} style={{ ...input, resize: 'vertical', minWidth: 180 }} /></td>
                   <td style={td}><button type="button" aria-label="Remove contact" title="Remove contact" onClick={() => void run(`delete-contact-${contact.id}`, { action: 'delete-contact', id: contact.id })} style={{ border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}>Remove</button></td>
                 </tr>
               ))}
@@ -301,10 +456,7 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
       </section>
 
       <section style={CARD}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
-          <div><h3 style={{ margin: 0, color: '#1e293b', fontSize: '15px' }}>Bank Account Inventory</h3><div style={{ color: '#64748b', fontSize: '11px', marginTop: '3px' }}>Intro-call inventory only. Connect banks and resolve statement coverage in Bank Statements.</div></div>
-          <button type="button" style={button} disabled={Boolean(saving)} onClick={() => void run('new-bank-account', { action: 'create-bank-account' })}>Add bank account</button>
-        </div>
+        {sectionHeader('Bank Account Inventory', 'Intro-call inventory only. Connect banks and resolve statement coverage in Bank Statements.', 'banks', <button type="button" style={button} disabled={Boolean(saving)} onClick={() => void run('new-bank-account', { action: 'create-bank-account' })}>Add bank account</button>)}
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['Institution', 'Account / type', 'Last 4', 'Legal entity', 'Purpose', 'Customer receipts?', 'Statements needed?', 'Needed from / through', 'Bank contact', 'Status', 'Notes', ''].map((label) => <th key={label} style={th}>{label}</th>)}</tr></thead>
@@ -312,17 +464,17 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
               {tracker.bankAccounts.length === 0 && <tr><td colSpan={12} style={{ ...td, color: '#64748b' }}>Add every operating, savings, payroll, merchant-settlement, trust/escrow, credit-card settlement, and recently closed business account identified during intake.</td></tr>}
               {tracker.bankAccounts.map((account: any) => (
                 <tr key={account.id}>
-                  <td style={td}><input defaultValue={account.institution || ''} onBlur={(event) => void updateBank(account, { institution: event.target.value })} style={input} /></td>
-                  <td style={td}><input defaultValue={[account.accountName, account.accountType].filter(Boolean).join(' / ')} placeholder="Name / type" onBlur={(event) => { const [accountName, accountType] = event.target.value.split('/').map((value) => value.trim()); void updateBank(account, { accountName, accountType }); }} style={input} /></td>
-                  <td style={td}><input defaultValue={account.last4 || ''} maxLength={4} onBlur={(event) => void updateBank(account, { last4: event.target.value })} style={{ ...input, width: 70 }} /></td>
-                  <td style={td}><input defaultValue={account.legalEntity || ''} onBlur={(event) => void updateBank(account, { legalEntity: event.target.value })} style={input} /></td>
-                  <td style={td}><input defaultValue={account.purpose || ''} placeholder="Operating, payroll…" onBlur={(event) => void updateBank(account, { purpose: event.target.value })} style={input} /></td>
-                  <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={account.receivesCustomerPayments} onChange={(event) => void updateBank(account, { receivesCustomerPayments: event.target.checked })} /></td>
-                  <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={account.statementsNeeded} onChange={(event) => void updateBank(account, { statementsNeeded: event.target.checked })} /></td>
-                  <td style={td}><div style={{ display: 'flex', gap: 4 }}><input defaultValue={account.statementsFromMonth || ''} placeholder="YYYY-MM" onBlur={(event) => void updateBank(account, { statementsFromMonth: event.target.value })} style={{ ...input, minWidth: 76 }} /><input defaultValue={account.statementsThroughMonth || ''} placeholder="YYYY-MM" onBlur={(event) => void updateBank(account, { statementsThroughMonth: event.target.value })} style={{ ...input, minWidth: 76 }} /></div></td>
-                  <td style={td}><input defaultValue={account.bankContactName || ''} onBlur={(event) => void updateBank(account, { bankContactName: event.target.value })} style={input} /></td>
-                  <td style={td}><select value={account.status} onChange={(event) => void updateBank(account, { status: event.target.value })} style={input}>{BANK_STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></td>
-                  <td style={td}><textarea defaultValue={account.notes || ''} onBlur={(event) => void updateBank(account, { notes: event.target.value })} rows={2} style={{ ...input, resize: 'vertical', minWidth: 160 }} /></td>
+                  <td style={td}><input value={bankValue(account, 'institution') || ''} onChange={(event) => editBank(account, { institution: event.target.value })} style={input} /></td>
+                  <td style={td}><input value={String(bankValue(account, 'nameAndType') ?? [account.accountName, account.accountType].filter(Boolean).join(' / '))} placeholder="Name / type" onChange={(event) => { const [accountName = '', accountType = ''] = event.target.value.split('/').map((value) => value.trim()); editBank(account, { nameAndType: event.target.value, accountName, accountType }); }} style={input} /></td>
+                  <td style={td}><input value={bankValue(account, 'last4') || ''} maxLength={4} onChange={(event) => editBank(account, { last4: event.target.value })} style={{ ...input, width: 70 }} /></td>
+                  <td style={td}><input value={bankValue(account, 'legalEntity') || ''} onChange={(event) => editBank(account, { legalEntity: event.target.value })} style={input} /></td>
+                  <td style={td}><input value={bankValue(account, 'purpose') || ''} placeholder="Operating, payroll…" onChange={(event) => editBank(account, { purpose: event.target.value })} style={input} /></td>
+                  <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={Boolean(bankValue(account, 'receivesCustomerPayments'))} onChange={(event) => editBank(account, { receivesCustomerPayments: event.target.checked })} /></td>
+                  <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={Boolean(bankValue(account, 'statementsNeeded'))} onChange={(event) => editBank(account, { statementsNeeded: event.target.checked })} /></td>
+                  <td style={td}><div style={{ display: 'flex', gap: 4 }}><input value={bankValue(account, 'statementsFromMonth') || ''} placeholder="YYYY-MM" onChange={(event) => editBank(account, { statementsFromMonth: event.target.value })} style={{ ...input, minWidth: 76 }} /><input value={bankValue(account, 'statementsThroughMonth') || ''} placeholder="YYYY-MM" onChange={(event) => editBank(account, { statementsThroughMonth: event.target.value })} style={{ ...input, minWidth: 76 }} /></div></td>
+                  <td style={td}><input value={bankValue(account, 'bankContactName') || ''} onChange={(event) => editBank(account, { bankContactName: event.target.value })} style={input} /></td>
+                  <td style={td}><select value={bankValue(account, 'status')} onChange={(event) => editBank(account, { status: event.target.value })} style={input}>{BANK_STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></td>
+                  <td style={td}><textarea value={bankValue(account, 'notes') || ''} onChange={(event) => editBank(account, { notes: event.target.value })} rows={2} style={{ ...input, resize: 'vertical', minWidth: 160 }} /></td>
                   <td style={td}><button type="button" aria-label="Remove bank account" title="Remove bank account" onClick={() => void run(`delete-bank-${account.id}`, { action: 'delete-bank-account', id: account.id })} style={{ border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}>Remove</button></td>
                 </tr>
               ))}
@@ -332,10 +484,7 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
       </section>
 
       <section style={CARD}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
-          <div><h3 style={{ margin: 0, color: '#1e293b', fontSize: '15px' }}>Required Documents and Follow-Up</h3><div style={{ color: '#64748b', fontSize: '11px', marginTop: '3px' }}>The standard QoE request is preloaded. “Filed” means in the Data Room; “Reviewed” requires staff confirmation.</div></div>
-          <button type="button" style={button} disabled={Boolean(saving)} onClick={() => void run('new-document', { action: 'create-document-requirement' })}>Add requirement</button>
-        </div>
+        {sectionHeader('Required Documents and Follow-Up', 'The standard QoE request is preloaded. “Filed” means in the Data Room; “Reviewed” requires staff confirmation.', 'documents', <button type="button" style={button} disabled={Boolean(saving)} onClick={() => void run('new-document', { action: 'create-document-requirement' })}>Add requirement</button>)}
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['Required?', 'Category / required document', 'Status', 'Owner', 'Requested', 'Due', 'Received', 'Data Room folder', 'Notes / follow-up (below)', ''].map((label) => <th key={label} style={{ ...th, ...(label === 'Owner' ? { minWidth: 170 } : {}), ...(label === 'Data Room folder' ? { minWidth: 190 } : {}) }}>{label}</th>)}</tr></thead>
@@ -346,17 +495,17 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
                   return (
                     <Fragment key={document.id}>
                       <tr key={document.id}>
-                        <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={document.required} onChange={(event) => void updateDocument(document, { required: event.target.checked })} /></td>
+                        <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={Boolean(documentValue(document, 'required'))} onChange={(event) => editDocument(document, { required: event.target.checked })} /></td>
                         <td style={td}>
                           <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Financial records</div>
-                          <select value={data.company?.accountingSystem || ''} onChange={(event) => void updateAccountingSystem(event.target.value)} style={{ ...input, minWidth: 260 }}>
+                          <select value={accountingSystemValue} onChange={(event) => editRow('documents', ACCOUNTING_SYSTEM_ROW, { accountingSystem: event.target.value })} style={{ ...input, minWidth: 260 }}>
                             {ACCOUNTING_SYSTEMS.map((system) => <option key={system.value} value={system.value}>{system.label}</option>)}
                           </select>
                         </td>
-                        <td style={td}><select value={document.status} onChange={(event) => void updateDocument(document, { status: event.target.value })} style={input}>{DOCUMENT_STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></td>
-                        <td style={td}><input defaultValue={document.owner || ''} onBlur={(event) => void updateDocument(document, { owner: event.target.value })} style={{ ...input, minWidth: 170 }} /></td>
-                        {(['requestedDate', 'dueDate', 'receivedDate'] as const).map((field) => <td key={field} style={td}><input type="date" defaultValue={asDate(document[field])} onBlur={(event) => void updateDocument(document, { [field]: event.target.value })} style={input} /></td>)}
-                        <td style={td}><input defaultValue={document.dataRoomFolder || ''} onBlur={(event) => void updateDocument(document, { dataRoomFolder: event.target.value })} style={{ ...input, minWidth: 190 }} /></td>
+                        <td style={td}><select value={documentValue(document, 'status')} onChange={(event) => editDocument(document, { status: event.target.value })} style={input}>{DOCUMENT_STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></td>
+                        <td style={td}><input value={documentValue(document, 'owner') || ''} onChange={(event) => editDocument(document, { owner: event.target.value })} style={{ ...input, minWidth: 170 }} /></td>
+                        {(['requestedDate', 'dueDate', 'receivedDate'] as const).map((field) => <td key={field} style={td}><input type="date" value={asDate(documentValue(document, field))} onChange={(event) => editDocument(document, { [field]: event.target.value })} style={input} /></td>)}
+                        <td style={td}><input value={documentValue(document, 'dataRoomFolder') || ''} onChange={(event) => editDocument(document, { dataRoomFolder: event.target.value })} style={{ ...input, minWidth: 190 }} /></td>
                         <td style={{ ...td, background: '#f8fafc' }} />
                         <td style={td}><button type="button" aria-label="Remove document requirement" title="Remove document requirement" onClick={() => void run(`delete-document-${document.id}`, { action: 'delete-document-requirement', id: document.id })} style={{ border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}>Remove</button></td>
                       </tr>
@@ -364,7 +513,7 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
                         <td style={{ ...td, background: '#f8fafc' }} />
                         <td style={{ ...td, background: '#f8fafc', fontWeight: 700, color: '#475569' }}>Accounting system notes / follow-up</td>
                         <td colSpan={8} style={{ ...td, background: '#f8fafc' }}>
-                          <textarea defaultValue={document.notes || ''} onBlur={(event) => void updateDocument(document, { notes: event.target.value })} rows={2} placeholder="Connection owner, access status, history needed, or CSV file request…" style={{ ...input, resize: 'vertical' }} />
+                          <textarea value={documentValue(document, 'notes') || ''} onChange={(event) => editDocument(document, { notes: event.target.value })} rows={2} placeholder="Connection owner, access status, history needed, or CSV file request…" style={{ ...input, resize: 'vertical' }} />
                         </td>
                       </tr>
                     </Fragment>
@@ -373,12 +522,12 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
                 return (
                 <Fragment key={document.id}>
                 <tr>
-                  <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={document.required} onChange={(event) => void updateDocument(document, { required: event.target.checked })} /></td>
-                  <td style={td}><input defaultValue={document.category} onBlur={(event) => void updateDocument(document, { category: event.target.value })} style={{ ...input, marginBottom: 4, minWidth: 120 }} /><input defaultValue={document.requirement} onBlur={(event) => void updateDocument(document, { requirement: event.target.value })} style={{ ...input, minWidth: 260 }} /></td>
-                  <td style={td}><select value={document.status} onChange={(event) => void updateDocument(document, { status: event.target.value })} style={input}>{DOCUMENT_STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></td>
-                  <td style={td}><input defaultValue={document.owner || ''} onBlur={(event) => void updateDocument(document, { owner: event.target.value })} style={{ ...input, minWidth: 170 }} /></td>
-                  {(['requestedDate', 'dueDate', 'receivedDate'] as const).map((field) => <td key={field} style={td}><input type="date" defaultValue={asDate(document[field])} onBlur={(event) => void updateDocument(document, { [field]: event.target.value })} style={input} /></td>)}
-                  <td style={td}><input defaultValue={document.dataRoomFolder || ''} onBlur={(event) => void updateDocument(document, { dataRoomFolder: event.target.value })} style={{ ...input, minWidth: 190 }} /></td>
+                  <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={Boolean(documentValue(document, 'required'))} onChange={(event) => editDocument(document, { required: event.target.checked })} /></td>
+                  <td style={td}><input value={documentValue(document, 'category') || ''} onChange={(event) => editDocument(document, { category: event.target.value })} style={{ ...input, marginBottom: 4, minWidth: 120 }} /><input value={documentValue(document, 'requirement') || ''} onChange={(event) => editDocument(document, { requirement: event.target.value })} style={{ ...input, minWidth: 260 }} /></td>
+                  <td style={td}><select value={documentValue(document, 'status')} onChange={(event) => editDocument(document, { status: event.target.value })} style={input}>{DOCUMENT_STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></td>
+                  <td style={td}><input value={documentValue(document, 'owner') || ''} onChange={(event) => editDocument(document, { owner: event.target.value })} style={{ ...input, minWidth: 170 }} /></td>
+                  {(['requestedDate', 'dueDate', 'receivedDate'] as const).map((field) => <td key={field} style={td}><input type="date" value={asDate(documentValue(document, field))} onChange={(event) => editDocument(document, { [field]: event.target.value })} style={input} /></td>)}
+                  <td style={td}><input value={documentValue(document, 'dataRoomFolder') || ''} onChange={(event) => editDocument(document, { dataRoomFolder: event.target.value })} style={{ ...input, minWidth: 190 }} /></td>
                   <td style={{ ...td, background: '#f8fafc' }} />
                   <td style={td}><button type="button" aria-label="Remove document requirement" title="Remove document requirement" onClick={() => void run(`delete-document-${document.id}`, { action: 'delete-document-requirement', id: document.id })} style={{ border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}>Remove</button></td>
                 </tr>
@@ -386,7 +535,7 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
                   <td style={{ ...td, background: '#f8fafc' }} />
                   <td style={{ ...td, background: '#f8fafc', fontWeight: 700, color: '#475569' }}>Notes / follow-up</td>
                   <td colSpan={8} style={{ ...td, background: '#f8fafc' }}>
-                    <textarea defaultValue={document.notes || ''} onBlur={(event) => void updateDocument(document, { notes: event.target.value })} rows={2} placeholder="Missing item, owner, next action, resolution…" style={{ ...input, resize: 'vertical' }} />
+                    <textarea value={documentValue(document, 'notes') || ''} onChange={(event) => editDocument(document, { notes: event.target.value })} rows={2} placeholder="Missing item, owner, next action, resolution…" style={{ ...input, resize: 'vertical' }} />
                   </td>
                 </tr>
                 </Fragment>

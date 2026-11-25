@@ -2,12 +2,14 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback, useLayoutEffect, ChangeEvent, useRef } from 'react';
-import { formatEstDateTime } from '@/lib/time/eastern';
+import { formatEstDate, formatEstDateLabel, formatEstDateTime } from '@/lib/time/eastern';
+import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
 import { viewToTrafficSection } from '@/lib/traffic/sections';
 import { QOE_SECTION, QOE_TABS, allowedQoeTabs } from '@/lib/qoe/access';
 import { useSectionTracking } from '@/lib/traffic/useSectionTracking';
 import {
   elementToWordSection,
+  createQoeReportFrontMatter,
   exportElementToWord,
   exportHtmlToWord,
   exportWordSections,
@@ -65,7 +67,7 @@ const VALUATION_TABS = [
 ] as const;
 const VALUATION_REPORT_VIEWS = ['valuation-reports'] as const;
 const isValuationReportView = (view: string) => (VALUATION_REPORT_VIEWS as readonly string[]).includes(view);
-const QOE_REPORT_TITLE = 'Corelytics QoE Report';
+const QOE_REPORT_TITLE = 'Corelytics Quality of Earnings Report with Cash Proof';
 /** Report sections that fetch their own data mark themselves with `data-report-loading` until ready. */
 const waitForReportContentReady = async (root: HTMLElement, timeoutMs = 45000): Promise<void> => {
   const started = Date.now();
@@ -1859,6 +1861,7 @@ function FinancialScorePage() {
     hfs_ebitda: true,
     hfs_margins: true,
     hfs_keyRatios: true,
+    hfs_loans: true,
     hfs_mda: true,
     qoe_adjustments: true,
     qoe_revenueQuality: true,
@@ -1908,6 +1911,9 @@ function FinancialScorePage() {
   const [pendingRichValuationWordExport, setPendingRichValuationWordExport] = useState(false);
   const [qoeDownloadAllIndex, setQoeDownloadAllIndex] = useState<number | null>(null);
   const qoeDownloadAllSectionsRef = useRef<WordSection[]>([]);
+  const [qoeReportEngagement, setQoeReportEngagement] = useState<any | null>(null);
+  const [qoeReportEngagementError, setQoeReportEngagementError] = useState('');
+  const [reportLoans, setReportLoans] = useState<{ companyId: string; instruments: any[] | null; error: string }>({ companyId: '', instruments: null, error: '' });
   const [valuationWordExportingId, setValuationWordExportingId] = useState<string | null>(null);
   const [valuationDataRoomFolders, setValuationDataRoomFolders] = useState<
     Array<{ id: string; key?: string | null; name: string; order?: number; documents: Array<{ id: string; originalFileName: string; createdAt?: string | null }> }>
@@ -3948,6 +3954,54 @@ function FinancialScorePage() {
   const [businessContextLastUpdatedAt, setBusinessContextLastUpdatedAt] = useState<string | null>(null);
   const [sdeModuleTab, setSdeModuleTab] = useState<'engagement-tracker' | 'ebitda-adjustments' | 'cash-proof' | 'bank-statements' | 'credit-card-review' | 'income-statement' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
   const [bankStatementsReviewId, setBankStatementsReviewId] = useState<string | null>(null);
+  useEffect(() => {
+    if (currentView !== 'qoe-report' || !selectedCompanyId) {
+      setQoeReportEngagement(null);
+      setQoeReportEngagementError('');
+      return;
+    }
+    let cancelled = false;
+    const loadEngagement = async () => {
+      try {
+        const response = await fetch(`/api/qoe-engagement-tracker?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Unable to load QoE engagement details');
+        if (!cancelled) {
+          setQoeReportEngagement(payload);
+          setQoeReportEngagementError('');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setQoeReportEngagement(null);
+          setQoeReportEngagementError(error instanceof Error ? error.message : 'Unable to load QoE engagement details');
+        }
+      }
+    };
+    void loadEngagement();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentView, selectedCompanyId]);
+  const historicalReviewPreviewOpen = valuationSectionPreview?.id === '3' || valuationSectionPreview?.id === 'qoe-3';
+  useEffect(() => {
+    if (!historicalReviewPreviewOpen || !selectedCompanyId) return;
+    let cancelled = false;
+    setReportLoans({ companyId: selectedCompanyId, instruments: null, error: '' });
+    const loadLoans = async () => {
+      try {
+        const response = await fetch(`/api/operations/loans?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || payload.details || 'Unable to load loans');
+        if (!cancelled) setReportLoans({ companyId: selectedCompanyId, instruments: Array.isArray(payload.instruments) ? payload.instruments : [], error: '' });
+      } catch (error) {
+        if (!cancelled) setReportLoans({ companyId: selectedCompanyId, instruments: [], error: error instanceof Error ? error.message : 'Unable to load loans' });
+      }
+    };
+    void loadLoans();
+    return () => {
+      cancelled = true;
+    };
+  }, [historicalReviewPreviewOpen, selectedCompanyId]);
   useEffect(() => {
     if (currentView !== 'quality-of-earnings' || valuationMethodTab !== 'sde') return;
     const isQoeTab = QOE_TABS.some((t) => t.id === sdeModuleTab);
@@ -12408,6 +12462,7 @@ function FinancialScorePage() {
         { key: 'hfs_margins', label: 'Margins' },
         { key: 'hfs_ebitda', label: 'EBITDA' },
         { key: 'hfs_keyRatios', label: 'Key Ratios' },
+        { key: 'hfs_loans', label: 'Loans Outstanding' },
         { key: 'hfs_mda', label: 'Management Discussion and Analysis' },
       ],
     },
@@ -12476,6 +12531,8 @@ function FinancialScorePage() {
         rows: [
           { key: 'qoeSummary_executiveSummary', label: 'Executive Summary' },
           { key: 'qoeSummary_qualityOfEarnings', label: 'Quality of Earnings' },
+          { key: 'qoeIncome_trailing12Months', label: 'QoE Adjusted Income Statement — Trailing 12 Months' },
+          { key: 'qoeIncome_monthly', label: 'QoE Adjusted Income Statement — Monthly' },
           { key: 'qoeSummary_revenueQuality', label: 'Revenue Quality' },
           { key: 'qoeSummary_customerQuality', label: 'Customer Quality' },
           { key: 'qoeSummary_cashFlowQuality', label: 'Cash Flow Quality' },
@@ -12486,16 +12543,8 @@ function FinancialScorePage() {
       { id: 'qoe-2', title: '2. Business Overview', rows: sharedRows('2') },
       { id: 'qoe-3', title: '3. Historical Financial Review', rows: sharedRows('3') },
       {
-        id: 'qoe-4',
-        title: '4. Income Statements',
-        rows: [
-          { key: 'qoeIncome_trailing12Months', label: 'Trailing 12 Months' },
-          { key: 'qoeIncome_monthly', label: 'Monthly' },
-        ],
-      },
-      {
         id: 'qoe-cash-proof',
-        title: '5. Cash Proof',
+        title: '4. Cash Proof',
         rows: [
           { key: 'qoeCash_summary', label: 'Summary' },
           { key: 'qoeCash_tieOutDetail', label: 'Tie-Out Detail' },
@@ -12505,8 +12554,8 @@ function FinancialScorePage() {
           { key: 'qoeCash_methodology', label: 'Methodology' },
         ],
       },
-      { id: 'qoe-6', title: '6. Market and Competitors', rows: sharedRows('10') },
-      { id: 'qoe-7', title: '7. Data Room & Supporting Documents', rows: sharedRows('12') },
+      { id: 'qoe-6', title: '5. Market and Competitors', rows: sharedRows('10') },
+      { id: 'qoe-7', title: '6. Data Room & Supporting Documents', rows: sharedRows('12') },
     ];
   }, [valuationSectionDefinitions]);
   const qoeSummarySelections = useMemo(
@@ -12625,7 +12674,7 @@ function FinancialScorePage() {
 
     const backgroundHistoryHtml = sel.bo_companyBackgroundHistory
       ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
-        <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Company Background & History</div>
+        <div data-word-heading="2" style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Company Background & History</div>
         ${renderBusinessOverviewNarrativeHtml(companyBackgroundHistory, 'No company background and history narrative has been saved.')}
       </div>`
       : '';
@@ -12636,7 +12685,7 @@ function FinancialScorePage() {
 
     const marketPositionHtml = sel.bo_marketPositionCompetitiveLandscape
       ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
-        <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Market Position & Competitive Landscape</div>
+        <div data-word-heading="2" style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Market Position & Competitive Landscape</div>
         ${renderBusinessOverviewNarrativeHtml(marketPositionCompetitiveLandscape, 'No market position and competitive landscape narrative has been saved.')}
         <div style="font-size: 12px; color: #64748b; margin-top: 10px;"><strong>Competitor search scopes:</strong> ${esc(competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', '))}</div>
         ${competitorTable.length > 0 ? `<div style="margin-top: 12px; overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 11px; color: #334155;"><thead><tr style="background: #f8fafc;">${['Competitor', 'NAICS', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat'].map((h) => `<th style="text-align:left;padding:6px;border:1px solid #e2e8f0;">${esc(h)}</th>`).join('')}</tr></thead><tbody>${competitorTable.map((row) => `<tr><td style="padding:6px;border:1px solid #e2e8f0;font-weight:700;">${esc(row.name)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(formatCompetitorNaics(row.sector, row.scope))}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.location)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.competitorType)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.revenueEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.employeeEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.yearsInBusiness)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.threatLevel)}</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -12664,14 +12713,14 @@ function FinancialScorePage() {
 
     const profileCardHtml = sel.bo_companyProfile
       ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
-        <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Company Profile</div>
+        <div data-word-heading="2" style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Company Profile</div>
         <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #334155; line-height: 1.6;">${profileListHtml}</ul>
       </div>`
       : '';
 
     const disclosuresCardHtml = sel.bo_companyDisclosures
       ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
-        <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Company Disclosures</div>
+        <div data-word-heading="2" style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Company Disclosures</div>
         ${
           businessOverviewDisclosureItems.length > 0
             ? `<ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #334155; line-height: 1.6;">${businessOverviewDisclosureItems
@@ -12726,7 +12775,7 @@ function FinancialScorePage() {
 
     const revenueHtml = sel.bo_revenueModel
       ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
-        <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Revenue Model</div>
+        <div data-word-heading="2" style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Revenue Model</div>
         <div style="display: grid; grid-template-columns: 1fr 140px; gap: 6px 10px; font-size: 13px; color: #334155;">
           <div>Recurring revenue</div><div style="text-align:right;font-weight:700;">${pctOrNA(businessOverviewRevenueMix.recurring)}</div>
           <div>Contracted revenue</div><div style="text-align:right;font-weight:700;">${pctOrNA(businessOverviewRevenueMix.contracted)}</div>
@@ -12738,7 +12787,7 @@ function FinancialScorePage() {
 
     const customerHtml = sel.bo_customerConcentration
       ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
-        <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Customer Concentration</div>
+        <div data-word-heading="2" style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Customer Concentration</div>
         ${
           businessOverviewCustomerConcentration
             ? `<div style="font-size: 13px; color: #334155; line-height: 1.6;">
@@ -12985,7 +13034,7 @@ function FinancialScorePage() {
     let quarters = Array.from(quarterAgg.values())
       .sort((a, b) => (a.year - b.year) || (a.quarter - b.quarter))
       .slice(-8);
-    if (quarters.length < 8 && monthly.length >= 12) {
+    if (quarters.length === 0 && monthly.length >= 12) {
       const recentRows = monthly.slice(-24);
       const sequentialBuckets: QuarterBucket[] = [];
       for (let i = 0; i < recentRows.length; i += 3) {
@@ -13031,6 +13080,33 @@ function FinancialScorePage() {
         sequentialBuckets.push(bucket);
       }
       quarters = sequentialBuckets.slice(-8);
+    }
+    const latestQuarter = quarters[quarters.length - 1];
+    if (latestQuarter && quarters.length < 8) {
+      const quarterByKey = new Map(quarters.map((q) => [`${q.year}-Q${q.quarter}`, q]));
+      const filled: QuarterBucket[] = [];
+      let year = latestQuarter.year;
+      let quarter = latestQuarter.quarter;
+      for (let i = 0; i < 8; i += 1) {
+        filled.unshift(quarterByKey.get(`${year}-Q${quarter}`) || {
+          year,
+          quarter,
+          label: `Q${quarter} ${year}`,
+          revenueTotal: 0,
+          cogsTotal: 0,
+          expenseTotal: 0,
+          interestTotal: 0,
+          daTotal: 0,
+          revenueAccounts: {},
+          cogsAccounts: {},
+        });
+        quarter -= 1;
+        if (quarter === 0) {
+          quarter = 4;
+          year -= 1;
+        }
+      }
+      quarters = filled;
     }
 
     const revenueAccountNames = Array.from(
@@ -13183,7 +13259,7 @@ function FinancialScorePage() {
       lines.push('');
     }
     if (valuationBuilderSelections.hfs_mda) {
-      lines.push('f. Management Discussion and Analysis:');
+      lines.push('g. Management Discussion and Analysis:');
       historicalFinancialSummaryData.mdaStrengths.forEach((item) => lines.push(`- Strength: ${item}`));
       historicalFinancialSummaryData.mdaWeaknesses.forEach((item) => lines.push(`- Watch Item: ${item}`));
       historicalFinancialSummaryData.mdaInsights.forEach((item) => lines.push(`- Insight: ${item}`));
@@ -13202,6 +13278,8 @@ function FinancialScorePage() {
     const money = (value: number) => `${formatDollar(value)}`;
     const pct = (value: number) => `${value.toFixed(1)}%`;
     const quarters = historicalFinancialSummaryData.quarters;
+    const newestFirst = <T,>(values: T[]): T[] => [...values].reverse();
+    const tableQuarters = newestFirst(quarters);
     const chartValues = historicalFinancialSummaryData.totalRevenueByQuarter;
     const maxChart = Math.max(1, ...chartValues.map((v) => Math.abs(v)));
     const chartW = 920;
@@ -13236,30 +13314,29 @@ function FinancialScorePage() {
       title: string,
       accountNames: string[],
       perQuarterValue: (account: string, quarter: typeof quarters[number]) => number,
-      totalLabel: string = 'Total'
+      totalLabel: string,
+      quarterTotal: (quarter: typeof quarters[number]) => number,
     ) => {
-      const quarterTotals = quarters.map((q) =>
-        accountNames.reduce((sum, account) => sum + perQuarterValue(account, q), 0)
-      );
+      const quarterTotals = tableQuarters.map(quarterTotal);
       const accountColPct = 22;
-      const quarterColPct = quarters.length > 0 ? (100 - accountColPct) / quarters.length : 0;
+      const quarterColPct = tableQuarters.length > 0 ? (100 - accountColPct) / tableQuarters.length : 0;
       return `
       <div style="margin: 20px 0 8px 0; font-size: 16px; font-weight: 800; color: #1e293b;">${esc(title)}</div>
       <div style="border: 1px solid #e2e8f0; border-radius: 10px;">
         <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;">
           <colgroup>
             <col style="width: ${accountColPct}%;" />
-            ${quarters.map(() => `<col style="width: ${quarterColPct.toFixed(4)}%;" />`).join('')}
+            ${tableQuarters.map(() => `<col style="width: ${quarterColPct.toFixed(4)}%;" />`).join('')}
           </colgroup>
           <thead>
             <tr style="background: #f8fafc;">
               <th style="text-align: left; padding: 5px 6px; border-bottom: 1px solid #e2e8f0;">Account</th>
-              ${quarters.map((q) => `<th style="text-align: right; padding: 5px 6px; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">${esc(q.label)}</th>`).join('')}
+              ${tableQuarters.map((q) => `<th style="text-align: right; padding: 5px 6px; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">${esc(q.label)}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
             ${accountNames.map((account) => {
-              const values = quarters.map((q) => perQuarterValue(account, q));
+              const values = tableQuarters.map((q) => perQuarterValue(account, q));
               return `<tr>
                 <td style="padding: 4px 6px; border-bottom: 1px solid #f1f5f9; font-weight: 600; color: #1e293b; word-wrap: break-word;">${esc(getFieldDisplayName(account))}</td>
                 ${values.map((v) => `<td style="padding: 4px 6px; border-bottom: 1px solid #f1f5f9; color: #334155; text-align: right; white-space: nowrap;">${money(v)}</td>`).join('')}
@@ -13284,7 +13361,8 @@ function FinancialScorePage() {
             'Quarterly Revenue by Account',
             historicalFinancialSummaryData.revenueAccountNames,
             (account, q) => q.revenueAccounts[account] || 0,
-            'Total Revenue'
+            'Total Revenue',
+            (q) => q.revenueTotal,
           )}
           <div style="margin: 18px 0 8px 0; font-size: 15px; font-weight: 800; color: #1e293b;">8-Quarter Revenue Trend</div>
           <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 12px 2px 12px;">
@@ -13314,7 +13392,8 @@ function FinancialScorePage() {
             'Quarterly COGS by Account',
             historicalFinancialSummaryData.cogsAccountNames,
             (account, q) => q.cogsAccounts[account] || 0,
-            'Total COGS'
+            'Total COGS',
+            (q) => q.cogsTotal,
           )}
         </div>
       `);
@@ -13333,10 +13412,10 @@ function FinancialScorePage() {
           <div style="border: 1px solid #e2e8f0; border-radius: 10px;">
             <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;">
               ${simpleColgroup}
-              <thead><tr style="background:#f8fafc;"><th style="text-align:left;padding:5px 6px;border-bottom:1px solid #e2e8f0;">Metric</th>${quarters.map((q) => `<th style="text-align:right;padding:5px 6px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${esc(q.label)}</th>`).join('')}</tr></thead>
+              <thead><tr style="background:#f8fafc;"><th style="text-align:left;padding:5px 6px;border-bottom:1px solid #e2e8f0;">Metric</th>${tableQuarters.map((q) => `<th style="text-align:right;padding:5px 6px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${esc(q.label)}</th>`).join('')}</tr></thead>
               <tbody>
-                <tr><td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;font-weight:700;">Gross Margin</td>${historicalFinancialSummaryData.grossMarginByQuarter.map((v) => `<td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap;">${pct(v)}</td>`).join('')}</tr>
-                <tr><td style="padding:4px 6px;font-weight:700;">EBITDA Margin</td>${historicalFinancialSummaryData.ebitdaMarginByQuarter.map((v) => `<td style="padding:4px 6px;text-align:right;white-space:nowrap;">${pct(v)}</td>`).join('')}</tr>
+                <tr><td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;font-weight:700;">Gross Margin</td>${newestFirst(historicalFinancialSummaryData.grossMarginByQuarter).map((v) => `<td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap;">${pct(v)}</td>`).join('')}</tr>
+                <tr><td style="padding:4px 6px;font-weight:700;">EBITDA Margin</td>${newestFirst(historicalFinancialSummaryData.ebitdaMarginByQuarter).map((v) => `<td style="padding:4px 6px;text-align:right;white-space:nowrap;">${pct(v)}</td>`).join('')}</tr>
               </tbody>
             </table>
           </div>
@@ -13350,9 +13429,9 @@ function FinancialScorePage() {
           <div style="border: 1px solid #e2e8f0; border-radius: 10px;">
             <table style="width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed;">
               ${simpleColgroup}
-              <thead><tr style="background:#f8fafc;"><th style="text-align:left;padding:5px 6px;border-bottom:1px solid #e2e8f0;">Metric</th>${quarters.map((q) => `<th style="text-align:right;padding:5px 6px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${esc(q.label)}</th>`).join('')}</tr></thead>
+              <thead><tr style="background:#f8fafc;"><th style="text-align:left;padding:5px 6px;border-bottom:1px solid #e2e8f0;">Metric</th>${tableQuarters.map((q) => `<th style="text-align:right;padding:5px 6px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${esc(q.label)}</th>`).join('')}</tr></thead>
               <tbody>
-                <tr><td style="padding:4px 6px;font-weight:700;">EBITDA</td>${historicalFinancialSummaryData.ebitdaByQuarter.map((v) => `<td style="padding:4px 6px;text-align:right;white-space:nowrap;">${money(v)}</td>`).join('')}</tr>
+                <tr><td style="padding:4px 6px;font-weight:700;">EBITDA</td>${newestFirst(historicalFinancialSummaryData.ebitdaByQuarter).map((v) => `<td style="padding:4px 6px;text-align:right;white-space:nowrap;">${money(v)}</td>`).join('')}</tr>
               </tbody>
             </table>
           </div>
@@ -13387,14 +13466,14 @@ function FinancialScorePage() {
               <thead>
                 <tr style="background:#f8fafc;">
                   <th style="text-align:left;padding:5px 6px;border-bottom:1px solid #e2e8f0;">Metric</th>
-                  ${quarters.map((q) => `<th style="text-align:right;padding:5px 6px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${esc(q.label)}</th>`).join('')}
+                  ${tableQuarters.map((q) => `<th style="text-align:right;padding:5px 6px;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${esc(q.label)}</th>`).join('')}
                 </tr>
               </thead>
               <tbody>
                 ${historicalFinancialSummaryData.keyRatioSeries.map((row) => `
                   <tr>
                     <td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;font-weight:700;color:#1e293b;">${esc(row.label)}</td>
-                    ${row.values.map((value) => `<td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;color:#334155;text-align:right;white-space:nowrap;">${esc(value)}</td>`).join('')}
+                    ${newestFirst(row.values).map((value) => `<td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;color:#334155;text-align:right;white-space:nowrap;">${esc(value)}</td>`).join('')}
                   </tr>
                 `).join('')}
               </tbody>
@@ -13403,10 +13482,107 @@ function FinancialScorePage() {
         </div>
       `);
     }
+    if (valuationBuilderSelections.hfs_loans !== false) {
+      const loansLoaded = reportLoans.companyId === selectedCompanyId && reportLoans.instruments !== null;
+      const isClosed = (instrument: any) => {
+        const closed = instrument?.terms?.closed;
+        return closed === true || String(closed).toLowerCase() === 'true' || Number(closed) === 1;
+      };
+      const isLoc = (instrument: any) => isLocByMappingAndName({
+        targetField: instrument.targetField,
+        accountId: instrument.accountId,
+        displayName: instrument.displayName || instrument.terms?.displayName,
+        loanType: instrument.terms?.loanType,
+        lender: instrument.terms?.lender,
+      });
+      const finite = (value: unknown): number | null => {
+        if (value === null || value === undefined || value === '') return null;
+        const parsed = Number(String(value).replace(/[$,\s]/g, ''));
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const currentBalance = (instrument: any): number | null => {
+        const derived = finite(instrument.derivedCurrentBalance);
+        if (derived !== null) return derived;
+        return isLoc(instrument) && finite(instrument.terms?.originalBalance) !== null ? 0 : null;
+      };
+      const loans = (reportLoans.instruments || []).filter((instrument) => {
+        if (isClosed(instrument)) return false;
+        const balance = currentBalance(instrument);
+        const prior = finite(instrument.priorMonthBalance);
+        return isLoc(instrument) || (balance !== null && Math.abs(balance) > 0.005) || (prior !== null && Math.abs(prior) > 0.005);
+      });
+      const optionalMoney = (value: number | null) => (value === null ? '—' : money(value));
+      const monthlyPrincipal = (instrument: any): number | null => {
+        const change = finite(instrument.principalChange);
+        return change === null ? null : -change;
+      };
+      const typeLabel = (instrument: any) => {
+        const target = String(instrument.targetField || '').trim().toLowerCase();
+        if (target === 'ltd') return 'Long-term debt';
+        if (target === 'loc') return 'Line of credit';
+        return instrument.terms?.loanType || '—';
+      };
+      const dateOnly = (value: unknown) => {
+        const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return match ? `${match[2]}/${match[3]}/${match[1]}` : '—';
+      };
+      const sumOf = (values: Array<number | null>) =>
+        values.some((value) => value !== null) ? values.reduce<number>((total, value) => total + (value || 0), 0) : null;
+      const activityMonth = loans.find((instrument) => instrument.principalChangeMonth)?.principalChangeMonth;
+      const th = (label: string, align: 'left' | 'right' = 'left') =>
+        `<th style="text-align:${align};padding:5px 6px;border-bottom:1px solid #e2e8f0;">${esc(label)}</th>`;
+      const td = (value: string, align: 'left' | 'right' = 'left', bold = false) =>
+        `<td style="padding:4px 6px;border-bottom:1px solid #f1f5f9;text-align:${align};${align === 'right' ? 'white-space:nowrap;' : ''}${bold ? 'font-weight:700;color:#1e293b;' : 'color:#334155;'}">${value}</td>`;
+      const totalCell = (value: string, align: 'left' | 'right' = 'right') =>
+        `<td style="padding:5px 6px;border-top:2px solid #e2e8f0;font-weight:800;color:#0f172a;text-align:${align};white-space:nowrap;">${value}</td>`;
+      const body = !loansLoaded
+        ? `<div data-report-loading="true" style="padding:12px 14px;font-size:13px;color:#64748b;">Loading loans…</div>`
+        : reportLoans.error
+          ? `<div style="padding:12px 14px;font-size:13px;color:#b91c1c;">Loans could not be loaded: ${esc(reportLoans.error)}</div>`
+          : loans.length === 0
+            ? `<div style="padding:12px 14px;font-size:13px;color:#64748b;">The company has not reported loans at this time</div>`
+            : `
+              <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                <thead><tr style="background:#f8fafc;">
+                  ${th('Loan Name')}${th('Loan ID')}${th('Lender')}${th('Type')}${th('Rate', 'right')}${th('Loan Amount', 'right')}${th('Balance', 'right')}${th('Monthly Principal', 'right')}${th('Monthly Interest', 'right')}${th('Maturity')}
+                </tr></thead>
+                <tbody>
+                  ${loans.map((instrument) => {
+                    const rate = finite(instrument.terms?.interestRatePct);
+                    return `<tr>
+                      ${td(esc(instrument.terms?.displayName || instrument.displayName || '—'), 'left', true)}
+                      ${td(esc(instrument.accountId || '—'))}
+                      ${td(esc(instrument.terms?.lender || '—'))}
+                      ${td(esc(typeLabel(instrument)))}
+                      ${td(rate === null ? '—' : `${rate.toFixed(2)}%`, 'right')}
+                      ${td(optionalMoney(finite(instrument.terms?.originalBalance)), 'right')}
+                      ${td(optionalMoney(currentBalance(instrument)), 'right', true)}
+                      ${td(optionalMoney(monthlyPrincipal(instrument)), 'right')}
+                      ${td(optionalMoney(finite(instrument.currentMonthInterestPaid)), 'right')}
+                      ${td(dateOnly(instrument.terms?.maturityDate))}
+                    </tr>`;
+                  }).join('')}
+                  <tr style="background:#f8fafc;">
+                    ${totalCell('Total', 'left')}${totalCell('')}${totalCell('')}${totalCell('')}${totalCell('')}${totalCell('')}
+                    ${totalCell(optionalMoney(sumOf(loans.map(currentBalance))))}
+                    ${totalCell(optionalMoney(sumOf(loans.map(monthlyPrincipal))))}
+                    ${totalCell(optionalMoney(sumOf(loans.map((instrument) => finite(instrument.currentMonthInterestPaid)))))}
+                    ${totalCell('')}
+                  </tr>
+                </tbody>
+              </table>
+              <div style="padding:8px 6px 4px;font-size:11px;color:#64748b;">Loan ID is the general ledger account. Monthly principal and interest are for ${esc(activityMonth || 'the current month')}, from Operational Reporting Loans.</div>`;
+      sections.push(`
+        <div style="margin-top: 20px;">
+          <div style="font-size: 18px; font-weight: 800; color: #1e293b;">f. Loans Outstanding</div>
+          <div style="border: 1px solid #e2e8f0; border-radius: 10px;">${body}</div>
+        </div>
+      `);
+    }
     if (valuationBuilderSelections.hfs_mda) {
       sections.push(`
         <div style="margin-top: 20px;">
-          <div style="font-size: 18px; font-weight: 800; color: #1e293b;">f. Management Discussion and Analysis</div>
+          <div style="font-size: 18px; font-weight: 800; color: #1e293b;">g. Management Discussion and Analysis</div>
           <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; display:grid; gap:10px;">
             <div><div style="font-size:14px;font-weight:800;color:#1e293b;margin-bottom:4px;">Strengths</div>${historicalFinancialSummaryData.mdaStrengths.length ? `<ul style="margin:0;padding-left:18px;color:#334155;font-size:14px;line-height:1.5;">${historicalFinancialSummaryData.mdaStrengths.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : `<div style="font-size:14px;color:#64748b;">No strengths available.</div>`}</div>
             <div><div style="font-size:14px;font-weight:800;color:#1e293b;margin-bottom:4px;">Watch Items</div>${historicalFinancialSummaryData.mdaWeaknesses.length ? `<ul style="margin:0;padding-left:18px;color:#334155;font-size:14px;line-height:1.5;">${historicalFinancialSummaryData.mdaWeaknesses.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : `<div style="font-size:14px;color:#64748b;">No watch items available.</div>`}</div>
@@ -13428,7 +13604,7 @@ function FinancialScorePage() {
         </div>
       </div>
     `;
-  }, [historicalFinancialSummaryData, valuationBuilderSelections, companyName, companyDisplayCurrency]);
+  }, [historicalFinancialSummaryData, valuationBuilderSelections, companyName, companyDisplayCurrency, reportLoans, selectedCompanyId]);
   const buildValuationSectionReportText = useCallback((sectionId: string, sectionTitle: string): string => {
     if (sectionId === '1') return buildExecutiveSummaryReportText();
     if (sectionId === '2') return buildBusinessOverviewReportText();
@@ -14386,11 +14562,13 @@ function FinancialScorePage() {
   );
   const valuationWordExportOptions = useCallback(
     (sectionId: string, sectionTitle: string) => {
-      const reportPrefix = sectionId.startsWith('qoe-') ? 'QoE Report - ' : '';
+      const isQoeReport = sectionId.startsWith('qoe-');
+      const reportPrefix = isQoeReport ? 'QoE Report - ' : '';
       return {
         title: `${reportPrefix}${sectionTitle} - ${companyName || 'Company'}`,
         fileName: safeWordFileName(`${reportPrefix}${sectionTitle} - ${companyName || 'Company'}`),
-        orientation: (['3', '12', 'qoe-3', 'qoe-4', 'qoe-cash-proof', 'qoe-7'].includes(sectionId) ? 'landscape' : 'portrait') as WordPageOrientation,
+        orientation: (['3', '12', 'qoe-3', 'qoe-cash-proof', 'qoe-7'].includes(sectionId) ? 'landscape' : 'portrait') as WordPageOrientation,
+        qoeBranding: isQoeReport,
       };
     },
     [companyName]
@@ -14464,14 +14642,42 @@ function FinancialScorePage() {
       setValuationWordExportingId(null);
     };
   }, [pendingRichValuationWordExport, valuationSectionPreview, valuationWordExportOptions]);
-  const startQoeDownloadAll = useCallback(() => {
+  const startQoeDownloadAll = useCallback(async () => {
     if (valuationWordExportingId || qoeReportSectionDefinitions.length === 0) return;
-    const first = qoeReportSectionDefinitions[0];
-    qoeDownloadAllSectionsRef.current = [];
+    if (!selectedCompanyId) return;
     setValuationWordExportingId('qoe-all');
-    setQoeDownloadAllIndex(0);
-    setValuationSectionPreview({ id: first.id, title: first.title, content: '' });
-  }, [valuationWordExportingId, qoeReportSectionDefinitions]);
+    try {
+      const response = await fetch(`/api/qoe-engagement-tracker?companyId=${encodeURIComponent(selectedCompanyId)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to load the QoE engagement details');
+
+      const tracker = payload.tracker || {};
+      const reviewPeriod = [tracker.reviewPeriodStart, tracker.reviewPeriodEnd].filter(Boolean).join(' through ');
+      qoeDownloadAllSectionsRef.current = await createQoeReportFrontMatter({
+        reportDate: formatEstDate(new Date()),
+        preparedFor: tracker.preparedFor || tracker.lender?.name || tracker.lenderName || '',
+        subjectBusiness: payload.company?.name || companyName || '',
+        proposedBorrower: tracker.proposedBorrower || '',
+        engagementLetterDate: tracker.engagementLetterDate ? formatEstDateLabel(tracker.engagementLetterDate) : '',
+        sbaLoanNumber: tracker.sbaLoanNumber || '',
+        sellerDocumentsReceived: tracker.sellerDocumentsComplete ? 'Yes' : 'No',
+        periodsUnderReview: reviewPeriod,
+        transactionType: tracker.transactionType || tracker.engagementType || '',
+        businessPurchasePrice: tracker.businessPurchasePrice || '',
+        preparedUnder: tracker.preparedUnder || '',
+        modulesEngaged: tracker.modulesEngaged || 'Quality of Earnings; Cash Proof',
+        engagementPartner: tracker.engagementPartner || tracker.teamLeadName || '',
+      });
+      const first = qoeReportSectionDefinitions[0];
+      setQoeDownloadAllIndex(0);
+      setValuationSectionPreview({ id: first.id, title: first.title, content: '' });
+    } catch (error) {
+      console.error('Failed to prepare QoE report front matter:', error);
+      alert(error instanceof Error ? error.message : 'Unable to prepare the QoE report.');
+      qoeDownloadAllSectionsRef.current = [];
+      setValuationWordExportingId(null);
+    }
+  }, [valuationWordExportingId, qoeReportSectionDefinitions, selectedCompanyId, companyName]);
   useEffect(() => {
     if (qoeDownloadAllIndex === null) return;
     const section = qoeReportSectionDefinitions[qoeDownloadAllIndex];
@@ -14495,7 +14701,9 @@ function FinancialScorePage() {
         await waitForChartsToRender(card);
         if (cancelled) return;
         const { orientation } = valuationWordExportOptions(section.id, section.title);
-        qoeDownloadAllSectionsRef.current.push(await elementToWordSection(card, orientation));
+        qoeDownloadAllSectionsRef.current.push(
+          await elementToWordSection(card, orientation, { heading: section.title, hideHeading: section.id === 'qoe-1' }),
+        );
         if (cancelled) return;
         const next = qoeReportSectionDefinitions[qoeDownloadAllIndex + 1];
         if (next) {
@@ -14504,7 +14712,11 @@ function FinancialScorePage() {
           return;
         }
         const title = `${QOE_REPORT_TITLE} - ${companyName || 'Company'}`;
-        await exportWordSections(qoeDownloadAllSectionsRef.current, { title, fileName: safeWordFileName(title) });
+        await exportWordSections(qoeDownloadAllSectionsRef.current, {
+          title,
+          fileName: safeWordFileName(title),
+          qoeBranding: true,
+        });
         finish();
       } catch (error) {
         if (cancelled) return;
@@ -14536,6 +14748,20 @@ function FinancialScorePage() {
     }
   }, [selectedCompanyId, valuationBuilderSelections]);
   const selectedAccountingSystem = company?.accountingSystem || '';
+  const qoeCoverTracker = qoeReportEngagement?.tracker || {};
+  const qoeCoverReviewPeriod = [qoeCoverTracker.reviewPeriodStart, qoeCoverTracker.reviewPeriodEnd].filter(Boolean).join(' through ');
+  const qoeCoverRows = [
+    ['Report date', formatEstDate(new Date())],
+    ['Engagement letter date', qoeCoverTracker.engagementLetterDate ? formatEstDateLabel(qoeCoverTracker.engagementLetterDate) : '—'],
+    ['SBA loan number', qoeCoverTracker.sbaLoanNumber || '—'],
+    ['Complete seller documents received', qoeCoverTracker.sellerDocumentsComplete ? 'Yes' : 'No'],
+    ['Periods under review', qoeCoverReviewPeriod || '—'],
+    ['Transaction type', qoeCoverTracker.transactionType || qoeCoverTracker.engagementType || '—'],
+    ['Business purchase price', qoeCoverTracker.businessPurchasePrice || '—'],
+    ['Prepared under', qoeCoverTracker.preparedUnder || '—'],
+    ['Modules engaged', qoeCoverTracker.modulesEngaged || 'Quality of Earnings; Cash Proof'],
+    ['Engagement partner', qoeCoverTracker.engagementPartner || qoeCoverTracker.teamLeadName || '—'],
+  ];
   const selectedCompanyCsvTrialBalanceData =
     csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId
       ? csvTrialBalanceData
@@ -22296,6 +22522,33 @@ function FinancialScorePage() {
               </p>
             </div>
 
+            <div style={{ padding: '52px 12%', background: '#ffffff', borderBottom: '1px solid #cbd5e1' }}>
+              <div style={{ color: '#1f70c1', fontSize: '35px', fontWeight: 800, marginBottom: '14px' }}>Corelytics</div>
+              <div style={{ color: '#0f172a', fontSize: '28px', fontWeight: 800, marginBottom: '34px' }}>Quality of Earnings Report with Cash Proof</div>
+              <div style={{ display: 'grid', gap: '8px', fontSize: '15px', color: '#1e293b', marginBottom: '28px' }}>
+                <div><strong>Prepared for:</strong> {qoeCoverTracker.preparedFor || qoeCoverTracker.lender?.name || qoeCoverTracker.lenderName || '—'}</div>
+                <div><strong>Subject business:</strong> {qoeReportEngagement?.company?.name || companyName || '—'}</div>
+                <div><strong>Proposed borrower:</strong> {qoeCoverTracker.proposedBorrower || '—'}</div>
+              </div>
+              {qoeReportEngagementError ? (
+                <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '13px' }}>
+                  Engagement details could not be loaded: {qoeReportEngagementError}
+                </div>
+              ) : (
+                <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden' }}>
+                  {qoeCoverRows.map(([label, value], index) => (
+                    <div key={label} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, .8fr) minmax(0, 1.2fr)', borderBottom: index === qoeCoverRows.length - 1 ? 0 : '1px solid #e2e8f0' }}>
+                      <div style={{ padding: '10px 12px', background: '#eff6ff', color: '#1e3a5f', fontSize: '13px', fontWeight: 700 }}>{label}</div>
+                      <div style={{ padding: '10px 12px', color: '#1e293b', fontSize: '13px' }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop: '22px', color: '#475569', fontSize: '12px', fontStyle: 'italic' }}>
+                All amounts are in U.S. dollars. Schedules in this report are presented to the nearest thousand dollars.
+              </div>
+            </div>
+
             <div style={{ padding: '18px 22px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', color: '#334155', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <span>
                 This page defines the report sections and required content for build-out. It is structured to be viewable and print-ready.
@@ -22534,6 +22787,17 @@ function FinancialScorePage() {
                   currency={companyDisplayCurrency}
                   locale={selectedCompany?.locale}
                   adjustmentSummary={sdeReportAdjustmentSummary}
+                  qualityOfEarningsStatements={
+                    qoeIncomeStatementViews.length > 0 ? (
+                      <SdeAdjustedIncomeStatement
+                        companyId={selectedCompanyId}
+                        monthly={monthly}
+                        refreshKey={sdeIncomeStatementRefreshKey}
+                        reportViews={qoeIncomeStatementViews}
+                        embedded
+                      />
+                    ) : null
+                  }
                 />
               ) : (
                 <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
@@ -22544,14 +22808,6 @@ function FinancialScorePage() {
               <div style={{ marginTop: '10px' }} dangerouslySetInnerHTML={{ __html: buildBusinessOverviewReportHtml(QOE_REPORT_TITLE) }} />
             ) : valuationSectionPreview.id === 'qoe-3' ? (
               <div style={{ marginTop: '10px' }} dangerouslySetInnerHTML={{ __html: buildHistoricalFinancialSummaryReportHtml(QOE_REPORT_TITLE, 'Historical Financial Review') }} />
-            ) : valuationSectionPreview.id === 'qoe-4' ? (
-              <SdeAdjustedIncomeStatement
-                companyId={selectedCompanyId}
-                monthly={monthly}
-                refreshKey={sdeIncomeStatementRefreshKey}
-                reportViews={qoeIncomeStatementViews}
-                reportTitle={QOE_REPORT_TITLE}
-              />
             ) : valuationSectionPreview.id === 'qoe-cash-proof' ? (
               <CashProofReportSection
                 companyId={selectedCompanyId}

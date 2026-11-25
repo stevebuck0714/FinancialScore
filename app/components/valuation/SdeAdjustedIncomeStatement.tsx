@@ -179,6 +179,7 @@ export default function SdeAdjustedIncomeStatement({
   refreshKey,
   reportViews,
   reportTitle,
+  embedded = false,
 }: {
   companyId: string | null | undefined;
   monthly: MonthlyRow[];
@@ -186,6 +187,8 @@ export default function SdeAdjustedIncomeStatement({
   /** Renders a static report section with these views stacked, without the toggle, CSV, or Print controls. */
   reportViews?: StatementView[];
   reportTitle?: string;
+  /** Report views placed inside another report section: no border or report header of their own. */
+  embedded?: boolean;
 }) {
   const money = useCompanyMoneyFormatter(companyId);
   const reportRef = useRef<HTMLDivElement>(null);
@@ -394,18 +397,22 @@ export default function SdeAdjustedIncomeStatement({
   monthlyRows.push({ label: 'Total QoE adjustments', values: qoeAdjustmentSeries, kind: 'adjustment' });
   monthlyRows.push({ label: 'Adjusted EBITDA', values: addSeries(ebitdaSeries, qoeAdjustmentSeries), kind: 'adjustedTotal' });
 
+  const ttmCell = { padding: '6px 10px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const };
   const row = (label: string, actual: number, adjustment = 0, adjusted = actual + adjustment, emphasis = false) => (
-    <div key={label} style={{ display: 'grid', gridTemplateColumns: 'minmax(210px, 1fr) 150px 150px 170px', gap: '12px', padding: '7px 10px', borderTop: '1px solid #e2e8f0', fontSize: '13px', fontWeight: emphasis ? 700 : 400, background: emphasis ? '#eff6ff' : 'transparent' }}>
-      <span style={{ color: emphasis ? '#1e3a8a' : '#334155' }}>{label}</span>
-      <span style={{ textAlign: 'right' }}>{fmt(actual)}</span>
-      <span style={{ textAlign: 'right', color: adjustment === 0 ? '#64748b' : adjustment > 0 ? '#059669' : '#dc2626' }}>{adjustment === 0 ? '—' : signed(adjustment)}</span>
-      <span style={{ textAlign: 'right', color: emphasis ? '#1e3a8a' : '#334155' }}>{fmt(adjusted)}</span>
-    </div>
+    <tr key={label} style={{ borderTop: '1px solid #e2e8f0', fontSize: '13px', fontWeight: emphasis ? 700 : 400, background: emphasis ? '#eff6ff' : 'transparent' }}>
+      <td style={{ ...ttmCell, textAlign: 'left', whiteSpace: 'normal', color: emphasis ? '#1e3a8a' : '#334155' }}>{label}</td>
+      <td style={ttmCell}>{fmt(actual)}</td>
+      <td style={{ ...ttmCell, color: adjustment === 0 ? '#64748b' : adjustment > 0 ? '#059669' : '#dc2626' }}>{adjustment === 0 ? '—' : signed(adjustment)}</td>
+      <td style={{ ...ttmCell, color: emphasis ? '#1e3a8a' : '#334155' }}>{fmt(adjusted)}</td>
+    </tr>
   );
   const adjustmentRow = (line: AdjustmentLine) => (
-    <div key={line.label} style={{ display: 'grid', gridTemplateColumns: 'minmax(210px, 1fr) 150px 150px 170px', gap: '12px', padding: '5px 10px 5px 28px', fontSize: '12px', color: '#475569' }}>
-      <span>{line.label}</span><span /><span style={{ textAlign: 'right', color: line.amount > 0 ? '#059669' : '#dc2626' }}>{signed(line.amount)}</span><span />
-    </div>
+    <tr key={line.label} style={{ fontSize: '12px', color: '#475569' }}>
+      <td style={{ padding: '3px 10px 3px 28px' }}>{line.label}</td>
+      <td />
+      <td style={{ ...ttmCell, padding: '3px 10px', color: line.amount > 0 ? '#059669' : '#dc2626' }}>{signed(line.amount)}</td>
+      <td />
+    </tr>
   );
   const monthlyRowBackground = (kind: MonthlyReportRow['kind']) =>
     kind === 'total' ? '#eff6ff' : kind === 'adjustedTotal' ? '#dbeafe' : '#ffffff';
@@ -539,10 +546,17 @@ export default function SdeAdjustedIncomeStatement({
   );
 
   const renderTtmTable = () => (
-        <div style={{ overflowX: 'auto', minWidth: '720px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(210px, 1fr) 150px 150px 170px', gap: '12px', padding: '8px 10px', background: '#f8fafc', color: '#475569', fontSize: '12px', fontWeight: 700 }}>
-            <span>Line item</span><span style={{ textAlign: 'right' }}>Trailing 12 Months</span><span style={{ textAlign: 'right' }}>QoE adjustment</span><span style={{ textAlign: 'right' }}>Adjusted TTM</span>
-          </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '640px' }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', color: '#475569', fontSize: '12px', fontWeight: 700 }}>
+              <th style={{ ...ttmCell, textAlign: 'left' }}>Line item</th>
+              <th style={ttmCell}>Trailing 12 Months</th>
+              <th style={ttmCell}>QoE adjustment</th>
+              <th style={ttmCell}>Adjusted TTM</th>
+            </tr>
+          </thead>
+          <tbody>
           {row('Revenue', model.revenue, totalOf(model.oneTimeRevenue), adjustedRevenue, true)}
           {model.oneTimeRevenue.map(adjustmentRow)}
           {model.cogsDetails.filter(([, amount, field]) => amount !== 0 || adjustmentLinesFor(field, operatingAdjustments).length > 0).flatMap(([label, amount, field]) => {
@@ -561,19 +575,21 @@ export default function SdeAdjustedIncomeStatement({
           {row('Add back: Interest expense', model.interest)}
           {row('Add back: Depreciation & amortization', model.depreciation)}
           {row('EBITDA', model.ebitda, model.adjustmentTotal, model.adjustedEbitda, true)}
+          </tbody>
+          </table>
         </div>
   );
 
   if (reportViews) {
     const isLoading = !error && (!adjustments || !settings);
     return (
-      <div className="sde-income-statement-report" style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
+      <div className="sde-income-statement-report" style={embedded ? { background: '#fff' } : { border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
         <style>{`
           .sde-income-statement-report .sde-monthly-table th,
           .sde-income-statement-report .sde-monthly-table td { font-size: 10px !important; padding: 4px 5px !important; }
           .sde-income-statement-report .sde-monthly-table td:first-child { padding-left: 8px !important; }
           @media print {
-            @page { size: letter landscape; margin: 0.4in; }
+            ${embedded ? '' : '@page { size: letter landscape; margin: 0.4in; }'}
             .sde-income-statement-report { border: none !important; border-radius: 0 !important; }
             .sde-income-statement-report * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .sde-income-statement-report .sde-monthly-scroll { overflow: visible !important; }
@@ -582,14 +598,16 @@ export default function SdeAdjustedIncomeStatement({
             .sde-income-statement-report .sde-statement-view + .sde-statement-view { break-before: page; page-break-before: always; }
           }
         `}</style>
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-          <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>{reportTitle || 'Corelytics Valuation Report'}</div>
-          <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800, marginTop: '6px' }}>Income Statements</div>
-          <div style={{ fontSize: '16px', color: '#475569', marginTop: '4px', lineHeight: 1.45 }}>
-            Prepared for: <strong>{companyName}</strong> | Generated: {new Date().toLocaleDateString('en-US', { timeZone: APP_TIME_ZONE })}
+        {!embedded && (
+          <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+            <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>{reportTitle || 'Corelytics Valuation Report'}</div>
+            <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800, marginTop: '6px' }}>Income Statements</div>
+            <div style={{ fontSize: '16px', color: '#475569', marginTop: '4px', lineHeight: 1.45 }}>
+              Prepared for: <strong>{companyName}</strong> | Generated: {new Date().toLocaleDateString('en-US', { timeZone: APP_TIME_ZONE })}
+            </div>
           </div>
-        </div>
-        <div style={{ padding: '16px 18px', display: 'grid', gap: '20px' }}>
+        )}
+        <div style={{ padding: embedded ? 0 : '16px 18px', display: 'grid', gap: '20px' }}>
           {error && <div style={{ color: '#b91c1c', fontSize: '13px' }}>{error}</div>}
           {isLoading ? (
             <div data-report-loading="true" style={{ fontSize: '13px', color: '#64748b' }}>Loading saved Quality of Earnings adjustments…</div>

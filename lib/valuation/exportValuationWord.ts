@@ -3,7 +3,7 @@ import type { IBorderOptions, IRunOptions, ITableCellBorders, Paragraph, Paragra
 export type WordPageOrientation = 'portrait' | 'landscape';
 
 type Docx = typeof import('docx');
-type Block = Paragraph | Table;
+type Block = Paragraph | Table | any;
 
 const PX_PER_INCH = 96;
 const TWIPS_PER_PX = 15;
@@ -37,6 +37,8 @@ type Ctx = {
   /** Card styling applied to every paragraph inside a bordered/shaded container. */
   box?: { fill: string | null; border: { width: number; color: string } | null };
   inCell?: boolean;
+  /** Full QoE report: section header boxes are dropped and only explicit headings feed the table of contents. */
+  fullReport?: boolean;
 };
 
 type Segment =
@@ -354,7 +356,7 @@ function trimSegments(segments: Segment[]): Segment[] {
 
 /** Large, all-bold, short text lines become Word headings so they use styles, keep-with-next, and the Navigation Pane. */
 function headingLevel(segments: Segment[], ctx: Ctx): 1 | 2 | null {
-  if (ctx.box || ctx.inCell) return null;
+  if (ctx.box || ctx.inCell || ctx.fullReport) return null;
   const texts = segments.filter((s): s is Extract<Segment, { kind: 'text' }> => s.kind === 'text' && !!s.text.trim());
   if (!texts.length || segments.some((s) => s.kind === 'image')) return null;
   const text = texts.map((s) => s.text).join('').trim();
@@ -612,9 +614,21 @@ async function walkChildren(el: Element, ctx: Ctx): Promise<Block[]> {
   return blocks;
 }
 
+/** The "report title / section / Prepared for … Generated" box each section preview starts with. */
+function isSectionReportHeader(el: Element): boolean {
+  const last = el.lastElementChild;
+  return el.children.length >= 2 && !!last && /^\s*Prepared for:/.test(last.textContent || '') && /Generated:/.test(last.textContent || '');
+}
+
 async function walkElement(el: Element, ctx: Ctx): Promise<Block[]> {
   const { D } = ctx;
   if (!isVisible(el)) return [];
+  if (ctx.fullReport && isSectionReportHeader(el)) return [];
+  const explicitHeading = el.getAttribute('data-word-heading');
+  if (ctx.fullReport && explicitHeading) {
+    const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    return text ? [new D.Paragraph({ text, heading: explicitHeading === '1' ? D.HeadingLevel.HEADING_1 : D.HeadingLevel.HEADING_2 })] : [];
+  }
   const out: Block[] = [];
   if (isPageBreakBefore(el)) out.push(pageBreak(D));
 
@@ -681,7 +695,89 @@ const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() 
 /** One converted report section; each becomes its own Word section starting on a new page. */
 export type WordSection = { blocks: Block[]; orientation: WordPageOrientation };
 
-async function buildDocument(sections: WordSection[], options: { title: string }): Promise<Blob> {
+export type QoeReportCover = {
+  reportDate: string;
+  preparedFor: string;
+  subjectBusiness: string;
+  proposedBorrower: string;
+  engagementLetterDate: string;
+  sbaLoanNumber: string;
+  sellerDocumentsReceived: string;
+  periodsUnderReview: string;
+  transactionType: string;
+  businessPurchasePrice: string;
+  preparedUnder: string;
+  modulesEngaged: string;
+  engagementPartner: string;
+};
+
+function coverValue(value: string): string {
+  return value.trim() || '—';
+}
+
+/** Cover and Word-native table of contents for a complete QoE report. */
+export async function createQoeReportFrontMatter(cover: QoeReportCover): Promise<WordSection[]> {
+  const D = await import('docx');
+  const coverRow = (label: string, value: string) =>
+    new D.TableRow({
+      children: [
+        new D.TableCell({
+          width: { size: 34, type: D.WidthType.PERCENTAGE },
+          shading: { fill: 'EAF2FB' },
+          margins: { top: 100, bottom: 100, left: 120, right: 120 },
+          children: [new D.Paragraph({ children: [new D.TextRun({ text: label, bold: true, size: 19, color: '1E3A5F' })] })],
+        }),
+        new D.TableCell({
+          width: { size: 66, type: D.WidthType.PERCENTAGE },
+          margins: { top: 100, bottom: 100, left: 120, right: 120 },
+          children: [new D.Paragraph({ children: [new D.TextRun({ text: coverValue(value), size: 19, color: '1E293B' })] })],
+        }),
+      ],
+    });
+  const table = new D.Table({
+    width: { size: 100, type: D.WidthType.PERCENTAGE },
+    rows: [
+      coverRow('Report date', cover.reportDate),
+      coverRow('Engagement letter date', cover.engagementLetterDate),
+      coverRow('SBA loan number', cover.sbaLoanNumber),
+      coverRow('Complete seller documents received', cover.sellerDocumentsReceived),
+      coverRow('Periods under review', cover.periodsUnderReview),
+      coverRow('Transaction type', cover.transactionType),
+      coverRow('Business purchase price', cover.businessPurchasePrice),
+      coverRow('Prepared under', cover.preparedUnder),
+      coverRow('Modules engaged', cover.modulesEngaged),
+      coverRow('Engagement partner', cover.engagementPartner),
+    ],
+  });
+
+  return [
+    {
+      orientation: 'portrait',
+      blocks: [
+        new D.Paragraph({ alignment: D.AlignmentType.LEFT, spacing: { before: 1800, after: 160 }, children: [new D.TextRun({ text: 'Corelytics', bold: true, size: 53, color: '1F70C1' })] }),
+        new D.Paragraph({ alignment: D.AlignmentType.LEFT, spacing: { after: 440 }, children: [new D.TextRun({ text: 'Quality of Earnings Report with Cash Proof', bold: true, size: 28, color: '0F172A' })] }),
+        new D.Paragraph({ spacing: { after: 100 }, children: [new D.TextRun({ text: 'Prepared for: ', bold: true, size: 20 }), new D.TextRun({ text: coverValue(cover.preparedFor), size: 20 })] }),
+        new D.Paragraph({ spacing: { after: 100 }, children: [new D.TextRun({ text: 'Subject business: ', bold: true, size: 20 }), new D.TextRun({ text: coverValue(cover.subjectBusiness), size: 20 })] }),
+        new D.Paragraph({ spacing: { after: 340 }, children: [new D.TextRun({ text: 'Proposed borrower: ', bold: true, size: 20 }), new D.TextRun({ text: coverValue(cover.proposedBorrower), size: 20 })] }),
+        table,
+        new D.Paragraph({ spacing: { before: 280 }, children: [new D.TextRun({ text: 'All amounts are in U.S. dollars. Schedules in this report are presented to the nearest thousand dollars.', italics: true, size: 18, color: '475569' })] }),
+      ],
+    },
+    {
+      orientation: 'portrait',
+      blocks: [
+        new D.Paragraph({ keepNext: true, keepLines: true, spacing: { after: 260 }, children: [new D.TextRun({ text: 'Table of Contents', bold: true, size: 30, color: '0F172A' })] }),
+        new D.TableOfContents('Quality of Earnings Report', {
+          hyperlink: true,
+          headingStyleRange: '1-2',
+          rightTabStop: 9000,
+        }),
+      ],
+    },
+  ];
+}
+
+async function buildDocument(sections: WordSection[], options: { title: string; qoeBranding?: boolean }): Promise<Blob> {
   const D = await import('docx');
   const filled = sections.filter((s) => s.blocks.length);
   if (!filled.length) throw new Error('The report had no content to export yet.');
@@ -689,6 +785,7 @@ async function buildDocument(sections: WordSection[], options: { title: string }
   const doc = new D.Document({
     creator: 'Corelytics',
     title: options.title,
+    features: { updateFields: true },
     styles: {
       default: {
         document: {
@@ -717,12 +814,27 @@ async function buildDocument(sections: WordSection[], options: { title: string }
           margin: { top: margin, right: margin, bottom: margin, left: margin, header: 360, footer: 360 },
         },
       },
+      ...(options.qoeBranding
+        ? {
+            headers: {
+              default: new D.Header({
+                children: [
+                  new D.Paragraph({
+                    children: [new D.TextRun({ text: 'Corelytics', bold: true, size: 20, color: '1F70C1' })],
+                  }),
+                ],
+              }),
+            },
+          }
+        : {}),
       footers: {
         default: new D.Footer({
           children: [
             new D.Paragraph({
               alignment: D.AlignmentType.RIGHT,
-              children: [new D.TextRun({ children: ['Page ', D.PageNumber.CURRENT], size: 16, color: '64748B' })],
+              children: options.qoeBranding
+                ? [new D.TextRun({ children: ['Venturis Financial, LLC/Corelytics   Page ', D.PageNumber.CURRENT, ' of ', D.PageNumber.TOTAL_PAGES], size: 16, color: '64748B' })]
+                : [new D.TextRun({ children: ['Page ', D.PageNumber.CURRENT], size: 16, color: '64748B' })],
             }),
           ],
         }),
@@ -763,8 +875,16 @@ export function safeWordFileName(title: string): string {
   return `${safe || 'Valuation Section'}.docx`;
 }
 
-/** Lays `root` out at Word page width and converts it to Word content for one section. */
-export async function elementToWordSection(root: HTMLElement, orientation: WordPageOrientation): Promise<WordSection> {
+/**
+ * Lays `root` out at Word page width and converts it to Word content for one section.
+ * With `toc`, the section is part of the full QoE report: it gets a Heading 1 table-of-contents
+ * entry (hidden when `hideHeading`), and elements marked `data-word-heading` become Heading 2 entries.
+ */
+export async function elementToWordSection(
+  root: HTMLElement,
+  orientation: WordPageOrientation,
+  toc?: { heading: string; hideHeading?: boolean },
+): Promise<WordSection> {
   const previous = { width: root.style.width, maxWidth: root.style.maxWidth, maxHeight: root.style.maxHeight, overflow: root.style.overflowY };
   root.style.width = `${contentWidthPx(orientation)}px`;
   root.style.maxWidth = 'none';
@@ -775,8 +895,15 @@ export async function elementToWordSection(root: HTMLElement, orientation: WordP
     await nextFrame();
     const D = await import('docx');
     const pageContentWidthPx = contentWidthPx(orientation);
-    const blocks = await walkChildren(root, { D, maxWidthPx: pageContentWidthPx, pageContentWidthPx });
-    return { blocks, orientation };
+    const blocks = await walkChildren(root, { D, maxWidthPx: pageContentWidthPx, pageContentWidthPx, fullReport: !!toc });
+    if (!toc) return { blocks, orientation };
+    /** Word leaves hidden text out of the table of contents, so a hidden heading is drawn as tiny white text instead. */
+    const heading = new D.Paragraph({
+      heading: D.HeadingLevel.HEADING_1,
+      spacing: toc.hideHeading ? { before: 0, after: 0, line: 20, lineRule: D.LineRuleType.EXACT } : undefined,
+      children: [toc.hideHeading ? new D.TextRun({ text: toc.heading, size: 2, color: 'FFFFFF' }) : new D.TextRun(toc.heading)],
+    });
+    return { blocks: [heading, ...blocks], orientation };
   } finally {
     root.style.width = previous.width;
     root.style.maxWidth = previous.maxWidth;
@@ -786,14 +913,14 @@ export async function elementToWordSection(root: HTMLElement, orientation: WordP
 }
 
 /** Combines converted sections into one .docx and downloads it. */
-export async function exportWordSections(sections: WordSection[], options: { title: string; fileName: string }): Promise<void> {
+export async function exportWordSections(sections: WordSection[], options: { title: string; fileName: string; qoeBranding?: boolean }): Promise<void> {
   triggerDownload(await buildDocument(sections, options), options.fileName);
 }
 
 /** Lays `root` out at Word page width, converts it to an editable .docx, and downloads it. */
 export async function exportElementToWord(
   root: HTMLElement,
-  options: { title: string; fileName: string; orientation: WordPageOrientation }
+  options: { title: string; fileName: string; orientation: WordPageOrientation; qoeBranding?: boolean }
 ): Promise<void> {
   await exportWordSections([await elementToWordSection(root, options.orientation)], options);
 }
@@ -801,7 +928,7 @@ export async function exportElementToWord(
 /** Renders an HTML string off-screen at page width so charts get real layout, then exports it to Word. */
 export async function exportHtmlToWord(
   html: string,
-  options: { title: string; fileName: string; orientation: WordPageOrientation }
+  options: { title: string; fileName: string; orientation: WordPageOrientation; qoeBranding?: boolean }
 ): Promise<void> {
   const host = document.createElement('div');
   host.setAttribute('aria-hidden', 'true');

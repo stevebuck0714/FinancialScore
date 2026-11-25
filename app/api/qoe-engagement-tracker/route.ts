@@ -49,8 +49,8 @@ const TRACKER_INCLUDE = {
 };
 
 function date(value: unknown) {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
+  const raw = String(value || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
   const parsed = new Date(`${raw}T00:00:00.000Z`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
@@ -101,7 +101,7 @@ async function getOrCreateTracker(companyId: string) {
 async function trackerResponse(companyId: string) {
   const [tracker, company, accountManagers, lenders, dataRoomDocuments, cashProof] = await Promise.all([
     getOrCreateTracker(companyId),
-    prisma.company.findUnique({ where: { id: companyId }, select: { accountingSystem: true } }),
+    prisma.company.findUnique({ where: { id: companyId }, select: { name: true, accountingSystem: true } }),
     prisma.user.findMany({
       where: { isAccountManager: true, isExternal: false },
       select: { id: true, name: true, email: true },
@@ -122,7 +122,7 @@ async function trackerResponse(companyId: string) {
   return {
     companyId,
     tracker,
-    company: { accountingSystem: company?.accountingSystem || '' },
+    company: { name: company?.name || '', accountingSystem: company?.accountingSystem || '' },
     accountManagers,
     lenders,
     dataRoom: {
@@ -188,10 +188,20 @@ export async function POST(request: NextRequest) {
         where: { id: tracker.id },
         data: {
           engagementType: text(body.engagementType),
+          preparedFor: text(body.preparedFor),
+          proposedBorrower: text(body.proposedBorrower),
+          transactionType: text(body.transactionType),
+          businessPurchasePrice: text(body.businessPurchasePrice),
+          preparedUnder: text(body.preparedUnder),
           reviewPeriodStart: text(body.reviewPeriodStart),
           reviewPeriodEnd: text(body.reviewPeriodEnd),
           fiscalYearEndMonth: body.fiscalYearEndMonth ? Number(body.fiscalYearEndMonth) : null,
           reportDueDate: date(body.reportDueDate),
+          engagementLetterDate: date(body.engagementLetterDate),
+          sbaLoanNumber: text(body.sbaLoanNumber),
+          sellerDocumentsComplete: Boolean(body.sellerDocumentsComplete),
+          modulesEngaged: text(body.modulesEngaged),
+          engagementPartner: text(body.engagementPartner),
           accountManagerUserId: accountManager?.id || null,
           accountManagerName: accountManager?.name || null,
           lenderId: lender?.id || null,

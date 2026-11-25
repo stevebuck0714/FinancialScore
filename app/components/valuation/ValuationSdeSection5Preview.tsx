@@ -31,6 +31,8 @@ type Props = {
   variant?: 'sde' | 'qoe';
   /** Per-adjustment breakdown shown after the Quality of Earnings charts. */
   adjustmentSummary?: QoeSummaryBucket[];
+  /** Adjusted income statements shown at the end of the Quality of Earnings section. */
+  qualityOfEarningsStatements?: React.ReactNode;
   /** QoE only: Revenue Quality cites the Cash Proof tax return comparison for this company. */
   companyId?: string | null;
 };
@@ -64,15 +66,15 @@ function TaxReturnRevenueNote({ companyId }: { companyId: string }) {
 }
 
 const sectionTitle = (title: string) => (
-  <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', margin: '16px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
+  <div data-word-heading="2" style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', margin: '16px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
     {title}
   </div>
 );
 
-function ExecutiveSummary({ children }: { children: React.ReactNode }) {
+function ExecutiveSummary({ children, hideTitle = false }: { children: React.ReactNode; hideTitle?: boolean }) {
   return (
     <div className="sde-executive-summary">
-      <div className="sde-executive-summary-title">Executive Summary</div>
+      {!hideTitle && <div className="sde-executive-summary-title">Executive Summary</div>}
       <p>{children}</p>
     </div>
   );
@@ -280,7 +282,7 @@ function QoeWaterfallChart({
 }
 
 export default function ValuationSdeSection5Preview(props: Props) {
-  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale, variant = 'sde', adjustmentSummary, companyId } = props;
+  const { model, monthly, selections, companyName, latestFinancialSource, sdeExecutiveFinancialSummaryApi, sdeRecommendationsApi, currency, locale, variant = 'sde', adjustmentSummary, qualityOfEarningsStatements, companyId } = props;
   const isQoe = variant === 'qoe';
   const fmt = model.formatDollars;
   const compact = (value: number) => formatMoneyCompact(value, { currency, locale });
@@ -521,7 +523,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
         {selections.sde_executiveSummary && (
           <div className="valuation-print-category">
             {sectionTitle('Executive Summary')}
-            <ExecutiveSummary>
+            <ExecutiveSummary hideTitle>
               {isQoe
                 ? qoeExecutiveSummary
                 : `Trailing 12-month SDE is ${fmt(model.ttmSDE)} and the indicated business value is ${fmt(model.sdeValuation)} at a ${model.sdeMultiplier.toFixed(1)}x SDE multiple. The multiple applies to each dollar of normalized SDE and is ${sectorMultiplePosition} the ${model.sdeSectorBenchmarks.sectorLabel} sector range of ${sectorMultipleRange.low.toFixed(1)}x–${sectorMultipleRange.high.toFixed(1)}x.`}
@@ -733,6 +735,7 @@ export default function ValuationSdeSection5Preview(props: Props) {
                 <QoeAdjustmentSummary buckets={adjustmentSummary} fmt={fmt} />
               </div>
             )}
+            {qualityOfEarningsStatements && <div style={{ marginTop: '16px' }}>{qualityOfEarningsStatements}</div>}
           </div>
         )}
 
