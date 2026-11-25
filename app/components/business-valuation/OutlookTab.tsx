@@ -263,9 +263,9 @@ export default function OutlookTab({ engagement, companyName, industryTable, loc
               disabled={locked || Boolean(saving) || !canDraftIndustry}
               onClick={() => void draftIndustryWithAi()}
               style={{ ...smallButton, background: '#64748b', opacity: canDraftIndustry ? 1 : 0.55 }}
-              title={industryDraftHint || 'Writes the Industry section from the indicators, published outlooks, and benchmarks. Review before approving.'}
+              title={industryDraftHint || 'Researches the industry on the web as of the valuation date, then writes the Industry section from that research, the indicators, published outlooks, and benchmarks, citing each source. Review before approving.'}
             >
-              {saving === 'outlook-ai' ? 'Drafting…' : 'Draft industry with AI'}
+              {saving === 'outlook-ai' ? 'Researching and drafting (1–2 min)…' : 'Draft industry with AI'}
             </button>
             {!locked && industryDraftHint && <span style={{ ...pendingNote, alignSelf: 'center' }}>AI draft: {industryDraftHint.toLowerCase()}</span>}
             <button

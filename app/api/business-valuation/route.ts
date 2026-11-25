@@ -49,7 +49,7 @@ import {
 import { formatEstDate } from '@/lib/time/eastern';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const STAFF_ROLES = new Set(['SITEADMIN', 'CONSULTANT']);
 
@@ -630,11 +630,12 @@ export async function POST(request: NextRequest) {
         },
         { feature: 'business_valuation', companyId, userId: context.userId, route: '/api/business-valuation' },
       );
-      const next: Outlook = { ...current, industry: draft.text, approvedAt: null, approvedByName: null };
+      const next: Outlook = { ...current, industry: draft.text, industrySources: draft.sources, approvedAt: null, approvedByName: null };
+      const researchSummary = draft.sources.length ? `, ${draft.sources.length} web sources` : draft.researchFailures.length ? ', web research unavailable' : '';
       await prisma.$transaction([
         prisma.businessValuationEngagement.update({ where: { id: engagement.id }, data: { outlook: JSON.parse(JSON.stringify(next)) } }),
         prisma.businessValuationChange.create({
-          data: { engagementId: engagement.id, field: 'outlook.industry', oldValue: current.industry ? 'Edited' : null, newValue: `AI draft (${draft.model})`, userId: context.userId, userName: actorName },
+          data: { engagementId: engagement.id, field: 'outlook.industry', oldValue: current.industry ? 'Edited' : null, newValue: `AI draft (${draft.model}${researchSummary})`, userId: context.userId, userName: actorName },
         }),
         ...(current.approvedAt
           ? [prisma.businessValuationChange.create({ data: { engagementId: engagement.id, field: 'outlook.approved', oldValue: 'Approved', newValue: 'Withdrawn after AI draft', userId: context.userId, userName: actorName } })]

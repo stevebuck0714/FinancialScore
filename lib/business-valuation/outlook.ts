@@ -85,6 +85,9 @@ export const OUTLOOK_SECTIONS = [
 ] as const;
 export type OutlookSectionKey = (typeof OUTLOOK_SECTIONS)[number]['key'];
 
+/** A web source cited as [number] in the Industry text. */
+export type OutlookWebSource = { number: number; url: string; title: string | null; date: string | null };
+
 export type Outlook = {
   geography: OutlookGeography | null;
   indicators: EconomicIndicator[];
@@ -95,6 +98,7 @@ export type Outlook = {
   national: string | null;
   regional: string | null;
   industry: string | null;
+  industrySources: OutlookWebSource[];
   approvedAt: string | null;
   approvedByName: string | null;
 };
@@ -109,6 +113,7 @@ export const DEFAULT_OUTLOOK: Outlook = {
   national: null,
   regional: null,
   industry: null,
+  industrySources: [],
   approvedAt: null,
   approvedByName: null,
 };
@@ -155,6 +160,15 @@ function normalizeIndicator(raw: unknown): EconomicIndicator | null {
   };
 }
 
+function normalizeWebSource(raw: unknown): OutlookWebSource | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const item = raw as Record<string, unknown>;
+  const number = finite(item.number);
+  const url = optionalText(item.url);
+  if (number === null || !url || !/^https?:\/\//i.test(url)) return null;
+  return { number, url, title: optionalText(item.title), date: dateOnly(item.date) };
+}
+
 function normalizeGeography(raw: unknown): OutlookGeography | null {
   if (!raw || typeof raw !== 'object') return null;
   const item = raw as Record<string, unknown>;
@@ -194,6 +208,7 @@ export function normalizeOutlook(raw: unknown): Outlook {
     national: optionalText(source.national),
     regional: optionalText(source.regional),
     industry: optionalText(source.industry),
+    industrySources: (Array.isArray(source.industrySources) ? source.industrySources : []).map(normalizeWebSource).filter((item): item is OutlookWebSource => Boolean(item)),
     approvedAt: optionalText(source.approvedAt),
     approvedByName: optionalText(source.approvedByName),
   };
@@ -377,7 +392,32 @@ export function outlookCitations(outlook: Outlook): OutlookCitation[] {
     if (!entry?.keyPoints) continue;
     citations.push({ key: item.key, label: item.publisher, detail: `${item.title}${entry.publishedDate ? `, ${entry.publishedDate}` : ''}`, url: entry.url || item.url });
   }
+  const cited = new Set(citedNumbers(outlook.industry || ''));
+  for (const source of outlook.industrySources) {
+    if (!cited.has(source.number)) continue;
+    citations.push({ key: `web-${source.number}`, label: `[${source.number}] ${sourceDomain(source.url)}`, detail: `${source.title || source.url}${source.date ? `, ${source.date}` : ''}`, url: source.url });
+  }
   return citations;
+}
+
+/** Numbers cited as [1] or [1, 3] in the order they first appear. */
+export function citedNumbers(text: string): number[] {
+  const numbers: number[] = [];
+  for (const match of text.matchAll(/\[(\d+(?:\s*,\s*\d+)*)\]/g)) {
+    for (const part of match[1].split(',')) {
+      const number = Number(part.trim());
+      if (!numbers.includes(number)) numbers.push(number);
+    }
+  }
+  return numbers;
+}
+
+function sourceDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
 }
 
 /** Open items and cautions, in the order a reviewer would raise them. */
