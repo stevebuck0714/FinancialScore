@@ -253,6 +253,7 @@ export async function POST(request: NextRequest) {
         data.interestPercent = pct;
       }
       if (body?.valuationDate !== undefined) data.valuationDate = dateOnly(body.valuationDate);
+      if (body?.engagementLetterDate !== undefined) data.engagementLetterDate = dateOnly(body.engagementLetterDate);
       if (body?.lenderId !== undefined) {
         const lenderId = text(body.lenderId);
         const lender = lenderId ? await prisma.qoeLender.findUnique({ where: { id: lenderId }, select: { id: true, name: true } }) : null;

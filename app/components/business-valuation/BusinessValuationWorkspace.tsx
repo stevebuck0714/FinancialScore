@@ -52,6 +52,7 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   reportType: 'Report type',
   interestPercent: 'Interest valued (%)',
   valuationDate: 'Valuation date',
+  engagementLetterDate: 'Engagement letter date',
   lenderName: 'Lender',
   appraiserName: 'Appraiser',
   reviewerName: 'Reviewer',
@@ -247,7 +248,7 @@ export default function BusinessValuationWorkspace({ companyId }: Props) {
   const edit = (field: string, next: unknown) => {
     setSaved(false);
     setPending((current) => {
-      const original = field === 'valuationDate' ? dateOnly(engagement?.valuationDate) : engagement?.[field] ?? '';
+      const original = field === 'valuationDate' || field === 'engagementLetterDate' ? dateOnly(engagement?.[field]) : engagement?.[field] ?? '';
       const copy = { ...current };
       if (String(next ?? '') === String(original ?? '')) delete copy[field];
       else copy[field] = next;
@@ -279,7 +280,7 @@ export default function BusinessValuationWorkspace({ companyId }: Props) {
   const snapshotBlocker = !engagement
     ? 'Create an engagement first.'
     : !engagement.valuationDate
-      ? 'Set and save the valuation date on the Engagement tab.'
+      ? 'Enter the Valuation date at the top of Scope of the engagement on the Engagement tab, then select Save.'
       : !engagement.independenceConfirmedAt
         ? 'Confirm independence on the Engagement tab.'
         : null;
@@ -384,7 +385,7 @@ export default function BusinessValuationWorkspace({ companyId }: Props) {
 
       <div style={{ ...CARD, display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
         <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{data?.companyName || 'Business Valuation'}</div>
-        {(data?.engagements || []).length > 0 && (
+        {(data?.engagements || []).length > 1 && (
           <label style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: '6px' }}>
             Engagement
             <select
@@ -394,8 +395,9 @@ export default function BusinessValuationWorkspace({ companyId }: Props) {
             >
               {data.engagements.map((item: any) => (
                 <option key={item.id} value={item.id}>
-                  {item.valuationDate ? `Valuation date ${formatEstDateLabel(dateOnly(item.valuationDate))}` : 'No valuation date'}
-                  {` · ${ENGAGEMENT_STATUS_LABELS[item.status] || item.status} · Opened ${formatEstDateLabel(item.createdAt)}`}
+                  {item.valuationDate
+                    ? `Valuation date ${formatEstDateLabel(dateOnly(item.valuationDate))} · ${ENGAGEMENT_STATUS_LABELS[item.status] || item.status} · opened ${formatEstDateLabel(item.createdAt)}`
+                    : `${ENGAGEMENT_STATUS_LABELS[item.status] || item.status} · opened ${formatEstDateLabel(item.createdAt)}`}
                 </option>
               ))}
             </select>
@@ -445,6 +447,40 @@ export default function BusinessValuationWorkspace({ companyId }: Props) {
             <div style={formColumns}>
               <div>
                 <div style={groupTitle}>Purpose and standard</div>
+                {row(
+                  'Valuation date',
+                  <input
+                    type="date"
+                    disabled={locked}
+                    value={'valuationDate' in pending ? String(pending.valuationDate || '') : dateOnly(engagement.valuationDate)}
+                    onClick={(event) => {
+                      try {
+                        event.currentTarget.showPicker?.();
+                      } catch {
+                        // Some embedded browsers block showPicker; typing the date still works.
+                      }
+                    }}
+                    onChange={(event) => edit('valuationDate', event.target.value)}
+                    style={{ ...input, width: '140px' }}
+                  />,
+                )}
+                {row(
+                  'Engagement letter date',
+                  <input
+                    type="date"
+                    disabled={locked}
+                    value={'engagementLetterDate' in pending ? String(pending.engagementLetterDate || '') : dateOnly(engagement.engagementLetterDate)}
+                    onClick={(event) => {
+                      try {
+                        event.currentTarget.showPicker?.();
+                      } catch {
+                        // Some embedded browsers block showPicker; typing the date still works.
+                      }
+                    }}
+                    onChange={(event) => edit('engagementLetterDate', event.target.value)}
+                    style={{ ...input, width: '140px' }}
+                  />,
+                )}
                 {select('purpose', 'Purpose')}
                 {select('reportType', 'Report type')}
                 {select('standardOfValue', 'Standard of value')}
@@ -465,23 +501,6 @@ export default function BusinessValuationWorkspace({ companyId }: Props) {
                     value={String(value('interestPercent') ?? '')}
                     onChange={(event) => edit('interestPercent', event.target.value)}
                     style={{ ...input, width: '90px', textAlign: 'right' }}
-                  />,
-                )}
-                {row(
-                  'Valuation date',
-                  <input
-                    type="date"
-                    disabled={locked}
-                    value={'valuationDate' in pending ? String(pending.valuationDate || '') : dateOnly(engagement.valuationDate)}
-                    onClick={(event) => {
-                      try {
-                        event.currentTarget.showPicker?.();
-                      } catch {
-                        // Some embedded browsers block showPicker; typing the date still works.
-                      }
-                    }}
-                    onChange={(event) => edit('valuationDate', event.target.value)}
-                    style={{ ...input, width: '140px' }}
                   />,
                 )}
               </div>

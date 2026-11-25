@@ -745,6 +745,7 @@ model BusinessValuationEngagement {
   ownershipBasis                String    @default("CONTROL") // CONTROL | MINORITY
   transactionStructure          String    @default("ASSET") // ASSET | STOCK
   valuationDate                 DateTime? // calendar date stored at UTC midnight
+  engagementLetterDate          DateTime? // calendar date stored at UTC midnight
   reportType                    String    @default("CONCLUSION_OF_VALUE")
   appraiserUserId               String?
   appraiserName                 String?

@@ -102,6 +102,7 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
   const [exportError, setExportError] = useState<string | null>(null);
 
   const valuationDate = dateOnly(engagement.valuationDate);
+  const engagementLetterDate = dateOnly(engagement.engagementLetterDate);
   const reportDate = formatEstDate();
   const isStock = engagement.transactionStructure === 'STOCK';
   const interest = engagement.interestPercent ?? 100;
@@ -266,7 +267,7 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
           <P>{engagement.lenderName || '[Lender]'}</P>
           <P style={bold}>Re: Valuation of {companyName} as of {longDate(valuationDate)}</P>
           <P>
-            At your request, {REPORT_FIRM} has prepared a {reportTypeLabel} of {interest}% of the {subjectAssets} of {companyName} (the Company) as of{' '}
+            {engagementLetterDate ? `At your request, under the engagement letter dated ${longDate(engagementLetterDate)}, ` : 'At your request, '}{REPORT_FIRM} has prepared a {reportTypeLabel} of {interest}% of the {subjectAssets} of {companyName} (the Company) as of{' '}
             {longDate(valuationDate)}, for the purpose of {purposeLabel}. The standard of value is {standardLabel} and the premise of value is {premiseLabel}. The
             valuation assumes {isStock ? 'a stock sale' : 'an asset sale'} of a {engagement.ownershipBasis === 'MINORITY' ? 'minority' : 'controlling'} interest.
           </P>
@@ -302,6 +303,7 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
               ['Premise of value', optionLabel('premiseOfValue', engagement.premiseOfValue)],
               ['Interest valued', `${interest}%, ${optionLabel('ownershipBasis', engagement.ownershipBasis).toLowerCase()}`],
               ['Transaction structure', optionLabel('transactionStructure', engagement.transactionStructure)],
+              ['Engagement letter date', longDate(engagementLetterDate)],
               ['Valuation date', longDate(valuationDate)],
               ['Report date', longDate(reportDate)],
               ['Appraiser', engagement.appraiserName || '—'],
