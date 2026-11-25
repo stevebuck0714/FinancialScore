@@ -86,13 +86,18 @@ export default function OutlookTab({ engagement, companyName, industryTable, loc
   const industryDraftHint = !valuationDate
     ? 'Set the valuation date on the Engagement tab first'
     : saved.indicators.length === 0
-      ? 'Pull the economic indicators first'
-      : hasPending
-        ? 'Save first'
-        : null;
+      ? 'Pull the economic indicators first (top of this tab)'
+      : null;
   const canDraftIndustry = !industryDraftHint;
   const draftIndustryWithAi = async () => {
-    if (saved.industry?.trim() && !window.confirm('Replace the current Industry text with an AI draft?')) return;
+    const message = hasPending
+      ? 'Save your unsaved Outlook changes and replace the Industry text with an AI draft?'
+      : 'Replace the current Industry text with an AI draft?';
+    if ((hasPending || sectionText('industry').trim()) && !window.confirm(message)) return;
+    if (hasPending) {
+      if (!(await run('outlook', { action: 'update-outlook', outlook: pending }))) return;
+      setPending({});
+    }
     if (await run('outlook-ai', { action: 'draft-industry-outlook' })) setJustSaved(false);
   };
 
@@ -113,7 +118,7 @@ export default function OutlookTab({ engagement, companyName, industryTable, loc
             <div style={cardTitle}>Economic indicators</div>
             <div style={cardSubtitle}>
               {saved.indicatorsAsOf
-                ? `As of ${formatEstDateLabel(saved.indicatorsAsOf)}. Pulled ${saved.indicatorsFetchedAt ? formatEstDateTime(saved.indicatorsFetchedAt) : ''} EST from FRED, BLS, and the Census geocoder.`
+                ? `As of ${formatEstDateLabel(saved.indicatorsAsOf)}. Pulled ${saved.indicatorsFetchedAt ? formatEstDateTime(saved.indicatorsFetchedAt) : ''} from FRED, BLS, and the Census geocoder.`
                 : 'National, state, metro, county, and industry data as of the valuation date.'}
             </div>
           </div>
@@ -166,9 +171,9 @@ export default function OutlookTab({ engagement, companyName, industryTable, loc
                     <tr key={indicator.key}>
                       <td style={td}>{indicator.label}</td>
                       <td style={{ ...td, color: '#64748b' }}>{indicator.area}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>{formatIndicatorValue(indicator.value, indicator.unit)}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{formatIndicatorValue(indicator.value, indicator.unit, indicator.unitsLabel)}</td>
                       <td style={td}>{formatObservationDate(indicator.date, indicator.frequency)}</td>
-                      <td style={{ ...td, textAlign: 'right', color: '#64748b' }}>{formatIndicatorValue(indicator.priorValue, indicator.unit)}</td>
+                      <td style={{ ...td, textAlign: 'right', color: '#64748b' }}>{formatIndicatorValue(indicator.priorValue, indicator.unit, indicator.unitsLabel)}</td>
                       <td style={{ ...td, textAlign: 'right' }}>{formatIndicatorChange(indicator)}</td>
                       <td style={td}>
                         <a href={indicator.url} target="_blank" rel="noreferrer" style={{ color: '#2751d0', textDecoration: 'none' }}>
@@ -248,7 +253,7 @@ export default function OutlookTab({ engagement, companyName, industryTable, loc
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
             <div style={cardTitle}>Economic and Industry Outlook</div>
             <div style={cardSubtitle}>
-              {saved.approvedAt ? `Approved by ${saved.approvedByName || 'unknown'} on ${formatEstDateTime(saved.approvedAt)} EST.` : 'Not approved. Edits after approval withdraw it.'}
+              {saved.approvedAt ? `Approved by ${saved.approvedByName || 'unknown'} on ${formatEstDateTime(saved.approvedAt)}.` : 'Not approved. Edits after approval withdraw it.'}
             </div>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
@@ -262,6 +267,7 @@ export default function OutlookTab({ engagement, companyName, industryTable, loc
             >
               {saving === 'outlook-ai' ? 'Drafting…' : 'Draft industry with AI'}
             </button>
+            {!locked && industryDraftHint && <span style={{ ...pendingNote, alignSelf: 'center' }}>AI draft: {industryDraftHint.toLowerCase()}</span>}
             <button
               type="button"
               disabled={locked || Boolean(saving) || !canApprove}

@@ -29,6 +29,8 @@ export type EconomicIndicator = {
   priorDate: string | null;
   /** FRED values as first published by the valuation date (ALFRED), or today's revised figures. */
   vintage: 'AS_OF_VALUATION_DATE' | 'CURRENT';
+  /** The source's own unit description for level series, e.g. "Millions of Dollars". */
+  unitsLabel?: string | null;
 };
 
 export type OutlookGeography = {
@@ -149,6 +151,7 @@ function normalizeIndicator(raw: unknown): EconomicIndicator | null {
     priorValue: finite(item.priorValue),
     priorDate: dateOnly(item.priorDate),
     vintage: item.vintage === 'AS_OF_VALUATION_DATE' ? 'AS_OF_VALUATION_DATE' : 'CURRENT',
+    unitsLabel: optionalText(item.unitsLabel),
   };
 }
 
@@ -270,11 +273,25 @@ export function formatObservationDate(date: string, frequency: IndicatorFrequenc
   return formatMonthKey(date.slice(0, 7));
 }
 
-export function formatIndicatorValue(value: number | null, unit: IndicatorUnit): string {
+export function formatIndicatorValue(value: number | null, unit: IndicatorUnit, unitsLabel?: string | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
   if (unit === 'PERCENT') return `${value.toFixed(1)}%`;
   if (unit === 'DOLLARS') return `$${Math.round(value).toLocaleString('en-US')}`;
-  return value.toLocaleString('en-US', { maximumFractionDigits: 1 });
+  const amount = value.toLocaleString('en-US', { maximumFractionDigits: 1 });
+  const label = (unitsLabel || '').trim();
+  if (!label) return amount;
+  const scaled = /^(thousands|millions|billions) of (.+)$/i.exec(label);
+  if (scaled) {
+    const scale = scaled[1].toLowerCase().replace(/s$/, '');
+    const rest = scaled[2];
+    const chained = /^chained (\d{4}) dollars/i.exec(rest);
+    if (chained) return `$${amount} ${scale} (chained ${chained[1]} dollars)`;
+    if (/^dollars/i.test(rest)) return `$${amount} ${scale}`;
+    return `${amount} ${scale} ${rest.toLowerCase()}`;
+  }
+  if (/^dollars$/i.test(label)) return `$${amount}`;
+  if (/^percent$/i.test(label)) return `${amount}%`;
+  return `${amount} (${label})`;
 }
 
 /** Percentage-point change for rates, percent change for levels. */
@@ -293,9 +310,9 @@ const cite = (indicator: EconomicIndicator) => `(${indicator.provider} ${indicat
 
 function sentence(indicator: EconomicIndicator): string {
   const when = formatObservationDate(indicator.date, indicator.frequency);
-  const value = formatIndicatorValue(indicator.value, indicator.unit);
+  const value = formatIndicatorValue(indicator.value, indicator.unit, indicator.unitsLabel);
   const prior = indicator.priorValue !== null && indicator.priorDate
-    ? `, compared with ${formatIndicatorValue(indicator.priorValue, indicator.unit)} a year earlier`
+    ? `, compared with ${formatIndicatorValue(indicator.priorValue, indicator.unit, indicator.unitsLabel)} a year earlier`
     : '';
   const area = indicator.scope === 'NATIONAL' || indicator.scope === 'INDUSTRY' ? '' : ` in ${indicator.area}`;
   return `${indicator.label}${area} was ${value} for ${when}${prior} ${cite(indicator)}.`;

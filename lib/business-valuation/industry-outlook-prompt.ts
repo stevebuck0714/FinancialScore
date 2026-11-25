@@ -41,8 +41,8 @@ const SYSTEM_PROMPT = [
 
 function indicatorLine(indicator: EconomicIndicator): string {
   const area = indicator.scope === 'NATIONAL' || indicator.scope === 'INDUSTRY' ? '' : `, ${indicator.area}`;
-  const prior = indicator.priorValue !== null ? `; year earlier ${formatIndicatorValue(indicator.priorValue, indicator.unit)} (change ${formatIndicatorChange(indicator)})` : '';
-  return `- ${indicator.label}${area}: ${formatIndicatorValue(indicator.value, indicator.unit)} for ${formatObservationDate(indicator.date, indicator.frequency)}${prior} (${indicator.provider} ${indicator.seriesId})`;
+  const prior = indicator.priorValue !== null ? `; year earlier ${formatIndicatorValue(indicator.priorValue, indicator.unit, indicator.unitsLabel)} (change ${formatIndicatorChange(indicator)})` : '';
+  return `- ${indicator.label}${area}: ${formatIndicatorValue(indicator.value, indicator.unit, indicator.unitsLabel)} for ${formatObservationDate(indicator.date, indicator.frequency)}${prior} (${indicator.provider} ${indicator.seriesId})`;
 }
 
 export function buildIndustryOutlookPrompt(input: IndustryOutlookInput): { system: string; user: string } {

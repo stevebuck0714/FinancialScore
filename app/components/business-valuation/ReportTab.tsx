@@ -383,7 +383,7 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
                   outlook.indicators
                     .filter((indicator) => indicator.scope === scope.value)
                     .map((indicator) => ({
-                      cells: [indicator.area, indicator.label, formatIndicatorValue(indicator.value, indicator.unit), formatObservationDate(indicator.date, indicator.frequency), formatIndicatorChange(indicator)],
+                      cells: [indicator.area, indicator.label, formatIndicatorValue(indicator.value, indicator.unit, indicator.unitsLabel), formatObservationDate(indicator.date, indicator.frequency), formatIndicatorChange(indicator)],
                     })),
                 )}
               />

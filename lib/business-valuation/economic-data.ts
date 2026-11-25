@@ -13,6 +13,7 @@ import {
 } from './outlook';
 
 const FRED_URL = 'https://api.stlouisfed.org/fred/series/observations';
+const FRED_SERIES_URL = 'https://api.stlouisfed.org/fred/series';
 const BLS_URL = 'https://api.bls.gov/publicAPI/v2/timeseries/data/';
 const CENSUS_URL = 'https://geocoding.geo.census.gov/geocoder/geographies/address';
 const TIMEOUT_MS = 20000;
@@ -110,8 +111,19 @@ async function fredObservations(seriesId: string, asOf: string, units: 'lin' | '
     .map((row: any) => ({ date: String(row.date), value: Number(row.value) }));
 }
 
+/** FRED's unit description for a series, e.g. "Millions of Dollars". Null when unavailable. */
+async function fredUnitsLabel(seriesId: string): Promise<string | null> {
+  const apiKey = process.env.FRED_API_KEY || process.env.NEXT_PUBLIC_FRED_API_KEY || '';
+  if (!apiKey) return null;
+  const params = new URLSearchParams({ series_id: seriesId, api_key: apiKey, file_type: 'json' });
+  const data = await fetchJson(`${FRED_SERIES_URL}?${params.toString()}`).catch(() => null);
+  const units = data?.seriess?.[0]?.units;
+  return typeof units === 'string' && units.trim() ? units.trim() : null;
+}
+
 async function fredIndicator(definition: FredDefinition, asOf: string, today: string): Promise<EconomicIndicator> {
   const units = definition.units || 'lin';
+  const unitsLabelPromise = definition.unit === 'NUMBER' || definition.unit === 'INDEX' ? fredUnitsLabel(definition.seriesId) : Promise.resolve(null);
   let vintage: EconomicIndicator['vintage'] = 'CURRENT';
   let rows: Observation[] = [];
   if (asOf < today) {
@@ -133,6 +145,7 @@ async function fredIndicator(definition: FredDefinition, asOf: string, today: st
     frequency: inferFrequency(rows),
     ...summary,
     vintage,
+    unitsLabel: await unitsLabelPromise,
   };
 }
 

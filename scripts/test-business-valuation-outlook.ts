@@ -4,6 +4,7 @@ import {
   buildOutlookDraft,
   federalReserveDistrict,
   formatIndicatorChange,
+  formatIndicatorValue,
   formatObservationDate,
   lausSeriesId,
   normalizeOutlook,
@@ -104,5 +105,14 @@ assert.ok(gaps.some((gap) => gap.includes('Build or write each section')));
 const complete = outlookGaps({ ...normalized, indicatorsAsOf: '2026-10-31', national: 'a', regional: 'b', industry: 'c' }, '2026-10-31');
 assert.ok(complete.includes('The outlook is not approved.'));
 assert.ok(!outlookGaps({ ...normalized, indicatorsAsOf: '2026-10-31', national: 'a', regional: 'b', industry: 'c', approvedAt: '2026-11-01T00:00:00Z' }, '2026-10-31').includes('The outlook is not approved.'));
+
+// Level series show the source's units.
+assert.equal(formatIndicatorValue(27302, 'NUMBER', 'Millions of Dollars'), '$27,302 million');
+assert.equal(formatIndicatorValue(24611.1, 'NUMBER', 'Billions of Chained 2017 Dollars'), '$24,611.1 billion (chained 2017 dollars)');
+assert.equal(formatIndicatorValue(1520, 'NUMBER', 'Thousands of Persons'), '1,520 thousand persons');
+assert.equal(formatIndicatorValue(48, 'INDEX', 'Index 1966:Q1=100'), '48 (Index 1966:Q1=100)');
+assert.equal(formatIndicatorValue(27302, 'NUMBER', null), '27,302');
+assert.equal(formatIndicatorValue(4.3, 'PERCENT', 'Percent'), '4.3%');
+assert.equal(normalizeOutlook({ indicators: [{ scope: 'INDUSTRY', seriesId: 'X', value: 1, date: '2026-01-01', unitsLabel: 'Millions of Dollars' }] }).indicators[0].unitsLabel, 'Millions of Dollars');
 
 console.log('business valuation outlook tests passed');
