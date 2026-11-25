@@ -5,6 +5,7 @@ import {
   DEFAULT_VALUATION_OUTLOOK_MODEL,
   buildIndustryOutlookPrompt,
   cleanDraftText,
+  extractDraftText,
   valuationOutlookModel,
 } from '../lib/business-valuation/industry-outlook-prompt';
 
@@ -87,5 +88,11 @@ assert.ok(empty.user.includes('Industry: not recorded'));
 assert.ok(empty.user.includes('- none available'));
 
 assert.equal(cleanDraftText('```text\n## Industry\n\n\n\n**Demand** held steady.\n```'), 'Industry\n\nDemand held steady.');
+
+// The shared AI helper requests JSON output, which OpenAI rejects unless the prompt mentions JSON.
+assert.ok(/json/i.test(prompt.system + prompt.user));
+assert.equal(extractDraftText('{"text": "First.\\n\\nSecond."}'), 'First.\n\nSecond.');
+assert.equal(extractDraftText('```json\n{"draft": "Only one."}\n```'), 'Only one.');
+assert.equal(extractDraftText('Plain paragraph.'), 'Plain paragraph.');
 
 console.log('business valuation industry outlook AI tests passed');

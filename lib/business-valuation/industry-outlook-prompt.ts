@@ -37,6 +37,7 @@ const SYSTEM_PROMPT = [
   '5. Compare the company with the industry benchmarks provided, stating the direction plainly (above, below, or in line with the benchmark).',
   '6. End with a paragraph on how these conditions affect the company\'s expected earnings and risk. Do not state a discount rate, capitalization rate, multiple, or value, and do not use listing-price language.',
   '7. Write three or four paragraphs, about 250 to 400 words, in formal third person and plain text. No headings, bullets, or markdown. Do not mention AI, the DATA block, or these instructions.',
+  '8. Respond with a JSON object that has one key, "text", whose value is the draft with paragraphs separated by a blank line, for example {"text": "First paragraph.\\n\\nSecond paragraph."}.',
 ].join('\n');
 
 function indicatorLine(indicator: EconomicIndicator): string {
@@ -87,6 +88,23 @@ export function buildIndustryOutlookPrompt(input: IndustryOutlookInput): { syste
   ].join('\n');
 
   return { system: SYSTEM_PROMPT, user };
+}
+
+/** Reads the draft from the {"text": ...} JSON reply, falling back to the raw reply. */
+export function extractDraftText(raw: string): string {
+  const trimmed = raw.trim().replace(/^```[a-z]*\s*|\s*```$/gi, '');
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (typeof parsed === 'string') return parsed;
+    if (parsed && typeof parsed === 'object') {
+      const record = parsed as Record<string, unknown>;
+      const value = record.text ?? record.draft ?? record.industry ?? Object.values(record).find((item) => typeof item === 'string');
+      if (typeof value === 'string') return value;
+    }
+  } catch {
+    return raw;
+  }
+  return raw;
 }
 
 /** Removes markdown the model may add despite instructions. */
