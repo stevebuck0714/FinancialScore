@@ -20,8 +20,7 @@ import CashProofTaxReturnCard from './CashProofTaxReturnCard';
 import CashProofTransactionMatchCard from './CashProofTransactionMatchCard';
 import StatementAccountPicker from './StatementAccountPicker';
 import { linkedStatementAccount, statementAccountLabel } from '@/lib/bank-statements/account-match';
-
-const FISCAL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+import { FISCAL_YEAR_END_MONTHS as FISCAL_MONTHS, fiscalYearEndLabel } from '@/lib/company/fiscal-year-end';
 
 type SampleDraft = {
   statementBeginning: string;
@@ -80,7 +79,6 @@ export default function CashProofWorkspace({
   const [loading, setLoading] = useState(Boolean(companyId));
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [fiscalYearEndMonth, setFiscalYearEndMonth] = useState(12);
   const [selectedSampleId, setSelectedSampleId] = useState<string | null>(null);
   const [draft, setDraft] = useState<SampleDraft | null>(null);
   const [editingBalance, setEditingBalance] = useState<{ accountId: string; month: string; value: string } | null>(null);
@@ -319,23 +317,19 @@ export default function CashProofWorkspace({
           {data?.canEdit ? (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <label style={{ fontSize: '12px', color: '#475569' }}>
-                Fiscal year-end month
-                <select
-                  value={fiscalYearEndMonth}
-                  onChange={(e) => setFiscalYearEndMonth(Number(e.target.value))}
-                  style={{ ...inputStyle, marginTop: '4px', width: 160 }}
-                >
-                  {FISCAL_MONTHS.map((name, i) => (
-                    <option key={name} value={i + 1}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                Fiscal year end (company profile)
+                <input
+                  type="text"
+                  readOnly
+                  aria-readonly="true"
+                  value={`${fiscalYearEndLabel(data?.companyFiscalYearEndMonth)}${data?.companyFiscalYearEndMonth ? '' : ' (not set)'}`}
+                  style={{ ...inputStyle, marginTop: '4px', width: 180, background: '#f8fafc', color: '#475569', cursor: 'default' }}
+                />
               </label>
               <button
                 style={buttonStyle('primary', !!busy)}
                 disabled={!!busy}
-                onClick={() => run('create', { action: 'create', fiscalYearEndMonth })}
+                onClick={() => run('create', { action: 'create' })}
               >
                 {busy === 'create' ? 'Pulling balances…' : 'Start Cash Proof'}
               </button>

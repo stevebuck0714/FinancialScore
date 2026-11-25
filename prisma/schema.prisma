@@ -102,6 +102,7 @@ model Company {
   locale                          String                           @default("en-US")
   industrySector                  Int? // Existing industry classification for benchmarks (keep as "Industry Group" in UI)
   accountingSystem                String? // QuickBooks, Xero, NetSuite, Sage, etc.
+  fiscalYearEndMonth              Int? // 1–12; null means not set (treated as December)
   companySizeCategory             String? // DEFAULT, SMB, MID_MARKET, ENTERPRISE
   industrySectorCategory          String? // For specialized reporting (Agriculture, Mining, Construction, etc.)
   subscriptionMonthlyPrice        Float?
@@ -183,6 +184,7 @@ model Company {
   creditCardTransactions          CreditCardTransaction[]
   cashProofEngagements            CashProofEngagement[]
   qoeEngagementTracker            QoeEngagementTracker?
+  businessValuationEngagements    BusinessValuationEngagement[]
   documentChunks                  CompanyDocumentChunk[]
   loans                           Loan[]
   xeroTransactions                XeroTransaction[]
@@ -724,7 +726,109 @@ model QoeLender {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  engagements QoeEngagementTracker[]
+  engagements                  QoeEngagementTracker[]
+  businessValuationEngagements BusinessValuationEngagement[]
+}
+
+// Business valuation (conclusion of value) engagement. Calculations read only
+// from a frozen BusinessValuationSnapshot, never from live company data.
+model BusinessValuationEngagement {
+  id                            String    @id @default(cuid())
+  companyId                     String
+  status                        String    @default("DRAFT") // DRAFT | IN_REVIEW | FINAL
+  lenderId                      String?
+  lenderName                    String?
+  purpose                       String    @default("SBA_CHANGE_OF_OWNERSHIP")
+  standardOfValue               String    @default("FAIR_MARKET_VALUE")
+  premiseOfValue                String    @default("GOING_CONCERN")
+  interestPercent               Float     @default(100)
+  ownershipBasis                String    @default("CONTROL") // CONTROL | MINORITY
+  transactionStructure          String    @default("ASSET") // ASSET | STOCK
+  valuationDate                 DateTime? // calendar date stored at UTC midnight
+  reportType                    String    @default("CONCLUSION_OF_VALUE")
+  appraiserUserId               String?
+  appraiserName                 String?
+  reviewerUserId                String?
+  reviewerName                  String?
+  feeNotContingent              Boolean   @default(false)
+  noInterestInDeal              Boolean   @default(false)
+  notActingAsBroker             Boolean   @default(false)
+  priorServicesDisclosed        Boolean   @default(false)
+  priorServicesNote             String?
+  independenceConfirmedAt       DateTime?
+  independenceConfirmedByUserId String?
+  dealTerms                     Json? // see lib/business-valuation/deal-terms.ts
+  earningsBase                  Json? // see lib/business-valuation/earnings-base.ts
+  incomeApproach                Json? // see lib/business-valuation/income-approach.ts
+  assetApproach                 Json? // see lib/business-valuation/asset-approach.ts
+  diligence                     Json? // see lib/business-valuation/diligence.ts
+  outlook                       Json? // see lib/business-valuation/outlook.ts
+  benchmarking                  Json? // see lib/business-valuation/benchmarking.ts
+  debtService                   Json? // see lib/business-valuation/debt-service.ts
+  reconciliation                Json? // see lib/business-valuation/reconciliation.ts
+  createdByUserId               String?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+
+  company    Company                      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lender     QoeLender?                   @relation(fields: [lenderId], references: [id], onDelete: SetNull)
+  snapshots  BusinessValuationSnapshot[]
+  changes    BusinessValuationChange[]
+  appraisals BusinessValuationAppraisal[]
+
+  @@index([companyId, createdAt])
+  @@index([lenderId])
+}
+
+// Immutable copy of the data a valuation relies on, as of the valuation date.
+model BusinessValuationSnapshot {
+  id                 String   @id @default(cuid())
+  engagementId       String
+  valuationDate      DateTime
+  asOfMonth          String // YYYY-MM, latest stored month on or before the valuation date
+  fiscalYearEndMonth Int
+  data               Json
+  createdByUserId    String?
+  createdByName      String?
+  createdAt          DateTime @default(now())
+
+  engagement BusinessValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId, createdAt])
+}
+
+// Outside real estate or equipment appraisal relied on for the breakdown of value.
+model BusinessValuationAppraisal {
+  id             String    @id @default(cuid())
+  engagementId   String
+  assetType      String // REAL_ESTATE | EQUIPMENT
+  appraiserFirm  String?
+  effectiveDate  DateTime? // calendar date stored at UTC midnight
+  value          Float     @default(0)
+  includedInDeal Boolean   @default(true)
+  documentId     String? // DataRoomDocument id
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  engagement BusinessValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+}
+
+model BusinessValuationChange {
+  id           String   @id @default(cuid())
+  engagementId String
+  field        String
+  oldValue     String?
+  newValue     String?
+  userId       String?
+  userName     String?
+  createdAt    DateTime @default(now())
+
+  engagement BusinessValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId, createdAt])
 }
 
 model QoeEngagementTrackerContact {

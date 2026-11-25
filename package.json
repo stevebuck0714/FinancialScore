@@ -32,6 +32,7 @@
     "test:operational-data": "tsx scripts/test-operational-data-store.ts",
     "test:cash-proof-matching": "tsx scripts/test-cash-proof-matching.ts",
     "test:cash-proof-tax-returns": "tsx scripts/test-cash-proof-tax-returns.ts",
+    "test:business-valuation": "tsx scripts/test-business-valuation-fiscal-years.ts && tsx scripts/test-business-valuation-deal-terms.ts && tsx scripts/test-business-valuation-earnings-base.ts && tsx scripts/test-business-valuation-income-approach.ts && tsx scripts/test-business-valuation-asset-approach.ts && tsx scripts/test-business-valuation-diligence.ts && tsx scripts/test-business-valuation-outlook.ts && tsx scripts/test-business-valuation-benchmarking.ts && tsx scripts/test-business-valuation-debt-service.ts && tsx scripts/test-business-valuation-reconciliation.ts && tsx scripts/test-business-valuation-report.ts",
     "ops:chart-readiness": "tsx scripts/check-operational-chart-readiness.ts",
     "worker:sync": "tsx lib/workers/sync-drain.ts"
   },

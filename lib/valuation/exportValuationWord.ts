@@ -777,6 +777,57 @@ export async function createQoeReportFrontMatter(cover: QoeReportCover): Promise
   ];
 }
 
+/** Cover and Word-native table of contents for a report other than the QoE report. */
+export async function createReportFrontMatter(cover: {
+  title: string;
+  subject: string;
+  draft: boolean;
+  rows: Array<[string, string]>;
+  footnote?: string;
+}): Promise<WordSection[]> {
+  const D = await import('docx');
+  const coverRow = (label: string, value: string) =>
+    new D.TableRow({
+      children: [
+        new D.TableCell({
+          width: { size: 34, type: D.WidthType.PERCENTAGE },
+          shading: { fill: 'EAF2FB' },
+          margins: { top: 100, bottom: 100, left: 120, right: 120 },
+          children: [new D.Paragraph({ children: [new D.TextRun({ text: label, bold: true, size: 19, color: '1E3A5F' })] })],
+        }),
+        new D.TableCell({
+          width: { size: 66, type: D.WidthType.PERCENTAGE },
+          margins: { top: 100, bottom: 100, left: 120, right: 120 },
+          children: [new D.Paragraph({ children: [new D.TextRun({ text: coverValue(value), size: 19, color: '1E293B' })] })],
+        }),
+      ],
+    });
+  return [
+    {
+      orientation: 'portrait',
+      blocks: [
+        new D.Paragraph({ spacing: { before: 1800, after: 160 }, children: [new D.TextRun({ text: 'Corelytics', bold: true, size: 53, color: '1F70C1' })] }),
+        new D.Paragraph({ spacing: { after: 120 }, children: [new D.TextRun({ text: cover.title, bold: true, size: 28, color: '0F172A' })] }),
+        new D.Paragraph({ spacing: { after: cover.draft ? 120 : 440 }, children: [new D.TextRun({ text: coverValue(cover.subject), size: 24, color: '334155' })] }),
+        ...(cover.draft
+          ? [new D.Paragraph({ spacing: { after: 320 }, children: [new D.TextRun({ text: 'DRAFT — NOT FOR RELIANCE', bold: true, size: 24, color: 'B91C1C' })] })]
+          : []),
+        new D.Table({ width: { size: 100, type: D.WidthType.PERCENTAGE }, rows: cover.rows.map(([label, value]) => coverRow(label, value)) }),
+        ...(cover.footnote
+          ? [new D.Paragraph({ spacing: { before: 280 }, children: [new D.TextRun({ text: cover.footnote, italics: true, size: 18, color: '475569' })] })]
+          : []),
+      ],
+    },
+    {
+      orientation: 'portrait',
+      blocks: [
+        new D.Paragraph({ keepNext: true, keepLines: true, spacing: { after: 260 }, children: [new D.TextRun({ text: 'Table of Contents', bold: true, size: 30, color: '0F172A' })] }),
+        new D.TableOfContents(cover.title, { hyperlink: true, headingStyleRange: '1-2' }),
+      ],
+    },
+  ];
+}
+
 async function buildDocument(sections: WordSection[], options: { title: string; qoeBranding?: boolean }): Promise<Blob> {
   const D = await import('docx');
   const filled = sections.filter((s) => s.blocks.length);

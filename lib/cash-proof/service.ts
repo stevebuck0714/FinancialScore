@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import prisma from '@/lib/prisma';
 import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
+import { companyFiscalYearEndMonth } from '@/lib/company/fiscal-year-end';
 import { DATAROOM_BANK_STATEMENTS_FOLDER_ID } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
 import {
@@ -140,6 +141,8 @@ export type CashProofState = {
     createdAt: string;
   } | null;
   latestFinancialMonth: string | null;
+  /** Company profile setting (1–12); new cash proofs use it. */
+  companyFiscalYearEndMonth: number | null;
   months: string[];
   accounts: CashProofAccountView[];
   samples: CashProofSampleView[];
@@ -240,13 +243,19 @@ async function loadBankStatementDocuments(companyId: string) {
   return docs.map((d) => ({ id: d.id, originalFileName: d.originalFileName, createdAt: d.createdAt.toISOString() }));
 }
 
+async function loadCompanyFiscalYearEndMonth(companyId: string): Promise<number | null> {
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { fiscalYearEndMonth: true } });
+  return company?.fiscalYearEndMonth ?? null;
+}
+
 export async function loadCashProofState(companyId: string): Promise<CashProofState> {
-  const [engagement, latestFinancialMonth, bankStatementDocuments, statementAccounts, taxDocs] = await Promise.all([
+  const [engagement, latestFinancialMonth, bankStatementDocuments, statementAccounts, taxDocs, companyFiscalYearEnd] = await Promise.all([
     latestEngagement(companyId),
     resolveLatestFinancialMonth(companyId),
     loadBankStatementDocuments(companyId),
     loadDetectedStatementAccounts(companyId),
     listTaxFolderDocuments(companyId),
+    loadCompanyFiscalYearEndMonth(companyId),
   ]);
   const taxReturnDocuments = taxDocs.map((d) => ({
     id: d.id,
@@ -273,6 +282,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
     return {
       engagement: null,
       latestFinancialMonth,
+      companyFiscalYearEndMonth: companyFiscalYearEnd,
       months: [],
       accounts: [],
       samples: [],
@@ -519,6 +529,7 @@ export async function loadCashProofState(companyId: string): Promise<CashProofSt
       createdAt: engagement.createdAt.toISOString(),
     },
     latestFinancialMonth,
+    companyFiscalYearEndMonth: companyFiscalYearEnd,
     months,
     accounts,
     samples,
@@ -692,7 +703,7 @@ async function refreshBookBalances(companyId: string, engagementId: string) {
 }
 
 export type CashProofAction =
-  | { action: 'create'; fiscalYearEndMonth?: number; periodStartMonth?: string; periodEndMonth?: string }
+  | { action: 'create'; periodStartMonth?: string; periodEndMonth?: string }
   | { action: 'refresh-book-balances'; engagementId: string }
   | {
       action: 'update-account';
@@ -804,7 +815,7 @@ async function createSampleRows(
 export async function runCashProofAction(companyId: string, userId: string, input: CashProofAction) {
   switch (input.action) {
     case 'create': {
-      const fiscalYearEndMonth = Math.min(12, Math.max(1, Math.round(Number(input.fiscalYearEndMonth) || 12)));
+      const fiscalYearEndMonth = companyFiscalYearEndMonth(await loadCompanyFiscalYearEndMonth(companyId));
       const latest = await resolveLatestFinancialMonth(companyId);
       if (!latest && !(input.periodStartMonth && input.periodEndMonth)) {
         throw new CashProofError('No monthly financials found. Sync the accounting system first.');

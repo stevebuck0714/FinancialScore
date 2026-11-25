@@ -4,6 +4,7 @@ import React from 'react';
 import { INDUSTRY_SECTORS } from '../../../data/industrySectors';
 import { profilesApi, companiesApi, ApiError } from '@/lib/api-client';
 import { ACCOUNTING_SYSTEMS, COMPANY_SIZES, INDUSTRY_SECTORS as INDUSTRY_SECTOR_OPTIONS } from '../../../lib/constants/company-options';
+import { FISCAL_YEAR_END_MONTHS } from '../../../lib/company/fiscal-year-end';
 import { US_STATES } from '../../constants';
 import CompanyCurrencySettings, { type CurrencyDraft } from '../company/CompanyCurrencySettings';
 import {
@@ -100,6 +101,7 @@ export default function ProfileTab({
   const [userDefinedAllocations, setUserDefinedAllocations] = React.useState<{ lobName: string; percentage: number }[]>([]);
   const [companyIndustryGroup, setCompanyIndustryGroup] = React.useState<number | ''>('');
   const [companyAccountingSystem, setCompanyAccountingSystem] = React.useState('');
+  const [companyFiscalYearEndMonth, setCompanyFiscalYearEndMonth] = React.useState('');
   const [companySize, setCompanySize] = React.useState('DEFAULT');
   const [companyIndustrySectorCode, setCompanyIndustrySectorCode] = React.useState('');
   const [companyAddressStreet, setCompanyAddressStreet] = React.useState('');
@@ -136,6 +138,7 @@ export default function ProfileTab({
   React.useEffect(() => {
     setCompanyIndustryGroup(company?.industrySector || '');
     setCompanyAccountingSystem(company?.accountingSystem || '');
+    setCompanyFiscalYearEndMonth(company?.fiscalYearEndMonth ? String(company.fiscalYearEndMonth) : '');
     setCompanySize(company?.companySizeCategory || 'DEFAULT');
     setCompanyIndustrySectorCode(company?.industrySectorCategory || '');
     setCompanyAddressStreet(company?.addressStreet || '');
@@ -152,6 +155,7 @@ export default function ProfileTab({
   }, [
     company?.industrySector,
     company?.accountingSystem,
+    company?.fiscalYearEndMonth,
     company?.companySizeCategory,
     company?.industrySectorCategory,
     company?.addressStreet,
@@ -303,6 +307,7 @@ export default function ProfileTab({
         addressZip: companyAddressZip || '',
         addressCountry: companyAddressCountry || '',
         accountingSystem: companyAccountingSystem,
+        fiscalYearEndMonth: companyFiscalYearEndMonth ? Number(companyFiscalYearEndMonth) : null,
         companySizeCategory: companySize || null,
         industrySectorCategory: companyIndustrySectorCode || null,
         industrySector: Number(companyIndustryGroup),
@@ -538,6 +543,21 @@ export default function ProfileTab({
               >
                 {ACCOUNTING_SYSTEMS.map(system => (
                   <option key={system.value} value={system.value}>{system.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span style={{ fontWeight: '600' }}>Fiscal Year End:</span>
+            </div>
+            <div>
+              <select
+                value={companyFiscalYearEndMonth}
+                onChange={(e) => setCompanyFiscalYearEndMonth(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+              >
+                <option value="">Not set (December)</option>
+                {FISCAL_YEAR_END_MONTHS.map((label, index) => (
+                  <option key={label} value={String(index + 1)}>{label}</option>
                 ))}
               </select>
             </div>

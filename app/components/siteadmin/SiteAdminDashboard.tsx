@@ -2526,12 +2526,13 @@ export default function SiteAdminDashboard(props: any) {
       !Array.isArray(uda[serviceKey])
         ? uda[serviceKey]
         : {};
-    return typeof service.enabledByAdmin === 'boolean' ? service.enabledByAdmin : true;
+    if (typeof service.enabledByAdmin === 'boolean') return service.enabledByAdmin;
+    return serviceKey !== 'businessValuation';
   };
 
   const saveServiceAccessEnabledByAdmin = async (
     companyId: string,
-    serviceKey: 'dailyAlerts' | 'operationalReporting' | 'askCorelytics' | 'expertAnalysis' | 'reportPackages' | 'qualityOfEarnings',
+    serviceKey: 'dailyAlerts' | 'operationalReporting' | 'askCorelytics' | 'expertAnalysis' | 'reportPackages' | 'qualityOfEarnings' | 'businessValuation',
     enabled: boolean,
     label: string,
   ) => {
@@ -2566,7 +2567,7 @@ export default function SiteAdminDashboard(props: any) {
 
   const renderServiceAccessCard = (
     company: any,
-    serviceKey: 'dailyAlerts' | 'operationalReporting' | 'askCorelytics' | 'expertAnalysis' | 'reportPackages' | 'qualityOfEarnings',
+    serviceKey: 'dailyAlerts' | 'operationalReporting' | 'askCorelytics' | 'expertAnalysis' | 'reportPackages' | 'qualityOfEarnings' | 'businessValuation',
     label: string,
     colors: { background: string; border: string; heading: string },
   ) => {
@@ -10485,6 +10486,7 @@ export default function SiteAdminDashboard(props: any) {
                                             {renderAiUsageCard(company)}
                                             {renderServiceAccessCard(company, 'expertAnalysis', 'Expert Analysis', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
                                             {renderServiceAccessCard(company, 'qualityOfEarnings', 'Quality of Earnings', { background: '#fdf4ff', border: '#f5d0fe', heading: '#a21caf' })}
+                                            {renderServiceAccessCard(company, 'businessValuation', 'Business Valuation', { background: '#eef2ff', border: '#c7d2fe', heading: '#3730a3' })}
                                             <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#5b21b6', margin: 0 }}>Valuation</h6>
                                               {editingValuationPricingByCompany[company.id] ? (
@@ -14295,6 +14297,7 @@ export default function SiteAdminDashboard(props: any) {
                                   {renderAiUsageCard(businessCompany)}
                                   {renderServiceAccessCard(businessCompany, 'expertAnalysis', 'Expert Analysis', { background: '#fff7ed', border: '#fed7aa', heading: '#c2410c' })}
                                   {renderServiceAccessCard(businessCompany, 'qualityOfEarnings', 'Quality of Earnings', { background: '#fdf4ff', border: '#f5d0fe', heading: '#a21caf' })}
+                                  {renderServiceAccessCard(businessCompany, 'businessValuation', 'Business Valuation', { background: '#eef2ff', border: '#c7d2fe', heading: '#3730a3' })}
                                   <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0, 1fr) auto', alignItems: 'center', gap: '10px', padding: '10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#5b21b6', margin: 0 }}>Valuation</h4>
                                     {editingValuationPricingByCompany[businessCompany.id] ? (

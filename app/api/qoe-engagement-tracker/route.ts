@@ -101,7 +101,7 @@ async function getOrCreateTracker(companyId: string) {
 async function trackerResponse(companyId: string) {
   const [tracker, company, accountManagers, lenders, dataRoomDocuments, cashProof] = await Promise.all([
     getOrCreateTracker(companyId),
-    prisma.company.findUnique({ where: { id: companyId }, select: { name: true, accountingSystem: true } }),
+    prisma.company.findUnique({ where: { id: companyId }, select: { name: true, accountingSystem: true, fiscalYearEndMonth: true } }),
     prisma.user.findMany({
       where: { isAccountManager: true, isExternal: false },
       select: { id: true, name: true, email: true },
@@ -122,7 +122,7 @@ async function trackerResponse(companyId: string) {
   return {
     companyId,
     tracker,
-    company: { name: company?.name || '', accountingSystem: company?.accountingSystem || '' },
+    company: { name: company?.name || '', accountingSystem: company?.accountingSystem || '', fiscalYearEndMonth: company?.fiscalYearEndMonth ?? null },
     accountManagers,
     lenders,
     dataRoom: {
@@ -195,7 +195,6 @@ export async function POST(request: NextRequest) {
           preparedUnder: text(body.preparedUnder),
           reviewPeriodStart: text(body.reviewPeriodStart),
           reviewPeriodEnd: text(body.reviewPeriodEnd),
-          fiscalYearEndMonth: body.fiscalYearEndMonth ? Number(body.fiscalYearEndMonth) : null,
           reportDueDate: date(body.reportDueDate),
           engagementLetterDate: date(body.engagementLetterDate),
           sbaLoanNumber: text(body.sbaLoanNumber),

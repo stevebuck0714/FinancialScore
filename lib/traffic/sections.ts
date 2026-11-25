@@ -7,6 +7,7 @@ export const TRAFFIC_SECTIONS = [
   { key: 'corelytics-score', label: 'Corelytics Score' },
   { key: 'expert-analysis', label: 'Expert Analysis' },
   { key: 'valuation', label: 'Valuation' },
+  { key: 'business-valuation', label: 'Business Valuation' },
   { key: 'data-room', label: 'Data Room' },
   { key: 'custom-reports', label: 'Custom Reports' },
   { key: 'report-packages', label: 'Report Packages' },
@@ -49,6 +50,7 @@ export function viewToTrafficSection(view: string): TrafficSectionKey | null {
   if (view === 'fs-score' || view === 'fs-insights') return 'corelytics-score';
   if (view.startsWith('pa-')) return 'expert-analysis';
   if (view === 'valuation' || view === 'valuation-reports' || view === 'qoe-report') return 'valuation';
+  if (view === 'business-valuation') return 'business-valuation';
   if (view === 'dataroom') return 'data-room';
   if (view === 'custom-reports') return 'custom-reports';
   if (view === 'custom-print') return 'report-packages';

@@ -6,6 +6,7 @@ import { formatEstDate, formatEstDateLabel, formatEstDateTime } from '@/lib/time
 import { isLocByMappingAndName } from '@/lib/loans/classify-loc';
 import { viewToTrafficSection } from '@/lib/traffic/sections';
 import { QOE_SECTION, QOE_TABS, allowedQoeTabs } from '@/lib/qoe/access';
+import { isBusinessValuationEnabled } from '@/lib/business-valuation/engagement';
 import { useSectionTracking } from '@/lib/traffic/useSectionTracking';
 import {
   elementToWordSection,
@@ -222,6 +223,7 @@ const SdeAdjustedIncomeStatement = dynamic(
 );
 const CashProofWorkspace = dynamic(() => import('./components/valuation/CashProofWorkspace'), { ssr: false });
 const QoeEngagementTracker = dynamic(() => import('./components/valuation/QoeEngagementTracker'), { ssr: false, loading: ReportChunkLoading });
+const BusinessValuationWorkspace = dynamic(() => import('./components/business-valuation/BusinessValuationWorkspace'), { ssr: false, loading: ReportChunkLoading });
 const BankStatementsWorkspace = dynamic(() => import('./components/valuation/BankStatementsWorkspace'), { ssr: false });
 const CreditCardReviewWorkspace = dynamic(() => import('./components/valuation/CreditCardReviewWorkspace'), { ssr: false });
 const CashProofReportSection = dynamic(() => import('./components/valuation/CashProofReportSection'), { ssr: false, loading: ReportChunkLoading });
@@ -395,6 +397,7 @@ const NAVIGABLE_VIEWS = new Set([
   'valuation-reports',
   'qoe-report',
   'quality-of-earnings',
+  'business-valuation',
   'valuation',
   'cash-flow',
   'financial-statements',
@@ -1843,7 +1846,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'qoe-report' | 'quality-of-earnings' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'qoe-report' | 'quality-of-earnings' | 'business-valuation' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'fs-insights' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom' | 'custom-reports' | 'my-accounts'>('login');
   const [valuationBuilderSelections, setValuationBuilderSelections] = useState<Record<string, boolean>>({
     es_enterpriseValueRange: true,
     es_primaryValuationMethod: true,
@@ -2212,6 +2215,7 @@ function FinancialScorePage() {
     if (isValuationReportView(view)) return 'valuation-reports';
     if (view === 'valuation') return 'valuation';
     if (view === 'quality-of-earnings' || view === 'qoe-report') return QOE_SECTION;
+    if (view === 'business-valuation') return 'business-valuation';
     if (view.startsWith('pa-')) return 'expert-analysis';
     if (view === 'dataroom') return 'dataroom';
     if (view === 'custom-reports') return 'custom-reports';
@@ -2232,6 +2236,7 @@ function FinancialScorePage() {
     return false;
   };
   const isQualityOfEarningsView = currentView === 'quality-of-earnings' || currentView === 'qoe-report';
+  const isCorelyticsStaff = hasSiteAdminOverride || String(currentUser?.role || '').toLowerCase() === 'consultant';
   const allowedQoeTabIds = useMemo(
     () =>
       hasSiteAdminOverride || !isCompanyUser || isCompanyAdmin
@@ -2475,6 +2480,11 @@ function FinancialScorePage() {
   const isExpertAnalysisEnabledByAdmin = companyServiceAccess.expertAnalysis;
   const isReportPackagesEnabledByAdmin = companyServiceAccess.reportPackages;
   const isQualityOfEarningsEnabledByAdmin = companyServiceAccess.qualityOfEarnings;
+  const isBusinessValuationEnabledByAdmin = useMemo(() => {
+    if (!selectedCompanyId || !Array.isArray(companies)) return false;
+    const selected = companies.find((company: any) => company.id === selectedCompanyId) as any;
+    return isBusinessValuationEnabled(selected?.userDefinedAllocations);
+  }, [companies, selectedCompanyId]);
   const dataRoomSubscriptionStatus = dataRoomState.subscriptionStatus;
   const isDataRoomActive = dataRoomSubscriptionStatus === 'active';
   const digitalPresenceSubscriptionStatus = digitalPresenceState.subscriptionStatus;
@@ -2701,6 +2711,16 @@ function FinancialScorePage() {
     if ((view === 'valuation' || isValuationReportView(view)) && !isValuationReportsEnabledByAdmin) {
       alert('Valuation is disabled for this company.');
       return;
+    }
+    if (view === 'business-valuation') {
+      if (!selectedCompanyId) {
+        alert('Please select a company first.');
+        return;
+      }
+      if (!isCorelyticsStaff || !isBusinessValuationEnabledByAdmin) {
+        alert('Business Valuation is disabled for this company.');
+        return;
+      }
     }
 
     if (view === 'custom-reports' && !selectedCompanyId) {
@@ -4007,6 +4027,11 @@ function FinancialScorePage() {
     const isQoeTab = QOE_TABS.some((t) => t.id === sdeModuleTab);
     if (isQoeTab && !allowedQoeTabIds.includes(sdeModuleTab)) setSdeModuleTab(firstQoeTab);
   }, [currentView, valuationMethodTab, sdeModuleTab, allowedQoeTabIds, firstQoeTab]);
+  useEffect(() => {
+    if (currentView !== 'valuation') return;
+    const valuationTabs: string[] = ['recommendations', 'ebitda-adjustments', 'income-statement', 'revenue-quality', 'customer-quality', 'working-capital', 'cash-flow-quality', 'balance-sheet-quality'];
+    if (!valuationTabs.includes(sdeModuleTab)) setSdeModuleTab('recommendations');
+  }, [currentView, sdeModuleTab]);
   useEffect(() => {
     if (sdeModuleTab !== 'bank-statements') setBankStatementsReviewId(null);
   }, [sdeModuleTab]);
@@ -15735,6 +15760,25 @@ function FinancialScorePage() {
                   {isQualityOfEarningsView && '› '}QUALITY OF EARNINGS
                 </h3>
               )}
+              {isCorelyticsStaff && isBusinessValuationEnabledByAdmin && (
+                <h3
+                  onClick={() => handleNavigation('business-valuation')}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: currentView === 'business-valuation' ? '#1F70C1' : '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '16px 0 0 0',
+                    cursor: 'pointer',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25',
+                  }}
+                >
+                  {currentView === 'business-valuation' && '› '}BUSINESS VALUATION
+                </h3>
+              )}
 
               {isDataRoomEnabledByAdmin && hasCompanySectionAccess('dataroom') && (
                 <h3
@@ -22313,6 +22357,12 @@ function FinancialScorePage() {
         </div>
       )}
 
+      {currentView === 'business-valuation' && selectedCompanyId && isCorelyticsStaff && isBusinessValuationEnabledByAdmin && (
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 24px' }}>
+          <BusinessValuationWorkspace key={selectedCompanyId} companyId={selectedCompanyId} />
+        </div>
+      )}
+
       {currentView.startsWith('pa-') && selectedCompanyId && hasCompanySectionAccess('expert-analysis') && (
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '16px 24px 0' }}>
           <nav
@@ -25319,12 +25369,10 @@ function FinancialScorePage() {
                     }
                   />
                 )}
-                {sdeModuleTab === 'engagement-tracker' && (
+                {sdeModuleTab === 'engagement-tracker' && currentView !== 'valuation' && (
                   <QoeEngagementTracker
                     key={selectedCompanyId || 'none'}
                     companyId={selectedCompanyId || null}
-                    onOpenBankStatements={() => setSdeModuleTab('bank-statements')}
-                    onOpenCashProof={() => setSdeModuleTab('cash-proof')}
                   />
                 )}
                 {sdeModuleTab === 'bank-statements' && (

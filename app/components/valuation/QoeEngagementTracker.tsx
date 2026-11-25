@@ -3,11 +3,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ACCOUNTING_SYSTEMS } from '@/lib/constants/company-options';
 import { US_STATES } from '@/app/constants';
+import { fiscalYearEndLabel } from '@/lib/company/fiscal-year-end';
 
 type Props = {
   companyId: string | null;
-  onOpenBankStatements: () => void;
-  onOpenCashProof: () => void;
 };
 
 const CARD: React.CSSProperties = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px', boxShadow: '0 1px 3px rgba(15,23,42,.05)' };
@@ -93,7 +92,7 @@ function LenderFields({ initial, submitLabel, disabled, onSubmit }: {
   );
 }
 
-export default function QoeEngagementTracker({ companyId, onOpenBankStatements, onOpenCashProof }: Props) {
+export default function QoeEngagementTracker({ companyId }: Props) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(Boolean(companyId));
   const [saving, setSaving] = useState<string | null>(null);
@@ -241,10 +240,6 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
               Internal Account Manager workspace for intake contacts, bank inventory, required evidence, and follow-up. Documents remain in the Data Room; bank connections and coverage remain in Bank Statements.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button type="button" style={{ ...button, background: '#475569' }} onClick={onOpenBankStatements}>Open Bank Statements</button>
-            <button type="button" style={{ ...button, background: '#475569' }} onClick={onOpenCashProof}>Open Cash Proof</button>
-          </div>
         </div>
         {error && <div style={{ color: '#b91c1c', fontSize: '12px', marginTop: '10px' }}>{error}</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(125px, 1fr))', gap: '8px', marginTop: '14px' }}>
@@ -317,7 +312,7 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
           {[
             ['Review period start', 'reviewPeriodStart', 'YYYY-MM'],
             ['Review period end', 'reviewPeriodEnd', 'YYYY-MM'],
-            ['Fiscal year-end month', 'fiscalYearEndMonth', '1–12'],
+            ['Fiscal year end (company profile)', 'fiscalYearEndMonth', ''],
             ['Report due date', 'reportDueDate', ''],
             ['Account Manager', 'accountManagerName', ''],
             ['Corelytics accountant', 'corelyticsAccountant', ''],
@@ -327,7 +322,16 @@ export default function QoeEngagementTracker({ companyId, onOpenBankStatements, 
           ].map(([label, key, placeholder]) => (
             <label key={key} style={{ fontSize: '11px', fontWeight: 600, color: '#475569' }}>
               {label}
-              {key === 'accountManagerName' ? (
+              {key === 'fiscalYearEndMonth' ? (
+                <input
+                  type="text"
+                  value={`${fiscalYearEndLabel(data.company?.fiscalYearEndMonth)}${data.company?.fiscalYearEndMonth ? '' : ' (not set)'}`}
+                  readOnly
+                  aria-readonly="true"
+                  title="Set in the company profile"
+                  style={{ ...input, marginTop: '4px', background: '#f8fafc', color: '#475569', cursor: 'default' }}
+                />
+              ) : key === 'accountManagerName' ? (
                 <select
                   value={overview('accountManagerUserId') || ''}
                   onChange={(event) => editOverview({ accountManagerUserId: event.target.value })}

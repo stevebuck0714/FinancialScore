@@ -204,6 +204,7 @@ export interface Company {
   locale?: string;
   industrySector?: number;
   accountingSystem?: string;
+  fiscalYearEndMonth?: number | null;
   companySizeCategory?: string;
   industrySectorCategory?: string;
   subscriptionMonthlyPrice?: number;

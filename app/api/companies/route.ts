@@ -165,6 +165,7 @@ export async function GET(request: NextRequest) {
       includeContactEmail,
       includeContactName,
       includeContactPhone,
+      includeFiscalYearEndMonth,
     ] = await Promise.all([
       hasCompanyColumn("industrySectorCategory"),
       hasCompanyColumn("accountingSystem"),
@@ -194,6 +195,7 @@ export async function GET(request: NextRequest) {
       hasCompanyColumn("contactEmail"),
       hasCompanyColumn("contactName"),
       hasCompanyColumn("contactPhone"),
+      hasCompanyColumn("fiscalYearEndMonth"),
     ]);
     let companies;
     try {
@@ -218,6 +220,7 @@ export async function GET(request: NextRequest) {
           ...(includeContactEmail ? { contactEmail: true } : {}),
           ...(includeContactName ? { contactName: true } : {}),
           ...(includeContactPhone ? { contactPhone: true } : {}),
+          ...(includeFiscalYearEndMonth ? { fiscalYearEndMonth: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           createdAt: true,
@@ -286,6 +289,7 @@ export async function GET(request: NextRequest) {
           ...(includeContactEmail ? { contactEmail: true } : {}),
           ...(includeContactName ? { contactName: true } : {}),
           ...(includeContactPhone ? { contactPhone: true } : {}),
+          ...(includeFiscalYearEndMonth ? { fiscalYearEndMonth: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           createdAt: true,
@@ -1193,6 +1197,16 @@ export async function PATCH(request: NextRequest) {
         console.warn('Company update: could not verify accountingSystem column, skipping update', error);
       }
     }
+    if (updateFields.fiscalYearEndMonth !== undefined) {
+      const raw = updateFields.fiscalYearEndMonth;
+      const month = raw === null || raw === '' ? null : Number(raw);
+      if (month !== null && (!Number.isInteger(month) || month < 1 || month > 12)) {
+        return NextResponse.json({ error: "Fiscal year end must be a month from 1 to 12" }, { status: 400 });
+      }
+      if (await hasCompanyColumn("fiscalYearEndMonth")) {
+        updateData.fiscalYearEndMonth = month;
+      }
+    }
     if (updateFields.companySizeCategory !== undefined) {
       try {
         const companySizeColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
@@ -1717,6 +1731,7 @@ export async function PATCH(request: NextRequest) {
       { requestKey: 'expertAnalysisEnabledByAdmin', allocationKey: 'expertAnalysis' },
       { requestKey: 'reportPackagesEnabledByAdmin', allocationKey: 'reportPackages' },
       { requestKey: 'qualityOfEarningsEnabledByAdmin', allocationKey: 'qualityOfEarnings' },
+      { requestKey: 'businessValuationEnabledByAdmin', allocationKey: 'businessValuation' },
     ] as const;
     const requestedServiceAccessSettings = serviceAccessSettings.filter(
       ({ requestKey }) => updateFields[requestKey] !== undefined,
@@ -1882,6 +1897,9 @@ export async function PATCH(request: NextRequest) {
     }
     if (await columnExists('companySizeCategory')) {
       selectFields.companySizeCategory = true;
+    }
+    if (await columnExists('fiscalYearEndMonth')) {
+      selectFields.fiscalYearEndMonth = true;
     }
     if (await columnExists('tier1SupportOwner')) {
       selectFields.tier1SupportOwner = true;

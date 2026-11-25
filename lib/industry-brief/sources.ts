@@ -282,6 +282,12 @@ function fredSeriesForContext(context: CompanySourceContext): FredSeriesDefiniti
   return selected.length > 0 ? selected : DEFAULT_FRED_SERIES;
 }
 
+export type IndustrySourceContext = CompanySourceContext;
+
+export function industryFredSeriesFor(context: IndustrySourceContext): Array<Pick<FredSeriesDefinition, 'seriesId' | 'title' | 'url'>> {
+  return fredSeriesForContext(context).map(({ seriesId, title, url }) => ({ seriesId, title, url }));
+}
+
 function blsSeriesForContext(context: CompanySourceContext): BlsSeriesDefinition[] {
   const selected = selectRankedCandidates(BLS_CANDIDATES, context, 2);
   return selected.length > 0 ? selected : DEFAULT_BLS_SERIES;
