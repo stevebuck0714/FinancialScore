@@ -18,6 +18,7 @@ import { INTERVIEW_TOPICS, REP_LETTER_STATUSES, automaticReliedOnSources, repres
 import { completeFiscalYears, EARNINGS_SOURCES, normalizeEarningsBase } from '@/lib/business-valuation/earnings-base';
 import { QOE_BUCKETS, normalizeIncomeApproach } from '@/lib/business-valuation/income-approach';
 import { normalizeAssetApproach } from '@/lib/business-valuation/asset-approach';
+import { comparableMultiple, normalizeMarketApproach } from '@/lib/business-valuation/market-approach';
 import { INDEPENDENCE_FIELDS, INDEPENDENCE_STATEMENTS } from '@/lib/business-valuation/engagement';
 import { formatMonthKey } from '@/lib/business-valuation/fiscal-years';
 import {
@@ -61,6 +62,7 @@ const total: CSSProperties = { fontWeight: 700, borderTop: '1px solid #64748b' }
 const pct = (value: number | null | undefined, digits = 1) => (value === null || value === undefined || !Number.isFinite(value) ? '—' : `${value.toFixed(digits)}%`);
 const dateOnly = (value: unknown) => (value ? String(value instanceof Date ? value.toISOString() : value).slice(0, 10) : null);
 const longDate = (value: string | null) => (value ? formatEstDateLabel(value, { year: 'numeric', month: 'long', day: 'numeric' }) : '[date]');
+const ratioText = (value: number | null | undefined) => (value === null || value === undefined || !Number.isFinite(value) ? '—' : value.toFixed(2));
 const share = (value: number, base: number) => (base ? pct((value / base) * 100) : '—');
 /** Lowercases the first word of a sentence-case label for use mid-sentence, keeping acronyms such as SBA. */
 const inSentence = (label: string) => (/^[A-Z0-9]{2,}/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1));
@@ -116,7 +118,10 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
   const assetInputs = normalizeAssetApproach(engagement.assetApproach);
 
   const indications = useMemo(() => computeIndications(engagement, snapshot), [engagement, snapshot]);
-  const { deal, appraisals, earnings, income, asset } = indications;
+  const { deal, appraisals, earnings, income, asset, market } = indications;
+  const marketInputs = normalizeMarketApproach(engagement.marketApproach);
+  const marketPerformed = market.includedCount > 0 && market.indicatedValue !== null;
+  const includedSales = marketInputs.comparables.filter((item) => item.included);
   const balanceSheet = snapshot?.trailingTwelveMonths?.balanceSheet || null;
   const result = computeReconciliation(reconciliation, indications, {
     companyName,
@@ -277,7 +282,9 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
             {weighted.length > 0
               ? `The conclusion weights ${weighted.map((line) => `the ${line.label.toLowerCase()} at ${line.weight}%`).join(' and ')}.`
               : 'No approach has been weighted yet.'}{' '}
-            The market approach was not performed because licensed comparable transaction data was not available.
+            {marketPerformed
+              ? `The market approach is based on ${market.includedCount} completed sales of comparable businesses${marketInputs.dataSource ? ` from ${marketInputs.dataSource}` : ''}.`
+              : 'The market approach was not performed because sufficient comparable transaction data was not available.'}
           </P>
           {result.purchasePrice !== null && result.concludedValue !== null && (
             <P>
@@ -583,10 +590,62 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
         </Section>
 
         <Section title="Market Approach">
-          <P>
-            The market approach estimates value from the prices paid for comparable private businesses. It was not performed for this valuation because licensed comparable
-            transaction data was not available as of the report date, and it carries no weight in the conclusion.
-          </P>
+          {marketPerformed ? (
+            <>
+              <P>
+                The market approach estimates value from the prices paid for comparable private businesses. We searched
+                {marketInputs.dataSource ? ` ${marketInputs.dataSource}${marketInputs.dataEdition ? ` (${marketInputs.dataEdition})` : ''}` : ' a transaction database'}
+                {marketInputs.searchCriteria ? ` using the following criteria: ${marketInputs.searchCriteria}` : ''}. Of {marketInputs.comparables.length} sales
+                reviewed, {market.includedCount} were judged comparable and are listed in the appendices.
+                {marketInputs.priceExcludesInventory ? ' The reported sale prices exclude inventory, so the Company\'s inventory is added to the indicated value.' : ''}
+              </P>
+              <Table
+                head={['Multiple', 'Sales', 'Low', 'Lower quartile', 'Median', 'Upper quartile', 'High', 'Selected']}
+                numeric={[1, 2, 3, 4, 5, 6, 7]}
+                rows={market.lines
+                  .filter((line) => line.stats)
+                  .map((line) => ({
+                    cells: [
+                      line.label,
+                      String(line.stats?.count ?? 0),
+                      ratioText(line.stats?.min),
+                      ratioText(line.stats?.q1),
+                      ratioText(line.stats?.median),
+                      ratioText(line.stats?.q3),
+                      ratioText(line.stats?.max),
+                      ratioText(line.selected),
+                    ],
+                  }))}
+              />
+              {market.lines
+                .filter((line) => line.selected !== null && line.reason)
+                .map((line) => (
+                  <P key={line.key}>
+                    <strong>{line.label}.</strong> {line.reason}
+                  </P>
+                ))}
+              <Table
+                head={['', 'Company figure', 'Multiple', 'Indication', 'Weight']}
+                numeric={[1, 2, 3, 4]}
+                rows={[
+                  ...market.lines
+                    .filter((line) => line.selected !== null)
+                    .map((line) => ({ cells: [line.metricLabel, money(line.companyMetric), ratioText(line.selected), money(line.indication), `${line.weight}%`] })),
+                  { cells: ['Weighted value', '', '', money(market.operatingValue), ''], style: total },
+                  ...(market.inventory !== null ? [{ cells: ['Add inventory', '', '', money(market.inventory), ''] }] : []),
+                  ...(market.debt !== null ? [{ cells: ['Less interest-bearing debt', '', '', money(-market.debt), ''] }] : []),
+                  ...(market.cash !== null ? [{ cells: ['Add cash', '', '', money(market.cash), ''] }] : []),
+                  { cells: ['Market approach value', '', '', money(market.indicatedValue), ''], style: total },
+                ]}
+              />
+              {marketInputs.notes && <P>{marketInputs.notes}</P>}
+            </>
+          ) : (
+            <P>
+              The market approach estimates value from the prices paid for comparable private businesses. It was not performed for this valuation because sufficient
+              comparable transaction data was not available, and it carries no weight in the conclusion.
+            </P>
+          )}
           {reconciliation.reasons.MARKET && <P><strong>Appraiser&apos;s note.</strong> {reconciliation.reasons.MARKET}</P>}
         </Section>
 
@@ -712,7 +771,34 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
 
         <Section title="Appendices">
           <H2>Comparable transactions</H2>
-          <P>None. The market approach was not performed.</P>
+          {marketPerformed ? (
+            <>
+              <Table
+                head={['Sale date', 'Description', 'Location', 'Revenue', 'SDE', 'Sale price', 'Price to SDE', 'Price to revenue']}
+                numeric={[3, 4, 5, 6, 7]}
+                rows={includedSales.map((item) => ({
+                  cells: [
+                    item.saleDate || '—',
+                    item.description || '—',
+                    item.location || '—',
+                    money(item.revenue),
+                    money(item.sde),
+                    money(item.price),
+                    ratioText(comparableMultiple(item, 'sde')),
+                    ratioText(comparableMultiple(item, 'revenue')),
+                  ],
+                }))}
+              />
+              {marketInputs.dataSource && (
+                <p style={R.note}>
+                  Source: {marketInputs.dataSource}
+                  {marketInputs.dataEdition ? `, ${marketInputs.dataEdition}` : ''}.
+                </p>
+              )}
+            </>
+          ) : (
+            <P>None. The market approach was not performed.</P>
+          )}
           <H2>Data sources</H2>
           {[
             ...outlookCitations(outlook).map((citation) => `${citation.label}: ${citation.detail}${citation.url ? ` (${citation.url})` : ''}`),
@@ -728,6 +814,7 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
             )
               .filter(([, source]) => source)
               .map(([label, source]) => `${label}: ${source}`),
+            ...(marketPerformed && marketInputs.dataSource ? [`Comparable transactions: ${marketInputs.dataSource}${marketInputs.dataEdition ? `, ${marketInputs.dataEdition}` : ''}`] : []),
             ...(benchmarking.rmaEdition ? [`RMA Annual Statement Studies, ${benchmarking.rmaEdition}`] : []),
             ...(benchmarkContext?.industryTable ? [`Industry benchmark table: ${industry}, ${benchmarkContext.industryTable.sizeBand}`] : []),
           ]

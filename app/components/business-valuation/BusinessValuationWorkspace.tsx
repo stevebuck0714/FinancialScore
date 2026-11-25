@@ -14,6 +14,7 @@ import DealTermsTab from './DealTermsTab';
 import EarningsBaseTab from './EarningsBaseTab';
 import IncomeApproachTab from './IncomeApproachTab';
 import AssetApproachTab from './AssetApproachTab';
+import MarketApproachTab from './MarketApproachTab';
 import DiligenceTab from './DiligenceTab';
 import OutlookTab from './OutlookTab';
 import BenchmarkingTab from './BenchmarkingTab';
@@ -26,6 +27,7 @@ type Tab =
   | 'engagement'
   | 'snapshot'
   | 'earnings-base'
+  | 'market-approach'
   | 'income-approach'
   | 'asset-approach'
   | 'deal-terms'
@@ -126,6 +128,12 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   'diligence.repLetterSentDate': 'Diligence: letter sent',
   'diligence.repLetterSignedDate': 'Diligence: letter signed',
   'diligence.repLetterDocumentId': 'Diligence: signed letter file',
+  'market.dataSource': 'Market: data source',
+  'market.dataEdition': 'Market: edition',
+  'market.searchCriteria': 'Market: search criteria',
+  'market.priceExcludesInventory': 'Market: prices exclude inventory',
+  'market.notes': 'Market: comparability notes',
+  'market.comparables': 'Market: comparable sales',
   'outlook.national': 'Outlook: national economy',
   'outlook.regional': 'Outlook: regional economy',
   'outlook.industry': 'Outlook: industry',
@@ -156,10 +164,13 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   'reconciliation.concluded': 'Reconciliation: concluded value',
 };
 const APPROACH_LABELS: Record<string, string> = { MARKET: 'market', INCOME: 'income', ASSET: 'asset' };
+const MULTIPLE_LABELS: Record<string, string> = { PRICE_TO_SDE: 'price to SDE', PRICE_TO_EBITDA: 'price to EBITDA', PRICE_TO_REVENUE: 'price to revenue' };
 const changeFieldLabel = (field: string) => {
   if (CHANGE_FIELD_LABELS[field]) return CHANGE_FIELD_LABELS[field];
   const approach = field.match(/^reconciliation\.(weight|reason)\.(\w+)$/);
   if (approach) return `Reconciliation: ${APPROACH_LABELS[approach[2]] || approach[2]} approach ${approach[1]}`;
+  const multiple = field.match(/^market\.(multiple|weight|reason)\.(\w+)$/);
+  if (multiple) return `Market: ${MULTIPLE_LABELS[multiple[2]] || multiple[2]} ${multiple[1] === 'multiple' ? 'selected multiple' : multiple[1]}`;
   if (field.startsWith('deal.included.')) return `Deal: ${field.slice('deal.included.'.length)} included`;
   return field;
 };
@@ -289,6 +300,7 @@ export default function BusinessValuationWorkspace({ companyId }: Props) {
     { id: 'engagement', label: 'ENGAGEMENT' },
     { id: 'snapshot', label: 'DATA SNAPSHOT' },
     { id: 'earnings-base', label: 'EARNINGS BASE' },
+    { id: 'market-approach', label: 'MARKET APPROACH' },
     { id: 'income-approach', label: 'INCOME APPROACH' },
     { id: 'asset-approach', label: 'ASSET APPROACH' },
     { id: 'deal-terms', label: 'DEAL TERMS' },
@@ -616,6 +628,10 @@ export default function BusinessValuationWorkspace({ companyId }: Props) {
           saving={saving}
           run={run}
         />
+      )}
+
+      {engagement && tab === 'market-approach' && (
+        <MarketApproachTab key={engagement.id} engagement={engagement} snapshot={snapshot} locked={locked} saving={saving} run={run} />
       )}
 
       {engagement && tab === 'income-approach' && (

@@ -20,12 +20,15 @@ import { lookupMarketSalary } from '@/lib/business-valuation/bls';
 import { normalizeIncomeApproach, validateIncomeApproach, type IncomeApproach } from '@/lib/business-valuation/income-approach';
 import { fredRateOnOrBefore } from '@/lib/business-valuation/fred';
 import { normalizeAssetApproach, validateAssetApproach, type AssetApproach } from '@/lib/business-valuation/asset-approach';
+import { MULTIPLE_TYPES, normalizeMarketApproach, validateMarketApproach, type MarketApproach } from '@/lib/business-valuation/market-approach';
 import { normalizeDiligence, validateDiligence, type Diligence } from '@/lib/business-valuation/diligence';
 import { OUTLOOK_SECTIONS, normalizeOutlook, outlookTextChanged, validateOutlook, type Outlook } from '@/lib/business-valuation/outlook';
 import { collectEconomicIndicators, resolveCompanyGeography } from '@/lib/business-valuation/economic-data';
+import { draftIndustryOutlook } from '@/lib/business-valuation/industry-outlook-ai';
 import {
   ALL_ASSET_SIZES,
   assetSizeBand,
+  computeBenchmarks,
   industryCodeCandidates,
   normalizeBenchmarking,
   validateBenchmarking,
@@ -181,6 +184,7 @@ async function workspaceResponse(companyId: string, engagementId: string | null)
           earningsBase: normalizeEarningsBase(engagement.earningsBase),
           incomeApproach: normalizeIncomeApproach(engagement.incomeApproach),
           assetApproach: normalizeAssetApproach(engagement.assetApproach),
+          marketApproach: normalizeMarketApproach(engagement.marketApproach),
           diligence: normalizeDiligence(engagement.diligence),
           outlook: normalizeOutlook(engagement.outlook),
           benchmarking,
@@ -461,6 +465,43 @@ export async function POST(request: NextRequest) {
           prisma.businessValuationChange.create({ data: { engagementId: engagement.id, ...change, userId: context.userId, userName: actorName } }),
         ),
       ]);
+    } else if (action === 'update-market-approach') {
+      const current = normalizeMarketApproach(engagement.marketApproach);
+      const incoming = body?.marketApproach && typeof body.marketApproach === 'object' ? (body.marketApproach as Record<string, unknown>) : {};
+      const next: MarketApproach = normalizeMarketApproach({
+        ...current,
+        ...incoming,
+        selections: { ...current.selections, ...((incoming.selections as Record<string, unknown>) || {}) },
+      });
+      const invalid = validateMarketApproach(next);
+      if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+      const changes: Array<{ field: string; oldValue: string | null; newValue: string | null }> = [];
+      for (const key of ['dataSource', 'dataEdition', 'searchCriteria', 'priceExcludesInventory', 'notes'] as const) {
+        if (display(current[key]) !== display(next[key])) changes.push({ field: `market.${key}`, oldValue: display(current[key]), newValue: display(next[key]) });
+      }
+      for (const type of MULTIPLE_TYPES) {
+        const before = current.selections[type.key];
+        const after = next.selections[type.key];
+        for (const part of ['multiple', 'weight', 'reason'] as const) {
+          if (display(before?.[part] ?? null) !== display(after?.[part] ?? null)) {
+            changes.push({ field: `market.${part}.${type.key}`, oldValue: part === 'reason' ? null : display(before?.[part] ?? null), newValue: part === 'reason' ? (after?.reason ? 'Edited' : 'Cleared') : display(after?.[part] ?? null) });
+          }
+        }
+      }
+      if (JSON.stringify(current.comparables) !== JSON.stringify(next.comparables)) {
+        const included = (market: MarketApproach) => market.comparables.filter((item) => item.included).length;
+        changes.push({
+          field: 'market.comparables',
+          oldValue: `${current.comparables.length} sales, ${included(current)} included`,
+          newValue: `${next.comparables.length} sales, ${included(next)} included`,
+        });
+      }
+      await prisma.$transaction([
+        prisma.businessValuationEngagement.update({ where: { id: engagement.id }, data: { marketApproach: JSON.parse(JSON.stringify(next)) } }),
+        ...changes.map((change) =>
+          prisma.businessValuationChange.create({ data: { engagementId: engagement.id, ...change, userId: context.userId, userName: actorName } }),
+        ),
+      ]);
     } else if (action === 'update-diligence') {
       const current = normalizeDiligence(engagement.diligence);
       const incoming = body?.diligence && typeof body.diligence === 'object' ? (body.diligence as Record<string, unknown>) : {};
@@ -562,6 +603,41 @@ export async function POST(request: NextRequest) {
         }),
         ...(current.approvedAt
           ? [prisma.businessValuationChange.create({ data: { engagementId: engagement.id, field: 'outlook.approved', oldValue: 'Approved', newValue: 'Withdrawn after indicator refresh', userId: context.userId, userName: actorName } })]
+          : []),
+      ]);
+    } else if (action === 'draft-industry-outlook') {
+      if (!engagement.valuationDate) return NextResponse.json({ error: 'Set the valuation date on the Engagement tab first' }, { status: 400 });
+      const current = normalizeOutlook(engagement.outlook);
+      if (current.indicators.length === 0) return NextResponse.json({ error: 'Pull the economic indicators first' }, { status: 400 });
+      const [latestSnapshot, company] = await Promise.all([
+        prisma.businessValuationSnapshot.findFirst({ where: { engagementId: engagement.id }, orderBy: { createdAt: 'desc' }, select: { data: true } }),
+        prisma.company.findUnique({ where: { id: companyId }, select: { name: true, industrySector: true, addressCity: true, addressState: true } }),
+      ]);
+      const benchmarking = normalizeBenchmarking(engagement.benchmarking);
+      const industryTable = await loadIndustryTable(
+        benchmarking.industryCode || (company?.industrySector ? String(company.industrySector) : null),
+        benchmarking.sizeBand || snapshotSizeBand(latestSnapshot?.data),
+      );
+      const draft = await draftIndustryOutlook(
+        {
+          companyName: company?.name || '',
+          industryName: industryTable?.industryName || null,
+          industryCode: industryTable?.industryId || null,
+          location: [company?.addressCity, company?.addressState].filter(Boolean).join(', ') || null,
+          valuationDate: engagement.valuationDate.toISOString().slice(0, 10),
+          outlook: current,
+          benchmarks: latestSnapshot ? computeBenchmarks(benchmarking, latestSnapshot.data as any, industryTable) : null,
+        },
+        { feature: 'business_valuation', companyId, userId: context.userId, route: '/api/business-valuation' },
+      );
+      const next: Outlook = { ...current, industry: draft.text, approvedAt: null, approvedByName: null };
+      await prisma.$transaction([
+        prisma.businessValuationEngagement.update({ where: { id: engagement.id }, data: { outlook: JSON.parse(JSON.stringify(next)) } }),
+        prisma.businessValuationChange.create({
+          data: { engagementId: engagement.id, field: 'outlook.industry', oldValue: current.industry ? 'Edited' : null, newValue: `AI draft (${draft.model})`, userId: context.userId, userName: actorName },
+        }),
+        ...(current.approvedAt
+          ? [prisma.businessValuationChange.create({ data: { engagementId: engagement.id, field: 'outlook.approved', oldValue: 'Approved', newValue: 'Withdrawn after AI draft', userId: context.userId, userName: actorName } })]
           : []),
       ]);
     } else if (action === 'approve-outlook') {

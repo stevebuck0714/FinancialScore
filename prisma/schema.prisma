@@ -762,6 +762,7 @@ model BusinessValuationEngagement {
   earningsBase                  Json? // see lib/business-valuation/earnings-base.ts
   incomeApproach                Json? // see lib/business-valuation/income-approach.ts
   assetApproach                 Json? // see lib/business-valuation/asset-approach.ts
+  marketApproach                Json? // see lib/business-valuation/market-approach.ts
   diligence                     Json? // see lib/business-valuation/diligence.ts
   outlook                       Json? // see lib/business-valuation/outlook.ts
   benchmarking                  Json? // see lib/business-valuation/benchmarking.ts

@@ -13,6 +13,7 @@ export const AI_USAGE_FEATURES = {
   web_research: 'Web Research',
   document_embeddings: 'Document indexing & search',
   industry_brief: 'Industry Brief',
+  business_valuation: 'Business Valuation',
   system_check: 'System checks',
   other: 'Other AI',
 } as const;
@@ -20,7 +21,7 @@ export const AI_USAGE_FEATURES = {
 export type AiUsageFeature = keyof typeof AI_USAGE_FEATURES;
 
 /** System-generated or included usage: tracked for cost, never counted toward a customer's allowance. */
-const NON_BILLABLE_FEATURES = new Set<AiUsageFeature>(['financial_score_insights', 'exec_briefing', 'industry_brief', 'system_check']);
+const NON_BILLABLE_FEATURES = new Set<AiUsageFeature>(['financial_score_insights', 'exec_briefing', 'industry_brief', 'business_valuation', 'system_check']);
 
 export type AiUsageTag = {
   feature: AiUsageFeature;

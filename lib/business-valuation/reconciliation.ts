@@ -121,7 +121,10 @@ export function computeReconciliation(
 ): ReconciliationResult {
   const isStock = context.transactionStructure === 'STOCK';
   const values: Record<ApproachKey, { value: number | null; basis: string }> = {
-    MARKET: { value: null, basis: 'Not performed (comparable sales data is not yet licensed)' },
+    MARKET: {
+      value: indications.market.indicatedValue,
+      basis: indications.market.includedCount > 0 ? indications.market.basis : 'Not performed (no comparable sales entered)',
+    },
     INCOME: { value: indications.income.indicatedValue, basis: isStock ? 'Equity value' : 'Value of the operating assets, cash-free and debt-free' },
     ASSET: { value: indications.asset.comparableNetAssets, basis: indications.asset.comparableBasis },
   };

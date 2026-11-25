@@ -29,6 +29,7 @@ const indications = {
   earnings: {},
   income: { indicatedValue: 1000000, capRateOutOfRange: false },
   asset: { comparableNetAssets: 300000, comparableBasis: 'Adjusted net assets excluding cash and interest-bearing debt (asset sale)' },
+  market: { indicatedValue: null, includedCount: 0, basis: 'Value of the operating assets, cash-free and debt-free' },
 } as unknown as Indications;
 const context = {
   companyName: 'Acme Resale',
@@ -84,5 +85,15 @@ const cautions = computeReconciliation(
 assert.ok(cautions.warnings.some((item) => item.includes('not reliable')));
 assert.ok(cautions.warnings.some((item) => item.includes('discounts for lack of control')));
 assert.ok(cautions.warnings.some((item) => item.includes('listing or asking price')));
+
+// A market approach with comparables can carry weight.
+const withMarket = computeReconciliation(
+  { ...DEFAULT_RECONCILIATION, weights: { MARKET: 50, INCOME: 50 }, reasons },
+  { ...indications, market: { indicatedValue: 900000, includedCount: 8, basis: 'Value of the operating assets, cash-free and debt-free' } } as unknown as Indications,
+  context,
+);
+assert.deepEqual(withMarket.blockers, []);
+assert.equal(withMarket.concludedValue, 950000);
+assert.equal(withMarket.lines.find((line) => line.key === 'MARKET')?.basis, 'Value of the operating assets, cash-free and debt-free');
 
 console.log('business valuation reconciliation tests passed');

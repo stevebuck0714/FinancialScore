@@ -83,6 +83,19 @@ export default function OutlookTab({ engagement, companyName, industryTable, loc
     setPending((current) => ({ ...current, ...draft }));
   };
 
+  const industryDraftHint = !valuationDate
+    ? 'Set the valuation date on the Engagement tab first'
+    : saved.indicators.length === 0
+      ? 'Pull the economic indicators first'
+      : hasPending
+        ? 'Save first'
+        : null;
+  const canDraftIndustry = !industryDraftHint;
+  const draftIndustryWithAi = async () => {
+    if (saved.industry?.trim() && !window.confirm('Replace the current Industry text with an AI draft?')) return;
+    if (await run('outlook-ai', { action: 'draft-industry-outlook' })) setJustSaved(false);
+  };
+
   const geography = saved.geography;
   const district = federalReserveDistrict(geography?.stateCode);
   const gaps = [...saved.indicatorNotes, ...outlookGaps(preview, valuationDate)];
@@ -240,6 +253,15 @@ export default function OutlookTab({ engagement, companyName, industryTable, loc
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
             <button type="button" disabled={locked} onClick={buildDraft} style={{ ...smallButton, background: '#64748b' }}>Build draft from data</button>
+            <button
+              type="button"
+              disabled={locked || Boolean(saving) || !canDraftIndustry}
+              onClick={() => void draftIndustryWithAi()}
+              style={{ ...smallButton, background: '#64748b', opacity: canDraftIndustry ? 1 : 0.55 }}
+              title={industryDraftHint || 'Writes the Industry section from the indicators, published outlooks, and benchmarks. Review before approving.'}
+            >
+              {saving === 'outlook-ai' ? 'Drafting…' : 'Draft industry with AI'}
+            </button>
             <button
               type="button"
               disabled={locked || Boolean(saving) || !canApprove}
