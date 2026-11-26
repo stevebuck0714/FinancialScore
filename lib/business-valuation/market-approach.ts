@@ -20,8 +20,38 @@ export type Comparable = {
   sde: number | null;
   ebitda: number | null;
   price: number;
+  /** Null means the sale follows the tab's "Sale prices exclude inventory" setting. */
+  inventoryInPrice: boolean | null;
+  inventoryAmount: number | null;
+  realEstateInPrice: boolean;
+  realEstateValue: number | null;
+  saleStructure: SaleStructure | null;
+  downPaymentPct: number | null;
+  sellerFinancedPct: number | null;
   included: boolean;
   exclusionReason: string | null;
+};
+
+export type SaleStructure = 'ASSET' | 'STOCK';
+
+export const EMPTY_COMPARABLE: Omit<Comparable, 'id'> = {
+  saleDate: null,
+  description: '',
+  industryCode: null,
+  location: null,
+  revenue: null,
+  sde: null,
+  ebitda: null,
+  price: 0,
+  inventoryInPrice: null,
+  inventoryAmount: null,
+  realEstateInPrice: false,
+  realEstateValue: null,
+  saleStructure: null,
+  downPaymentPct: null,
+  sellerFinancedPct: null,
+  included: true,
+  exclusionReason: null,
 };
 
 export type MultipleSelection = { multiple: number | null; weight: number | null; reason: string | null };
@@ -86,6 +116,13 @@ export function normalizeMarketApproach(raw: unknown): MarketApproach {
         sde: optionalNumber(item.sde),
         ebitda: optionalNumber(item.ebitda),
         price: optionalNumber(item.price) ?? 0,
+        inventoryInPrice: typeof item.inventoryInPrice === 'boolean' ? item.inventoryInPrice : null,
+        inventoryAmount: optionalNumber(item.inventoryAmount),
+        realEstateInPrice: item.realEstateInPrice === true,
+        realEstateValue: optionalNumber(item.realEstateValue),
+        saleStructure: item.saleStructure === 'ASSET' || item.saleStructure === 'STOCK' ? item.saleStructure : null,
+        downPaymentPct: optionalNumber(item.downPaymentPct),
+        sellerFinancedPct: optionalNumber(item.sellerFinancedPct),
         included: item.included !== false,
         exclusionReason: optionalText(item.exclusionReason),
       })),
@@ -97,7 +134,9 @@ export function normalizeMarketApproach(raw: unknown): MarketApproach {
 export function validateMarketApproach(market: MarketApproach): string | null {
   if (market.comparables.length > MAX_COMPARABLES) return `No more than ${MAX_COMPARABLES} comparable sales.`;
   if (market.comparables.some((item) => !(item.price > 0))) return 'Every comparable sale needs a sale price above zero.';
-  if (market.comparables.some((item) => [item.revenue, item.sde, item.ebitda].some((value) => value !== null && !Number.isFinite(value)))) return 'Comparable figures must be numbers.';
+  if (market.comparables.some((item) => [item.revenue, item.sde, item.ebitda, item.inventoryAmount, item.realEstateValue].some((value) => value !== null && !Number.isFinite(value)))) return 'Comparable figures must be numbers.';
+  if (market.comparables.some((item) => [item.inventoryAmount, item.realEstateValue].some((value) => value !== null && value < 0))) return 'Inventory and real estate amounts cannot be negative.';
+  if (market.comparables.some((item) => [item.downPaymentPct, item.sellerFinancedPct].some((value) => value !== null && (value < 0 || value > 100)))) return 'Down payment and seller financing must be between 0% and 100%.';
   for (const selection of Object.values(market.selections)) {
     if (selection.multiple !== null && (selection.multiple < 0 || selection.multiple > 100)) return 'Selected multiples must be between 0 and 100.';
     if (selection.weight !== null && (selection.weight < 0 || selection.weight > 100)) return 'Each weight must be between 0% and 100%.';
@@ -130,9 +169,29 @@ export function multipleStats(values: number[]): MultipleStats | null {
   };
 }
 
-export function comparableMultiple(comparable: Pick<Comparable, 'price' | MetricKey>, metric: MetricKey): number | null {
+export type PriceAdjustment = { price: number | null; inventory: number; realEstate: number; problem: 'INVENTORY_AMOUNT' | 'REAL_ESTATE_VALUE' | 'NOT_POSITIVE' | null };
+
+/** Puts a sale price on the same basis as the others: inventory treated per the tab setting, real estate removed. */
+export function adjustedPrice(comparable: Comparable, priceExcludesInventory: boolean): PriceAdjustment {
+  let inventory = 0;
+  let realEstate = 0;
+  const inventoryDiffers = comparable.inventoryInPrice !== null && comparable.inventoryInPrice === priceExcludesInventory;
+  if (inventoryDiffers) {
+    if (comparable.inventoryAmount === null) return { price: null, inventory, realEstate, problem: 'INVENTORY_AMOUNT' };
+    inventory = priceExcludesInventory ? -comparable.inventoryAmount : comparable.inventoryAmount;
+  }
+  if (comparable.realEstateInPrice) {
+    if (comparable.realEstateValue === null) return { price: null, inventory, realEstate, problem: 'REAL_ESTATE_VALUE' };
+    realEstate = -comparable.realEstateValue;
+  }
+  const price = comparable.price + inventory + realEstate;
+  return price > 0 ? { price, inventory, realEstate, problem: null } : { price: null, inventory, realEstate, problem: 'NOT_POSITIVE' };
+}
+
+export function comparableMultiple(comparable: Comparable, metric: MetricKey, priceExcludesInventory: boolean): number | null {
   const base = comparable[metric];
-  return base !== null && base > 0 && comparable.price > 0 ? comparable.price / base : null;
+  const price = adjustedPrice(comparable, priceExcludesInventory).price;
+  return base !== null && base > 0 && price !== null ? price / base : null;
 }
 
 export type MultipleLine = {
@@ -173,7 +232,7 @@ export function computeMarketApproach(
   const selectedKeys = MULTIPLE_TYPES.filter((type) => market.selections[type.key]?.multiple != null).map((type) => type.key);
 
   const lines: MultipleLine[] = MULTIPLE_TYPES.map((type) => {
-    const values = included.map((item) => comparableMultiple(item, type.metric)).filter((value): value is number => value !== null);
+    const values = included.map((item) => comparableMultiple(item, type.metric, market.priceExcludesInventory)).filter((value): value is number => value !== null);
     const selection = market.selections[type.key];
     const selected = selection?.multiple ?? null;
     const companyMetric = companyMetrics[type.metric];
@@ -204,6 +263,20 @@ export function computeMarketApproach(
     if (late.length) warnings.push(`${late.length} included sale${late.length === 1 ? ' is' : 's are'} dated after the valuation date; exclude ${late.length === 1 ? 'it' : 'them'}.`);
   }
   if (market.comparables.some((item) => !item.included && !item.exclusionReason)) warnings.push('Give the reason for each excluded sale.');
+  const sales = (count: number) => `${count} included sale${count === 1 ? '' : 's'}`;
+  const verb = (count: number, singular: string, plural: string) => (count === 1 ? singular : plural);
+  const problems = included.map((item) => adjustedPrice(item, market.priceExcludesInventory).problem);
+  const inventoryMissing = problems.filter((problem) => problem === 'INVENTORY_AMOUNT').length;
+  if (inventoryMissing) {
+    const action = market.priceExcludesInventory ? verb(inventoryMissing, 'includes', 'include') : verb(inventoryMissing, 'excludes', 'exclude');
+    warnings.push(`${sales(inventoryMissing)} ${action} inventory unlike the others but ${verb(inventoryMissing, 'has', 'have')} no inventory amount, so ${verb(inventoryMissing, 'it is', 'they are')} left out of the multiples. Enter the amount or exclude the sale.`);
+  }
+  const realEstateMissing = problems.filter((problem) => problem === 'REAL_ESTATE_VALUE').length;
+  if (realEstateMissing) warnings.push(`${sales(realEstateMissing)} ${verb(realEstateMissing, 'includes', 'include')} real estate with no value given, so ${verb(realEstateMissing, 'it is', 'they are')} left out of the multiples. Enter the real estate value or exclude the sale.`);
+  const notPositive = problems.filter((problem) => problem === 'NOT_POSITIVE').length;
+  if (notPositive) warnings.push(`${sales(notPositive)} ${verb(notPositive, 'has', 'have')} an adjusted price of zero or less after removing inventory or real estate; check the amounts.`);
+  const otherStructure = included.filter((item) => item.saleStructure && item.saleStructure !== (isStock ? 'STOCK' : 'ASSET')).length;
+  if (otherStructure) warnings.push(`${sales(otherStructure)} ${otherStructure === 1 ? 'was a' : 'were'} ${isStock ? 'asset' : 'stock'} sale${otherStructure === 1 ? '' : 's'}, while this engagement values ${isStock ? 'the stock' : 'the assets'}; support their comparability or exclude them.`);
   if (selectedKeys.length === 0 && included.length > 0) warnings.push('Select at least one multiple.');
   if (selectedKeys.length > 0 && !weightsValid) {
     if (Math.abs(weightTotal - 100) > 0.001) warnings.push(`Weights of the selected multiples total ${weightTotal}%; they must total 100%.`);
@@ -233,8 +306,7 @@ export function computeMarketApproach(
   };
 }
 
-const HEADER_ALIASES: Record<keyof Omit<Comparable, 'id' | 'included' | 'exclusionReason'>, string[]> = {
-  saleDate: ['sale date', 'date of sale', 'date sold', 'sold date', 'close date', 'closing date', 'transaction date', 'date'],
+const HEADER_ALIASES: Record<keyof Omit<Comparable, 'id' | 'included' | 'exclusionReason'>, string[]> = {  saleDate: ['sale date', 'date of sale', 'date sold', 'sold date', 'close date', 'closing date', 'transaction date', 'date'],
   description: ['description', 'business description', 'business type', 'type of business', 'naics description', 'sic description', 'company', 'business'],
   industryCode: ['naics', 'naics code', 'sic', 'sic code', 'industry code'],
   location: ['location', 'state', 'city', 'region', 'area', 'geographic area'],
@@ -242,7 +314,34 @@ const HEADER_ALIASES: Record<keyof Omit<Comparable, 'id' | 'included' | 'exclusi
   sde: ['sde', 'seller s discretionary earnings', 'sellers discretionary earnings', 'discretionary earnings', 'sde cash flow', 'cash flow'],
   ebitda: ['ebitda'],
   price: ['price', 'sale price', 'selling price', 'deal price', 'purchase price', 'total price', 'mvic'],
+  inventoryInPrice: ['inventory included', 'inventory included in price', 'price includes inventory', 'includes inventory', 'inventory in price'],
+  inventoryAmount: ['inventory', 'inventory amount', 'inventory value', 'inventory at sale'],
+  realEstateInPrice: ['real estate included', 'real estate included in price', 'price includes real estate', 'includes real estate', 'real estate in price'],
+  realEstateValue: ['real estate value', 'real estate amount', 'real estate price', 'real estate'],
+  saleStructure: ['asset or stock', 'asset or stock sale', 'asset stock', 'sale type', 'transaction type', 'deal structure', 'structure'],
+  downPaymentPct: ['down payment', 'down payment pct', 'down payment percent', 'percent down', 'pct down', 'down', 'cash down'],
+  sellerFinancedPct: ['seller financing', 'seller financed', 'seller financing pct', 'seller financing percent', 'percent seller financed', 'seller note pct', 'seller note'],
 };
+
+export function parseYesNo(value: string): boolean | null {
+  const text = value.trim().toLowerCase();
+  if (/^(y|yes|true|1|x|included|incl)$/.test(text)) return true;
+  if (/^(n|no|false|0|excluded|excl|not included)$/.test(text)) return false;
+  return null;
+}
+
+/** Accepts "20%", "20", or a fraction such as 0.2. */
+export function parsePercent(value: string): number | null {
+  const amount = parseAmount(value);
+  if (amount === null) return null;
+  return !value.includes('%') && amount > 0 && amount <= 1 ? amount * 100 : amount;
+}
+
+export function parseSaleStructure(value: string): SaleStructure | null {
+  const text = value.trim().toLowerCase();
+  if (/stock|share|equity/.test(text)) return 'STOCK';
+  return /asset/.test(text) ? 'ASSET' : null;
+}
 
 const normalizeHeader = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -329,7 +428,9 @@ export function importComparablesCsv(text: string): ComparableImport {
       skippedRows += 1;
       continue;
     }
+    const realEstateValue = parseAmount(cell(cells, 'realEstateValue'));
     comparables.push({
+      ...EMPTY_COMPARABLE,
       id: newId(),
       saleDate: parseSaleDate(cell(cells, 'saleDate')),
       description: cell(cells, 'description'),
@@ -339,8 +440,13 @@ export function importComparablesCsv(text: string): ComparableImport {
       sde: parseAmount(cell(cells, 'sde')),
       ebitda: parseAmount(cell(cells, 'ebitda')),
       price,
-      included: true,
-      exclusionReason: null,
+      inventoryInPrice: parseYesNo(cell(cells, 'inventoryInPrice')),
+      inventoryAmount: parseAmount(cell(cells, 'inventoryAmount')),
+      realEstateInPrice: parseYesNo(cell(cells, 'realEstateInPrice')) ?? (columnFor.realEstateInPrice === undefined && realEstateValue !== null && realEstateValue > 0),
+      realEstateValue,
+      saleStructure: parseSaleStructure(cell(cells, 'saleStructure')),
+      downPaymentPct: parsePercent(cell(cells, 'downPaymentPct')),
+      sellerFinancedPct: parsePercent(cell(cells, 'sellerFinancedPct')),
     });
   }
   return {

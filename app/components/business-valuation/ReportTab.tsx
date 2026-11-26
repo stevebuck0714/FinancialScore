@@ -18,7 +18,7 @@ import { INTERVIEW_TOPICS, REP_LETTER_STATUSES, automaticReliedOnSources, repres
 import { completeFiscalYears, EARNINGS_SOURCES, normalizeEarningsBase } from '@/lib/business-valuation/earnings-base';
 import { QOE_BUCKETS, normalizeIncomeApproach } from '@/lib/business-valuation/income-approach';
 import { normalizeAssetApproach } from '@/lib/business-valuation/asset-approach';
-import { comparableMultiple, normalizeMarketApproach } from '@/lib/business-valuation/market-approach';
+import { adjustedPrice, comparableMultiple, normalizeMarketApproach } from '@/lib/business-valuation/market-approach';
 import { INDEPENDENCE_FIELDS, INDEPENDENCE_STATEMENTS } from '@/lib/business-valuation/engagement';
 import { formatMonthKey } from '@/lib/business-valuation/fiscal-years';
 import {
@@ -122,6 +122,10 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
   const marketInputs = normalizeMarketApproach(engagement.marketApproach);
   const marketPerformed = market.includedCount > 0 && market.indicatedValue !== null;
   const includedSales = marketInputs.comparables.filter((item) => item.included);
+  const adjustedSales = includedSales.filter((item) => {
+    const adjustment = adjustedPrice(item, marketInputs.priceExcludesInventory);
+    return adjustment.inventory !== 0 || adjustment.realEstate !== 0;
+  }).length;
   const balanceSheet = snapshot?.trailingTwelveMonths?.balanceSheet || null;
   const result = computeReconciliation(reconciliation, indications, {
     companyName,
@@ -772,8 +776,8 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
           {marketPerformed ? (
             <>
               <Table
-                head={['Sale date', 'Description', 'Location', 'Revenue', 'SDE', 'Sale price', 'Price to SDE', 'Price to revenue']}
-                numeric={[3, 4, 5, 6, 7]}
+                head={['Sale date', 'Description', 'Location', 'Revenue', 'SDE', 'Sale price', 'Adjusted price', 'Structure', 'Price to SDE', 'Price to revenue']}
+                numeric={[3, 4, 5, 6, 8, 9]}
                 rows={includedSales.map((item) => ({
                   cells: [
                     item.saleDate || '—',
@@ -782,11 +786,19 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
                     money(item.revenue),
                     money(item.sde),
                     money(item.price),
-                    ratioText(comparableMultiple(item, 'sde')),
-                    ratioText(comparableMultiple(item, 'revenue')),
+                    money(adjustedPrice(item, marketInputs.priceExcludesInventory).price),
+                    item.saleStructure === 'STOCK' ? 'Stock' : item.saleStructure === 'ASSET' ? 'Asset' : '—',
+                    ratioText(comparableMultiple(item, 'sde', marketInputs.priceExcludesInventory)),
+                    ratioText(comparableMultiple(item, 'revenue', marketInputs.priceExcludesInventory)),
                   ],
                 }))}
               />
+              {adjustedSales > 0 && (
+                <p style={R.note}>
+                  Adjusted price removes real estate included in a sale and puts inventory on the same basis as the other sales ({marketInputs.priceExcludesInventory ? 'excluding' : 'including'} inventory);{' '}
+                  {adjustedSales} sale{adjustedSales === 1 ? ' was' : 's were'} adjusted.
+                </p>
+              )}
               {marketInputs.dataSource && (
                 <p style={R.note}>
                   Source: {marketInputs.dataSource}

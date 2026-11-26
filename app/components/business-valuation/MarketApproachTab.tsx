@@ -6,7 +6,9 @@ import { computeIncomeApproach, normalizeIncomeApproach } from '@/lib/business-v
 import { normalizeDealTerms } from '@/lib/business-valuation/deal-terms';
 import {
   MAX_COMPARABLES,
+  EMPTY_COMPARABLE,
   MULTIPLE_TYPES,
+  adjustedPrice,
   comparableMultiple,
   computeMarketApproach,
   importComparablesCsv,
@@ -152,7 +154,7 @@ export default function MarketApproachTab({ engagement, snapshot, locked, saving
         </div>
         <label style={{ ...checkboxLabel, marginTop: '8px', cursor: locked ? 'not-allowed' : 'pointer' }}>
           <input type="checkbox" disabled={locked} checked={Boolean(value('priceExcludesInventory'))} onChange={(event) => edit('priceExcludesInventory', event.target.checked)} style={{ margin: 0 }} />
-          Sale prices exclude inventory (the company&apos;s inventory is added to the indicated value)
+          Sale prices exclude inventory (the company&apos;s inventory is added to the indicated value). Mark any sale that differs in its Inventory in price column.
         </label>
       </div>
 
@@ -174,7 +176,7 @@ export default function MarketApproachTab({ engagement, snapshot, locked, saving
                 onClick={() =>
                   setComparables([
                     ...comparables,
-                    { id: newRowId(), saleDate: null, description: '', industryCode: null, location: null, revenue: null, sde: null, ebitda: null, price: 0, included: true, exclusionReason: null },
+                    { ...EMPTY_COMPARABLE, id: newRowId() },
                   ])
                 }
                 style={smallButton}
@@ -187,11 +189,12 @@ export default function MarketApproachTab({ engagement, snapshot, locked, saving
         {importNote && <div style={{ fontSize: '12px', color: '#1e3a8a', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '4px 8px', marginBottom: '6px' }}>{importNote}</div>}
         {comparables.length === 0 ? (
           <div style={{ fontSize: '12px', color: '#64748b' }}>
-            No sales yet. The CSV needs a header row; recognized columns include Sale date, Description, NAICS, Location, Revenue, SDE, EBITDA, and Sale price.
+            No sales yet. The CSV needs a header row; recognized columns include Sale date, Description, NAICS, Location, Revenue, SDE, EBITDA, Sale price, Inventory included, Inventory, Real estate included,
+            Real estate value, Asset or stock, Down payment, and Seller financing.
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1300px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '2100px' }}>
               <thead>
                 <tr>
                   <th style={{ ...th, width: '44px' }}>Use</th>
@@ -203,6 +206,14 @@ export default function MarketApproachTab({ engagement, snapshot, locked, saving
                   <th style={{ ...th, width: '100px', textAlign: 'right' }}>SDE</th>
                   <th style={{ ...th, width: '100px', textAlign: 'right' }}>EBITDA</th>
                   <th style={{ ...th, width: '110px', textAlign: 'right' }}>Sale price</th>
+                  <th style={{ ...th, width: '96px' }} title="Whether this sale's price included inventory. Per setting follows the checkbox above.">Inventory in price</th>
+                  <th style={{ ...th, width: '100px', textAlign: 'right' }}>Inventory</th>
+                  <th style={{ ...th, width: '60px' }} title="The sale price included real estate">Real estate in price</th>
+                  <th style={{ ...th, width: '100px', textAlign: 'right' }}>Real estate value</th>
+                  <th style={{ ...th, width: '84px' }}>Asset or stock</th>
+                  <th style={{ ...th, width: '70px', textAlign: 'right' }}>Down payment</th>
+                  <th style={{ ...th, width: '70px', textAlign: 'right' }}>Seller financed</th>
+                  <th style={{ ...th, width: '110px', textAlign: 'right' }} title="Sale price with inventory put on the same basis as the other sales and real estate removed; the multiples use it">Adjusted price</th>
                   <th style={{ ...th, width: '60px', textAlign: 'right' }}>P/SDE</th>
                   <th style={{ ...th, width: '68px', textAlign: 'right' }}>P/EBITDA</th>
                   <th style={{ ...th, width: '60px', textAlign: 'right' }}>P/Rev</th>
@@ -213,6 +224,7 @@ export default function MarketApproachTab({ engagement, snapshot, locked, saving
               <tbody>
                 {comparables.map((row, index) => {
                   const normalized = preview.comparables[index];
+                  const adjusted = normalized ? adjustedPrice(normalized, preview.priceExcludesInventory) : null;
                   return (
                     <tr key={row.id} style={row.included ? undefined : { background: '#f8fafc', color: '#94a3b8' }}>
                       <td style={{ ...td, textAlign: 'center' }}>
@@ -226,9 +238,38 @@ export default function MarketApproachTab({ engagement, snapshot, locked, saving
                       <td style={td}><NumberInput disabled={locked} value={row.sde ?? ''} onChange={(next) => updateComparable(index, { sde: next })} /></td>
                       <td style={td}><NumberInput disabled={locked} value={row.ebitda ?? ''} onChange={(next) => updateComparable(index, { ebitda: next })} /></td>
                       <td style={td}><NumberInput disabled={locked} value={row.price || ''} onChange={(next) => updateComparable(index, { price: next })} /></td>
-                      <td style={right}>{ratio(normalized ? comparableMultiple(normalized, 'sde') : null)}</td>
-                      <td style={right}>{ratio(normalized ? comparableMultiple(normalized, 'ebitda') : null)}</td>
-                      <td style={right}>{ratio(normalized ? comparableMultiple(normalized, 'revenue') : null)}</td>
+                      <td style={td}>
+                        <select
+                          disabled={locked}
+                          value={row.inventoryInPrice === null || row.inventoryInPrice === undefined ? '' : row.inventoryInPrice ? 'yes' : 'no'}
+                          onChange={(event) => updateComparable(index, { inventoryInPrice: event.target.value === '' ? null : event.target.value === 'yes' })}
+                          style={input}
+                        >
+                          <option value="">Per setting</option>
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </td>
+                      <td style={td}><NumberInput disabled={locked} value={row.inventoryAmount ?? ''} onChange={(next) => updateComparable(index, { inventoryAmount: next })} /></td>
+                      <td style={{ ...td, textAlign: 'center' }}>
+                        <input type="checkbox" disabled={locked} checked={Boolean(row.realEstateInPrice)} onChange={(event) => updateComparable(index, { realEstateInPrice: event.target.checked })} style={{ margin: 0 }} />
+                      </td>
+                      <td style={td}><NumberInput disabled={locked || !row.realEstateInPrice} value={row.realEstateValue ?? ''} onChange={(next) => updateComparable(index, { realEstateValue: next })} /></td>
+                      <td style={td}>
+                        <select disabled={locked} value={row.saleStructure ?? ''} onChange={(event) => updateComparable(index, { saleStructure: event.target.value || null })} style={input}>
+                          <option value="">—</option>
+                          <option value="ASSET">Asset</option>
+                          <option value="STOCK">Stock</option>
+                        </select>
+                      </td>
+                      <td style={td}><NumberInput kind="percent" disabled={locked} value={row.downPaymentPct ?? ''} onChange={(next) => updateComparable(index, { downPaymentPct: next })} /></td>
+                      <td style={td}><NumberInput kind="percent" disabled={locked} value={row.sellerFinancedPct ?? ''} onChange={(next) => updateComparable(index, { sellerFinancedPct: next })} /></td>
+                      <td style={{ ...right, fontWeight: adjusted && adjusted.price !== normalized?.price ? 600 : 400, color: adjusted?.problem ? '#b45309' : undefined }} title={adjusted?.problem ? 'Not used in the multiples; see the warnings below' : undefined}>
+                        {adjusted?.price !== null && adjusted?.price !== undefined ? money(adjusted.price) : adjusted?.problem ? 'Needs amount' : '—'}
+                      </td>
+                      <td style={right}>{ratio(normalized ? comparableMultiple(normalized, 'sde', preview.priceExcludesInventory) : null)}</td>
+                      <td style={right}>{ratio(normalized ? comparableMultiple(normalized, 'ebitda', preview.priceExcludesInventory) : null)}</td>
+                      <td style={right}>{ratio(normalized ? comparableMultiple(normalized, 'revenue', preview.priceExcludesInventory) : null)}</td>
                       <td style={td}>
                         {!row.included && (
                           <input type="text" disabled={locked} placeholder="Why it is not comparable" value={row.exclusionReason ?? ''} onChange={(event) => updateComparable(index, { exclusionReason: event.target.value })} style={input} />

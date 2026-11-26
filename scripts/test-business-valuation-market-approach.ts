@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
 import {
   DEFAULT_MARKET_APPROACH,
+  EMPTY_COMPARABLE,
+  adjustedPrice,
+  comparableMultiple,
   computeMarketApproach,
   importComparablesCsv,
   multipleStats,
   normalizeMarketApproach,
   parseAmount,
+  parsePercent,
   parseSaleDate,
+  parseSaleStructure,
+  parseYesNo,
   validateMarketApproach,
   type Comparable,
   type MarketApproach,
@@ -51,6 +57,7 @@ assert.match(importComparablesCsv('Name,Revenue\nA,100').error || '', /sale pric
 // Validation.
 assert.equal(validateMarketApproach(DEFAULT_MARKET_APPROACH), null);
 const sale = (overrides: Partial<Comparable>): Comparable => ({
+  ...EMPTY_COMPARABLE,
   id: Math.random().toString(36),
   saleDate: '2024-01-01',
   description: 'Resale store',
@@ -138,5 +145,71 @@ const noSde = computeMarketApproach(market, { sde: null, normalizedEbitda: 20000
 });
 assert.equal(noSde.indicatedValue, null);
 assert.ok(noSde.warnings.some((item) => item.includes('needs a positive company')));
+
+// Per-sale details from provider exports.
+assert.equal(parseYesNo('Yes'), true);
+assert.equal(parseYesNo('N'), false);
+assert.equal(parseYesNo('maybe'), null);
+assert.equal(parsePercent('25%'), 25);
+assert.equal(parsePercent('0.3'), 30);
+assert.equal(parsePercent('40'), 40);
+assert.equal(parseSaleStructure('Stock Sale'), 'STOCK');
+assert.equal(parseSaleStructure('Asset'), 'ASSET');
+assert.equal(parseSaleStructure(''), null);
+const detailed = importComparablesCsv(
+  [
+    'Sale Price,SDE,Inventory Included,Inventory,Real Estate Value,Asset or Stock,% Down,Seller Financing',
+    '"$300,000","$100,000",Yes,"$60,000",,Asset,25%,0.5',
+    '"$900,000","$150,000",,,"$400,000",Stock Sale,,',
+  ].join('\n'),
+);
+assert.equal(detailed.error, null);
+assert.deepEqual(detailed.ignoredColumns, []);
+const [withInventory, withBuilding] = detailed.comparables;
+assert.equal(withInventory.inventoryInPrice, true);
+assert.equal(withInventory.inventoryAmount, 60000);
+assert.equal(withInventory.realEstateInPrice, false);
+assert.equal(withInventory.saleStructure, 'ASSET');
+assert.equal(withInventory.downPaymentPct, 25);
+assert.equal(withInventory.sellerFinancedPct, 50);
+// A real estate value with no "included" column means the price included it.
+assert.equal(withBuilding.realEstateInPrice, true);
+assert.equal(withBuilding.realEstateValue, 400000);
+assert.equal(withBuilding.saleStructure, 'STOCK');
+
+// Prices are put on one basis: Store A's $300,000 with $60,000 inventory equals Store B's $240,000 without it.
+assert.deepEqual(adjustedPrice(withInventory, true), { price: 240000, inventory: -60000, realEstate: 0, problem: null });
+assert.equal(comparableMultiple(withInventory, 'sde', true), 2.4);
+assert.equal(adjustedPrice(withInventory, false).price, 300000);
+assert.equal(adjustedPrice(sale({ inventoryInPrice: false, inventoryAmount: 50000 }), false).price, 550000);
+assert.equal(adjustedPrice(withBuilding, true).price, 500000);
+assert.equal(adjustedPrice(sale({ inventoryInPrice: true }), true).problem, 'INVENTORY_AMOUNT');
+assert.equal(adjustedPrice(sale({ realEstateInPrice: true }), true).problem, 'REAL_ESTATE_VALUE');
+assert.equal(adjustedPrice(sale({ realEstateInPrice: true, realEstateValue: 600000 }), true).problem, 'NOT_POSITIVE');
+
+// Sales that cannot be put on the same basis are left out of the statistics, with warnings.
+const mixed = computeMarketApproach(
+  {
+    ...market,
+    comparables: [
+      ...comparables,
+      sale({ price: 560000, inventoryInPrice: true, inventoryAmount: 60000 }),
+      sale({ inventoryInPrice: true }),
+      sale({ realEstateInPrice: true }),
+      sale({ saleStructure: 'STOCK' }),
+    ],
+  },
+  earnings,
+  balanceSheet,
+  { transactionStructure: 'ASSET', valuationDate: '2026-10-31' },
+);
+const mixedSde = mixed.lines.find((line) => line.key === 'PRICE_TO_SDE')!;
+assert.equal(mixedSde.stats?.count, 7);
+assert.equal(mixedSde.stats?.median, 2.5);
+assert.ok(mixed.warnings.some((item) => item.includes('1 included sale includes inventory unlike the others but has no inventory amount')));
+assert.ok(mixed.warnings.some((item) => item.includes('1 included sale includes real estate with no value given')));
+assert.ok(mixed.warnings.some((item) => item.includes('1 included sale was a stock sale, while this engagement values the assets')));
+assert.equal(validateMarketApproach({ ...DEFAULT_MARKET_APPROACH, comparables: [sale({ downPaymentPct: 120 })] })?.includes('between 0% and 100%'), true);
+assert.equal(normalizeMarketApproach({ comparables: [{ price: 1, saleStructure: 'LEASE', inventoryInPrice: 'yes' }] }).comparables[0].saleStructure, null);
 
 console.log('business valuation market approach tests passed');
