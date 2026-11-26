@@ -19,11 +19,9 @@ assert.equal(assetSizeBand(2500000), '1m-5m');
 assert.deepEqual(industryCodeCandidates('453310'), ['453310', '45331', '4533', '453', '45']);
 assert.deepEqual(industryCodeCandidates(null), []);
 
-// Normalizing keeps known metrics and numeric RMA values, strips non-digits from the code.
-const normalized = normalizeBenchmarking({ industryCode: 'NAICS 45331', sizeBand: 'huge', rmaValues: { grossProfit: '65.5%', bogus: 3, currentRatio: '', quickRatio: null } });
-assert.equal(normalized.industryCode, '45331');
-assert.equal(normalized.sizeBand, null);
-assert.deepEqual(normalized.rmaValues, { grossProfit: 65.5 });
+// Normalizing strips non-digits from the code and drops fields no longer used, such as RMA figures.
+const normalized = normalizeBenchmarking({ industryCode: 'NAICS 45331', sizeBand: 'huge', rmaEdition: '2025', rmaValues: { grossProfit: 65.5 } });
+assert.deepEqual(normalized, { industryCode: '45331', sizeBand: null, notes: null });
 assert.equal(validateBenchmarking(DEFAULT_BENCHMARKING), null);
 assert.match(validateBenchmarking({ ...DEFAULT_BENCHMARKING, industryCode: '1' }) || '', /2- to 6-digit/);
 
@@ -91,7 +89,7 @@ const snapshot = {
   periodSummaries: [summary('FY2026-YTD', 100, 50), summary('FY2025', 500000, 150000), summary('FY2024', 400000, 140000)],
 };
 
-const result = computeBenchmarks({ ...DEFAULT_BENCHMARKING, rmaValues: { daysInventory: 120 } }, snapshot, table);
+const result = computeBenchmarks(snapshot, table);
 assert.deepEqual(result.years.map((year) => year.key), ['FY2025', 'FY2024']);
 const row = (key: string) => result.rows.find((item) => item.key === key)!;
 // Gross profit 70% vs table 71.2%: within 10% of the benchmark, so in line.
@@ -102,20 +100,20 @@ assert.equal(row('grossProfit').assessment, 'In line');
 assert.equal(row('currentRatio').company[0], 4);
 assert.equal(row('currentRatio').tableUsedAllSizes, true);
 assert.equal(row('currentRatio').assessment, 'Better');
-// Days inventory 60000 / 150000 × 365 = 146 vs RMA 120 (RMA beats the table): worse.
+// Days inventory 60000 / 150000 × 365 = 146 vs table 167.1; fewer days is better.
 assert.equal(Math.round(row('daysInventory').company[0]!), 146);
-assert.equal(row('daysInventory').benchmark, 120);
-assert.equal(row('daysInventory').benchmarkSource, 'RMA');
-assert.equal(row('daysInventory').assessment, 'Worse');
+assert.equal(row('daysInventory').benchmark, 167.1);
+assert.equal(row('daysInventory').benchmarkSource, 'TABLE');
+assert.equal(row('daysInventory').assessment, 'Better');
 // No direction for inventory share of assets; no benchmark for quick ratio.
 assert.equal(row('inventory').assessment, null);
 assert.equal(row('quickRatio').benchmark, null);
 assert.equal(row('debtToNetWorth').company[0], 80000 / 120000);
 assert.ok(result.warnings.some((warning) => warning.includes('Only 2 complete fiscal years')));
-assert.ok(result.warnings.some((warning) => warning.includes('Record the RMA edition')));
+assert.ok(!result.warnings.some((warning) => warning.includes('RMA')));
 assert.ok(result.warnings.some((warning) => warning.includes('all asset sizes')));
 assert.ok(result.warnings.some((warning) => warning.includes('No officer compensation')));
-assert.ok(computeBenchmarks(DEFAULT_BENCHMARKING, null, null).warnings.some((warning) => warning.includes('No industry table match')));
+assert.ok(computeBenchmarks(null, null).warnings.some((warning) => warning.includes('No industry table match')));
 
 assert.equal(formatBenchmarkValue(70, 'PCT'), '70.0%');
 assert.equal(formatBenchmarkValue(146.2, 'DAYS'), '146');

@@ -41,8 +41,8 @@ const indicator = (overrides: Partial<EconomicIndicator>): EconomicIndicator => 
 const benchmarks: BenchmarkResult = {
   years: [{ key: 'FY2025', label: 'FY2025' }],
   rows: [
-    { key: 'gm', label: 'Gross margin', group: 'PROFITABILITY' as any, unit: 'PCT', company: [48.2], rma: null, table: 41, tableUsedAllSizes: false, benchmark: 41, benchmarkSource: 'TABLE', difference: 7.2, assessment: 'Better' },
-    { key: 'none', label: 'Current ratio', group: 'LIQUIDITY' as any, unit: 'RATIO', company: [null], rma: null, table: 1.4, tableUsedAllSizes: false, benchmark: 1.4, benchmarkSource: 'TABLE', difference: null, assessment: null },
+    { key: 'gm', label: 'Gross margin', group: 'PROFITABILITY' as any, unit: 'PCT', company: [48.2], table: 41, tableUsedAllSizes: false, benchmark: 41, benchmarkSource: 'TABLE', difference: 7.2, assessment: 'Better' },
+    { key: 'none', label: 'Current ratio', group: 'LIQUIDITY' as any, unit: 'RATIO', company: [null], table: 1.4, tableUsedAllSizes: false, benchmark: 1.4, benchmarkSource: 'TABLE', difference: null, assessment: null },
   ],
   warnings: [],
 };

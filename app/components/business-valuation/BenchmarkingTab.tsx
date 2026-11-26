@@ -9,11 +9,9 @@ import {
   computeBenchmarks,
   formatBenchmarkDifference,
   formatBenchmarkValue,
-  normalizeBenchmarking,
   type Benchmarking,
   type IndustryTable,
 } from '@/lib/business-valuation/benchmarking';
-import NumberInput from './NumberInput';
 import { CARD, button, cardSubtitle, cardTitle, formColumns, formRow, formRowLabel, groupTitle, input, pendingNote, td, th } from './styles';
 
 type Props = {
@@ -40,16 +38,8 @@ export default function BenchmarkingTab({ engagement, snapshot, context, locked,
     setJustSaved(false);
     setPending((current) => ({ ...current, [field]: next }));
   };
-  const pendingRma = (pending.rmaValues as Record<string, unknown>) || {};
-  const rmaValue = (key: string) => (key in pendingRma ? pendingRma[key] : saved.rmaValues[key] ?? '');
-  const editRma = (key: string, raw: string) => edit('rmaValues', { ...pendingRma, [key]: raw === '' ? null : raw });
-
-  const preview = useMemo(
-    () => normalizeBenchmarking({ ...saved, ...pending, rmaValues: { ...saved.rmaValues, ...((pending.rmaValues as Record<string, unknown>) || {}) } }),
-    [saved, pending],
-  );
   const table = context?.industryTable || null;
-  const result = computeBenchmarks(preview, snapshot, table);
+  const result = useMemo(() => computeBenchmarks(snapshot, table), [snapshot, table]);
   const sourceChanged = 'industryCode' in pending || 'sizeBand' in pending;
 
   const save = async () => {
@@ -68,7 +58,7 @@ export default function BenchmarkingTab({ engagement, snapshot, context, locked,
   const textInput = (field: keyof Benchmarking, placeholder = '') => (
     <input type="text" disabled={locked} placeholder={placeholder} value={String(value(field) ?? '')} onChange={(event) => edit(field, event.target.value)} style={{ ...input, flex: 1, minWidth: 0 }} />
   );
-  const columnCount = result.years.length + 5;
+  const columnCount = result.years.length + 4;
 
   return (
     <div style={{ display: 'grid', gap: '8px' }}>
@@ -76,7 +66,7 @@ export default function BenchmarkingTab({ engagement, snapshot, context, locked,
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
             <div style={cardTitle}>Benchmark sources</div>
-            <div style={cardSubtitle}>RMA figures are used where entered; the Corelytics industry table fills the rest. Save records the whole Benchmarking tab.</div>
+            <div style={cardSubtitle}>The company is compared with the Corelytics industry table. Save records the whole Benchmarking tab.</div>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
             {hasPending && <span style={pendingNote}>Unsaved changes</span>}
@@ -110,12 +100,6 @@ export default function BenchmarkingTab({ engagement, snapshot, context, locked,
             )}
           </div>
           <div>
-            <div style={groupTitle}>RMA Annual Statement Studies</div>
-            {row('Edition', textInput('rmaEdition', 'e.g. 2025–2026'))}
-            {row('Industry', textInput('rmaIndustry', 'NAICS code and title'))}
-            {row('Size band', textInput('rmaSizeBand', 'e.g. Sales $1MM–3MM'))}
-          </div>
-          <div>
             <div style={groupTitle}>Notes</div>
             <textarea
               rows={3}
@@ -139,7 +123,6 @@ export default function BenchmarkingTab({ engagement, snapshot, context, locked,
             <tr>
               <th style={th}>Metric</th>
               {result.years.map((year) => <th key={year.key} style={{ ...th, textAlign: 'right' }}>{year.label}</th>)}
-              <th style={{ ...th, textAlign: 'right', width: '100px' }}>RMA</th>
               <th style={{ ...th, textAlign: 'right' }}>Industry table</th>
               <th style={{ ...th, textAlign: 'right' }}>Difference</th>
               <th style={th}>Assessment</th>
@@ -158,10 +141,7 @@ export default function BenchmarkingTab({ engagement, snapshot, context, locked,
                     {item.company.map((amount, index) => (
                       <td key={result.years[index].key} style={{ ...td, textAlign: 'right', fontWeight: index === 0 ? 600 : 400 }}>{formatBenchmarkValue(amount, item.unit)}</td>
                     ))}
-                    <td style={{ ...td, padding: '1px 4px' }}>
-                      <NumberInput value={rmaValue(item.key)} onChange={(raw) => editRma(item.key, raw)} kind={item.unit === 'PCT' ? 'percent' : 'number'} disabled={locked} />
-                    </td>
-                    <td style={{ ...td, textAlign: 'right', color: item.benchmarkSource === 'TABLE' ? '#1e293b' : '#94a3b8' }}>
+                    <td style={{ ...td, textAlign: 'right' }}>
                       {formatBenchmarkValue(item.table, item.unit)}
                       {item.tableUsedAllSizes && item.table !== null ? '*' : ''}
                     </td>

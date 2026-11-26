@@ -626,7 +626,7 @@ export async function POST(request: NextRequest) {
           location: [company?.addressCity, company?.addressState].filter(Boolean).join(', ') || null,
           valuationDate: engagement.valuationDate.toISOString().slice(0, 10),
           outlook: current,
-          benchmarks: latestSnapshot ? computeBenchmarks(benchmarking, latestSnapshot.data as any, industryTable) : null,
+          benchmarks: latestSnapshot ? computeBenchmarks(latestSnapshot.data as any, industryTable) : null,
         },
         { feature: 'business_valuation', companyId, userId: context.userId, route: '/api/business-valuation' },
       );
@@ -653,17 +653,11 @@ export async function POST(request: NextRequest) {
     } else if (action === 'update-benchmarking') {
       const current = normalizeBenchmarking(engagement.benchmarking);
       const incoming = body?.benchmarking && typeof body.benchmarking === 'object' ? (body.benchmarking as Record<string, unknown>) : {};
-      const next: Benchmarking = normalizeBenchmarking({
-        ...current,
-        ...incoming,
-        rmaValues: { ...current.rmaValues, ...((incoming.rmaValues as Record<string, unknown>) || {}) },
-      });
+      const next: Benchmarking = normalizeBenchmarking({ ...current, ...incoming });
       const invalid = validateBenchmarking(next);
       if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-      const summarize = (item: Benchmarking, key: keyof Benchmarking) =>
-        key === 'rmaValues' ? Object.entries(item.rmaValues).map(([metric, value]) => `${metric}=${value}`).join('; ') || null : display(item[key]);
       const changes = (Object.keys(next) as Array<keyof Benchmarking>)
-        .map((key) => ({ field: `benchmark.${key}`, oldValue: summarize(current, key), newValue: summarize(next, key) }))
+        .map((key) => ({ field: `benchmark.${key}`, oldValue: display(current[key]), newValue: display(next[key]) }))
         .filter((change) => change.oldValue !== change.newValue);
       await prisma.$transaction([
         prisma.businessValuationEngagement.update({ where: { id: engagement.id }, data: { benchmarking: JSON.parse(JSON.stringify(next)) } }),

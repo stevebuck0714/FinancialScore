@@ -1,4 +1,4 @@
-import { optionalNumber, optionalText } from './deal-terms';
+import { optionalText } from './deal-terms';
 import { completeFiscalYears, type SnapshotEarningsInput } from './earnings-base';
 import type { FiscalPeriodSummary } from './fiscal-years';
 
@@ -69,40 +69,22 @@ export type Benchmarking = {
   industryCode: string | null;
   /** Overrides the size band derived from the latest fiscal year's total assets. */
   sizeBand: string | null;
-  rmaEdition: string | null;
-  rmaIndustry: string | null;
-  rmaSizeBand: string | null;
-  rmaValues: Record<BenchmarkMetricKey, number>;
   notes: string | null;
 };
 
 export const DEFAULT_BENCHMARKING: Benchmarking = {
   industryCode: null,
   sizeBand: null,
-  rmaEdition: null,
-  rmaIndustry: null,
-  rmaSizeBand: null,
-  rmaValues: {},
   notes: null,
 };
 
 export function normalizeBenchmarking(raw: unknown): Benchmarking {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const rawValues = source.rmaValues && typeof source.rmaValues === 'object' ? (source.rmaValues as Record<string, unknown>) : {};
-  const rmaValues: Benchmarking['rmaValues'] = {};
-  for (const metric of BENCHMARK_METRICS) {
-    const value = optionalNumber(rawValues[metric.key]);
-    if (value !== null) rmaValues[metric.key] = value;
-  }
   const code = optionalText(source.industryCode);
   const sizeBand = optionalText(source.sizeBand);
   return {
     industryCode: code ? code.replace(/\D/g, '') || null : null,
     sizeBand: sizeBand && ((ASSET_SIZE_BANDS as readonly string[]).includes(sizeBand) || sizeBand === ALL_ASSET_SIZES) ? sizeBand : null,
-    rmaEdition: optionalText(source.rmaEdition),
-    rmaIndustry: optionalText(source.rmaIndustry),
-    rmaSizeBand: optionalText(source.rmaSizeBand),
-    rmaValues,
     notes: optionalText(source.notes),
   };
 }
@@ -151,11 +133,10 @@ export type BenchmarkRow = {
   group: (typeof BENCHMARK_GROUPS)[number]['key'];
   unit: MetricUnit;
   company: Array<number | null>;
-  rma: number | null;
   table: number | null;
   tableUsedAllSizes: boolean;
   benchmark: number | null;
-  benchmarkSource: 'RMA' | 'TABLE' | null;
+  benchmarkSource: 'TABLE' | null;
   difference: number | null;
   assessment: 'Better' | 'Worse' | 'In line' | null;
 };
@@ -169,16 +150,15 @@ export type BenchmarkResult = {
 /** Within this share of the benchmark, a metric counts as in line. */
 const IN_LINE_TOLERANCE = 0.1;
 
-export function computeBenchmarks(benchmarking: Benchmarking, snapshot: SnapshotEarningsInput, table: IndustryTable): BenchmarkResult {
+export function computeBenchmarks(snapshot: SnapshotEarningsInput, table: IndustryTable): BenchmarkResult {
   const years = completeFiscalYears(snapshot).slice(0, 3);
   const rows: BenchmarkRow[] = BENCHMARK_METRICS.map((metric) => {
     const company = years.map((year) => {
       const value = metric.compute(year.summary);
       return value !== null && Number.isFinite(value) ? value : null;
     });
-    const rma = benchmarking.rmaValues[metric.key] ?? null;
     const tableValue = industryTableValue(table, metric.tableMetrics);
-    const benchmark = rma ?? tableValue?.value ?? null;
+    const benchmark = tableValue?.value ?? null;
     const latest = company[0] ?? null;
     const difference = latest !== null && benchmark !== null ? latest - benchmark : null;
     let assessment: BenchmarkRow['assessment'] = null;
@@ -193,11 +173,10 @@ export function computeBenchmarks(benchmarking: Benchmarking, snapshot: Snapshot
       group: metric.group,
       unit: metric.unit,
       company,
-      rma,
       table: tableValue?.value ?? null,
       tableUsedAllSizes: tableValue?.usedAllSizes ?? false,
       benchmark,
-      benchmarkSource: rma !== null ? 'RMA' : tableValue ? 'TABLE' : null,
+      benchmarkSource: tableValue ? 'TABLE' : null,
       difference,
       assessment,
     };
@@ -206,9 +185,7 @@ export function computeBenchmarks(benchmarking: Benchmarking, snapshot: Snapshot
   const warnings: string[] = [];
   if (years.length === 0) warnings.push('No complete fiscal years in the snapshot; freeze data that covers at least one full fiscal year.');
   else if (years.length < 3) warnings.push(`Only ${years.length} complete fiscal year${years.length === 1 ? '' : 's'} in the snapshot; three are expected.`);
-  if (!table) warnings.push('No industry table match for the company NAICS code; enter an industry code or RMA figures.');
-  if (Object.keys(benchmarking.rmaValues).length === 0) warnings.push('No RMA figures entered; the comparison uses the Corelytics industry table.');
-  else if (!benchmarking.rmaEdition) warnings.push('Record the RMA edition the figures came from.');
+  if (!table) warnings.push('No industry table match for the company NAICS code; enter an industry code.');
   if (rows.some((row) => row.tableUsedAllSizes && row.benchmarkSource === 'TABLE')) warnings.push('Some industry table figures use all asset sizes because the size band has no value.');
   const latest = years[0]?.summary;
   if (latest?.balanceSheet && latest.balanceSheet.totalEquity <= 0) warnings.push('Net worth is zero or negative in the latest fiscal year, so debt to net worth is not meaningful.');

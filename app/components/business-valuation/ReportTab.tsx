@@ -144,7 +144,7 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
     transactionStructure: engagement.transactionStructure,
     valuationDate,
   });
-  const benchmarks = computeBenchmarks(benchmarking, snapshot, benchmarkContext?.industryTable || null);
+  const benchmarks = computeBenchmarks(snapshot, benchmarkContext?.industryTable || null);
   const readiness = reportReadiness({
     hasSnapshot: Boolean(snapshot),
     independenceConfirmed: Boolean(engagement.independenceConfirmedAt),
@@ -460,9 +460,7 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
           )}
           <H2>Industry benchmarking</H2>
           <P>
-            The Company&apos;s latest complete fiscal year is compared with{' '}
-            {benchmarking.rmaEdition ? `RMA Annual Statement Studies (${benchmarking.rmaEdition}${benchmarking.rmaIndustry ? `, ${benchmarking.rmaIndustry}` : ''}${benchmarking.rmaSizeBand ? `, ${benchmarking.rmaSizeBand}` : ''}) where entered, and otherwise with ` : ''}
-            the industry benchmark table for {industry}
+            The Company&apos;s latest complete fiscal year is compared with the industry benchmark table for {industry}
             {benchmarkContext?.industryTable ? ` (${benchmarkContext.industryTable.sizeBand})` : ''}.
           </P>
           <Table
@@ -476,7 +474,7 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
                   cells: [
                     row.label,
                     ...benchmarks.years.map((_, index) => formatBenchmarkValue(row.company[index] ?? null, row.unit)),
-                    `${formatBenchmarkValue(row.benchmark, row.unit)}${row.benchmarkSource === 'RMA' ? ' (RMA)' : ''}`,
+                    formatBenchmarkValue(row.benchmark, row.unit),
                     row.assessment || '—',
                   ],
                 })),
@@ -815,7 +813,6 @@ export default function ReportTab({ engagement, snapshot, companyName, companyPr
               .filter(([, source]) => source)
               .map(([label, source]) => `${label}: ${source}`),
             ...(marketPerformed && marketInputs.dataSource ? [`Comparable transactions: ${marketInputs.dataSource}${marketInputs.dataEdition ? `, ${marketInputs.dataEdition}` : ''}`] : []),
-            ...(benchmarking.rmaEdition ? [`RMA Annual Statement Studies, ${benchmarking.rmaEdition}`] : []),
             ...(benchmarkContext?.industryTable ? [`Industry benchmark table: ${industry}, ${benchmarkContext.industryTable.sizeBand}`] : []),
           ]
             .filter((item, index, list) => list.indexOf(item) === index)

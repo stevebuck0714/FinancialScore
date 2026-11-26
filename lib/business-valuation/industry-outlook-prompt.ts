@@ -146,7 +146,7 @@ export function buildIndustryOutlookPrompt(input: IndustryOutlookInput): { syste
     .filter((row) => row.company[0] !== null && row.benchmark !== null)
     .map(
       (row) =>
-        `- ${row.label}: company ${formatBenchmarkValue(row.company[0], row.unit)}, benchmark ${formatBenchmarkValue(row.benchmark, row.unit)} (${row.benchmarkSource === 'RMA' ? 'RMA' : 'Corelytics industry table'}), difference ${formatBenchmarkDifference(row.difference, row.unit)}${row.assessment ? `, ${row.assessment.toLowerCase()}` : ''}`,
+        `- ${row.label}: company ${formatBenchmarkValue(row.company[0], row.unit)}, benchmark ${formatBenchmarkValue(row.benchmark, row.unit)} (Corelytics industry table), difference ${formatBenchmarkDifference(row.difference, row.unit)}${row.assessment ? `, ${row.assessment.toLowerCase()}` : ''}`,
     );
   const latestYear = input.benchmarks?.years[0]?.label;
 
