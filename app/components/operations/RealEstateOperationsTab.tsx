@@ -32,6 +32,11 @@ const td: React.CSSProperties = { padding: '9px 10px', borderBottom: '1px solid 
 
 const basisBadge: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#1e3a8a', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 999, padding: '3px 9px', textTransform: 'uppercase', whiteSpace: 'nowrap' };
 const CAPITAL_ENTRY_TYPES = ['CONTRIBUTION', 'DEEMED_CONTRIBUTION', 'OWNERSHIP_TRANSFER_IN', 'OWNERSHIP_TRANSFER_OUT'];
+const INVESTOR_ROLLFORWARD_GROUPS = [
+  { key: 'SPONSOR GROUP', label: 'Sponsor Group' },
+  { key: 'LAND CONTRIBUTOR GROUP', label: 'Land Contributor Group' },
+  { key: 'INVESTOR GROUP', label: 'Investor Group' },
+] as const;
 
 type PropertyTypeFilter = 'all' | 'income' | 'expenses' | 'assets' | 'liabilities';
 type ReportRange = { startDate: string; endDate: string };
@@ -189,6 +194,19 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
     [waterfallInvestors, waterfallEntries, waterfallSettings, waterfallAsOfDate],
   );
   const waterfallBalanceById = useMemo(() => new Map(waterfall.balances.map((balance) => [balance.investorId, balance])), [waterfall]);
+  const investorRollforwardRows = useMemo(() => data.investors.map((investor) => {
+    const entries = Array.isArray(investor.entries) ? investor.entries : [];
+    const sum = (type: string) => entries.filter((entry: any) => entry.entryType === type).reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0);
+    const balance = waterfallBalanceById.get(investor.id);
+    return {
+      investor,
+      contribution: CAPITAL_ENTRY_TYPES.reduce((total, type) => total + sum(type), 0),
+      distribution: sum('DISTRIBUTION'),
+      allocation: sum('ALLOCATION'),
+      preferred: waterfall.ready && balance?.isLandContributor ? balance.preferredReturnUnpaid : null,
+      evenUp: waterfall.ready && balance && !balance.isLandContributor ? balance.evenUpUnpaid : null,
+    };
+  }), [data.investors, waterfall, waterfallBalanceById]);
 
   const months = useMemo(() => Array.from(new Set(data.lines.map((line) => String(line.periodEnd).slice(0, 7)))).sort(), [data.lines]);
   const expenseLines = useMemo(() => data.lines.filter((line) => String(line.accountType).toLowerCase() === 'expense'), [data.lines]);
@@ -617,40 +635,48 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
           </div>
           <span style={basisBadge}>Operating Agreement basis</span>
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-          <thead><tr>{sortableHeader('investors', 'name', 'Investor / Member')}{sortableHeader('investors', 'group', 'Group')}{sortableHeader('investors', 'ownership', 'Ownership', 'right')}{sortableHeader('investors', 'contribution', 'Contributions / Deemed Capital', 'right')}{sortableHeader('investors', 'distribution', 'Distributions', 'right')}{sortableHeader('investors', 'allocation', 'Allocations', 'right')}{sortableHeader('investors', 'preferred', 'Unpaid Pref. Return', 'right')}{sortableHeader('investors', 'evenUp', 'Unpaid Even-Up', 'right')}</tr></thead>
-          <tbody>{sortRows('investors', data.investors.map((investor) => {
-            const entries = Array.isArray(investor.entries) ? investor.entries : [];
-            const sum = (type: string) => entries.filter((entry: any) => entry.entryType === type).reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0);
-            const balance = waterfallBalanceById.get(investor.id);
-            return {
-              investor,
-              contribution: CAPITAL_ENTRY_TYPES.reduce((total, type) => total + sum(type), 0),
-              distribution: sum('DISTRIBUTION'),
-              allocation: sum('ALLOCATION'),
-              preferred: waterfall.ready && balance?.isLandContributor ? balance.preferredReturnUnpaid : null,
-              evenUp: waterfall.ready && balance && !balance.isLandContributor ? balance.evenUpUnpaid : null,
-            };
-          }), (row, key) => key === 'name' ? row.investor.legalName : key === 'group' ? row.investor.memberGroup : key === 'ownership' ? Number(row.investor.ownershipPercentage || 0) : (row as any)[key]).slice(0, expandedTables.investors ? undefined : 12).map(({ investor, contribution, distribution, allocation, preferred, evenUp }) => <tr key={investor.id}><td style={{ ...td, fontWeight: 700 }}>{investor.legalName}</td><td style={td}>{investor.memberGroup || '-'}</td><td style={{ ...td, textAlign: 'right' }}>{investor.ownershipPercentage == null ? '-' : `${Number(investor.ownershipPercentage).toFixed(2)}%`}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(contribution)}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(distribution)}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(allocation)}</td><td style={{ ...td, textAlign: 'right' }}>{preferred === null ? '-' : fmt(preferred)}</td><td style={{ ...td, textAlign: 'right' }}>{evenUp === null ? '-' : fmt(evenUp)}</td></tr>)}</tbody>
-          {data.investors.length > 0 && (() => {
-            const totals = data.investors.reduce((acc: { ownership: number; contribution: number; distribution: number; allocation: number; preferred: number; evenUp: number }, investor: any) => {
-              const entries = Array.isArray(investor.entries) ? investor.entries : [];
-              const sum = (type: string) => entries.filter((entry: any) => entry.entryType === type).reduce((total: number, entry: any) => total + Number(entry.amount || 0), 0);
-              const balance = waterfallBalanceById.get(investor.id);
-              return {
-                ownership: acc.ownership + Number(investor.ownershipPercentage || 0),
-                contribution: acc.contribution + CAPITAL_ENTRY_TYPES.reduce((total, type) => total + sum(type), 0),
-                distribution: acc.distribution + sum('DISTRIBUTION'),
-                allocation: acc.allocation + sum('ALLOCATION'),
-                preferred: acc.preferred + (waterfall.ready && balance?.isLandContributor ? balance.preferredReturnUnpaid : 0),
-                evenUp: acc.evenUp + (waterfall.ready && balance && !balance.isLandContributor ? balance.evenUpUnpaid : 0),
-              };
-            }, { ownership: 0, contribution: 0, distribution: 0, allocation: 0, preferred: 0, evenUp: 0 });
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+          <thead><tr><th style={th}>Investor / Member</th><th style={{ ...th, textAlign: 'right' }}>Ownership</th><th style={{ ...th, textAlign: 'right' }}>Contributions / Deemed Capital</th><th style={{ ...th, textAlign: 'right' }}>Distributions</th><th style={{ ...th, textAlign: 'right' }}>Allocations</th><th style={{ ...th, textAlign: 'right' }}>Unpaid Pref. Return</th><th style={{ ...th, textAlign: 'right' }}>Unpaid Even-Up</th></tr></thead>
+          <tbody>{(() => {
+            const groupRows = [
+              ...INVESTOR_ROLLFORWARD_GROUPS.map((group) => ({ ...group, rows: investorRollforwardRows.filter((row) => row.investor.memberGroup === group.key) })),
+              ...(() => {
+                const knownGroups = new Set(INVESTOR_ROLLFORWARD_GROUPS.map((group) => group.key));
+                const rows = investorRollforwardRows.filter((row) => !knownGroups.has(row.investor.memberGroup));
+                return rows.length ? [{ key: 'OTHER', label: 'Other Members', rows }] : [];
+              })(),
+            ];
+            const subtotal = (rows: typeof investorRollforwardRows) => rows.reduce((total, row) => ({
+              ownership: total.ownership + Number(row.investor.ownershipPercentage || 0),
+              contribution: total.contribution + row.contribution,
+              distribution: total.distribution + row.distribution,
+              allocation: total.allocation + row.allocation,
+              preferred: total.preferred + (row.preferred || 0),
+              evenUp: total.evenUp + (row.evenUp || 0),
+            }), { ownership: 0, contribution: 0, distribution: 0, allocation: 0, preferred: 0, evenUp: 0 });
             const totalCell = { ...td, textAlign: 'right' as const, fontWeight: 800 };
-            return <tfoot><tr style={{ background: '#f8fafc' }}><td style={{ ...td, fontWeight: 800 }}>Total</td><td style={td} /><td style={totalCell}>{`${totals.ownership.toFixed(2)}%`}</td><td style={totalCell}>{fmt(totals.contribution)}</td><td style={totalCell}>{fmt(totals.distribution)}</td><td style={totalCell}>{fmt(totals.allocation)}</td><td style={totalCell}>{waterfall.ready ? fmt(totals.preferred) : '-'}</td><td style={totalCell}>{waterfall.ready ? fmt(totals.evenUp) : '-'}</td></tr></tfoot>;
+            return groupRows.map((group) => {
+              const totals = subtotal(group.rows);
+              return <Fragment key={group.key}>
+                <tr><td colSpan={7} style={{ ...td, paddingTop: 16, paddingBottom: 7, fontSize: 11, fontWeight: 800, color: '#1e3a8a', textTransform: 'uppercase', background: '#eff6ff' }}>{group.label}</td></tr>
+                {group.rows.map(({ investor, contribution, distribution, allocation, preferred, evenUp }) => <tr key={investor.id}><td style={{ ...td, fontWeight: 700 }}>{investor.legalName}</td><td style={{ ...td, textAlign: 'right' }}>{investor.ownershipPercentage == null ? '-' : `${Number(investor.ownershipPercentage).toFixed(2)}%`}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(contribution)}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(distribution)}</td><td style={{ ...td, textAlign: 'right' }}>{fmt(allocation)}</td><td style={{ ...td, textAlign: 'right' }}>{preferred === null ? '-' : fmt(preferred)}</td><td style={{ ...td, textAlign: 'right' }}>{evenUp === null ? '-' : fmt(evenUp)}</td></tr>)}
+                <tr style={{ background: '#f8fafc' }}><td style={{ ...td, fontWeight: 800 }}>{group.label} subtotal</td><td style={totalCell}>{`${totals.ownership.toFixed(2)}%`}</td><td style={totalCell}>{fmt(totals.contribution)}</td><td style={totalCell}>{fmt(totals.distribution)}</td><td style={totalCell}>{fmt(totals.allocation)}</td><td style={totalCell}>{waterfall.ready ? fmt(totals.preferred) : '-'}</td><td style={totalCell}>{waterfall.ready ? fmt(totals.evenUp) : '-'}</td></tr>
+              </Fragment>;
+            });
+          })()}</tbody>
+          {investorRollforwardRows.length > 0 && (() => {
+            const totals = investorRollforwardRows.reduce((total, row) => ({
+              ownership: total.ownership + Number(row.investor.ownershipPercentage || 0),
+              contribution: total.contribution + row.contribution,
+              distribution: total.distribution + row.distribution,
+              allocation: total.allocation + row.allocation,
+              preferred: total.preferred + (row.preferred || 0),
+              evenUp: total.evenUp + (row.evenUp || 0),
+            }), { ownership: 0, contribution: 0, distribution: 0, allocation: 0, preferred: 0, evenUp: 0 });
+            const totalCell = { ...td, textAlign: 'right' as const, fontWeight: 800 };
+            return <tfoot><tr style={{ background: '#e2e8f0' }}><td style={{ ...td, fontWeight: 800 }}>Total</td><td style={totalCell}>{`${totals.ownership.toFixed(2)}%`}</td><td style={totalCell}>{fmt(totals.contribution)}</td><td style={totalCell}>{fmt(totals.distribution)}</td><td style={totalCell}>{fmt(totals.allocation)}</td><td style={totalCell}>{waterfall.ready ? fmt(totals.preferred) : '-'}</td><td style={totalCell}>{waterfall.ready ? fmt(totals.evenUp) : '-'}</td></tr></tfoot>;
           })()}
         </table>
-        {tableToggle('investors', data.investors.length)}
         {!data.investors.length && <div style={{ padding: 18, color: '#64748b' }}>Import or add the member ledger to populate investor balances.</div>}
       </div>}
       {reportEnabled('investorCapitalRollforward') && <InvestorOwnershipTransfersPanel investors={data.investors} aliases={data.aliases || []} fmt={fmt} />}
