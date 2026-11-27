@@ -561,6 +561,24 @@ export async function DELETE(request: NextRequest) {
     const existingCompanyScopedTables = await getExistingCompanyScopedTables();
 
     await prisma.$transaction(async (tx) => {
+      const consultantUserIds = [
+        consultant.userId,
+        ...(await tx.user.findMany({
+          where: {
+            consultantId: id,
+            id: { not: consultant.userId }
+          },
+          select: { id: true }
+        })).map((user: { id: string }) => user.id)
+      ];
+
+      // Financial records retain a required uploader reference. Delete records owned
+      // by the consultant and their team before deleting their user accounts, including
+      // records outside companies that are owned by this consultant.
+      await tx.financialRecord.deleteMany({
+        where: { uploadedByUserId: { in: consultantUserIds } }
+      });
+
       for (const companyId of ownedCompanyIds) {
         for (const tableName of COMPANY_SCOPED_TABLE_DELETE_ORDER) {
           if (!existingCompanyScopedTables.has(tableName)) continue;
