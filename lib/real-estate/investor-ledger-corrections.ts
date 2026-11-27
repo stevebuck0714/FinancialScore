@@ -54,6 +54,24 @@ const CORRECTIONS: Correction[] = [
       return true;
     },
   },
+  {
+    key: 'bgah-jrsep-transfer-2024-06-26-audit-note',
+    appliesTo: (companyId) => companyId === BENNS_GRANT_COMPANY_ID,
+    apply: async (tx, companyId) => {
+      const updated = await tx.$executeRawUnsafe(
+        `UPDATE "RealEstateInvestorLedgerEntry" e
+         SET "notes"='Non-cash transfer of capital associated with JRSEP, LLC’s purchase of a 1% member interest from Igor A. Vaserfirer on June 26, 2024. $118,737 capital basis transferred from Igor’s member capital account; no new cash was contributed to Benns Grant. Supporting documents: interest purchase/assignment, updated Exhibit A/member schedule, and capital-account summary.',
+             "updatedAt"=NOW()
+         FROM "RealEstateInvestor" i
+         WHERE i.id=e."investorId" AND e."companyId"=$1 AND i."legalName"='JRSEP, LLC'
+           AND e."entryType"='OWNERSHIP_TRANSFER_IN' AND e."effectiveDate"='2024-06-26' AND e."amount"=118737
+           AND e."reference"='BGAH ownership transfer fixture'
+           AND e."notes"='Purchased interest from Igor A Vaserfirer'`,
+        companyId,
+      );
+      return updated === 1;
+    },
+  },
 ];
 
 async function ensureCorrectionTable() {

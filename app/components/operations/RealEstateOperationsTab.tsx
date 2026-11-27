@@ -8,6 +8,7 @@ import PropertyBalanceSheetTable from '@/app/components/financial/PropertyBalanc
 import PropertyCashFlowTable from '@/app/components/financial/PropertyCashFlowTable';
 import StatementTrendPopup from '@/app/components/financial/StatementTrendPopup';
 import RealEstateWaterfallPanel from '@/app/components/operations/RealEstateWaterfallPanel';
+import InvestorOwnershipTransfersPanel from '@/app/components/operations/InvestorOwnershipTransfersPanel';
 import QbdInvestorActivityPanel from '@/app/components/operations/QbdInvestorActivityPanel';
 import { useTableSort } from '@/app/components/operations/useTableSort';
 import { computeWaterfall, type WaterfallEntry, type WaterfallInvestor, type WaterfallSettings } from '@/lib/real-estate/waterfall';
@@ -652,6 +653,7 @@ export default function RealEstateOperationsTab({ selectedCompanyId, mode, opera
         {tableToggle('investors', data.investors.length)}
         {!data.investors.length && <div style={{ padding: 18, color: '#64748b' }}>Import or add the member ledger to populate investor balances.</div>}
       </div>}
+      {reportEnabled('investorCapitalRollforward') && <InvestorOwnershipTransfersPanel investors={data.investors} aliases={data.aliases || []} fmt={fmt} />}
       {reportEnabled('investorCapitalRollforward') && <QbdInvestorActivityPanel companyId={selectedCompanyId} investors={data.investors} fmt={fmt} />}
       <RealEstateWaterfallPanel
         key={`${selectedCompanyId}-${waterfallSettings.stabilizationDate || ''}-${waterfallSettings.preferredReturnRate}`}

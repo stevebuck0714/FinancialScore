@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
         companyId,
       ),
       prisma.$queryRawUnsafe<any[]>(`
-        SELECT i.*, COALESCE(jsonb_agg(jsonb_build_object('entryType',e."entryType",'amount',e."amount",'effectiveDate',e."effectiveDate") ORDER BY e."effectiveDate") FILTER (WHERE e.id IS NOT NULL), '[]') AS entries
+        SELECT i.*, COALESCE(jsonb_agg(jsonb_build_object('entryType',e."entryType",'amount',e."amount",'effectiveDate',e."effectiveDate",'reference',e."reference",'notes',e."notes") ORDER BY e."effectiveDate") FILTER (WHERE e.id IS NOT NULL), '[]') AS entries
         FROM "RealEstateInvestor" i LEFT JOIN "RealEstateInvestorLedgerEntry" e ON e."investorId"=i.id
         WHERE i."companyId"=$1 GROUP BY i.id ORDER BY i."legalName"`, companyId),
       prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "RealEstateOccupancySnapshot" WHERE "companyId"=$1 ORDER BY "periodEnd"`, companyId),
