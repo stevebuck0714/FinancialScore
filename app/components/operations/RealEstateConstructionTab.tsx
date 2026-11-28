@@ -248,13 +248,15 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
     {
       label: 'Land: lender value above the QuickBooks basis',
       amount: data.fixedAssets.filter((asset) => asset.assetClass === 'land').reduce((total, asset) => total + asset.cost, 0) - (usesByClass.find((row) => row.costClass === 'land')?.amount || 0),
+      meaning: 'The lender’s land value is higher than the historical land cost recorded in QuickBooks.',
     },
     {
       label: 'Construction loan interest expensed in QuickBooks instead of capitalized',
       amount: -quickBooksLines.filter((line) => line.reportType === 'ACTIVITY' && isInterestExpense(line) && /construction/i.test(line.accountName) && (!lastDrawDate || line.periodEnd <= `${lastDrawDate.slice(0, 7)}-31`)).reduce((total, line) => total + line.amount, 0),
+      meaning: 'Construction-period interest was recorded as expense rather than included in the asset cost.',
     },
-    { label: 'Retainage held from the contractor, if its release was never booked in QuickBooks', amount: -totals.retainageHeld },
-    { label: 'Liquidated damages retained by the owner', amount: -(totals.ldWithheld - totals.ldReleased) },
+    { label: 'Retainage held from the contractor, if its release was never booked in QuickBooks', amount: -totals.retainageHeld, meaning: 'Amounts withheld from the contractor may not yet be reflected in the QuickBooks Building account.' },
+    { label: 'Liquidated damages retained by the owner', amount: -(totals.ldWithheld - totals.ldReleased), meaning: 'Contractual amounts retained by the owner reduce what was paid to the contractor.' },
   ].filter((item) => Math.abs(item.amount) >= 0.5) : [];
   const unexplainedVariance = registerVariance - varianceItems.reduce((total, item) => total + item.amount, 0);
   const missingInService = data.fixedAssets.filter((asset) => asset.assetClass !== 'land' && !asset.inServiceDate).length;
@@ -646,16 +648,17 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
 
       <div style={card}>
         <h3 style={{ marginTop: 0 }}>Register reconciliation to project cost</h3>
-        <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 720 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 1080 }}>
+          <thead><tr><th style={th}>Line</th><th style={{ ...th, textAlign: 'right' }}>Amount</th><th style={th}>Meaning</th></tr></thead>
           <tbody>
-            <tr><td style={td}>Fixed asset register</td><td style={num}>{fmt(registerCost)}</td></tr>
-            {usesByClass.filter((row) => ['loan', 'expense'].includes(row.costClass)).map((row) => <tr key={row.costClass}><td style={td}>{COST_CLASS_LABEL[row.costClass]} — not in the register</td><td style={num}>{fmt(row.amount)}</td></tr>)}
-            <tr><td style={td}>Total project cost (lender budget)</td><td style={num}>{fmt(usesTotal)}</td></tr>
-            <tr style={{ ...totalRow, color: Math.abs(registerVariance) >= 1 ? '#b91c1c' : '#166534' }}><td style={td}>Difference</td><td style={num}>{fmt(registerVariance)}</td></tr>
+            <tr><td style={td}>Fixed asset register</td><td style={num}>{fmt(registerCost)}</td><td style={td}>Capitalized asset costs tracked for depreciation.</td></tr>
+            {usesByClass.filter((row) => ['loan', 'expense'].includes(row.costClass)).map((row) => <tr key={row.costClass}><td style={td}>{COST_CLASS_LABEL[row.costClass]} — not in the register</td><td style={num}>{fmt(row.amount)}</td><td style={td}>{row.costClass === 'loan' ? 'Debt issuance costs are tracked separately and amortized over the debt term.' : 'Lease-up and organization costs were expensed rather than capitalized as fixed assets.'}</td></tr>)}
+            <tr><td style={td}>Total project cost (lender budget)</td><td style={num}>{fmt(usesTotal)}</td><td style={td}>The lender’s total approved project-cost budget used as the reconciliation target.</td></tr>
+            <tr style={{ ...totalRow, color: Math.abs(registerVariance) >= 1 ? '#b91c1c' : '#166534' }}><td style={td}>Difference</td><td style={num}>{fmt(registerVariance)}</td><td style={td}>The remaining gap between the accounting-side total and the lender budget.</td></tr>
             {varianceItems.length > 0 && Math.abs(registerVariance) >= 1 && <>
-              <tr><td style={{ ...td, fontWeight: 700, color: '#64748b', fontSize: 12, textTransform: 'uppercase' }} colSpan={2}>Explained by</td></tr>
-              {varianceItems.map((item) => <tr key={item.label}><td style={{ ...td, paddingLeft: 24 }}>{item.label}</td><td style={num}>{fmt(item.amount)}</td></tr>)}
-              <tr style={{ ...totalRow, color: Math.abs(unexplainedVariance) >= 1 ? '#b91c1c' : '#166534' }}><td style={td}>Not yet explained</td><td style={num}>{fmt(unexplainedVariance)}</td></tr>
+              <tr><td style={{ ...td, fontWeight: 700, color: '#64748b', fontSize: 12, textTransform: 'uppercase' }} colSpan={3}>Explained by</td></tr>
+              {varianceItems.map((item) => <tr key={item.label}><td style={{ ...td, paddingLeft: 24 }}>{item.label}</td><td style={num}>{fmt(item.amount)}</td><td style={td}>{item.meaning}</td></tr>)}
+              <tr style={{ ...totalRow, color: Math.abs(unexplainedVariance) >= 1 ? '#b91c1c' : '#166534' }}><td style={td}>Not yet explained</td><td style={num}>{fmt(unexplainedVariance)}</td><td style={td}>The portion of the difference that still needs support or a documented explanation.</td></tr>
             </>}
           </tbody>
         </table>
@@ -665,25 +668,38 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
       {fixedAssetComparison && <div style={card}>
         <h3 style={{ marginTop: 0 }}>Register compared with QuickBooks</h3>
         <p style={{ color: '#64748b', margin: '0 0 12px', fontSize: 13 }}>Register cost by class against the QuickBooks Desktop fixed-asset accounts at {formatDate(fixedAssetComparison.asOf)}. Accumulated depreciation is the {usesBook ? 'combined books\u2019' : 'register\u2019s straight-line'} amount on the same date.</p>
-        <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 860 }}>
-          <thead><tr><th style={th}>Class</th><th style={{ ...th, textAlign: 'right' }}>Register</th><th style={{ ...th, textAlign: 'right' }}>QuickBooks</th><th style={{ ...th, textAlign: 'right' }}>Difference</th></tr></thead>
+        <table style={{ width: '100%', borderCollapse: 'collapse', maxWidth: 1180 }}>
+          <thead><tr><th style={th}>Class</th><th style={{ ...th, textAlign: 'right' }}>Register</th><th style={{ ...th, textAlign: 'right' }}>QuickBooks</th><th style={{ ...th, textAlign: 'right' }}>Difference</th><th style={th}>Meaning</th></tr></thead>
           <tbody>
-            {fixedAssetComparison.rows.map((row) => <tr key={row.assetClass}>
-              <td style={{ ...td, fontWeight: 700 }}>{FIXED_ASSET_CLASS_LABEL[row.assetClass]}</td>
-              <td style={num}>{fmt(row.register)}</td>
-              <td style={num}>{fmt(row.quickBooks)}</td>
-              <td style={{ ...num, color: Math.abs(row.register - row.quickBooks) >= 1 ? '#b91c1c' : '#166534' }}>{fmt(row.register - row.quickBooks)}</td>
-            </tr>)}
+            {fixedAssetComparison.rows.map((row) => {
+              const difference = row.register - row.quickBooks;
+              const meaning = row.assetClass === 'accumulated_depreciation'
+                ? Math.abs(difference) < 1
+                  ? 'Accumulated depreciation agrees between the register and QuickBooks.'
+                  : `QuickBooks has ${fmt(Math.abs(difference))} more accumulated depreciation, which lowers its net fixed assets by the same amount. Reconcile depreciation methods, in-service dates, useful lives, and prior-period postings.`
+                : Math.abs(difference) < 1
+                  ? 'Gross capitalized cost agrees between the register and QuickBooks.'
+                  : 'Gross capitalized cost does not agree; reconcile the fixed-asset account mapping and source support.';
+              return <tr key={row.assetClass}>
+                <td style={{ ...td, fontWeight: 700 }}>{FIXED_ASSET_CLASS_LABEL[row.assetClass]}</td>
+                <td style={num}>{fmt(row.register)}</td>
+                <td style={num}>{fmt(row.quickBooks)}</td>
+                <td style={{ ...num, color: Math.abs(difference) >= 1 ? '#b91c1c' : '#166534' }}>{fmt(difference)}</td>
+                <td style={td}>{meaning}</td>
+              </tr>;
+            })}
             {fixedAssetComparison.unclassified.map((line) => <tr key={line.accountCode}>
               <td style={td}>{line.accountName} <span style={{ color: '#64748b', fontSize: 11 }}>(QuickBooks fixed-asset account outside these classes)</span></td>
               <td style={num} />
               <td style={num}>{fmt(line.amount)}</td>
               <td style={num} />
+              <td style={td}>This QuickBooks account is excluded because it is not a property fixed asset; review its account type and intercompany classification.</td>
             </tr>)}
             {(() => {
               const register = fixedAssetComparison.rows.reduce((total, row) => total + row.register, 0);
               const quickBooks = fixedAssetComparison.rows.reduce((total, row) => total + row.quickBooks, 0);
-              return <tr style={totalRow}><td style={td}>Net fixed assets</td><td style={num}>{fmt(register)}</td><td style={num}>{fmt(quickBooks)}</td><td style={{ ...num, color: Math.abs(register - quickBooks) >= 1 ? '#b91c1c' : '#166534' }}>{fmt(register - quickBooks)}</td></tr>;
+              const difference = register - quickBooks;
+              return <tr style={totalRow}><td style={td}>Net fixed assets</td><td style={num}>{fmt(register)}</td><td style={num}>{fmt(quickBooks)}</td><td style={{ ...num, color: Math.abs(difference) >= 1 ? '#b91c1c' : '#166534' }}>{fmt(difference)}</td><td style={td}>{Math.abs(difference) < 1 ? 'Net fixed assets agree.' : 'The net-book-value difference is driven by the accumulated-depreciation variance above.'}</td></tr>;
             })()}
           </tbody>
         </table>
@@ -729,6 +745,14 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
             </>}
           </tbody>
         </table></div> : <div style={{ padding: '0 18px 18px', color: '#64748b' }}>Add depreciable assets with useful lives in the Fixed Asset Register to build the schedule.</div>}
+        {quickBooksDepreciation.has(2023) && quickBooksDepreciation.has(2024) && (() => {
+          const scheduleForYear = (year: number) => scheduleAssets.reduce((total, row) => total + assetYearDepreciation(row.asset, row.depreciable, year), 0);
+          const difference2023 = scheduleForYear(2023) - quickBooksDepreciation.get(2023)!;
+          const difference2024 = scheduleForYear(2024) - quickBooksDepreciation.get(2024)!;
+          return <div style={{ margin: '12px 18px 18px', padding: 12, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, color: '#78350f', fontSize: 13, lineHeight: 1.5 }}>
+            <strong>2023–2024 QuickBooks depreciation review.</strong> QuickBooks exceeds the book schedule by {fmt(Math.abs(difference2023))} in 2023 and {fmt(Math.abs(difference2024))} in 2024. The schedule begins depreciation when assets entered service on Dec 29, 2023 and applies the later-phase cost from Aug 1, 2024; the QuickBooks amounts are therefore not consistent with the stated straight-line book schedule. Review the 2023–2024 QuickBooks general-ledger detail for tax or accelerated depreciation, catch-up entries, impairment/write-offs, or accounts mapped as depreciation in error. Do not carry these annual differences directly into the current accumulated-depreciation reconciliation until the QuickBooks account and entity scope are confirmed.
+          </div>;
+        })()}
       </div>
     </>}
 
