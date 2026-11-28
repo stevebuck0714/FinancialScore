@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useCompanyMoneyFormatter } from '@/app/hooks/useCompanyMoneyFormatter';
-import ReportPlaceholder from '@/app/components/operations/ReportPlaceholder';
 import { useTableSort } from '@/app/components/operations/useTableSort';
 import { accumulatedDepreciation, annualRunRate, depreciationForYear, depreciationYears, isDepreciable } from '@/lib/real-estate/depreciation';
 import { formatEstDate } from '@/lib/time/eastern';
@@ -295,6 +294,45 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
       };
     });
   }, [loanYears, quickBooksLines, quickBooksYearEnds]);
+  const interestAndAmortizationRows = useMemo(() => {
+    const monthEnds = new Map<string, string>();
+    const interestByMonth = new Map<string, number>();
+    const capitalizedInterestByMonth = new Map<string, number>();
+    const amortizationByMonth = new Map<string, number>();
+    const loanBalanceByPeriod = new Map<string, number>();
+    const drawsByMonth = new Map<string, number>();
+    const add = (target: Map<string, number>, month: string, amount: number) => target.set(month, (target.get(month) || 0) + amount);
+
+    for (const line of quickBooksLines) {
+      const month = line.periodEnd.slice(0, 7);
+      if (!month) continue;
+      if (!monthEnds.has(month) || line.periodEnd > monthEnds.get(month)!) monthEnds.set(month, line.periodEnd);
+      if (line.reportType === 'ACTIVITY' && isInterestExpense(line)) add(interestByMonth, month, line.amount);
+      if (line.reportType === 'ACTIVITY' && accountTypeIs(line, 'fixedasset', 'otherasset') && /interest/i.test(line.accountName)) add(capitalizedInterestByMonth, month, line.amount);
+      if (line.reportType === 'ACTIVITY' && isAmortizationExpense(line)) add(amortizationByMonth, month, line.amount);
+      if (line.reportType === 'BALANCE' && isConstructionLoan(line)) loanBalanceByPeriod.set(line.periodEnd, (loanBalanceByPeriod.get(line.periodEnd) || 0) + line.amount);
+    }
+    for (const draw of data.draws) {
+      if (draw.drawDate) add(drawsByMonth, draw.drawDate.slice(0, 7), draw.loanFunded);
+    }
+
+    let priorLoanBalance: number | null = null;
+    return [...monthEnds.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([month, periodEnd]) => {
+      const loanBalance = loanBalanceByPeriod.get(periodEnd) ?? null;
+      const advances = drawsByMonth.get(month) || 0;
+      const derivedPrincipalReduction = priorLoanBalance !== null && loanBalance !== null ? priorLoanBalance + advances - loanBalance : null;
+      if (loanBalance !== null) priorLoanBalance = loanBalance;
+      return {
+        month,
+        bookedInterest: interestByMonth.get(month) || 0,
+        identifiedCapitalizedInterest: capitalizedInterestByMonth.get(month) || 0,
+        loanFeeAmortization: amortizationByMonth.get(month) || 0,
+        advances,
+        loanBalance,
+        derivedPrincipalReduction,
+      };
+    }).filter((row) => Math.abs(row.bookedInterest) >= 0.5 || Math.abs(row.identifiedCapitalizedInterest) >= 0.5 || Math.abs(row.loanFeeAmortization) >= 0.5 || Math.abs(row.advances) >= 0.5 || row.loanBalance !== null);
+  }, [quickBooksLines, data.draws]);
   const accumulatedAtQuickBooks = quickBooksLatest ? totalAccumulated(quickBooksLatest) : 0;
   const fixedAssetComparison = useMemo(() => {
     if (!quickBooksLatest) return null;
@@ -799,13 +837,33 @@ export default function RealEstateConstructionTab({ selectedCompanyId, operation
         </table></div>
         {toggle('loanDraws', loanRows.length)}
       </div>
-      <ReportPlaceholder
-        title="Interest and Amortization"
-        description="Interest by month (capitalized during construction, expensed after placed in service), principal payments after conversion to the permanent loan, and the debt-issuance cost amortization."
-        needs={quickBooksLines.length
-          ? ['Loan terms for each tranche: rate, amortization, and maturity (note or loan agreement)', 'Virginia Housing loan statements or the conversion closing statement to split QuickBooks interest between capitalized and expensed']
-          : ['Loan terms for each tranche: rate, amortization, and maturity (note or loan agreement)', 'Virginia Housing loan statements or the conversion closing statement', 'Interest paid outside the draws after Draw 29']}
-      />
+      <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px 0', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Interest and Amortization</h3>
+            <p style={{ color: '#64748b', margin: '6px 0 12px', fontSize: 13 }}>Monthly amounts booked in QuickBooks Desktop. Principal reduction is derived from the QuickBooks loan balance after adding the construction advances for the month; it is not lender-confirmed.</p>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 999, padding: '3px 9px', textTransform: 'uppercase' }}>Lender terms pending</span>
+        </div>
+        {interestAndAmortizationRows.length ? <>
+          <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1140 }}>
+            <thead><tr><th style={th}>Month</th><th style={{ ...th, textAlign: 'right' }}>Interest expense booked</th><th style={{ ...th, textAlign: 'right' }}>Capitalized interest identified</th><th style={{ ...th, textAlign: 'right' }}>Loan-fee amortization booked</th><th style={{ ...th, textAlign: 'right' }}>Construction advances</th><th style={{ ...th, textAlign: 'right' }}>Derived principal reduction</th><th style={{ ...th, textAlign: 'right' }}>Loan balance</th></tr></thead>
+            <tbody>{interestAndAmortizationRows.slice(0, expanded.interestAmortization ? undefined : 12).map((row) => <tr key={row.month}>
+              <td style={{ ...td, fontWeight: 700 }}>{formatMonth(row.month)}</td>
+              <td style={num}>{fmt(row.bookedInterest)}</td>
+              <td style={num}>{row.identifiedCapitalizedInterest ? fmt(row.identifiedCapitalizedInterest) : '—'}</td>
+              <td style={num}>{row.loanFeeAmortization ? fmt(row.loanFeeAmortization) : '—'}</td>
+              <td style={num}>{row.advances ? fmt(row.advances) : '—'}</td>
+              <td style={num}>{row.derivedPrincipalReduction === null ? '—' : fmt(row.derivedPrincipalReduction)}</td>
+              <td style={num}>{row.loanBalance === null ? '—' : fmt(row.loanBalance)}</td>
+            </tr>)}</tbody>
+          </table></div>
+          {toggle('interestAmortization', interestAndAmortizationRows.length)}
+          <div style={{ padding: '0 18px 14px', color: '#64748b', fontSize: 12, lineHeight: 1.5 }}>
+            <strong>Interpretation:</strong> “Capitalized interest identified” includes only QuickBooks asset-account activity with “interest” in the account name. It does not identify capitalized interest posted through an undifferentiated Building or CIP account. Confirm the interest split, principal payments, rates, maturity, and debt-issuance-cost amortization against the loan agreements, lender statements, and conversion closing statement.
+          </div>
+        </> : <div style={{ padding: 18, color: '#64748b' }}>No monthly QuickBooks loan, interest, or amortization activity has synced yet.</div>}
+      </div>
     </>}
   </div>;
 }
